@@ -8472,7 +8472,7 @@ local function initCharacterInspectLayout(parentCat)
 end
 
 local function initInventoryUpgradeLayout(cat)
-	local cItemInv = wowSettingsHelper(cat, L["ItemsInventory"])
+	local cItemInv = wowSettingsHelper(cat, L["InventoryUpgrade"])
 
 	local function GetBagAnchorOptions()
 		local opts = Settings.CreateControlTextContainer()
