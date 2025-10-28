@@ -7868,7 +7868,7 @@ local function initItemInventoryLayout(cat)
 		{
 			var = "showIlvlOnBankFrame",
 			text = L["showIlvlOnBankFrame"],
-			func = function(svalue)
+			func = function(value)
 				addon.db["showIlvlOnBankFrame"] = value
 				if value then
 					if BankFrame:IsShown() then
@@ -7910,8 +7910,12 @@ local function initItemInventoryLayout(cat)
 				end
 				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
 				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
-				-- Rebuild UI to show/hide the upgrade icon position dropdown
 			end,
+		},
+		{
+			var = "closeBagsOnAuctionHouse",
+			text = L["closeBagsOnAuctionHouse"] or "Close bags on Auction House",
+			func = function(value) addon.db["closeBagsOnAuctionHouse"] = value end,
 		},
 	}
 	table.sort(data, function(a, b)
@@ -7932,6 +7936,98 @@ local function initItemInventoryLayout(cat)
 
 	local setData = SettingsCreateCheckbox(cItemInv, data)
 
+	local function GetBagAnchorOptions()
+		local opts = Settings.CreateControlTextContainer()
+		opts:Add("TOPLEFT", L["topLeft"])
+		opts:Add("TOPRIGHT", L["topRight"])
+		opts:Add("BOTTOMLEFT", L["bottomLeft"])
+		opts:Add("BOTTOMRIGHT", L["bottomRight"])
+		return opts:GetData()
+	end
+
+	if setData.showIlvlOnBagItems then
+		local bagIlvlSetting = Settings.RegisterProxySetting(
+			cat,
+			"EQOL_bagIlvlPosition",
+			Settings.VarType.String,
+			L["bagIlvlPosition"],
+			addon.db["bagIlvlPosition"] or "TOPLEFT",
+			function() return addon.db["bagIlvlPosition"] or "TOPLEFT" end,
+			function(value)
+				addon.db["bagIlvlPosition"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+			end
+		)
+		local ddIlvl = Settings.CreateDropdown(cItemInv, bagIlvlSetting, GetBagAnchorOptions, nil)
+		ddIlvl:SetParentInitializer(setData.showIlvlOnBagItems.element, function() return setData.showIlvlOnBagItems.setting:GetValue() end)
+	end
+
+	if setData.showUpgradeArrowOnBagItems then
+		local bagUpgradeSetting = Settings.RegisterProxySetting(
+			cat,
+			"EQOL_bagUpgradeIconPosition",
+			Settings.VarType.String,
+			L["bagUpgradeIconPosition"],
+			addon.db["bagUpgradeIconPosition"] or "TOPLEFT",
+			function() return addon.db["bagUpgradeIconPosition"] or "TOPLEFT" end,
+			function(value)
+				addon.db["bagUpgradeIconPosition"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame and frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+				if MerchantFrame and MerchantFrame:IsShown() then
+					if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
+					if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
+				end
+				if EquipmentFlyoutFrame and EquipmentFlyoutFrame:IsShown() and EquipmentFlyout_UpdateItems then EquipmentFlyout_UpdateItems() end
+			end
+		)
+		local ddUpgrade = Settings.CreateDropdown(cItemInv, bagUpgradeSetting, GetBagAnchorOptions, nil)
+		ddUpgrade:SetParentInitializer(setData.showUpgradeArrowOnBagItems.element, function() return setData.showUpgradeArrowOnBagItems.setting:GetValue() end)
+	end
+
+	local confirmationHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["Confirmations"] })
+	Settings.RegisterInitializer(cItemInv, confirmationHeader)
+
+	local confirmData = {
+		{
+			var = "deleteItemFillDialog",
+			text = L["deleteItemFillDialog"]:format(DELETE_ITEM_CONFIRM_STRING),
+			desc = L["deleteItemFillDialogDesc"],
+			func = function(value) addon.db["deleteItemFillDialog"] = value end,
+		},
+		{
+			var = "confirmPatronOrderDialog",
+			text = L["confirmPatronOrderDialog"]:format(PROFESSIONS_CRAFTER_ORDER_TAB_NPC),
+			desc = L["confirmPatronOrderDialogDesc"],
+			func = function(value) addon.db["confirmPatronOrderDialog"] = value end,
+		},
+		{
+			var = "confirmTimerRemovalTrade",
+			text = L["confirmTimerRemovalTrade"],
+			desc = L["confirmTimerRemovalTradeDesc"],
+			func = function(value) addon.db["confirmTimerRemovalTrade"] = value end,
+		},
+		{
+			var = "confirmReplaceEnchant",
+			text = L["confirmReplaceEnchant"],
+			desc = L["confirmReplaceEnchantDesc"],
+			func = function(value) addon.db["confirmReplaceEnchant"] = value end,
+		},
+		{
+			var = "confirmSocketReplace",
+			text = L["confirmSocketReplace"],
+			desc = L["confirmSocketReplaceDesc"],
+			func = function(value) addon.db["confirmSocketReplace"] = value end,
+		},
+	}
+
+	SettingsCreateCheckbox(cItemInv, confirmData)
 end
 
 function loadMain()
