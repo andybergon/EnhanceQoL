@@ -362,7 +362,11 @@ globals = {
 	"UIParent",
 	"WorldFrame",
 	"WorldMapFrame",
-
+	"CreateTexturePool",
+	"ChatEdit_OnEscapePressed",
+	"ChatEdit_ChooseBoxForSend",
+	"ChatEdit_GetLastToldTarget",
+	"ChatEdit_GetLastTellTarget",
 	"HUD_EDIT_MODE_BOSS_FRAMES_LABEL",
 	"HUD_EDIT_MODE_SETTINGS_CATEGORY_TITLE_MISC",
 	"HUD_EDIT_MODE_PLAYER_FRAME_LABEL",
