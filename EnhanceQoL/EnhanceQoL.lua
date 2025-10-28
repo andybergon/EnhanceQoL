@@ -8881,6 +8881,7 @@ function loadMain()
 	-- Settings.RegisterAddOnCategory(category)
 	-- addon.settingsCategory = category
 
+	--@debug@
 	local cat, layout = Settings.RegisterVerticalLayoutCategory("Enhance QoL")
 	Settings.RegisterAddOnCategory(cat)
 	addon.SettingsLayout.rootCategory = cat
@@ -8891,6 +8892,7 @@ function loadMain()
 	initVendorsEconomyLayout(cat)
 	wowSettingsHelper(cat, L["MapNavigation"])
 	wowSettingsHelper(cat, L["UIInput"])
+	--@end-debug@
 end
 
 -- Erstelle ein Frame f��r Events
