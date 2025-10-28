@@ -7721,64 +7721,74 @@ local function SettingsCreateCheckbox(cat, data)
 end
 
 local function initCombatDungeonLayout(cat)
-	local cCombat, sCombat = wowSettingsHelper(cat, L["CombatDungeons"])
+	local cCombat = wowSettingsHelper(cat, L["CombatDungeons"])
 
-	local data = {
+	local finderHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCombatHeaderDungeonFinder"] })
+	Settings.RegisterInitializer(cCombat, finderHeader)
+
+	local finderData = SettingsCreateCheckbox(cCombat, {
 		{
-			text = L["groupfinderAppText"],
+			var = "skipSignUpDialog",
+			text = L["SettingsCombatSkipSignup"],
+			desc = L["SettingsCombatSkipSignupDesc"],
+			func = function(value) addon.db["skipSignUpDialog"] = value end,
+		},
+		{
+			var = "persistSignUpNote",
+			text = L["SettingsCombatPersistNote"],
+			desc = L["SettingsCombatPersistNoteDesc"],
+			func = function(value)
+				addon.db["persistSignUpNote"] = value
+				if EQOL and EQOL.PersistSignUpNote then EQOL.PersistSignUpNote() end
+			end,
+		},
+		{
 			var = "groupfinderAppText",
+			text = L["SettingsCombatHideFormingOverlay"],
+			desc = L["SettingsCombatHideFormingOverlayDesc"],
 			func = function(value)
 				addon.db["groupfinderAppText"] = value
 				toggleGroupApplication(value)
 			end,
 		},
 		{
-			text = L["groupfinderMoveResetButton"],
 			var = "groupfinderMoveResetButton",
+			text = L["SettingsCombatMoveReset"],
+			desc = L["SettingsCombatMoveResetDesc"],
 			func = function(value)
 				addon.db["groupfinderMoveResetButton"] = value
 				toggleLFGFilterPosition()
 			end,
 		},
 		{
-			var = "autoChooseDelvePower",
-			text = L["autoChooseDelvePower"],
-			func = function(value) addon.db["autoChooseDelvePower"] = value end,
-		},
-		{
-			var = "persistSignUpNote",
-			text = L["Persist LFG signup note"],
-			func = function(value) addon.db["persistSignUpNote"] = value end,
-		},
-		{
-			var = "skipSignUpDialog",
-			text = L["Quick signup"],
-			func = function(value) addon.db["skipSignUpDialog"] = value end,
-		},
-		{
 			var = "lfgSortByRio",
-			text = L["lfgSortByRio"],
+			text = L["SettingsCombatSortByMplus"],
+			desc = L["SettingsCombatSortByMplusDesc"],
 			func = function(value) addon.db["lfgSortByRio"] = value end,
 		},
+	})
+
+	local delveHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = DELVE_LABEL })
+	Settings.RegisterInitializer(cCombat, delveHeader)
+
+	SettingsCreateCheckbox(cCombat, {
 		{
-			var = "enableChatIMRaiderIO",
-			text = L["enableChatIMRaiderIO"],
-			func = function(value) addon.db["enableChatIMRaiderIO"] = value end,
+			var = "autoChooseDelvePower",
+			text = L["SettingsCombatAutoDelve"],
+			desc = L["SettingsCombatAutoDelveDesc"],
+			func = function(value) addon.db["autoChooseDelvePower"] = value end,
 		},
-	}
-	table.sort(data, function(a, b) return a.text < b.text end)
+	})
 
-	local setData = SettingsCreateCheckbox(cCombat, data)
+	local roleHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCombatHeaderRole"] })
+	Settings.RegisterInitializer(cCombat, roleHeader)
 
-	local header = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["groupFinderRoleSeclection"] })
-	Settings.RegisterInitializer(cCombat, header)
-
-	setData = SettingsCreateCheckbox(cCombat, {
+	local roleToggle = SettingsCreateCheckbox(cCombat, {
 		{
-			text = L["groupfinderSkipRoleSelect"],
 			var = "groupfinderSkipRoleSelect",
+			text = L["SettingsCombatSkipRoleSelect"],
+			desc = L["SettingsCombatSkipRoleSelectDesc"],
 			func = function(value) addon.db["groupfinderSkipRoleSelect"] = value end,
-			desc = L["interruptWithShift"],
 		},
 	})
 
@@ -7786,20 +7796,22 @@ local function initCombatDungeonLayout(cat)
 		cat,
 		"EQOL_Mode",
 		Settings.VarType.Number,
-		L["groupfinderSkipRolecheckHeadline"],
+		L["SettingsCombatRoleModeLabel"],
 		1,
 		function() return addon.db.groupfinderSkipRoleSelectOption or 1 end,
 		function(v) addon.db.groupfinderSkipRoleSelectOption = v end
 	)
 	local function GetRoleOptions()
 		local opts = Settings.CreateControlTextContainer()
-		opts:Add(1, L["groupfinderUseCurSpec"], L["groupfinderUseCurSpecDesc"])
-		opts:Add(2, L["groupfinderSkipRolecheckUseLFD"], L["groupfinderSkipRolecheckUseLFDDesc"])
+		opts:Add(1, L["SettingsCombatRoleModeSpec"], L["SettingsCombatRoleModeSpecDesc"])
+		opts:Add(2, L["SettingsCombatRoleModeLFD"], L["SettingsCombatRoleModeLFDDesc"])
 		return opts:GetData()
 	end
-	local dd = Settings.CreateDropdown(cCombat, modeSetting, GetRoleOptions, "Choose the mode")
+	local dd = Settings.CreateDropdown(cCombat, modeSetting, GetRoleOptions, L["SettingsCombatRoleModeDesc"])
 
-	dd:SetParentInitializer(setData.groupfinderSkipRoleSelect.element, function() return setData.groupfinderSkipRoleSelect.setting:GetValue() end)
+	dd:SetParentInitializer(roleToggle.groupfinderSkipRoleSelect.element, function()
+		return roleToggle.groupfinderSkipRoleSelect.setting:GetValue()
+	end)
 end
 
 local function initItemInventoryLayout(cat)
