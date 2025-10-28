@@ -8003,54 +8003,6 @@ local function initCharacterInspectLayout(parentCat)
 		refreshInspectFrame()
 	end)
 
-	local catalystHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderCatalyst"] })
-	Settings.RegisterInitializer(cChar, catalystHeader)
-
-	SettingsCreateCheckbox(cChar, {
-		{
-			var = "showCloakUpgradeButton",
-			text = L["SettingsCharInspectShowCloakButton"],
-			desc = L["SettingsCharInspectShowCloakButtonDesc"],
-			func = function(value)
-				addon.db["showCloakUpgradeButton"] = value
-				if addon.functions.updateCloakUpgradeButton then addon.functions.updateCloakUpgradeButton() end
-			end,
-		},
-		{
-			var = "instantCatalystEnabled",
-			text = L["SettingsCharInspectInstantCatalyst"],
-			desc = L["SettingsCharInspectInstantCatalystDesc"],
-			func = function(value)
-				addon.db["instantCatalystEnabled"] = value
-				if addon.functions.toggleInstantCatalystButton then addon.functions.toggleInstantCatalystButton(value) end
-			end,
-		},
-	})
-
-	local utilityHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderUtilities"] })
-	Settings.RegisterInitializer(cChar, utilityHeader)
-
-	SettingsCreateCheckbox(cChar, {
-		{
-			var = "openCharframeOnUpgrade",
-			text = L["SettingsCharInspectOpenOnUpgrade"],
-			desc = L["SettingsCharInspectOpenOnUpgradeDesc"],
-			func = function(value) addon.db["openCharframeOnUpgrade"] = value end,
-		},
-		{
-			var = "enableGemHelper",
-			text = L["SettingsCharInspectEnableGemHelper"],
-			desc = L["SettingsCharInspectEnableGemHelperDesc"],
-			func = function(value)
-				addon.db["enableGemHelper"] = value
-				if not value and EnhanceQoLGemHelper then
-					EnhanceQoLGemHelper:Hide()
-					EnhanceQoLGemHelper = nil
-				end
-			end,
-		},
-	})
-
 	local classOptions = {}
 	local classname = select(2, UnitClass("player"))
 
@@ -8427,6 +8379,54 @@ local function initItemInventoryLayout(cat)
 	}
 
 	SettingsCreateCheckbox(cItemInv, confirmData)
+
+	local catalystHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderCatalyst"] })
+	Settings.RegisterInitializer(cItemInv, catalystHeader)
+
+	SettingsCreateCheckbox(cItemInv, {
+		{
+			var = "showCloakUpgradeButton",
+			text = L["SettingsCharInspectShowCloakButton"],
+			desc = L["SettingsCharInspectShowCloakButtonDesc"],
+			func = function(value)
+				addon.db["showCloakUpgradeButton"] = value
+				if addon.functions.updateCloakUpgradeButton then addon.functions.updateCloakUpgradeButton() end
+			end,
+		},
+		{
+			var = "instantCatalystEnabled",
+			text = L["SettingsCharInspectInstantCatalyst"],
+			desc = L["SettingsCharInspectInstantCatalystDesc"],
+			func = function(value)
+				addon.db["instantCatalystEnabled"] = value
+				if addon.functions.toggleInstantCatalystButton then addon.functions.toggleInstantCatalystButton(value) end
+			end,
+		},
+	})
+
+	local quickHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderUtilities"] })
+	Settings.RegisterInitializer(cItemInv, quickHeader)
+
+	SettingsCreateCheckbox(cItemInv, {
+		{
+			var = "openCharframeOnUpgrade",
+			text = L["SettingsCharInspectOpenOnUpgrade"],
+			desc = L["SettingsCharInspectOpenOnUpgradeDesc"],
+			func = function(value) addon.db["openCharframeOnUpgrade"] = value end,
+		},
+		{
+			var = "enableGemHelper",
+			text = L["SettingsCharInspectEnableGemHelper"],
+			desc = L["SettingsCharInspectEnableGemHelperDesc"],
+			func = function(value)
+				addon.db["enableGemHelper"] = value
+				if not value and EnhanceQoLGemHelper then
+					EnhanceQoLGemHelper:Hide()
+					EnhanceQoLGemHelper = nil
+				end
+			end,
+		},
+	})
 
 	initCharacterInspectLayout(cItemInv)
 end
