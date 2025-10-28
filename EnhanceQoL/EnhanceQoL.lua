@@ -7809,9 +7809,391 @@ local function initCombatDungeonLayout(cat)
 	end
 	local dd = Settings.CreateDropdown(cCombat, modeSetting, GetRoleOptions, L["SettingsCombatRoleModeDesc"])
 
-	dd:SetParentInitializer(roleToggle.groupfinderSkipRoleSelect.element, function()
-		return roleToggle.groupfinderSkipRoleSelect.setting:GetValue()
+	dd:SetParentInitializer(roleToggle.groupfinderSkipRoleSelect.element, function() return roleToggle.groupfinderSkipRoleSelect.setting:GetValue() end)
+end
+
+local function initCharacterInspectLayout(parentCat)
+	local cChar = wowSettingsHelper(parentCat, L["SettingsCharInspectCategory"])
+
+	local function registerBoolean(key, text, desc, getter, setter)
+		local setting = Settings.RegisterProxySetting(cChar, key, Settings.VarType.Boolean, text, false, getter, setter)
+		local element = Settings.CreateCheckbox(cChar, setting, desc)
+		return { setting = setting, element = element }
+	end
+
+	local function refreshInspectFrame()
+		if InspectFrame and InspectFrame:IsShown() and InspectFrame.unit then
+			local guid = UnitGUID(InspectFrame.unit)
+			if guid then onInspect(guid) end
+		end
+	end
+
+	local function GetAnchorOptions()
+		local opts = Settings.CreateControlTextContainer()
+		opts:Add("TOPLEFT", L["topLeft"])
+		opts:Add("TOPRIGHT", L["topRight"])
+		opts:Add("BOTTOMLEFT", L["bottomLeft"])
+		opts:Add("BOTTOMRIGHT", L["bottomRight"])
+		return opts:GetData()
+	end
+
+	_ensureDisplayDB()
+
+	local charHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderCharacter"] })
+	Settings.RegisterInitializer(cChar, charHeader)
+
+	local ilvlOption = registerBoolean("EQOL_CharDisplayItemLevel", L["SettingsCharInspectCharacterIlvl"], L["SettingsCharInspectCharacterIlvlDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.charDisplayOptions or {}
+		return t.ilvl == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.charDisplayOptions.ilvl = value == true
+		setCharFrame()
 	end)
+
+	local anchorSetting = Settings.RegisterProxySetting(
+		cChar,
+		"EQOL_CharIlvlAnchor",
+		Settings.VarType.String,
+		L["SettingsCharInspectIlvlAnchor"],
+		addon.db["charIlvlPosition"] or "TOPLEFT",
+		function() return addon.db["charIlvlPosition"] or "TOPLEFT" end,
+		function(value)
+			addon.db["charIlvlPosition"] = value
+			setCharFrame()
+		end
+	)
+	local ddIlvl = Settings.CreateDropdown(cChar, anchorSetting, GetAnchorOptions, L["SettingsCharInspectIlvlAnchorDesc"])
+	ddIlvl:SetParentInitializer(ilvlOption.element, function() return ilvlOption.setting:GetValue() end)
+
+	local gemsOption = registerBoolean("EQOL_CharDisplayGems", L["SettingsCharInspectCharacterGems"], L["SettingsCharInspectCharacterGemsDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.charDisplayOptions or {}
+		return t.gems == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.charDisplayOptions.gems = value == true
+		setCharFrame()
+	end)
+
+	local gemTipOption = registerBoolean("EQOL_CharDisplayGemTooltip", L["SettingsCharInspectCharacterGemTip"], L["SettingsCharInspectCharacterGemTipDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.charDisplayOptions or {}
+		return t.gemtip == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.charDisplayOptions.gemtip = value == true
+		setCharFrame()
+	end)
+
+	if gemTipOption and gemsOption then gemTipOption.element:SetParentInitializer(gemsOption.element, function() return gemsOption.setting:GetValue() end) end
+	registerBoolean(
+		"EQOL_CharDisplayDurability",
+		L["SettingsCharInspectCharacterDurability"],
+		L["SettingsCharInspectCharacterDurabilityDesc"],
+		function() return addon.db["showDurabilityOnCharframe"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["showDurabilityOnCharframe"] = enabled
+			_ensureDisplayDB()
+			addon.db.charDisplayOptions.durability = enabled
+			if addon.general and addon.general.durabilityIconFrame then
+				if enabled and not (addon.functions and addon.functions.IsTimerunner and addon.functions.IsTimerunner()) then
+					calculateDurability()
+					addon.general.durabilityIconFrame:Show()
+				else
+					addon.general.durabilityIconFrame:Hide()
+				end
+			end
+			setCharFrame()
+		end
+	)
+
+	registerBoolean("EQOL_CharDisplayEnchants", L["SettingsCharInspectCharacterEnchants"], L["SettingsCharInspectCharacterEnchantsDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.charDisplayOptions or {}
+		return t.enchants == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.charDisplayOptions.enchants = value == true
+		setCharFrame()
+	end)
+
+	registerBoolean(
+		"EQOL_CharDisplayMovement",
+		L["SettingsCharInspectMovementSpeed"],
+		L["SettingsCharInspectMovementSpeedDesc"],
+		function() return addon.db["movementSpeedStatEnabled"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["movementSpeedStatEnabled"] = enabled
+			if enabled then
+				if addon.MovementSpeedStat and addon.MovementSpeedStat.Refresh then addon.MovementSpeedStat.Refresh() end
+			elseif addon.MovementSpeedStat and addon.MovementSpeedStat.Disable then
+				addon.MovementSpeedStat.Disable()
+			end
+		end
+	)
+
+	registerBoolean(
+		"EQOL_CharDisplayCatalyst",
+		L["SettingsCharInspectCharacterCatalyst"],
+		L["SettingsCharInspectCharacterCatalystDesc"],
+		function() return addon.db["showCatalystChargesOnCharframe"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["showCatalystChargesOnCharframe"] = enabled
+			_ensureDisplayDB()
+			addon.db.charDisplayOptions.catalyst = enabled
+			if addon.general and addon.general.iconFrame then
+				if enabled and addon.variables and addon.variables.catalystID and not (addon.functions and addon.functions.IsTimerunner and addon.functions.IsTimerunner()) then
+					local info = C_CurrencyInfo.GetCurrencyInfo(addon.variables.catalystID)
+					if info then addon.general.iconFrame.count:SetText(info.quantity) end
+					addon.general.iconFrame:Show()
+				else
+					addon.general.iconFrame:Hide()
+				end
+			end
+			setCharFrame()
+		end
+	)
+
+	local inspectHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderInspect"] })
+	Settings.RegisterInitializer(cChar, inspectHeader)
+
+	registerBoolean("EQOL_InspectDisplayItemLevel", L["SettingsCharInspectInspectIlvl"], L["SettingsCharInspectInspectIlvlDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.inspectDisplayOptions or {}
+		return t.ilvl == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.inspectDisplayOptions.ilvl = value == true
+		refreshInspectFrame()
+	end)
+
+	local inspectGemsOption = registerBoolean("EQOL_InspectDisplayGems", L["SettingsCharInspectInspectGems"], L["SettingsCharInspectInspectGemsDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.inspectDisplayOptions or {}
+		return t.gems == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.inspectDisplayOptions.gems = value == true
+		refreshInspectFrame()
+	end)
+	local inspectGemTipOption = registerBoolean("EQOL_InspectDisplayGemTooltip", L["SettingsCharInspectInspectGemTip"], L["SettingsCharInspectInspectGemTipDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.inspectDisplayOptions or {}
+		return t.gemtip == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.inspectDisplayOptions.gemtip = value == true
+		refreshInspectFrame()
+	end)
+
+	if inspectGemTipOption and inspectGemsOption then inspectGemTipOption.element:SetParentInitializer(inspectGemsOption.element, function() return inspectGemsOption.setting:GetValue() end) end
+
+	registerBoolean("EQOL_InspectDisplayEnchants", L["SettingsCharInspectInspectEnchants"], L["SettingsCharInspectInspectEnchantsDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.inspectDisplayOptions or {}
+		return t.enchants == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.inspectDisplayOptions.enchants = value == true
+		refreshInspectFrame()
+	end)
+
+	local catalystHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderCatalyst"] })
+	Settings.RegisterInitializer(cChar, catalystHeader)
+
+	SettingsCreateCheckbox(cChar, {
+		{
+			var = "showCloakUpgradeButton",
+			text = L["SettingsCharInspectShowCloakButton"],
+			desc = L["SettingsCharInspectShowCloakButtonDesc"],
+			func = function(value)
+				addon.db["showCloakUpgradeButton"] = value
+				if addon.functions.updateCloakUpgradeButton then addon.functions.updateCloakUpgradeButton() end
+			end,
+		},
+		{
+			var = "instantCatalystEnabled",
+			text = L["SettingsCharInspectInstantCatalyst"],
+			desc = L["SettingsCharInspectInstantCatalystDesc"],
+			func = function(value)
+				addon.db["instantCatalystEnabled"] = value
+				if addon.functions.toggleInstantCatalystButton then addon.functions.toggleInstantCatalystButton(value) end
+			end,
+		},
+	})
+
+	local utilityHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderUtilities"] })
+	Settings.RegisterInitializer(cChar, utilityHeader)
+
+	SettingsCreateCheckbox(cChar, {
+		{
+			var = "openCharframeOnUpgrade",
+			text = L["SettingsCharInspectOpenOnUpgrade"],
+			desc = L["SettingsCharInspectOpenOnUpgradeDesc"],
+			func = function(value) addon.db["openCharframeOnUpgrade"] = value end,
+		},
+		{
+			var = "enableGemHelper",
+			text = L["SettingsCharInspectEnableGemHelper"],
+			desc = L["SettingsCharInspectEnableGemHelperDesc"],
+			func = function(value)
+				addon.db["enableGemHelper"] = value
+				if not value and EnhanceQoLGemHelper then
+					EnhanceQoLGemHelper:Hide()
+					EnhanceQoLGemHelper = nil
+				end
+			end,
+		},
+	})
+
+	local classOptions = {}
+	local classname = select(2, UnitClass("player"))
+
+	local function addTotemOption(dbKey)
+		table.insert(classOptions, {
+			var = dbKey,
+			text = L["shaman_HideTotem"],
+			func = function(value)
+				addon.db[dbKey] = value
+				if TotemFrame then
+					if value then
+						TotemFrame:Hide()
+					else
+						TotemFrame:Show()
+					end
+				end
+			end,
+		})
+	end
+
+	if classname == "DEATHKNIGHT" then
+		table.insert(classOptions, {
+			var = "deathknight_HideRuneFrame",
+			text = L["deathknight_HideRuneFrame"],
+			func = function(value)
+				addon.db["deathknight_HideRuneFrame"] = value
+				if RuneFrame then
+					if value then
+						RuneFrame:Hide()
+					else
+						RuneFrame:Show()
+					end
+				end
+			end,
+		})
+		addTotemOption("deathknight_HideTotemBar")
+	elseif classname == "DRUID" then
+		addTotemOption("druid_HideTotemBar")
+		table.insert(classOptions, {
+			var = "druid_HideComboPoint",
+			text = L["druid_HideComboPoint"],
+			func = function(value)
+				addon.db["druid_HideComboPoint"] = value
+				if DruidComboPointBarFrame then
+					if value then
+						DruidComboPointBarFrame:Hide()
+					else
+						DruidComboPointBarFrame:Show()
+					end
+				end
+			end,
+		})
+	elseif classname == "EVOKER" then
+		table.insert(classOptions, {
+			var = "evoker_HideEssence",
+			text = L["evoker_HideEssence"],
+			func = function(value)
+				addon.db["evoker_HideEssence"] = value
+				if EssencePlayerFrame then
+					if value then
+						EssencePlayerFrame:Hide()
+					else
+						EssencePlayerFrame:Show()
+					end
+				end
+			end,
+		})
+	elseif classname == "MAGE" then
+		addTotemOption("mage_HideTotemBar")
+	elseif classname == "MONK" then
+		table.insert(classOptions, {
+			var = "monk_HideHarmonyBar",
+			text = L["monk_HideHarmonyBar"],
+			func = function(value)
+				addon.db["monk_HideHarmonyBar"] = value
+				if MonkHarmonyBarFrame then
+					if value then
+						MonkHarmonyBarFrame:Hide()
+					else
+						MonkHarmonyBarFrame:Show()
+					end
+				end
+			end,
+		})
+		addTotemOption("monk_HideTotemBar")
+	elseif classname == "PRIEST" then
+		addTotemOption("priest_HideTotemBar")
+	elseif classname == "SHAMAN" then
+		addTotemOption("shaman_HideTotem")
+	elseif classname == "ROGUE" then
+		table.insert(classOptions, {
+			var = "rogue_HideComboPoint",
+			text = L["rogue_HideComboPoint"],
+			func = function(value)
+				addon.db["rogue_HideComboPoint"] = value
+				if RogueComboPointBarFrame then
+					if value then
+						RogueComboPointBarFrame:Hide()
+					else
+						RogueComboPointBarFrame:Show()
+					end
+				end
+			end,
+		})
+	elseif classname == "PALADIN" then
+		table.insert(classOptions, {
+			var = "paladin_HideHolyPower",
+			text = L["paladin_HideHolyPower"],
+			func = function(value)
+				addon.db["paladin_HideHolyPower"] = value
+				if PaladinPowerBarFrame then
+					if value then
+						PaladinPowerBarFrame:Hide()
+					else
+						PaladinPowerBarFrame:Show()
+					end
+				end
+			end,
+		})
+		addTotemOption("paladin_HideTotemBar")
+	elseif classname == "WARLOCK" then
+		table.insert(classOptions, {
+			var = "warlock_HideSoulShardBar",
+			text = L["warlock_HideSoulShardBar"],
+			func = function(value)
+				addon.db["warlock_HideSoulShardBar"] = value
+				if WarlockPowerFrame then
+					if value then
+						WarlockPowerFrame:Hide()
+					else
+						WarlockPowerFrame:Show()
+					end
+				end
+			end,
+		})
+		addTotemOption("warlock_HideTotemBar")
+	end
+
+	if #classOptions > 0 then
+		local classHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = headerClassInfo })
+		Settings.RegisterInitializer(cChar, classHeader)
+		SettingsCreateCheckbox(cChar, classOptions)
+	end
 end
 
 local function initItemInventoryLayout(cat)
@@ -8045,6 +8427,8 @@ local function initItemInventoryLayout(cat)
 	}
 
 	SettingsCreateCheckbox(cItemInv, confirmData)
+
+	initCharacterInspectLayout(cItemInv)
 end
 
 function loadMain()
