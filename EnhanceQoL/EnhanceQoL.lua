@@ -8617,6 +8617,7 @@ local function initVendorsEconomyLayout(parent)
 
 	local suppressMailboxReset = false
 	local mailboxDropdown
+	local mailboxRemoveSetting
 
 	local function ensureMailboxPopup()
 		if StaticPopupDialogs["ENHANCEQOL_MAILBOX_REMOVE"] then return end
@@ -8625,16 +8626,28 @@ local function initVendorsEconomyLayout(parent)
 			button1 = YES,
 			button2 = NO,
 			OnShow = function(self, data)
-				self.text:SetText(L["SettingsVendorMailboxRemoveConfirm"]:format(data and data.contact or ""))
+				local msg = L["SettingsVendorMailboxRemoveConfirm"]:format(data and data.contact or "")
+				if self.Text then
+					self.Text:SetText(msg)
+				elseif self.text then
+					self.text:SetText(msg)
+				end
 			end,
 			OnAccept = function(_, data)
 				if data and data.contact and addon.db["mailboxContacts"] then
 					addon.db["mailboxContacts"][data.contact] = nil
 					if addon.Mailbox and addon.Mailbox.RefreshList then addon.Mailbox:RefreshList() end
 				end
+				suppressMailboxReset = true
+				if mailboxRemoveSetting and mailboxRemoveSetting.SetValue then mailboxRemoveSetting:SetValue("") end
+				suppressMailboxReset = false
+				if mailboxDropdown and mailboxDropdown.SetOptionsData then mailboxDropdown:SetOptionsData(createOptionsFromTable(GetMailboxContacts)) end
 				if mailboxDropdown and mailboxDropdown.SetValue then mailboxDropdown:SetValue("") end
 			end,
 			OnCancel = function()
+				suppressMailboxReset = true
+				if mailboxRemoveSetting and mailboxRemoveSetting.SetValue then mailboxRemoveSetting:SetValue("") end
+				suppressMailboxReset = false
 				if mailboxDropdown and mailboxDropdown.SetValue then mailboxDropdown:SetValue("") end
 			end,
 			timeout = 0,
@@ -8644,7 +8657,7 @@ local function initVendorsEconomyLayout(parent)
 		}
 	end
 
-	local mailboxRemoveSetting = Settings.RegisterProxySetting(
+	mailboxRemoveSetting = Settings.RegisterProxySetting(
 		cVendors,
 		"EQOL_VendorsMailboxRemove",
 		Settings.VarType.String,
@@ -8655,9 +8668,6 @@ local function initVendorsEconomyLayout(parent)
 			if suppressMailboxReset or not value or value == "" then return end
 			ensureMailboxPopup()
 			StaticPopup_Show("ENHANCEQOL_MAILBOX_REMOVE", nil, nil, { contact = value })
-			suppressMailboxReset = true
-			mailboxRemoveSetting:SetValue("")
-			suppressMailboxReset = false
 		end
 	)
 
@@ -8707,6 +8717,7 @@ local function initVendorsEconomyLayout(parent)
 
 	local suppressMoneyReset = false
 	local moneyDropdown
+	local moneyRemoveSetting
 
 	local function ensureMoneyPopup()
 		if StaticPopupDialogs["ENHANCEQOL_MONEY_REMOVE"] then return end
@@ -8715,13 +8726,25 @@ local function initVendorsEconomyLayout(parent)
 			button1 = YES,
 			button2 = NO,
 			OnShow = function(self, data)
-				self.text:SetText(L["SettingsVendorMoneyRemoveConfirm"]:format(data and data.displayName or ""))
+				local msg = L["SettingsVendorMoneyRemoveConfirm"]:format(data and data.displayName or "")
+				if self.Text then
+					self.Text:SetText(msg)
+				elseif self.text then
+					self.text:SetText(msg)
+				end
 			end,
 			OnAccept = function(_, data)
 				if data and data.guid and addon.db["moneyTracker"] then addon.db["moneyTracker"][data.guid] = nil end
+				suppressMoneyReset = true
+				if moneyRemoveSetting and moneyRemoveSetting.SetValue then moneyRemoveSetting:SetValue("") end
+				suppressMoneyReset = false
+				if moneyDropdown and moneyDropdown.SetOptionsData then moneyDropdown:SetOptionsData(createOptionsFromTable(GetMoneyContacts)) end
 				if moneyDropdown and moneyDropdown.SetValue then moneyDropdown:SetValue("") end
 			end,
 			OnCancel = function()
+				suppressMoneyReset = true
+				if moneyRemoveSetting and moneyRemoveSetting.SetValue then moneyRemoveSetting:SetValue("") end
+				suppressMoneyReset = false
 				if moneyDropdown and moneyDropdown.SetValue then moneyDropdown:SetValue("") end
 			end,
 			timeout = 0,
@@ -8755,9 +8778,6 @@ local function initVendorsEconomyLayout(parent)
 			end
 			ensureMoneyPopup()
 			StaticPopup_Show("ENHANCEQOL_MONEY_REMOVE", nil, nil, { guid = value, displayName = displayName })
-			suppressMoneyReset = true
-			moneyRemoveSetting:SetValue("")
-			suppressMoneyReset = false
 		end
 	)
 
