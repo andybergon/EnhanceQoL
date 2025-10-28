@@ -8513,17 +8513,11 @@ local function initVendorsEconomyLayout(parent)
 		guildRepairSetting.element:SetParentInitializer(autoRepairSetting.element, function() return autoRepairSetting.setting:GetValue() end)
 	end
 
-	registerBoolean(
-		"EQOL_VendorsSellJunk",
-		L["SettingsVendorSellJunk"],
-		L["SettingsVendorSellJunkDesc"],
-		function() return addon.db["sellAllJunk"] == true end,
-		function(value)
-			local enabled = value == true
-			addon.db["sellAllJunk"] = enabled
-			if enabled then checkBagIgnoreJunk() end
-		end
-	)
+	registerBoolean("EQOL_VendorsSellJunk", L["SettingsVendorSellJunk"], L["SettingsVendorSellJunkDesc"], function() return addon.db["sellAllJunk"] == true end, function(value)
+		local enabled = value == true
+		addon.db["sellAllJunk"] = enabled
+		if enabled then checkBagIgnoreJunk() end
+	end)
 
 	-- Merchant
 	local merchantHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderMerchant"] })
@@ -8549,22 +8543,16 @@ local function initVendorsEconomyLayout(parent)
 		end
 	)
 
-	registerBoolean(
-		"EQOL_VendorsMarkKnown",
-		L["SettingsVendorKnownHighlights"],
-		L["SettingsVendorKnownHighlightsDesc"],
-		function() return addon.db["markKnownOnMerchant"] == true end,
-		function(value)
-			addon.db["markKnownOnMerchant"] = value == true
-			if MerchantFrame and MerchantFrame:IsShown() then
-				if MerchantFrame.selectedTab == 2 then
-					if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
-				else
-					if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
-				end
+	registerBoolean("EQOL_VendorsMarkKnown", L["SettingsVendorKnownHighlights"], L["SettingsVendorKnownHighlightsDesc"], function() return addon.db["markKnownOnMerchant"] == true end, function(value)
+		addon.db["markKnownOnMerchant"] = value == true
+		if MerchantFrame and MerchantFrame:IsShown() then
+			if MerchantFrame.selectedTab == 2 then
+				if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
+			else
+				if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
 			end
 		end
-	)
+	end)
 
 	registerBoolean(
 		"EQOL_VendorsMarkPets",
@@ -8657,19 +8645,11 @@ local function initVendorsEconomyLayout(parent)
 		}
 	end
 
-	mailboxRemoveSetting = Settings.RegisterProxySetting(
-		cVendors,
-		"EQOL_VendorsMailboxRemove",
-		Settings.VarType.String,
-		L["SettingsVendorMailboxRemove"],
-		"",
-		function() return "" end,
-		function(value)
-			if suppressMailboxReset or not value or value == "" then return end
-			ensureMailboxPopup()
-			StaticPopup_Show("ENHANCEQOL_MAILBOX_REMOVE", nil, nil, { contact = value })
-		end
-	)
+	mailboxRemoveSetting = Settings.RegisterProxySetting(cVendors, "EQOL_VendorsMailboxRemove", Settings.VarType.String, L["SettingsVendorMailboxRemove"], "", function() return "" end, function(value)
+		if suppressMailboxReset or not value or value == "" then return end
+		ensureMailboxPopup()
+		StaticPopup_Show("ENHANCEQOL_MAILBOX_REMOVE", nil, nil, { contact = value })
+	end)
 
 	mailboxDropdown = Settings.CreateDropdown(cVendors, mailboxRemoveSetting, function() return createOptionsFromTable(GetMailboxContacts) end, L["SettingsVendorMailboxRemoveDesc"])
 	if mailboxDropdown.SetParentInitializer then
@@ -8754,35 +8734,26 @@ local function initVendorsEconomyLayout(parent)
 		}
 	end
 
-	local moneyRemoveSetting = Settings.RegisterProxySetting(
-		cVendors,
-		"EQOL_VendorsMoneyRemove",
-		Settings.VarType.String,
-		L["SettingsVendorMoneyRemove"],
-		"",
-		function() return "" end,
-		function(value)
-			if suppressMoneyReset or not value or value == "" then return end
-			local info = addon.db["moneyTracker"] and addon.db["moneyTracker"][value]
-			local displayName
-			if info then
-				local name = info.name or "?"
-				local realm = info.realm or ""
-				if realm ~= "" then
-					displayName = string.format("%s-%s", name, realm)
-				else
-					displayName = name
-				end
+	moneyRemoveSetting = Settings.RegisterProxySetting(cVendors, "EQOL_VendorsMoneyRemove", Settings.VarType.String, L["SettingsVendorMoneyRemove"], "", function() return "" end, function(value)
+		if suppressMoneyReset or not value or value == "" then return end
+		local info = addon.db["moneyTracker"] and addon.db["moneyTracker"][value]
+		local displayName
+		if info then
+			local name = info.name or "?"
+			local realm = info.realm or ""
+			if realm ~= "" then
+				displayName = string.format("%s-%s", name, realm)
 			else
-				displayName = value
+				displayName = name
 			end
-			ensureMoneyPopup()
-			StaticPopup_Show("ENHANCEQOL_MONEY_REMOVE", nil, nil, { guid = value, displayName = displayName })
+		else
+			displayName = value
 		end
-	)
+		ensureMoneyPopup()
+		StaticPopup_Show("ENHANCEQOL_MONEY_REMOVE", nil, nil, { guid = value, displayName = displayName })
+	end)
 
-	moneyDropdown =
-		Settings.CreateDropdown(cVendors, moneyRemoveSetting, function() return createOptionsFromTable(GetMoneyContacts) end, L["SettingsVendorMoneyRemoveDesc"])
+	moneyDropdown = Settings.CreateDropdown(cVendors, moneyRemoveSetting, function() return createOptionsFromTable(GetMoneyContacts) end, L["SettingsVendorMoneyRemoveDesc"])
 	if moneyDropdown.SetParentInitializer then
 		moneyDropdown:SetParentInitializer(moneySetting.element, function() return addon.db["enableMoneyTracker"] == true end)
 	elseif moneyDropdown.SetParent then
