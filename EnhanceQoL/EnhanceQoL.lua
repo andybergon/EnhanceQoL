@@ -3820,28 +3820,6 @@ local function addContainerActionsFrame(container)
 	removeButton:SetFullWidth(true)
 	managedGroup:AddChild(removeButton)
 
-	local addBox = AceGUI:Create("EditBox")
-	addBox:SetFullWidth(true)
-	addBox:SetLabel(L["containerActionsBlacklistAddLabel"])
-	if addBox.SetPlaceholderText then addBox:SetPlaceholderText(L["containerActionsBlacklistAddPlaceholder"]) end
-	addBox:SetCallback("OnEnterPressed", function(widget, _, text)
-		if not addon.ContainerActions then return end
-		local itemID = addon.ContainerActions:ParseInputToItemID(text)
-		if not itemID then
-			addon.ContainerActions:HandleBlacklistError("invalid")
-			return
-		end
-		local ok, reason = addon.ContainerActions:AddItemToBlacklist(itemID)
-		if ok then
-			widget:SetText("")
-			widget:ClearFocus()
-			refreshBlacklistDropdown(itemID)
-		else
-			addon.ContainerActions:HandleBlacklistError(reason, itemID)
-		end
-	end)
-	managedGroup:AddChild(addBox)
-
 	scroll:DoLayout()
 	wrapper:DoLayout()
 	group:DoLayout()
@@ -7720,717 +7698,6 @@ local function SettingsCreateCheckbox(cat, data)
 	return rData
 end
 
-local function initCombatDungeonLayout(cat)
-	local cCombat = wowSettingsHelper(cat, L["CombatDungeons"])
-
-	local finderHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCombatHeaderDungeonFinder"] })
-	Settings.RegisterInitializer(cCombat, finderHeader)
-
-	local finderData = SettingsCreateCheckbox(cCombat, {
-		{
-			var = "skipSignUpDialog",
-			text = L["SettingsCombatSkipSignup"],
-			desc = L["SettingsCombatSkipSignupDesc"],
-			func = function(value) addon.db["skipSignUpDialog"] = value end,
-		},
-		{
-			var = "persistSignUpNote",
-			text = L["SettingsCombatPersistNote"],
-			desc = L["SettingsCombatPersistNoteDesc"],
-			func = function(value)
-				addon.db["persistSignUpNote"] = value
-				if EQOL and EQOL.PersistSignUpNote then EQOL.PersistSignUpNote() end
-			end,
-		},
-		{
-			var = "groupfinderAppText",
-			text = L["SettingsCombatHideFormingOverlay"],
-			desc = L["SettingsCombatHideFormingOverlayDesc"],
-			func = function(value)
-				addon.db["groupfinderAppText"] = value
-				toggleGroupApplication(value)
-			end,
-		},
-		{
-			var = "groupfinderMoveResetButton",
-			text = L["SettingsCombatMoveReset"],
-			desc = L["SettingsCombatMoveResetDesc"],
-			func = function(value)
-				addon.db["groupfinderMoveResetButton"] = value
-				toggleLFGFilterPosition()
-			end,
-		},
-		{
-			var = "lfgSortByRio",
-			text = L["SettingsCombatSortByMplus"],
-			desc = L["SettingsCombatSortByMplusDesc"],
-			func = function(value) addon.db["lfgSortByRio"] = value end,
-		},
-	})
-
-	local delveHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = DELVE_LABEL })
-	Settings.RegisterInitializer(cCombat, delveHeader)
-
-	SettingsCreateCheckbox(cCombat, {
-		{
-			var = "autoChooseDelvePower",
-			text = L["SettingsCombatAutoDelve"],
-			desc = L["SettingsCombatAutoDelveDesc"],
-			func = function(value) addon.db["autoChooseDelvePower"] = value end,
-		},
-	})
-
-	local roleHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCombatHeaderRole"] })
-	Settings.RegisterInitializer(cCombat, roleHeader)
-
-	local roleToggle = SettingsCreateCheckbox(cCombat, {
-		{
-			var = "groupfinderSkipRoleSelect",
-			text = L["SettingsCombatSkipRoleSelect"],
-			desc = L["SettingsCombatSkipRoleSelectDesc"],
-			func = function(value) addon.db["groupfinderSkipRoleSelect"] = value end,
-		},
-	})
-
-	local modeSetting = Settings.RegisterProxySetting(
-		cat,
-		"EQOL_Mode",
-		Settings.VarType.Number,
-		L["SettingsCombatRoleModeLabel"],
-		1,
-		function() return addon.db.groupfinderSkipRoleSelectOption or 1 end,
-		function(v) addon.db.groupfinderSkipRoleSelectOption = v end
-	)
-	local function GetRoleOptions()
-		local opts = Settings.CreateControlTextContainer()
-		opts:Add(1, L["SettingsCombatRoleModeSpec"], L["SettingsCombatRoleModeSpecDesc"])
-		opts:Add(2, L["SettingsCombatRoleModeLFD"], L["SettingsCombatRoleModeLFDDesc"])
-		return opts:GetData()
-	end
-	local dd = Settings.CreateDropdown(cCombat, modeSetting, GetRoleOptions, L["SettingsCombatRoleModeDesc"])
-
-	dd:SetParentInitializer(roleToggle.groupfinderSkipRoleSelect.element, function() return roleToggle.groupfinderSkipRoleSelect.setting:GetValue() end)
-end
-
-local function initCharacterInspectLayout(parentCat)
-	local cChar = wowSettingsHelper(parentCat, L["SettingsCharInspectCategory"])
-
-	local function registerBoolean(key, text, desc, getter, setter)
-		local setting = Settings.RegisterProxySetting(cChar, key, Settings.VarType.Boolean, text, false, getter, setter)
-		local element = Settings.CreateCheckbox(cChar, setting, desc)
-		return { setting = setting, element = element }
-	end
-
-	local function refreshInspectFrame()
-		if InspectFrame and InspectFrame:IsShown() and InspectFrame.unit then
-			local guid = UnitGUID(InspectFrame.unit)
-			if guid then onInspect(guid) end
-		end
-	end
-
-	local function GetAnchorOptions()
-		local opts = Settings.CreateControlTextContainer()
-		opts:Add("TOPLEFT", L["topLeft"])
-		opts:Add("TOPRIGHT", L["topRight"])
-		opts:Add("BOTTOMLEFT", L["bottomLeft"])
-		opts:Add("BOTTOMRIGHT", L["bottomRight"])
-		return opts:GetData()
-	end
-
-	_ensureDisplayDB()
-
-	local charHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderCharacter"] })
-	Settings.RegisterInitializer(cChar, charHeader)
-
-	local ilvlOption = registerBoolean("EQOL_CharDisplayItemLevel", L["SettingsCharInspectCharacterIlvl"], L["SettingsCharInspectCharacterIlvlDesc"], function()
-		_ensureDisplayDB()
-		local t = addon.db.charDisplayOptions or {}
-		return t.ilvl == true
-	end, function(value)
-		_ensureDisplayDB()
-		addon.db.charDisplayOptions.ilvl = value == true
-		setCharFrame()
-	end)
-
-	local anchorSetting = Settings.RegisterProxySetting(
-		cChar,
-		"EQOL_CharIlvlAnchor",
-		Settings.VarType.String,
-		L["SettingsCharInspectIlvlAnchor"],
-		addon.db["charIlvlPosition"] or "TOPLEFT",
-		function() return addon.db["charIlvlPosition"] or "TOPLEFT" end,
-		function(value)
-			addon.db["charIlvlPosition"] = value
-			setCharFrame()
-		end
-	)
-	local ddIlvl = Settings.CreateDropdown(cChar, anchorSetting, GetAnchorOptions, L["SettingsCharInspectIlvlAnchorDesc"])
-	ddIlvl:SetParentInitializer(ilvlOption.element, function() return ilvlOption.setting:GetValue() end)
-
-	local gemsOption = registerBoolean("EQOL_CharDisplayGems", L["SettingsCharInspectCharacterGems"], L["SettingsCharInspectCharacterGemsDesc"], function()
-		_ensureDisplayDB()
-		local t = addon.db.charDisplayOptions or {}
-		return t.gems == true
-	end, function(value)
-		_ensureDisplayDB()
-		addon.db.charDisplayOptions.gems = value == true
-		setCharFrame()
-	end)
-
-	local gemTipOption = registerBoolean("EQOL_CharDisplayGemTooltip", L["SettingsCharInspectCharacterGemTip"], L["SettingsCharInspectCharacterGemTipDesc"], function()
-		_ensureDisplayDB()
-		local t = addon.db.charDisplayOptions or {}
-		return t.gemtip == true
-	end, function(value)
-		_ensureDisplayDB()
-		addon.db.charDisplayOptions.gemtip = value == true
-		setCharFrame()
-	end)
-
-	if gemTipOption and gemsOption then gemTipOption.element:SetParentInitializer(gemsOption.element, function() return gemsOption.setting:GetValue() end) end
-	registerBoolean(
-		"EQOL_CharDisplayDurability",
-		L["SettingsCharInspectCharacterDurability"],
-		L["SettingsCharInspectCharacterDurabilityDesc"],
-		function() return addon.db["showDurabilityOnCharframe"] == true end,
-		function(value)
-			local enabled = value == true
-			addon.db["showDurabilityOnCharframe"] = enabled
-			_ensureDisplayDB()
-			addon.db.charDisplayOptions.durability = enabled
-			if addon.general and addon.general.durabilityIconFrame then
-				if enabled and not (addon.functions and addon.functions.IsTimerunner and addon.functions.IsTimerunner()) then
-					calculateDurability()
-					addon.general.durabilityIconFrame:Show()
-				else
-					addon.general.durabilityIconFrame:Hide()
-				end
-			end
-			setCharFrame()
-		end
-	)
-
-	registerBoolean("EQOL_CharDisplayEnchants", L["SettingsCharInspectCharacterEnchants"], L["SettingsCharInspectCharacterEnchantsDesc"], function()
-		_ensureDisplayDB()
-		local t = addon.db.charDisplayOptions or {}
-		return t.enchants == true
-	end, function(value)
-		_ensureDisplayDB()
-		addon.db.charDisplayOptions.enchants = value == true
-		setCharFrame()
-	end)
-
-	registerBoolean(
-		"EQOL_CharDisplayMovement",
-		L["SettingsCharInspectMovementSpeed"],
-		L["SettingsCharInspectMovementSpeedDesc"],
-		function() return addon.db["movementSpeedStatEnabled"] == true end,
-		function(value)
-			local enabled = value == true
-			addon.db["movementSpeedStatEnabled"] = enabled
-			if enabled then
-				if addon.MovementSpeedStat and addon.MovementSpeedStat.Refresh then addon.MovementSpeedStat.Refresh() end
-			elseif addon.MovementSpeedStat and addon.MovementSpeedStat.Disable then
-				addon.MovementSpeedStat.Disable()
-			end
-		end
-	)
-
-	registerBoolean(
-		"EQOL_CharDisplayCatalyst",
-		L["SettingsCharInspectCharacterCatalyst"],
-		L["SettingsCharInspectCharacterCatalystDesc"],
-		function() return addon.db["showCatalystChargesOnCharframe"] == true end,
-		function(value)
-			local enabled = value == true
-			addon.db["showCatalystChargesOnCharframe"] = enabled
-			_ensureDisplayDB()
-			addon.db.charDisplayOptions.catalyst = enabled
-			if addon.general and addon.general.iconFrame then
-				if enabled and addon.variables and addon.variables.catalystID and not (addon.functions and addon.functions.IsTimerunner and addon.functions.IsTimerunner()) then
-					local info = C_CurrencyInfo.GetCurrencyInfo(addon.variables.catalystID)
-					if info then addon.general.iconFrame.count:SetText(info.quantity) end
-					addon.general.iconFrame:Show()
-				else
-					addon.general.iconFrame:Hide()
-				end
-			end
-			setCharFrame()
-		end
-	)
-
-	local inspectHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderInspect"] })
-	Settings.RegisterInitializer(cChar, inspectHeader)
-
-	registerBoolean("EQOL_InspectDisplayItemLevel", L["SettingsCharInspectInspectIlvl"], L["SettingsCharInspectInspectIlvlDesc"], function()
-		_ensureDisplayDB()
-		local t = addon.db.inspectDisplayOptions or {}
-		return t.ilvl == true
-	end, function(value)
-		_ensureDisplayDB()
-		addon.db.inspectDisplayOptions.ilvl = value == true
-		refreshInspectFrame()
-	end)
-
-	local inspectGemsOption = registerBoolean("EQOL_InspectDisplayGems", L["SettingsCharInspectInspectGems"], L["SettingsCharInspectInspectGemsDesc"], function()
-		_ensureDisplayDB()
-		local t = addon.db.inspectDisplayOptions or {}
-		return t.gems == true
-	end, function(value)
-		_ensureDisplayDB()
-		addon.db.inspectDisplayOptions.gems = value == true
-		refreshInspectFrame()
-	end)
-	local inspectGemTipOption = registerBoolean("EQOL_InspectDisplayGemTooltip", L["SettingsCharInspectInspectGemTip"], L["SettingsCharInspectInspectGemTipDesc"], function()
-		_ensureDisplayDB()
-		local t = addon.db.inspectDisplayOptions or {}
-		return t.gemtip == true
-	end, function(value)
-		_ensureDisplayDB()
-		addon.db.inspectDisplayOptions.gemtip = value == true
-		refreshInspectFrame()
-	end)
-
-	if inspectGemTipOption and inspectGemsOption then inspectGemTipOption.element:SetParentInitializer(inspectGemsOption.element, function() return inspectGemsOption.setting:GetValue() end) end
-
-	registerBoolean("EQOL_InspectDisplayEnchants", L["SettingsCharInspectInspectEnchants"], L["SettingsCharInspectInspectEnchantsDesc"], function()
-		_ensureDisplayDB()
-		local t = addon.db.inspectDisplayOptions or {}
-		return t.enchants == true
-	end, function(value)
-		_ensureDisplayDB()
-		addon.db.inspectDisplayOptions.enchants = value == true
-		refreshInspectFrame()
-	end)
-
-	local classOptions = {}
-	local classname = select(2, UnitClass("player"))
-
-	local function addTotemOption(dbKey)
-		table.insert(classOptions, {
-			var = dbKey,
-			text = L["shaman_HideTotem"],
-			func = function(value)
-				addon.db[dbKey] = value
-				if TotemFrame then
-					if value then
-						TotemFrame:Hide()
-					else
-						TotemFrame:Show()
-					end
-				end
-			end,
-		})
-	end
-
-	if classname == "DEATHKNIGHT" then
-		table.insert(classOptions, {
-			var = "deathknight_HideRuneFrame",
-			text = L["deathknight_HideRuneFrame"],
-			func = function(value)
-				addon.db["deathknight_HideRuneFrame"] = value
-				if RuneFrame then
-					if value then
-						RuneFrame:Hide()
-					else
-						RuneFrame:Show()
-					end
-				end
-			end,
-		})
-		addTotemOption("deathknight_HideTotemBar")
-	elseif classname == "DRUID" then
-		addTotemOption("druid_HideTotemBar")
-		table.insert(classOptions, {
-			var = "druid_HideComboPoint",
-			text = L["druid_HideComboPoint"],
-			func = function(value)
-				addon.db["druid_HideComboPoint"] = value
-				if DruidComboPointBarFrame then
-					if value then
-						DruidComboPointBarFrame:Hide()
-					else
-						DruidComboPointBarFrame:Show()
-					end
-				end
-			end,
-		})
-	elseif classname == "EVOKER" then
-		table.insert(classOptions, {
-			var = "evoker_HideEssence",
-			text = L["evoker_HideEssence"],
-			func = function(value)
-				addon.db["evoker_HideEssence"] = value
-				if EssencePlayerFrame then
-					if value then
-						EssencePlayerFrame:Hide()
-					else
-						EssencePlayerFrame:Show()
-					end
-				end
-			end,
-		})
-	elseif classname == "MAGE" then
-		addTotemOption("mage_HideTotemBar")
-	elseif classname == "MONK" then
-		table.insert(classOptions, {
-			var = "monk_HideHarmonyBar",
-			text = L["monk_HideHarmonyBar"],
-			func = function(value)
-				addon.db["monk_HideHarmonyBar"] = value
-				if MonkHarmonyBarFrame then
-					if value then
-						MonkHarmonyBarFrame:Hide()
-					else
-						MonkHarmonyBarFrame:Show()
-					end
-				end
-			end,
-		})
-		addTotemOption("monk_HideTotemBar")
-	elseif classname == "PRIEST" then
-		addTotemOption("priest_HideTotemBar")
-	elseif classname == "SHAMAN" then
-		addTotemOption("shaman_HideTotem")
-	elseif classname == "ROGUE" then
-		table.insert(classOptions, {
-			var = "rogue_HideComboPoint",
-			text = L["rogue_HideComboPoint"],
-			func = function(value)
-				addon.db["rogue_HideComboPoint"] = value
-				if RogueComboPointBarFrame then
-					if value then
-						RogueComboPointBarFrame:Hide()
-					else
-						RogueComboPointBarFrame:Show()
-					end
-				end
-			end,
-		})
-	elseif classname == "PALADIN" then
-		table.insert(classOptions, {
-			var = "paladin_HideHolyPower",
-			text = L["paladin_HideHolyPower"],
-			func = function(value)
-				addon.db["paladin_HideHolyPower"] = value
-				if PaladinPowerBarFrame then
-					if value then
-						PaladinPowerBarFrame:Hide()
-					else
-						PaladinPowerBarFrame:Show()
-					end
-				end
-			end,
-		})
-		addTotemOption("paladin_HideTotemBar")
-	elseif classname == "WARLOCK" then
-		table.insert(classOptions, {
-			var = "warlock_HideSoulShardBar",
-			text = L["warlock_HideSoulShardBar"],
-			func = function(value)
-				addon.db["warlock_HideSoulShardBar"] = value
-				if WarlockPowerFrame then
-					if value then
-						WarlockPowerFrame:Hide()
-					else
-						WarlockPowerFrame:Show()
-					end
-				end
-			end,
-		})
-		addTotemOption("warlock_HideTotemBar")
-	end
-
-	if #classOptions > 0 then
-		local classHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = headerClassInfo })
-		Settings.RegisterInitializer(cChar, classHeader)
-		SettingsCreateCheckbox(cChar, classOptions)
-	end
-end
-
-local function initItemInventoryLayout(cat)
-	local cItemInv = wowSettingsHelper(cat, L["ItemsInventory"])
-
-	local function GetBagAnchorOptions()
-		local opts = Settings.CreateControlTextContainer()
-		opts:Add("TOPLEFT", L["topLeft"])
-		opts:Add("TOPRIGHT", L["topRight"])
-		opts:Add("BOTTOMLEFT", L["bottomLeft"])
-		opts:Add("BOTTOMRIGHT", L["bottomRight"])
-		return opts:GetData()
-	end
-
-	local displayHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderDisplayItemLevel"] })
-	Settings.RegisterInitializer(cItemInv, displayHeader)
-
-	local displayData = SettingsCreateCheckbox(cItemInv, {
-		{
-			var = "showIlvlOnBagItems",
-			text = L["SettingsItemInvDisplayBags"],
-			desc = L["SettingsItemInvDisplayBagsDesc"],
-			func = function(value)
-				addon.db["showIlvlOnBagItems"] = value
-				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
-					if frame:IsShown() then addon.functions.updateBags(frame) end
-				end
-				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
-			end,
-		},
-	})
-
-	local bagIlvlSetting = Settings.RegisterProxySetting(
-		cat,
-		"EQOL_bagIlvlPosition",
-		Settings.VarType.String,
-		L["SettingsItemInvBagIlvlPosition"],
-		addon.db["bagIlvlPosition"] or "TOPLEFT",
-		function() return addon.db["bagIlvlPosition"] or "TOPLEFT" end,
-		function(value)
-			addon.db["bagIlvlPosition"] = value
-			for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
-				if frame:IsShown() then addon.functions.updateBags(frame) end
-			end
-			if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
-		end
-	)
-	local ddIlvl = Settings.CreateDropdown(cItemInv, bagIlvlSetting, GetBagAnchorOptions, L["SettingsItemInvBagIlvlPositionDesc"])
-	ddIlvl:SetParentInitializer(displayData.showIlvlOnBagItems.element, function() return displayData.showIlvlOnBagItems.setting:GetValue() end)
-
-	SettingsCreateCheckbox(cItemInv, {
-		{
-			var = "showIlvlOnBankFrame",
-			text = L["SettingsItemInvDisplayBank"],
-			desc = L["SettingsItemInvDisplayBankDesc"],
-			func = function(value)
-				addon.db["showIlvlOnBankFrame"] = value
-				if value then
-					if BankFrame:IsShown() then
-						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
-							local itemButton = _G["BankFrameItem" .. slot]
-							if itemButton then addon.functions.updateBank(itemButton, -1, slot) end
-						end
-					end
-				else
-					if BankFrame:IsShown() then
-						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
-							local itemButton = _G["BankFrameItem" .. slot]
-							if itemButton and itemButton.ItemLevelText then itemButton.ItemLevelText:Hide() end
-						end
-					end
-				end
-				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
-			end,
-		},
-		{
-			var = "showIlvlOnMerchantframe",
-			text = L["SettingsItemInvDisplayMerchant"],
-			desc = L["SettingsItemInvDisplayMerchantDesc"],
-			func = function(value) addon.db["showIlvlOnMerchantframe"] = value end,
-		},
-	})
-
-	local overlaysHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderBagOverlays"] })
-	Settings.RegisterInitializer(cItemInv, overlaysHeader)
-
-	local overlayData = SettingsCreateCheckbox(cItemInv, {
-		{
-			var = "showBindOnBagItems",
-			text = L["SettingsItemInvShowBindStatus"],
-			desc = L["SettingsItemInvShowBindStatusDesc"]:format(_G.ITEM_BIND_ON_EQUIP, _G.ITEM_ACCOUNTBOUND_UNTIL_EQUIP, _G.ITEM_BNETACCOUNTBOUND),
-			func = function(value)
-				addon.db["showBindOnBagItems"] = value
-				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
-					if frame:IsShown() then addon.functions.updateBags(frame) end
-				end
-				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
-			end,
-		},
-		{
-			var = "fadeBagQualityIcons",
-			text = L["SettingsItemInvFadeQuality"],
-			desc = L["SettingsItemInvFadeQualityDesc"],
-			func = function(value)
-				addon.db["fadeBagQualityIcons"] = value
-				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
-					if frame:IsShown() then addon.functions.updateBags(frame) end
-				end
-				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
-				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
-			end,
-		},
-		{
-			var = "showUpgradeArrowOnBagItems",
-			text = L["SettingsItemInvShowUpgradeIndicators"],
-			desc = L["SettingsItemInvShowUpgradeIndicatorsDesc"],
-			func = function(value)
-				addon.db["showUpgradeArrowOnBagItems"] = value
-				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
-					if frame:IsShown() then addon.functions.updateBags(frame) end
-				end
-				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
-				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
-				if MerchantFrame and MerchantFrame:IsShown() then
-					if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
-					if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
-				end
-				if EquipmentFlyoutFrame and EquipmentFlyoutFrame:IsShown() and EquipmentFlyout_UpdateItems then EquipmentFlyout_UpdateItems() end
-			end,
-		},
-	})
-
-	local bagUpgradeSetting = Settings.RegisterProxySetting(
-		cat,
-		"EQOL_bagUpgradeIconPosition",
-		Settings.VarType.String,
-		L["SettingsItemInvUpgradeIconPosition"],
-		addon.db["bagUpgradeIconPosition"] or "TOPLEFT",
-		function() return addon.db["bagUpgradeIconPosition"] or "TOPLEFT" end,
-		function(value)
-			addon.db["bagUpgradeIconPosition"] = value
-			for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
-				if frame and frame:IsShown() then addon.functions.updateBags(frame) end
-			end
-			if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
-			if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
-			if MerchantFrame and MerchantFrame:IsShown() then
-				if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
-				if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
-			end
-			if EquipmentFlyoutFrame and EquipmentFlyoutFrame:IsShown() and EquipmentFlyout_UpdateItems then EquipmentFlyout_UpdateItems() end
-		end
-	)
-	local ddUpgrade = Settings.CreateDropdown(cItemInv, bagUpgradeSetting, GetBagAnchorOptions, L["SettingsItemInvUpgradeIconPositionDesc"])
-	ddUpgrade:SetParentInitializer(overlayData.showUpgradeArrowOnBagItems.element, function() return overlayData.showUpgradeArrowOnBagItems.setting:GetValue() end)
-
-	local interactionHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderBagInteraction"] })
-	Settings.RegisterInitializer(cItemInv, interactionHeader)
-
-	SettingsCreateCheckbox(cItemInv, {
-		{
-			var = "showBagFilterMenu",
-			text = L["SettingsItemInvBagFilterMenu"],
-			desc = L["SettingsItemInvBagFilterMenuDesc"]:format(SHIFT_KEY_TEXT),
-			func = function(value)
-				addon.db["showBagFilterMenu"] = value
-				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
-					if frame:IsShown() then addon.functions.updateBags(frame) end
-				end
-				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
-				if value then
-					if BankFrame:IsShown() then
-						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
-							local itemButton = _G["BankFrameItem" .. slot]
-							if itemButton then addon.functions.updateBank(itemButton, -1, slot) end
-						end
-					end
-				else
-					if BankFrame:IsShown() then
-						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
-							local itemButton = _G["BankFrameItem" .. slot]
-							if itemButton and itemButton.ItemLevelText then itemButton.ItemLevelText:Hide() end
-						end
-					end
-				end
-				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
-			end,
-		},
-		{
-			var = "closeBagsOnAuctionHouse",
-			text = L["SettingsItemInvCloseBagsAuctionHouse"],
-			desc = L["SettingsItemInvCloseBagsAuctionHouseDesc"],
-			func = function(value) addon.db["closeBagsOnAuctionHouse"] = value end,
-		},
-	})
-
-	local confirmationHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderConfirmation"] })
-	Settings.RegisterInitializer(cItemInv, confirmationHeader)
-
-	local confirmData = {
-		{
-			var = "deleteItemFillDialog",
-			text = L["SettingsItemInvConfirmDelete"]:format(DELETE_ITEM_CONFIRM_STRING),
-			desc = L["SettingsItemInvConfirmDeleteDesc"],
-			func = function(value) addon.db["deleteItemFillDialog"] = value end,
-		},
-		{
-			var = "confirmPatronOrderDialog",
-			text = L["SettingsItemInvConfirmPatronOrder"]:format(PROFESSIONS_CRAFTER_ORDER_TAB_NPC),
-			desc = L["SettingsItemInvConfirmPatronOrderDesc"],
-			func = function(value) addon.db["confirmPatronOrderDialog"] = value end,
-		},
-		{
-			var = "confirmTimerRemovalTrade",
-			text = L["SettingsItemInvConfirmTradeTimer"],
-			desc = L["SettingsItemInvConfirmTradeTimerDesc"],
-			func = function(value) addon.db["confirmTimerRemovalTrade"] = value end,
-		},
-		{
-			var = "confirmReplaceEnchant",
-			text = L["SettingsItemInvConfirmReplaceEnchant"],
-			desc = L["SettingsItemInvConfirmReplaceEnchantDesc"],
-			func = function(value) addon.db["confirmReplaceEnchant"] = value end,
-		},
-		{
-			var = "confirmSocketReplace",
-			text = L["SettingsItemInvConfirmReplaceSocket"],
-			desc = L["SettingsItemInvConfirmReplaceSocketDesc"],
-			func = function(value) addon.db["confirmSocketReplace"] = value end,
-		},
-	}
-
-	SettingsCreateCheckbox(cItemInv, confirmData)
-
-	local catalystHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderCatalyst"] })
-	Settings.RegisterInitializer(cItemInv, catalystHeader)
-
-	SettingsCreateCheckbox(cItemInv, {
-		{
-			var = "showCloakUpgradeButton",
-			text = L["SettingsCharInspectShowCloakButton"],
-			desc = L["SettingsCharInspectShowCloakButtonDesc"],
-			func = function(value)
-				addon.db["showCloakUpgradeButton"] = value
-				if addon.functions.updateCloakUpgradeButton then addon.functions.updateCloakUpgradeButton() end
-			end,
-		},
-		{
-			var = "instantCatalystEnabled",
-			text = L["SettingsCharInspectInstantCatalyst"],
-			desc = L["SettingsCharInspectInstantCatalystDesc"],
-			func = function(value)
-				addon.db["instantCatalystEnabled"] = value
-				if addon.functions.toggleInstantCatalystButton then addon.functions.toggleInstantCatalystButton(value) end
-			end,
-		},
-	})
-
-	local quickHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderUtilities"] })
-	Settings.RegisterInitializer(cItemInv, quickHeader)
-
-	SettingsCreateCheckbox(cItemInv, {
-		{
-			var = "openCharframeOnUpgrade",
-			text = L["SettingsCharInspectOpenOnUpgrade"],
-			desc = L["SettingsCharInspectOpenOnUpgradeDesc"],
-			func = function(value) addon.db["openCharframeOnUpgrade"] = value end,
-		},
-		{
-			var = "enableGemHelper",
-			text = L["SettingsCharInspectEnableGemHelper"],
-			desc = L["SettingsCharInspectEnableGemHelperDesc"],
-			func = function(value)
-				addon.db["enableGemHelper"] = value
-				if not value and EnhanceQoLGemHelper then
-					EnhanceQoLGemHelper:Hide()
-					EnhanceQoLGemHelper = nil
-				end
-			end,
-		},
-	})
-
-	initCharacterInspectLayout(cItemInv)
-end
-
 local function initVendorsEconomyLayout(parent)
 	local cVendors = wowSettingsHelper(parent, L["VendorsEconomy"])
 
@@ -8761,6 +8028,860 @@ local function initVendorsEconomyLayout(parent)
 	end
 end
 
+local function initCombatDungeonLayout(cat)
+	local cCombat = wowSettingsHelper(cat, L["CombatDungeons"])
+
+	local finderHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCombatHeaderDungeonFinder"] })
+	Settings.RegisterInitializer(cCombat, finderHeader)
+
+	local finderData = SettingsCreateCheckbox(cCombat, {
+		{
+			var = "skipSignUpDialog",
+			text = L["SettingsCombatSkipSignup"],
+			desc = L["SettingsCombatSkipSignupDesc"],
+			func = function(value) addon.db["skipSignUpDialog"] = value end,
+		},
+		{
+			var = "persistSignUpNote",
+			text = L["SettingsCombatPersistNote"],
+			desc = L["SettingsCombatPersistNoteDesc"],
+			func = function(value)
+				addon.db["persistSignUpNote"] = value
+				if EQOL and EQOL.PersistSignUpNote then EQOL.PersistSignUpNote() end
+			end,
+		},
+		{
+			var = "groupfinderAppText",
+			text = L["SettingsCombatHideFormingOverlay"],
+			desc = L["SettingsCombatHideFormingOverlayDesc"],
+			func = function(value)
+				addon.db["groupfinderAppText"] = value
+				toggleGroupApplication(value)
+			end,
+		},
+		{
+			var = "groupfinderMoveResetButton",
+			text = L["SettingsCombatMoveReset"],
+			desc = L["SettingsCombatMoveResetDesc"],
+			func = function(value)
+				addon.db["groupfinderMoveResetButton"] = value
+				toggleLFGFilterPosition()
+			end,
+		},
+		{
+			var = "lfgSortByRio",
+			text = L["SettingsCombatSortByMplus"],
+			desc = L["SettingsCombatSortByMplusDesc"],
+			func = function(value) addon.db["lfgSortByRio"] = value end,
+		},
+	})
+
+	local delveHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = DELVE_LABEL })
+	Settings.RegisterInitializer(cCombat, delveHeader)
+
+	SettingsCreateCheckbox(cCombat, {
+		{
+			var = "autoChooseDelvePower",
+			text = L["SettingsCombatAutoDelve"],
+			desc = L["SettingsCombatAutoDelveDesc"],
+			func = function(value) addon.db["autoChooseDelvePower"] = value end,
+		},
+	})
+
+	local roleHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCombatHeaderRole"] })
+	Settings.RegisterInitializer(cCombat, roleHeader)
+
+	local roleToggle = SettingsCreateCheckbox(cCombat, {
+		{
+			var = "groupfinderSkipRoleSelect",
+			text = L["SettingsCombatSkipRoleSelect"],
+			desc = L["SettingsCombatSkipRoleSelectDesc"],
+			func = function(value) addon.db["groupfinderSkipRoleSelect"] = value end,
+		},
+	})
+
+	local modeSetting = Settings.RegisterProxySetting(
+		cat,
+		"EQOL_Mode",
+		Settings.VarType.Number,
+		L["SettingsCombatRoleModeLabel"],
+		1,
+		function() return addon.db.groupfinderSkipRoleSelectOption or 1 end,
+		function(v) addon.db.groupfinderSkipRoleSelectOption = v end
+	)
+	local function GetRoleOptions()
+		local opts = Settings.CreateControlTextContainer()
+		opts:Add(1, L["SettingsCombatRoleModeSpec"], L["SettingsCombatRoleModeSpecDesc"])
+		opts:Add(2, L["SettingsCombatRoleModeLFD"], L["SettingsCombatRoleModeLFDDesc"])
+		return opts:GetData()
+	end
+	local dd = Settings.CreateDropdown(cCombat, modeSetting, GetRoleOptions, L["SettingsCombatRoleModeDesc"])
+
+	dd:SetParentInitializer(roleToggle.groupfinderSkipRoleSelect.element, function() return roleToggle.groupfinderSkipRoleSelect.setting:GetValue() end)
+end
+
+local function initCharacterInspectLayout(parentCat)
+	local cChar = wowSettingsHelper(parentCat, L["SettingsCharInspectCategory"])
+
+	local function registerBoolean(key, text, desc, getter, setter)
+		local setting = Settings.RegisterProxySetting(cChar, key, Settings.VarType.Boolean, text, false, getter, setter)
+		local element = Settings.CreateCheckbox(cChar, setting, desc)
+		return { setting = setting, element = element }
+	end
+
+	local function refreshInspectFrame()
+		if InspectFrame and InspectFrame:IsShown() and InspectFrame.unit then
+			local guid = UnitGUID(InspectFrame.unit)
+			if guid then onInspect(guid) end
+		end
+	end
+
+	local function GetAnchorOptions()
+		local opts = Settings.CreateControlTextContainer()
+		opts:Add("TOPLEFT", L["topLeft"])
+		opts:Add("TOPRIGHT", L["topRight"])
+		opts:Add("BOTTOMLEFT", L["bottomLeft"])
+		opts:Add("BOTTOMRIGHT", L["bottomRight"])
+		return opts:GetData()
+	end
+
+	_ensureDisplayDB()
+
+	local charHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderCharacter"] })
+	Settings.RegisterInitializer(cChar, charHeader)
+
+	local ilvlOption = registerBoolean("EQOL_CharDisplayItemLevel", L["SettingsCharInspectCharacterIlvl"], L["SettingsCharInspectCharacterIlvlDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.charDisplayOptions or {}
+		return t.ilvl == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.charDisplayOptions.ilvl = value == true
+		setCharFrame()
+	end)
+
+	local anchorSetting = Settings.RegisterProxySetting(
+		cChar,
+		"EQOL_CharIlvlAnchor",
+		Settings.VarType.String,
+		L["SettingsCharInspectIlvlAnchor"],
+		addon.db["charIlvlPosition"] or "TOPLEFT",
+		function() return addon.db["charIlvlPosition"] or "TOPLEFT" end,
+		function(value)
+			addon.db["charIlvlPosition"] = value
+			setCharFrame()
+		end
+	)
+	local ddIlvl = Settings.CreateDropdown(cChar, anchorSetting, GetAnchorOptions, L["SettingsCharInspectIlvlAnchorDesc"])
+	ddIlvl:SetParentInitializer(ilvlOption.element, function() return ilvlOption.setting:GetValue() end)
+
+	local gemsOption = registerBoolean("EQOL_CharDisplayGems", L["SettingsCharInspectCharacterGems"], L["SettingsCharInspectCharacterGemsDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.charDisplayOptions or {}
+		return t.gems == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.charDisplayOptions.gems = value == true
+		setCharFrame()
+	end)
+
+	local gemTipOption = registerBoolean("EQOL_CharDisplayGemTooltip", L["SettingsCharInspectCharacterGemTip"], L["SettingsCharInspectCharacterGemTipDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.charDisplayOptions or {}
+		return t.gemtip == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.charDisplayOptions.gemtip = value == true
+		setCharFrame()
+	end)
+
+	if gemTipOption and gemsOption then gemTipOption.element:SetParentInitializer(gemsOption.element, function() return gemsOption.setting:GetValue() end) end
+	registerBoolean(
+		"EQOL_CharDisplayDurability",
+		L["SettingsCharInspectCharacterDurability"],
+		L["SettingsCharInspectCharacterDurabilityDesc"],
+		function() return addon.db["showDurabilityOnCharframe"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["showDurabilityOnCharframe"] = enabled
+			_ensureDisplayDB()
+			addon.db.charDisplayOptions.durability = enabled
+			if addon.general and addon.general.durabilityIconFrame then
+				if enabled and not (addon.functions and addon.functions.IsTimerunner and addon.functions.IsTimerunner()) then
+					calculateDurability()
+					addon.general.durabilityIconFrame:Show()
+				else
+					addon.general.durabilityIconFrame:Hide()
+				end
+			end
+			setCharFrame()
+		end
+	)
+
+	registerBoolean("EQOL_CharDisplayEnchants", L["SettingsCharInspectCharacterEnchants"], L["SettingsCharInspectCharacterEnchantsDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.charDisplayOptions or {}
+		return t.enchants == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.charDisplayOptions.enchants = value == true
+		setCharFrame()
+	end)
+
+	SettingsCreateCheckbox(cChar, {
+		{
+			var = "enableGemHelper",
+			text = L["SettingsCharInspectEnableGemHelper"],
+			desc = L["SettingsCharInspectEnableGemHelperDesc"],
+			func = function(value)
+				addon.db["enableGemHelper"] = value
+				if not value and EnhanceQoLGemHelper then
+					EnhanceQoLGemHelper:Hide()
+					EnhanceQoLGemHelper = nil
+				end
+			end,
+		},
+	})
+
+	registerBoolean(
+		"EQOL_CharDisplayMovement",
+		L["SettingsCharInspectMovementSpeed"],
+		L["SettingsCharInspectMovementSpeedDesc"],
+		function() return addon.db["movementSpeedStatEnabled"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["movementSpeedStatEnabled"] = enabled
+			if enabled then
+				if addon.MovementSpeedStat and addon.MovementSpeedStat.Refresh then addon.MovementSpeedStat.Refresh() end
+			elseif addon.MovementSpeedStat and addon.MovementSpeedStat.Disable then
+				addon.MovementSpeedStat.Disable()
+			end
+		end
+	)
+
+	registerBoolean(
+		"EQOL_CharDisplayCatalyst",
+		L["SettingsCharInspectCharacterCatalyst"],
+		L["SettingsCharInspectCharacterCatalystDesc"],
+		function() return addon.db["showCatalystChargesOnCharframe"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["showCatalystChargesOnCharframe"] = enabled
+			_ensureDisplayDB()
+			addon.db.charDisplayOptions.catalyst = enabled
+			if addon.general and addon.general.iconFrame then
+				if enabled and addon.variables and addon.variables.catalystID and not (addon.functions and addon.functions.IsTimerunner and addon.functions.IsTimerunner()) then
+					local info = C_CurrencyInfo.GetCurrencyInfo(addon.variables.catalystID)
+					if info then addon.general.iconFrame.count:SetText(info.quantity) end
+					addon.general.iconFrame:Show()
+				else
+					addon.general.iconFrame:Hide()
+				end
+			end
+			setCharFrame()
+		end
+	)
+
+	local inspectHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderInspect"] })
+	Settings.RegisterInitializer(cChar, inspectHeader)
+
+	registerBoolean("EQOL_InspectDisplayItemLevel", L["SettingsCharInspectInspectIlvl"], L["SettingsCharInspectInspectIlvlDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.inspectDisplayOptions or {}
+		return t.ilvl == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.inspectDisplayOptions.ilvl = value == true
+		refreshInspectFrame()
+	end)
+
+	local inspectGemsOption = registerBoolean("EQOL_InspectDisplayGems", L["SettingsCharInspectInspectGems"], L["SettingsCharInspectInspectGemsDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.inspectDisplayOptions or {}
+		return t.gems == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.inspectDisplayOptions.gems = value == true
+		refreshInspectFrame()
+	end)
+	local inspectGemTipOption = registerBoolean("EQOL_InspectDisplayGemTooltip", L["SettingsCharInspectInspectGemTip"], L["SettingsCharInspectInspectGemTipDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.inspectDisplayOptions or {}
+		return t.gemtip == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.inspectDisplayOptions.gemtip = value == true
+		refreshInspectFrame()
+	end)
+
+	if inspectGemTipOption and inspectGemsOption then inspectGemTipOption.element:SetParentInitializer(inspectGemsOption.element, function() return inspectGemsOption.setting:GetValue() end) end
+
+	registerBoolean("EQOL_InspectDisplayEnchants", L["SettingsCharInspectInspectEnchants"], L["SettingsCharInspectInspectEnchantsDesc"], function()
+		_ensureDisplayDB()
+		local t = addon.db.inspectDisplayOptions or {}
+		return t.enchants == true
+	end, function(value)
+		_ensureDisplayDB()
+		addon.db.inspectDisplayOptions.enchants = value == true
+		refreshInspectFrame()
+	end)
+
+	local classOptions = {}
+	local classname = select(2, UnitClass("player"))
+
+	local function addTotemOption(dbKey)
+		table.insert(classOptions, {
+			var = dbKey,
+			text = L["shaman_HideTotem"],
+			func = function(value)
+				addon.db[dbKey] = value
+				if TotemFrame then
+					if value then
+						TotemFrame:Hide()
+					else
+						TotemFrame:Show()
+					end
+				end
+			end,
+		})
+	end
+
+	if classname == "DEATHKNIGHT" then
+		table.insert(classOptions, {
+			var = "deathknight_HideRuneFrame",
+			text = L["deathknight_HideRuneFrame"],
+			func = function(value)
+				addon.db["deathknight_HideRuneFrame"] = value
+				if RuneFrame then
+					if value then
+						RuneFrame:Hide()
+					else
+						RuneFrame:Show()
+					end
+				end
+			end,
+		})
+		addTotemOption("deathknight_HideTotemBar")
+	elseif classname == "DRUID" then
+		addTotemOption("druid_HideTotemBar")
+		table.insert(classOptions, {
+			var = "druid_HideComboPoint",
+			text = L["druid_HideComboPoint"],
+			func = function(value)
+				addon.db["druid_HideComboPoint"] = value
+				if DruidComboPointBarFrame then
+					if value then
+						DruidComboPointBarFrame:Hide()
+					else
+						DruidComboPointBarFrame:Show()
+					end
+				end
+			end,
+		})
+	elseif classname == "EVOKER" then
+		table.insert(classOptions, {
+			var = "evoker_HideEssence",
+			text = L["evoker_HideEssence"],
+			func = function(value)
+				addon.db["evoker_HideEssence"] = value
+				if EssencePlayerFrame then
+					if value then
+						EssencePlayerFrame:Hide()
+					else
+						EssencePlayerFrame:Show()
+					end
+				end
+			end,
+		})
+	elseif classname == "MAGE" then
+		addTotemOption("mage_HideTotemBar")
+	elseif classname == "MONK" then
+		table.insert(classOptions, {
+			var = "monk_HideHarmonyBar",
+			text = L["monk_HideHarmonyBar"],
+			func = function(value)
+				addon.db["monk_HideHarmonyBar"] = value
+				if MonkHarmonyBarFrame then
+					if value then
+						MonkHarmonyBarFrame:Hide()
+					else
+						MonkHarmonyBarFrame:Show()
+					end
+				end
+			end,
+		})
+		addTotemOption("monk_HideTotemBar")
+	elseif classname == "PRIEST" then
+		addTotemOption("priest_HideTotemBar")
+	elseif classname == "SHAMAN" then
+		addTotemOption("shaman_HideTotem")
+	elseif classname == "ROGUE" then
+		table.insert(classOptions, {
+			var = "rogue_HideComboPoint",
+			text = L["rogue_HideComboPoint"],
+			func = function(value)
+				addon.db["rogue_HideComboPoint"] = value
+				if RogueComboPointBarFrame then
+					if value then
+						RogueComboPointBarFrame:Hide()
+					else
+						RogueComboPointBarFrame:Show()
+					end
+				end
+			end,
+		})
+	elseif classname == "PALADIN" then
+		table.insert(classOptions, {
+			var = "paladin_HideHolyPower",
+			text = L["paladin_HideHolyPower"],
+			func = function(value)
+				addon.db["paladin_HideHolyPower"] = value
+				if PaladinPowerBarFrame then
+					if value then
+						PaladinPowerBarFrame:Hide()
+					else
+						PaladinPowerBarFrame:Show()
+					end
+				end
+			end,
+		})
+		addTotemOption("paladin_HideTotemBar")
+	elseif classname == "WARLOCK" then
+		table.insert(classOptions, {
+			var = "warlock_HideSoulShardBar",
+			text = L["warlock_HideSoulShardBar"],
+			func = function(value)
+				addon.db["warlock_HideSoulShardBar"] = value
+				if WarlockPowerFrame then
+					if value then
+						WarlockPowerFrame:Hide()
+					else
+						WarlockPowerFrame:Show()
+					end
+				end
+			end,
+		})
+		addTotemOption("warlock_HideTotemBar")
+	end
+
+	if #classOptions > 0 then
+		local classHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = headerClassInfo })
+		Settings.RegisterInitializer(cChar, classHeader)
+		SettingsCreateCheckbox(cChar, classOptions)
+	end
+end
+
+local function initInventoryUpgradeLayout(cat)
+	local cItemInv = wowSettingsHelper(cat, L["ItemsInventory"])
+
+	local function GetBagAnchorOptions()
+		local opts = Settings.CreateControlTextContainer()
+		opts:Add("TOPLEFT", L["topLeft"])
+		opts:Add("TOPRIGHT", L["topRight"])
+		opts:Add("BOTTOMLEFT", L["bottomLeft"])
+		opts:Add("BOTTOMRIGHT", L["bottomRight"])
+		return opts:GetData()
+	end
+
+	local displayHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderDisplayItemLevel"] })
+	Settings.RegisterInitializer(cItemInv, displayHeader)
+
+	local displayData = SettingsCreateCheckbox(cItemInv, {
+		{
+			var = "showIlvlOnBagItems",
+			text = L["SettingsItemInvDisplayBags"],
+			desc = L["SettingsItemInvDisplayBagsDesc"],
+			func = function(value)
+				addon.db["showIlvlOnBagItems"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+			end,
+		},
+	})
+
+	local bagIlvlSetting = Settings.RegisterProxySetting(
+		cat,
+		"EQOL_bagIlvlPosition",
+		Settings.VarType.String,
+		L["SettingsItemInvBagIlvlPosition"],
+		addon.db["bagIlvlPosition"] or "TOPLEFT",
+		function() return addon.db["bagIlvlPosition"] or "TOPLEFT" end,
+		function(value)
+			addon.db["bagIlvlPosition"] = value
+			for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+				if frame:IsShown() then addon.functions.updateBags(frame) end
+			end
+			if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+		end
+	)
+	local ddIlvl = Settings.CreateDropdown(cItemInv, bagIlvlSetting, GetBagAnchorOptions, L["SettingsItemInvBagIlvlPositionDesc"])
+	ddIlvl:SetParentInitializer(displayData.showIlvlOnBagItems.element, function() return displayData.showIlvlOnBagItems.setting:GetValue() end)
+
+	SettingsCreateCheckbox(cItemInv, {
+		{
+			var = "showIlvlOnBankFrame",
+			text = L["SettingsItemInvDisplayBank"],
+			desc = L["SettingsItemInvDisplayBankDesc"],
+			func = function(value)
+				addon.db["showIlvlOnBankFrame"] = value
+				if value then
+					if BankFrame:IsShown() then
+						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
+							local itemButton = _G["BankFrameItem" .. slot]
+							if itemButton then addon.functions.updateBank(itemButton, -1, slot) end
+						end
+					end
+				else
+					if BankFrame:IsShown() then
+						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
+							local itemButton = _G["BankFrameItem" .. slot]
+							if itemButton and itemButton.ItemLevelText then itemButton.ItemLevelText:Hide() end
+						end
+					end
+				end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			end,
+		},
+		{
+			var = "showIlvlOnMerchantframe",
+			text = L["SettingsItemInvDisplayMerchant"],
+			desc = L["SettingsItemInvDisplayMerchantDesc"],
+			func = function(value) addon.db["showIlvlOnMerchantframe"] = value end,
+		},
+	})
+
+	local overlaysHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderBagOverlays"] })
+	Settings.RegisterInitializer(cItemInv, overlaysHeader)
+
+	local overlayData = SettingsCreateCheckbox(cItemInv, {
+		{
+			var = "showBindOnBagItems",
+			text = L["SettingsItemInvShowBindStatus"],
+			desc = L["SettingsItemInvShowBindStatusDesc"]:format(_G.ITEM_BIND_ON_EQUIP, _G.ITEM_ACCOUNTBOUND_UNTIL_EQUIP, _G.ITEM_BNETACCOUNTBOUND),
+			func = function(value)
+				addon.db["showBindOnBagItems"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+			end,
+		},
+		{
+			var = "fadeBagQualityIcons",
+			text = L["SettingsItemInvFadeQuality"],
+			desc = L["SettingsItemInvFadeQualityDesc"],
+			func = function(value)
+				addon.db["fadeBagQualityIcons"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			end,
+		},
+		{
+			var = "showUpgradeArrowOnBagItems",
+			text = L["SettingsItemInvShowUpgradeIndicators"],
+			desc = L["SettingsItemInvShowUpgradeIndicatorsDesc"],
+			func = function(value)
+				addon.db["showUpgradeArrowOnBagItems"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+				if MerchantFrame and MerchantFrame:IsShown() then
+					if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
+					if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
+				end
+				if EquipmentFlyoutFrame and EquipmentFlyoutFrame:IsShown() and EquipmentFlyout_UpdateItems then EquipmentFlyout_UpdateItems() end
+			end,
+		},
+	})
+
+	local bagUpgradeSetting = Settings.RegisterProxySetting(
+		cat,
+		"EQOL_bagUpgradeIconPosition",
+		Settings.VarType.String,
+		L["SettingsItemInvUpgradeIconPosition"],
+		addon.db["bagUpgradeIconPosition"] or "TOPLEFT",
+		function() return addon.db["bagUpgradeIconPosition"] or "TOPLEFT" end,
+		function(value)
+			addon.db["bagUpgradeIconPosition"] = value
+			for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+				if frame and frame:IsShown() then addon.functions.updateBags(frame) end
+			end
+			if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+			if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			if MerchantFrame and MerchantFrame:IsShown() then
+				if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
+				if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
+			end
+			if EquipmentFlyoutFrame and EquipmentFlyoutFrame:IsShown() and EquipmentFlyout_UpdateItems then EquipmentFlyout_UpdateItems() end
+		end
+	)
+	local ddUpgrade = Settings.CreateDropdown(cItemInv, bagUpgradeSetting, GetBagAnchorOptions, L["SettingsItemInvUpgradeIconPositionDesc"])
+	ddUpgrade:SetParentInitializer(overlayData.showUpgradeArrowOnBagItems.element, function() return overlayData.showUpgradeArrowOnBagItems.setting:GetValue() end)
+
+	local interactionHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderBagInteraction"] })
+	Settings.RegisterInitializer(cItemInv, interactionHeader)
+
+	SettingsCreateCheckbox(cItemInv, {
+		{
+			var = "showBagFilterMenu",
+			text = L["SettingsItemInvBagFilterMenu"],
+			desc = L["SettingsItemInvBagFilterMenuDesc"]:format(SHIFT_KEY_TEXT),
+			func = function(value)
+				addon.db["showBagFilterMenu"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+				if value then
+					if BankFrame:IsShown() then
+						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
+							local itemButton = _G["BankFrameItem" .. slot]
+							if itemButton then addon.functions.updateBank(itemButton, -1, slot) end
+						end
+					end
+				else
+					if BankFrame:IsShown() then
+						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
+							local itemButton = _G["BankFrameItem" .. slot]
+							if itemButton and itemButton.ItemLevelText then itemButton.ItemLevelText:Hide() end
+						end
+					end
+				end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			end,
+		},
+		{
+			var = "closeBagsOnAuctionHouse",
+			text = L["SettingsItemInvCloseBagsAuctionHouse"],
+			desc = L["SettingsItemInvCloseBagsAuctionHouseDesc"],
+			func = function(value) addon.db["closeBagsOnAuctionHouse"] = value end,
+		},
+	})
+
+	local containerHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderContainerActions"] })
+	Settings.RegisterInitializer(cItemInv, containerHeader)
+
+	if addon.ContainerActions and addon.ContainerActions.Init then addon.ContainerActions:Init() end
+
+	local containerButtonSetting = Settings.RegisterProxySetting(
+		cat,
+		"EQOL_ContainerActionsEnabled",
+		Settings.VarType.Boolean,
+		L["SettingsItemInvContainerButton"],
+		false,
+		function() return addon.db["automaticallyOpenContainer"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["automaticallyOpenContainer"] = enabled
+			if addon.ContainerActions then
+				if addon.ContainerActions.OnSettingChanged then addon.ContainerActions:OnSettingChanged(enabled) end
+				if enabled and addon.ContainerActions.Init then addon.ContainerActions:Init() end
+			end
+		end
+	)
+	local containerButtonElement = Settings.CreateCheckbox(cItemInv, containerButtonSetting, L["SettingsItemInvContainerButtonDesc"])
+
+	local suppressBlacklistReset = false
+	local blacklistDropdown
+	local blacklistRemoveSetting
+
+	local function buildBlacklistOptions()
+		local container = Settings.CreateControlTextContainer()
+		if addon.ContainerActions and addon.ContainerActions.GetBlacklistEntries then
+			local entryFormat = L["containerActionsBlacklistEntry"] or "%s - %d"
+			local entries = addon.ContainerActions:GetBlacklistEntries() or {}
+			local sorted = {}
+			for _, data in ipairs(entries) do
+				local itemID = tonumber(data.itemID)
+				if itemID then
+					local displayName = data.name or ("item:" .. itemID)
+					local ok, label = pcall(string.format, entryFormat, displayName, itemID)
+					if not ok then label = ("%s - %d"):format(displayName, itemID) end
+					sorted[#sorted + 1] = { value = tostring(itemID), label = label }
+				end
+			end
+			table.sort(sorted, function(a, b) return a.label < b.label end)
+			for _, entry in ipairs(sorted) do
+				container:Add(entry.value, entry.label)
+			end
+		end
+		return container:GetData()
+	end
+
+	local function refreshBlacklistOptions()
+		if blacklistDropdown and blacklistDropdown.SetOptionsData then blacklistDropdown:SetOptionsData(buildBlacklistOptions()) end
+	end
+
+	local function clearBlacklistSelection()
+		suppressBlacklistReset = true
+		if blacklistRemoveSetting and blacklistRemoveSetting.SetValue then blacklistRemoveSetting:SetValue("") end
+		suppressBlacklistReset = false
+		if blacklistDropdown and blacklistDropdown.SetValue then blacklistDropdown:SetValue("") end
+	end
+
+	local function ensureBlacklistPopup()
+		if StaticPopupDialogs["ENHANCEQOL_CONTAINER_BLACKLIST_REMOVE"] then return end
+		StaticPopupDialogs["ENHANCEQOL_CONTAINER_BLACKLIST_REMOVE"] = {
+			text = "",
+			button1 = YES,
+			button2 = NO,
+			OnShow = function(self, data)
+				local template = L["SettingsItemInvContainerBlacklistConfirm"] or "Remove %s from the blacklist?"
+				local display = data and data.displayName or ""
+				local ok, formatted = pcall(string.format, template, display)
+				local text = ok and formatted or ("Remove %s from the blacklist?"):format(display)
+				if self.Text then
+					self.Text:SetText(text)
+				elseif self.text then
+					self.text:SetText(text)
+				end
+			end,
+			OnAccept = function(_, data)
+				if data and data.itemID and addon.ContainerActions then
+					local ok, reason = addon.ContainerActions:RemoveItemFromBlacklist(data.itemID)
+					if not ok and addon.ContainerActions.HandleBlacklistError then addon.ContainerActions:HandleBlacklistError(reason, data.itemID) end
+				end
+				refreshBlacklistOptions()
+				clearBlacklistSelection()
+			end,
+			OnCancel = function()
+				refreshBlacklistOptions()
+				clearBlacklistSelection()
+			end,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+		}
+	end
+
+	blacklistRemoveSetting = Settings.RegisterProxySetting(
+		cat,
+		"EQOL_ContainerActionsBlacklistRemove",
+		Settings.VarType.String,
+		L["SettingsItemInvContainerBlacklist"],
+		"",
+		function() return "" end,
+		function(value)
+			if suppressBlacklistReset or not value or value == "" then return end
+			if not addon.ContainerActions then
+				clearBlacklistSelection()
+				return
+			end
+			local itemID = tonumber(value)
+			if not itemID then
+				clearBlacklistSelection()
+				return
+			end
+			local displayName
+			if addon.ContainerActions.GetItemDisplayName then displayName = addon.ContainerActions:GetItemDisplayName(itemID) end
+			if not displayName or displayName == "" then displayName = tostring(itemID) end
+			local entryFormat = L["containerActionsBlacklistEntry"] or "%s - %d"
+			local ok, formatted = pcall(string.format, entryFormat, displayName, itemID)
+			if ok then
+				displayName = formatted
+			else
+				displayName = ("%s - %d"):format(displayName, itemID)
+			end
+			ensureBlacklistPopup()
+			StaticPopup_Show("ENHANCEQOL_CONTAINER_BLACKLIST_REMOVE", nil, nil, { itemID = itemID, displayName = displayName })
+		end
+	)
+
+	blacklistDropdown = Settings.CreateDropdown(cItemInv, blacklistRemoveSetting, function() return buildBlacklistOptions() end, L["SettingsItemInvContainerBlacklistDesc"])
+	if blacklistDropdown.SetParentInitializer then
+		blacklistDropdown:SetParentInitializer(containerButtonElement, function() return containerButtonSetting:GetValue() == true end)
+	elseif blacklistDropdown.SetParent then
+		blacklistDropdown:SetParent(containerButtonElement)
+	end
+
+	if addon.ContainerActions and hooksecurefunc then hooksecurefunc(addon.ContainerActions, "OnBlacklistChanged", function() refreshBlacklistOptions() end) end
+
+	refreshBlacklistOptions()
+	clearBlacklistSelection()
+
+	local confirmationHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderConfirmation"] })
+	Settings.RegisterInitializer(cItemInv, confirmationHeader)
+
+	local confirmData = {
+		{
+			var = "deleteItemFillDialog",
+			text = L["SettingsItemInvConfirmDelete"]:format(DELETE_ITEM_CONFIRM_STRING),
+			desc = L["SettingsItemInvConfirmDeleteDesc"],
+			func = function(value) addon.db["deleteItemFillDialog"] = value end,
+		},
+		{
+			var = "confirmPatronOrderDialog",
+			text = L["SettingsItemInvConfirmPatronOrder"]:format(PROFESSIONS_CRAFTER_ORDER_TAB_NPC),
+			desc = L["SettingsItemInvConfirmPatronOrderDesc"],
+			func = function(value) addon.db["confirmPatronOrderDialog"] = value end,
+		},
+		{
+			var = "confirmTimerRemovalTrade",
+			text = L["SettingsItemInvConfirmTradeTimer"],
+			desc = L["SettingsItemInvConfirmTradeTimerDesc"],
+			func = function(value) addon.db["confirmTimerRemovalTrade"] = value end,
+		},
+		{
+			var = "confirmReplaceEnchant",
+			text = L["SettingsItemInvConfirmReplaceEnchant"],
+			desc = L["SettingsItemInvConfirmReplaceEnchantDesc"],
+			func = function(value) addon.db["confirmReplaceEnchant"] = value end,
+		},
+		{
+			var = "confirmSocketReplace",
+			text = L["SettingsItemInvConfirmReplaceSocket"],
+			desc = L["SettingsItemInvConfirmReplaceSocketDesc"],
+			func = function(value) addon.db["confirmSocketReplace"] = value end,
+		},
+	}
+
+	SettingsCreateCheckbox(cItemInv, confirmData)
+
+	local catalystHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderCatalyst"] })
+	Settings.RegisterInitializer(cItemInv, catalystHeader)
+
+	SettingsCreateCheckbox(cItemInv, {
+		{
+			var = "showCloakUpgradeButton",
+			text = L["SettingsCharInspectShowCloakButton"],
+			desc = L["SettingsCharInspectShowCloakButtonDesc"],
+			func = function(value)
+				addon.db["showCloakUpgradeButton"] = value
+				if addon.functions.updateCloakUpgradeButton then addon.functions.updateCloakUpgradeButton() end
+			end,
+		},
+		{
+			var = "instantCatalystEnabled",
+			text = L["SettingsCharInspectInstantCatalyst"],
+			desc = L["SettingsCharInspectInstantCatalystDesc"],
+			func = function(value)
+				addon.db["instantCatalystEnabled"] = value
+				if addon.functions.toggleInstantCatalystButton then addon.functions.toggleInstantCatalystButton(value) end
+			end,
+		},
+	})
+
+	local quickHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsCharInspectHeaderUtilities"] })
+	Settings.RegisterInitializer(cItemInv, quickHeader)
+
+	SettingsCreateCheckbox(cItemInv, {
+		{
+			var = "openCharframeOnUpgrade",
+			text = L["SettingsCharInspectOpenOnUpgrade"],
+			desc = L["SettingsCharInspectOpenOnUpgradeDesc"],
+			func = function(value) addon.db["openCharframeOnUpgrade"] = value end,
+		},
+	})
+end
+
 function loadMain()
 	CreateUI()
 
@@ -8858,8 +8979,9 @@ function loadMain()
 	addon.SettingsLayout.rootCategory = cat
 	addon.SettingsLayout.rootLayout = layout
 
+	initCharacterInspectLayout(cat)
 	initCombatDungeonLayout(cat)
-	initItemInventoryLayout(cat)
+	initInventoryUpgradeLayout(cat)
 	initVendorsEconomyLayout(cat)
 	--@end-alpha@
 end
