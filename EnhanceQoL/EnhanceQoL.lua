@@ -7741,12 +7741,6 @@ local function initCombatDungeonLayout(cat)
 			end,
 		},
 		{
-			text = L["groupfinderSkipRoleSelect"],
-			var = "groupfinderSkipRoleSelect",
-			func = function(value) addon.db["groupfinderSkipRoleSelect"] = value end,
-			desc = L["interruptWithShift"],
-		},
-		{
 			var = "autoChooseDelvePower",
 			text = L["autoChooseDelvePower"],
 			func = function(value) addon.db["autoChooseDelvePower"] = value end,
@@ -7775,6 +7769,16 @@ local function initCombatDungeonLayout(cat)
 	table.sort(data, function(a, b) return a.text < b.text end)
 
 	local setData = SettingsCreateCheckbox(cCombat, data)
+
+	local header = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["groupFinderRoleSeclection"] })
+	Settings.RegisterInitializer(cCombat, header)
+
+	setData = SettingsCreateCheckbox(cCombat, {{
+		text = L["groupfinderSkipRoleSelect"],
+		var = "groupfinderSkipRoleSelect",
+		func = function(value) addon.db["groupfinderSkipRoleSelect"] = value end,
+		desc = L["interruptWithShift"],
+	}})
 
 	local modeSetting = Settings.RegisterProxySetting(
 		cat,
