@@ -7773,12 +7773,17 @@ local function initCombatDungeonLayout(cat)
 	local header = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["groupFinderRoleSeclection"] })
 	Settings.RegisterInitializer(cCombat, header)
 
-	setData = SettingsCreateCheckbox(cCombat, {{
-		text = L["groupfinderSkipRoleSelect"],
-		var = "groupfinderSkipRoleSelect",
-		func = function(value) addon.db["groupfinderSkipRoleSelect"] = value end,
-		desc = L["interruptWithShift"],
-	}})
+	setData = SettingsCreateCheckbox(
+		cCombat,
+		{
+			{
+				text = L["groupfinderSkipRoleSelect"],
+				var = "groupfinderSkipRoleSelect",
+				func = function(value) addon.db["groupfinderSkipRoleSelect"] = value end,
+				desc = L["interruptWithShift"],
+			},
+		}
+	)
 
 	local modeSetting = Settings.RegisterProxySetting(
 		cat,
@@ -7798,6 +7803,135 @@ local function initCombatDungeonLayout(cat)
 	local dd = Settings.CreateDropdown(cCombat, modeSetting, GetRoleOptions, "Choose the mode")
 
 	dd:SetParentInitializer(setData.groupfinderSkipRoleSelect.element, function() return setData.groupfinderSkipRoleSelect.setting:GetValue() end)
+end
+
+local function initItemInventoryLayout(cat)
+	local cItemInv, sItemInv = wowSettingsHelper(cat, L["ItemsInventory"])
+
+	local data = {
+		{
+			var = "showIlvlOnMerchantframe",
+			text = L["showIlvlOnMerchantframe"],
+			func = function(value) addon.db["showIlvlOnMerchantframe"] = value end,
+		},
+		{
+			var = "showIlvlOnBagItems",
+			text = L["showIlvlOnBagItems"],
+			func = function(value)
+				addon.db["showIlvlOnBagItems"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+			end,
+		},
+		{
+			var = "showBagFilterMenu",
+			text = L["showBagFilterMenu"],
+			desc = (L["showBagFilterMenuDesc"]):format(SHIFT_KEY_TEXT),
+			func = function(value)
+				addon.db["showBagFilterMenu"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+				if value then
+					if BankFrame:IsShown() then
+						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
+							local itemButton = _G["BankFrameItem" .. slot]
+							if itemButton then addon.functions.updateBank(itemButton, -1, slot) end
+						end
+					end
+				else
+					if BankFrame:IsShown() then
+						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
+							local itemButton = _G["BankFrameItem" .. slot]
+							if itemButton and itemButton.ItemLevelText then itemButton.ItemLevelText:Hide() end
+						end
+					end
+				end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			end,
+		},
+		{
+			var = "fadeBagQualityIcons",
+			text = L["fadeBagQualityIcons"],
+			func = function(value)
+				addon.db["fadeBagQualityIcons"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			end,
+		},
+		{
+			var = "showIlvlOnBankFrame",
+			text = L["showIlvlOnBankFrame"],
+			func = function(svalue)
+				addon.db["showIlvlOnBankFrame"] = value
+				if value then
+					if BankFrame:IsShown() then
+						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
+							local itemButton = _G["BankFrameItem" .. slot]
+							if itemButton then addon.functions.updateBank(itemButton, -1, slot) end
+						end
+					end
+				else
+					if BankFrame:IsShown() then
+						for slot = 1, C_Container.GetContainerNumSlots(BANK_CONTAINER) do
+							local itemButton = _G["BankFrameItem" .. slot]
+							if itemButton and itemButton.ItemLevelText then itemButton.ItemLevelText:Hide() end
+						end
+					end
+				end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			end,
+		},
+		{
+			var = "showBindOnBagItems",
+			text = L["showBindOnBagItems"],
+			desc = L["showBindOnBagItemsDesc"]:format(_G.ITEM_BIND_ON_EQUIP, _G.ITEM_ACCOUNTBOUND_UNTIL_EQUIP, _G.ITEM_BNETACCOUNTBOUND),
+			func = function(value)
+				addon.db["showBindOnBagItems"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+			end,
+		},
+		{
+			var = "showUpgradeArrowOnBagItems",
+			text = L["showUpgradeArrowOnBagItems"],
+			func = function(value)
+				addon.db["showUpgradeArrowOnBagItems"] = value
+				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+					if frame:IsShown() then addon.functions.updateBags(frame) end
+				end
+				if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
+				if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+				-- Rebuild UI to show/hide the upgrade icon position dropdown
+			end,
+		},
+	}
+	table.sort(data, function(a, b)
+		local textA = a.var
+		local textB = b.var
+		if a.text then
+			textA = a.text
+		else
+			textA = L[a.var]
+		end
+		if b.text then
+			textB = b.text
+		else
+			textB = L[b.var]
+		end
+		return textA < textB
+	end)
+
+	local setData = SettingsCreateCheckbox(cItemInv, data)
+
 end
 
 function loadMain()
@@ -7897,8 +8031,7 @@ function loadMain()
 	addon.SettingsLayout.rootLayout = layout
 
 	initCombatDungeonLayout(cat)
-
-	wowSettingsHelper(cat, L["ItemsInventory"])
+	initItemInventoryLayout(cat)
 	wowSettingsHelper(cat, L["MapNavigation"])
 	wowSettingsHelper(cat, L["UIInput"])
 end
