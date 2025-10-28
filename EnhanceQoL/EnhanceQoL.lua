@@ -3820,28 +3820,6 @@ local function addContainerActionsFrame(container)
 	removeButton:SetFullWidth(true)
 	managedGroup:AddChild(removeButton)
 
-	local addBox = AceGUI:Create("EditBox")
-	addBox:SetFullWidth(true)
-	addBox:SetLabel(L["containerActionsBlacklistAddLabel"])
-	if addBox.SetPlaceholderText then addBox:SetPlaceholderText(L["containerActionsBlacklistAddPlaceholder"]) end
-	addBox:SetCallback("OnEnterPressed", function(widget, _, text)
-		if not addon.ContainerActions then return end
-		local itemID = addon.ContainerActions:ParseInputToItemID(text)
-		if not itemID then
-			addon.ContainerActions:HandleBlacklistError("invalid")
-			return
-		end
-		local ok, reason = addon.ContainerActions:AddItemToBlacklist(itemID)
-		if ok then
-			widget:SetText("")
-			widget:ClearFocus()
-			refreshBlacklistDropdown(itemID)
-		else
-			addon.ContainerActions:HandleBlacklistError(reason, itemID)
-		end
-	end)
-	managedGroup:AddChild(addBox)
-
 	scroll:DoLayout()
 	wrapper:DoLayout()
 	group:DoLayout()
@@ -8250,6 +8228,21 @@ local function initCharacterInspectLayout(parentCat)
 		setCharFrame()
 	end)
 
+	SettingsCreateCheckbox(cChar, {
+		{
+			var = "enableGemHelper",
+			text = L["SettingsCharInspectEnableGemHelper"],
+			desc = L["SettingsCharInspectEnableGemHelperDesc"],
+			func = function(value)
+				addon.db["enableGemHelper"] = value
+				if not value and EnhanceQoLGemHelper then
+					EnhanceQoLGemHelper:Hide()
+					EnhanceQoLGemHelper = nil
+				end
+			end,
+		},
+	})
+
 	registerBoolean(
 		"EQOL_CharDisplayMovement",
 		L["SettingsCharInspectMovementSpeed"],
@@ -8478,7 +8471,7 @@ local function initCharacterInspectLayout(parentCat)
 	end
 end
 
-local function initItemInventoryLayout(cat)
+local function initInventoryUpgradeLayout(cat)
 	local cItemInv = wowSettingsHelper(cat, L["ItemsInventory"])
 
 	local function GetBagAnchorOptions()
@@ -8672,6 +8665,148 @@ local function initItemInventoryLayout(cat)
 		},
 	})
 
+	local containerHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderContainerActions"] })
+	Settings.RegisterInitializer(cItemInv, containerHeader)
+
+	if addon.ContainerActions and addon.ContainerActions.Init then addon.ContainerActions:Init() end
+
+	local containerButtonSetting = Settings.RegisterProxySetting(
+		cat,
+		"EQOL_ContainerActionsEnabled",
+		Settings.VarType.Boolean,
+		L["SettingsItemInvContainerButton"],
+		false,
+		function() return addon.db["automaticallyOpenContainer"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["automaticallyOpenContainer"] = enabled
+			if addon.ContainerActions then
+				if addon.ContainerActions.OnSettingChanged then addon.ContainerActions:OnSettingChanged(enabled) end
+				if enabled and addon.ContainerActions.Init then addon.ContainerActions:Init() end
+			end
+		end
+	)
+	local containerButtonElement = Settings.CreateCheckbox(cItemInv, containerButtonSetting, L["SettingsItemInvContainerButtonDesc"])
+
+	local suppressBlacklistReset = false
+	local blacklistDropdown
+	local blacklistRemoveSetting
+
+	local function buildBlacklistOptions()
+		local container = Settings.CreateControlTextContainer()
+		if addon.ContainerActions and addon.ContainerActions.GetBlacklistEntries then
+			local entryFormat = L["containerActionsBlacklistEntry"] or "%s - %d"
+			local entries = addon.ContainerActions:GetBlacklistEntries() or {}
+			local sorted = {}
+			for _, data in ipairs(entries) do
+				local itemID = tonumber(data.itemID)
+				if itemID then
+					local displayName = data.name or ("item:" .. itemID)
+					local ok, label = pcall(string.format, entryFormat, displayName, itemID)
+					if not ok then label = ("%s - %d"):format(displayName, itemID) end
+					sorted[#sorted + 1] = { value = tostring(itemID), label = label }
+				end
+			end
+			table.sort(sorted, function(a, b) return a.label < b.label end)
+			for _, entry in ipairs(sorted) do
+				container:Add(entry.value, entry.label)
+			end
+		end
+		return container:GetData()
+	end
+
+	local function refreshBlacklistOptions()
+		if blacklistDropdown and blacklistDropdown.SetOptionsData then blacklistDropdown:SetOptionsData(buildBlacklistOptions()) end
+	end
+
+	local function clearBlacklistSelection()
+		suppressBlacklistReset = true
+		if blacklistRemoveSetting and blacklistRemoveSetting.SetValue then blacklistRemoveSetting:SetValue("") end
+		suppressBlacklistReset = false
+		if blacklistDropdown and blacklistDropdown.SetValue then blacklistDropdown:SetValue("") end
+	end
+
+	local function ensureBlacklistPopup()
+		if StaticPopupDialogs["ENHANCEQOL_CONTAINER_BLACKLIST_REMOVE"] then return end
+		StaticPopupDialogs["ENHANCEQOL_CONTAINER_BLACKLIST_REMOVE"] = {
+			text = "",
+			button1 = YES,
+			button2 = NO,
+			OnShow = function(self, data)
+				local template = L["SettingsItemInvContainerBlacklistConfirm"] or "Remove %s from the blacklist?"
+				local display = data and data.displayName or ""
+				local ok, formatted = pcall(string.format, template, display)
+				local text = ok and formatted or ("Remove %s from the blacklist?"):format(display)
+				if self.Text then
+					self.Text:SetText(text)
+				elseif self.text then
+					self.text:SetText(text)
+				end
+			end,
+			OnAccept = function(_, data)
+				if data and data.itemID and addon.ContainerActions then
+					local ok, reason = addon.ContainerActions:RemoveItemFromBlacklist(data.itemID)
+					if not ok and addon.ContainerActions.HandleBlacklistError then addon.ContainerActions:HandleBlacklistError(reason, data.itemID) end
+				end
+				refreshBlacklistOptions()
+				clearBlacklistSelection()
+			end,
+			OnCancel = function()
+				refreshBlacklistOptions()
+				clearBlacklistSelection()
+			end,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+		}
+	end
+
+	blacklistRemoveSetting = Settings.RegisterProxySetting(
+		cat,
+		"EQOL_ContainerActionsBlacklistRemove",
+		Settings.VarType.String,
+		L["SettingsItemInvContainerBlacklist"],
+		"",
+		function() return "" end,
+		function(value)
+			if suppressBlacklistReset or not value or value == "" then return end
+			if not addon.ContainerActions then
+				clearBlacklistSelection()
+				return
+			end
+			local itemID = tonumber(value)
+			if not itemID then
+				clearBlacklistSelection()
+				return
+			end
+			local displayName
+			if addon.ContainerActions.GetItemDisplayName then displayName = addon.ContainerActions:GetItemDisplayName(itemID) end
+			if not displayName or displayName == "" then displayName = tostring(itemID) end
+			local entryFormat = L["containerActionsBlacklistEntry"] or "%s - %d"
+			local ok, formatted = pcall(string.format, entryFormat, displayName, itemID)
+			if ok then
+				displayName = formatted
+			else
+				displayName = ("%s - %d"):format(displayName, itemID)
+			end
+			ensureBlacklistPopup()
+			StaticPopup_Show("ENHANCEQOL_CONTAINER_BLACKLIST_REMOVE", nil, nil, { itemID = itemID, displayName = displayName })
+		end
+	)
+
+	blacklistDropdown = Settings.CreateDropdown(cItemInv, blacklistRemoveSetting, function() return buildBlacklistOptions() end, L["SettingsItemInvContainerBlacklistDesc"])
+	if blacklistDropdown.SetParentInitializer then
+		blacklistDropdown:SetParentInitializer(containerButtonElement, function() return containerButtonSetting:GetValue() == true end)
+	elseif blacklistDropdown.SetParent then
+		blacklistDropdown:SetParent(containerButtonElement)
+	end
+
+	if addon.ContainerActions and hooksecurefunc then hooksecurefunc(addon.ContainerActions, "OnBlacklistChanged", function() refreshBlacklistOptions() end) end
+
+	refreshBlacklistOptions()
+	clearBlacklistSelection()
+
 	local confirmationHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderConfirmation"] })
 	Settings.RegisterInitializer(cItemInv, confirmationHeader)
 
@@ -8744,20 +8879,7 @@ local function initItemInventoryLayout(cat)
 			desc = L["SettingsCharInspectOpenOnUpgradeDesc"],
 			func = function(value) addon.db["openCharframeOnUpgrade"] = value end,
 		},
-		{
-			var = "enableGemHelper",
-			text = L["SettingsCharInspectEnableGemHelper"],
-			desc = L["SettingsCharInspectEnableGemHelperDesc"],
-			func = function(value)
-				addon.db["enableGemHelper"] = value
-				if not value and EnhanceQoLGemHelper then
-					EnhanceQoLGemHelper:Hide()
-					EnhanceQoLGemHelper = nil
-				end
-			end,
-		},
 	})
-
 end
 
 function loadMain()
@@ -8859,7 +8981,7 @@ function loadMain()
 
 	initCharacterInspectLayout(cat)
 	initCombatDungeonLayout(cat)
-	initItemInventoryLayout(cat)
+	initInventoryUpgradeLayout(cat)
 	initVendorsEconomyLayout(cat)
 	--@end-alpha@
 end
