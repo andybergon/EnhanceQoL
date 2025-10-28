@@ -8758,8 +8758,6 @@ local function initItemInventoryLayout(cat)
 		},
 	})
 
-	initCharacterInspectLayout(cItemInv)
-	initVendorsEconomyLayout(cItemInv)
 end
 
 function loadMain()
@@ -8859,8 +8857,10 @@ function loadMain()
 	addon.SettingsLayout.rootCategory = cat
 	addon.SettingsLayout.rootLayout = layout
 
+	initCharacterInspectLayout(cat)
 	initCombatDungeonLayout(cat)
 	initItemInventoryLayout(cat)
+	initVendorsEconomyLayout(cat)
 	--@end-alpha@
 end
 
