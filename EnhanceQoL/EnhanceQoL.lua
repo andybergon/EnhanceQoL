@@ -7720,6 +7720,336 @@ local function SettingsCreateCheckbox(cat, data)
 	return rData
 end
 
+local function initVendorsEconomyLayout(parent)
+	local cVendors = wowSettingsHelper(parent, L["VendorsEconomy"])
+
+	local function registerBoolean(key, text, desc, getter, setter)
+		local setting = Settings.RegisterProxySetting(cVendors, key, Settings.VarType.Boolean, text, false, getter, setter)
+		local element = Settings.CreateCheckbox(cVendors, setting, desc)
+		return { setting = setting, element = element }
+	end
+
+	local function createOptionsFromTable(listProvider)
+		local container = Settings.CreateControlTextContainer()
+		local entries = {}
+		for value, label in pairs(listProvider()) do
+			table.insert(entries, { value = value, label = label })
+		end
+		table.sort(entries, function(a, b) return tostring(a.label) < tostring(b.label) end)
+		for _, entry in ipairs(entries) do
+			container:Add(entry.value, entry.label)
+		end
+		return container:GetData()
+	end
+
+	-- Auction House
+	local ahHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderAuctionHouse"] })
+	Settings.RegisterInitializer(cVendors, ahHeader)
+
+	registerBoolean(
+		"EQOL_VendorsPersistAHFilters",
+		L["SettingsVendorAuctionPersist"],
+		L["SettingsVendorAuctionPersistDesc"],
+		function() return addon.db["persistAuctionHouseFilter"] == true end,
+		function(value) addon.db["persistAuctionHouseFilter"] = value == true end
+	)
+
+	registerBoolean(
+		"EQOL_VendorsCurrentExpansionFilter",
+		L["SettingsVendorAuctionCurrentExpansion"],
+		L["SettingsVendorAuctionCurrentExpansionDesc"],
+		function() return addon.db["alwaysUserCurExpAuctionHouse"] == true end,
+		function(value) addon.db["alwaysUserCurExpAuctionHouse"] = value == true end
+	)
+
+	-- Repairs & Junk
+	local repairsHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderRepairs"] })
+	Settings.RegisterInitializer(cVendors, repairsHeader)
+
+	local guildRepairSetting
+	local suppressGuildUpdate = false
+
+	local autoRepairSetting = registerBoolean(
+		"EQOL_VendorsAutoRepair",
+		L["SettingsVendorAutoRepair"],
+		L["SettingsVendorAutoRepairDesc"],
+		function() return addon.db["autoRepair"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["autoRepair"] = enabled
+			if not enabled and addon.db["autoRepairGuildBank"] then
+				addon.db["autoRepairGuildBank"] = false
+				if guildRepairSetting and guildRepairSetting.setting then
+					suppressGuildUpdate = true
+					guildRepairSetting.setting:SetValue(false)
+					suppressGuildUpdate = false
+				end
+			end
+		end
+	)
+
+	guildRepairSetting = registerBoolean(
+		"EQOL_VendorsGuildRepair",
+		L["SettingsVendorAutoRepairGuild"],
+		L["SettingsVendorAutoRepairGuildDesc"],
+		function() return addon.db["autoRepairGuildBank"] == true end,
+		function(value)
+			if suppressGuildUpdate then return end
+			addon.db["autoRepairGuildBank"] = value == true
+		end
+	)
+	if guildRepairSetting and guildRepairSetting.element and guildRepairSetting.element.SetParentInitializer and autoRepairSetting and autoRepairSetting.element then
+		guildRepairSetting.element:SetParentInitializer(autoRepairSetting.element, function() return autoRepairSetting.setting:GetValue() end)
+	end
+
+	registerBoolean("EQOL_VendorsSellJunk", L["SettingsVendorSellJunk"], L["SettingsVendorSellJunkDesc"], function() return addon.db["sellAllJunk"] == true end, function(value)
+		local enabled = value == true
+		addon.db["sellAllJunk"] = enabled
+		if enabled then checkBagIgnoreJunk() end
+	end)
+
+	-- Merchant
+	local merchantHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderMerchant"] })
+	Settings.RegisterInitializer(cVendors, merchantHeader)
+
+	registerBoolean(
+		"EQOL_VendorsExtendedMerchant",
+		L["SettingsVendorExtendedMerchant"],
+		L["SettingsVendorExtendedMerchantDesc"],
+		function() return addon.db["enableExtendedMerchant"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["enableExtendedMerchant"] = enabled
+			if addon.Merchant then
+				if enabled and addon.Merchant.Enable then
+					addon.Merchant:Enable()
+				elseif not enabled and addon.Merchant.Disable then
+					addon.Merchant:Disable()
+					addon.variables.requireReload = true
+					if addon.functions.checkReloadFrame then addon.functions.checkReloadFrame() end
+				end
+			end
+		end
+	)
+
+	registerBoolean("EQOL_VendorsMarkKnown", L["SettingsVendorKnownHighlights"], L["SettingsVendorKnownHighlightsDesc"], function() return addon.db["markKnownOnMerchant"] == true end, function(value)
+		addon.db["markKnownOnMerchant"] = value == true
+		if MerchantFrame and MerchantFrame:IsShown() then
+			if MerchantFrame.selectedTab == 2 then
+				if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
+			else
+				if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
+			end
+		end
+	end)
+
+	registerBoolean(
+		"EQOL_VendorsMarkPets",
+		L["SettingsVendorPetHighlights"],
+		L["SettingsVendorPetHighlightsDesc"],
+		function() return addon.db["markCollectedPetsOnMerchant"] == true end,
+		function(value)
+			addon.db["markCollectedPetsOnMerchant"] = value == true
+			if MerchantFrame and MerchantFrame:IsShown() then
+				if MerchantFrame.selectedTab == 2 then
+					if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
+				else
+					if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
+				end
+			end
+		end
+	)
+
+	-- Mailbox
+	local mailboxHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderMailbox"] })
+	Settings.RegisterInitializer(cVendors, mailboxHeader)
+
+	local mailboxSetting = registerBoolean(
+		"EQOL_VendorsMailbox",
+		L["SettingsVendorMailboxEnable"],
+		L["SettingsVendorMailboxEnableDesc"],
+		function() return addon.db["enableMailboxAddressBook"] == true end,
+		function(value)
+			local enabled = value == true
+			addon.db["enableMailboxAddressBook"] = enabled
+			if addon.Mailbox then
+				if addon.Mailbox.SetEnabled then addon.Mailbox:SetEnabled(enabled) end
+				if enabled and addon.Mailbox.AddSelfToContacts then addon.Mailbox:AddSelfToContacts() end
+				if addon.Mailbox.RefreshList then addon.Mailbox:RefreshList() end
+			end
+		end
+	)
+
+	local function GetMailboxContacts()
+		local opts = {}
+		if addon.db and addon.db["mailboxContacts"] then
+			for key, rec in pairs(addon.db["mailboxContacts"]) do
+				local class = rec and rec.class
+				local col = (CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS)[class or ""] or { r = 1, g = 1, b = 1 }
+				opts[key] = string.format("|cff%02x%02x%02x%s|r", (col.r or 1) * 255, (col.g or 1) * 255, (col.b or 1) * 255, key)
+			end
+		end
+		return opts
+	end
+
+	local suppressMailboxReset = false
+	local mailboxDropdown
+	local mailboxRemoveSetting
+
+	local function ensureMailboxPopup()
+		if StaticPopupDialogs["ENHANCEQOL_MAILBOX_REMOVE"] then return end
+		StaticPopupDialogs["ENHANCEQOL_MAILBOX_REMOVE"] = {
+			text = "",
+			button1 = YES,
+			button2 = NO,
+			OnShow = function(self, data)
+				local msg = L["SettingsVendorMailboxRemoveConfirm"]:format(data and data.contact or "")
+				if self.Text then
+					self.Text:SetText(msg)
+				elseif self.text then
+					self.text:SetText(msg)
+				end
+			end,
+			OnAccept = function(_, data)
+				if data and data.contact and addon.db["mailboxContacts"] then
+					addon.db["mailboxContacts"][data.contact] = nil
+					if addon.Mailbox and addon.Mailbox.RefreshList then addon.Mailbox:RefreshList() end
+				end
+				suppressMailboxReset = true
+				if mailboxRemoveSetting and mailboxRemoveSetting.SetValue then mailboxRemoveSetting:SetValue("") end
+				suppressMailboxReset = false
+				if mailboxDropdown and mailboxDropdown.SetOptionsData then mailboxDropdown:SetOptionsData(createOptionsFromTable(GetMailboxContacts)) end
+				if mailboxDropdown and mailboxDropdown.SetValue then mailboxDropdown:SetValue("") end
+			end,
+			OnCancel = function()
+				suppressMailboxReset = true
+				if mailboxRemoveSetting and mailboxRemoveSetting.SetValue then mailboxRemoveSetting:SetValue("") end
+				suppressMailboxReset = false
+				if mailboxDropdown and mailboxDropdown.SetValue then mailboxDropdown:SetValue("") end
+			end,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+		}
+	end
+
+	mailboxRemoveSetting = Settings.RegisterProxySetting(cVendors, "EQOL_VendorsMailboxRemove", Settings.VarType.String, L["SettingsVendorMailboxRemove"], "", function() return "" end, function(value)
+		if suppressMailboxReset or not value or value == "" then return end
+		ensureMailboxPopup()
+		StaticPopup_Show("ENHANCEQOL_MAILBOX_REMOVE", nil, nil, { contact = value })
+	end)
+
+	mailboxDropdown = Settings.CreateDropdown(cVendors, mailboxRemoveSetting, function() return createOptionsFromTable(GetMailboxContacts) end, L["SettingsVendorMailboxRemoveDesc"])
+	if mailboxDropdown.SetParentInitializer then
+		mailboxDropdown:SetParentInitializer(mailboxSetting.element, function() return addon.db["enableMailboxAddressBook"] == true end)
+	elseif mailboxDropdown.SetParent then
+		mailboxDropdown:SetParent(mailboxSetting.element)
+	end
+
+	-- Money tracker
+	local moneyHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderMoney"] })
+	Settings.RegisterInitializer(cVendors, moneyHeader)
+
+	local moneySetting = registerBoolean(
+		"EQOL_VendorsMoneyTracker",
+		L["SettingsVendorMoneyEnable"],
+		L["SettingsVendorMoneyEnableDesc"],
+		function() return addon.db["enableMoneyTracker"] == true end,
+		function(value) addon.db["enableMoneyTracker"] = value == true end
+	)
+
+	local goldOnlySetting = registerBoolean(
+		"EQOL_VendorsMoneyGoldOnly",
+		L["SettingsVendorMoneyGoldOnly"],
+		L["SettingsVendorMoneyGoldOnlyDesc"],
+		function() return addon.db["showOnlyGoldOnMoney"] == true end,
+		function(value) addon.db["showOnlyGoldOnMoney"] = value == true end
+	)
+	goldOnlySetting.element:SetParentInitializer(moneySetting.element, function() return addon.db["enableMoneyTracker"] == true end)
+
+	local function GetMoneyContacts()
+		local opts = {}
+		if addon.db and addon.db["moneyTracker"] then
+			for guid, info in pairs(addon.db["moneyTracker"]) do
+				if guid ~= UnitGUID("player") then
+					local col = (CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS)[info.class] or { r = 1, g = 1, b = 1 }
+					local name = info.name or "?"
+					local realm = info.realm or ""
+					local display = realm ~= "" and string.format("%s-%s", name, realm) or name
+					opts[guid] = string.format("|cff%02x%02x%02x%s|r", (col.r or 1) * 255, (col.g or 1) * 255, (col.b or 1) * 255, display)
+				end
+			end
+		end
+		return opts
+	end
+
+	local suppressMoneyReset = false
+	local moneyDropdown
+	local moneyRemoveSetting
+
+	local function ensureMoneyPopup()
+		if StaticPopupDialogs["ENHANCEQOL_MONEY_REMOVE"] then return end
+		StaticPopupDialogs["ENHANCEQOL_MONEY_REMOVE"] = {
+			text = "",
+			button1 = YES,
+			button2 = NO,
+			OnShow = function(self, data)
+				local msg = L["SettingsVendorMoneyRemoveConfirm"]:format(data and data.displayName or "")
+				if self.Text then
+					self.Text:SetText(msg)
+				elseif self.text then
+					self.text:SetText(msg)
+				end
+			end,
+			OnAccept = function(_, data)
+				if data and data.guid and addon.db["moneyTracker"] then addon.db["moneyTracker"][data.guid] = nil end
+				suppressMoneyReset = true
+				if moneyRemoveSetting and moneyRemoveSetting.SetValue then moneyRemoveSetting:SetValue("") end
+				suppressMoneyReset = false
+				if moneyDropdown and moneyDropdown.SetOptionsData then moneyDropdown:SetOptionsData(createOptionsFromTable(GetMoneyContacts)) end
+				if moneyDropdown and moneyDropdown.SetValue then moneyDropdown:SetValue("") end
+			end,
+			OnCancel = function()
+				suppressMoneyReset = true
+				if moneyRemoveSetting and moneyRemoveSetting.SetValue then moneyRemoveSetting:SetValue("") end
+				suppressMoneyReset = false
+				if moneyDropdown and moneyDropdown.SetValue then moneyDropdown:SetValue("") end
+			end,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+		}
+	end
+
+	moneyRemoveSetting = Settings.RegisterProxySetting(cVendors, "EQOL_VendorsMoneyRemove", Settings.VarType.String, L["SettingsVendorMoneyRemove"], "", function() return "" end, function(value)
+		if suppressMoneyReset or not value or value == "" then return end
+		local info = addon.db["moneyTracker"] and addon.db["moneyTracker"][value]
+		local displayName
+		if info then
+			local name = info.name or "?"
+			local realm = info.realm or ""
+			if realm ~= "" then
+				displayName = string.format("%s-%s", name, realm)
+			else
+				displayName = name
+			end
+		else
+			displayName = value
+		end
+		ensureMoneyPopup()
+		StaticPopup_Show("ENHANCEQOL_MONEY_REMOVE", nil, nil, { guid = value, displayName = displayName })
+	end)
+
+	moneyDropdown = Settings.CreateDropdown(cVendors, moneyRemoveSetting, function() return createOptionsFromTable(GetMoneyContacts) end, L["SettingsVendorMoneyRemoveDesc"])
+	if moneyDropdown.SetParentInitializer then
+		moneyDropdown:SetParentInitializer(moneySetting.element, function() return addon.db["enableMoneyTracker"] == true end)
+	elseif moneyDropdown.SetParent then
+		moneyDropdown:SetParent(moneySetting.element)
+	end
+end
+
 local function initCombatDungeonLayout(cat)
 	local cCombat = wowSettingsHelper(cat, L["CombatDungeons"])
 
@@ -8429,336 +8759,7 @@ local function initItemInventoryLayout(cat)
 	})
 
 	initCharacterInspectLayout(cItemInv)
-end
-
-local function initVendorsEconomyLayout(parent)
-	local cVendors = wowSettingsHelper(parent, L["VendorsEconomy"])
-
-	local function registerBoolean(key, text, desc, getter, setter)
-		local setting = Settings.RegisterProxySetting(cVendors, key, Settings.VarType.Boolean, text, false, getter, setter)
-		local element = Settings.CreateCheckbox(cVendors, setting, desc)
-		return { setting = setting, element = element }
-	end
-
-	local function createOptionsFromTable(listProvider)
-		local container = Settings.CreateControlTextContainer()
-		local entries = {}
-		for value, label in pairs(listProvider()) do
-			table.insert(entries, { value = value, label = label })
-		end
-		table.sort(entries, function(a, b) return tostring(a.label) < tostring(b.label) end)
-		for _, entry in ipairs(entries) do
-			container:Add(entry.value, entry.label)
-		end
-		return container:GetData()
-	end
-
-	-- Auction House
-	local ahHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderAuctionHouse"] })
-	Settings.RegisterInitializer(cVendors, ahHeader)
-
-	registerBoolean(
-		"EQOL_VendorsPersistAHFilters",
-		L["SettingsVendorAuctionPersist"],
-		L["SettingsVendorAuctionPersistDesc"],
-		function() return addon.db["persistAuctionHouseFilter"] == true end,
-		function(value) addon.db["persistAuctionHouseFilter"] = value == true end
-	)
-
-	registerBoolean(
-		"EQOL_VendorsCurrentExpansionFilter",
-		L["SettingsVendorAuctionCurrentExpansion"],
-		L["SettingsVendorAuctionCurrentExpansionDesc"],
-		function() return addon.db["alwaysUserCurExpAuctionHouse"] == true end,
-		function(value) addon.db["alwaysUserCurExpAuctionHouse"] = value == true end
-	)
-
-	-- Repairs & Junk
-	local repairsHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderRepairs"] })
-	Settings.RegisterInitializer(cVendors, repairsHeader)
-
-	local guildRepairSetting
-	local suppressGuildUpdate = false
-
-	local autoRepairSetting = registerBoolean(
-		"EQOL_VendorsAutoRepair",
-		L["SettingsVendorAutoRepair"],
-		L["SettingsVendorAutoRepairDesc"],
-		function() return addon.db["autoRepair"] == true end,
-		function(value)
-			local enabled = value == true
-			addon.db["autoRepair"] = enabled
-			if not enabled and addon.db["autoRepairGuildBank"] then
-				addon.db["autoRepairGuildBank"] = false
-				if guildRepairSetting and guildRepairSetting.setting then
-					suppressGuildUpdate = true
-					guildRepairSetting.setting:SetValue(false)
-					suppressGuildUpdate = false
-				end
-			end
-		end
-	)
-
-	guildRepairSetting = registerBoolean(
-		"EQOL_VendorsGuildRepair",
-		L["SettingsVendorAutoRepairGuild"],
-		L["SettingsVendorAutoRepairGuildDesc"],
-		function() return addon.db["autoRepairGuildBank"] == true end,
-		function(value)
-			if suppressGuildUpdate then return end
-			addon.db["autoRepairGuildBank"] = value == true
-		end
-	)
-	if guildRepairSetting and guildRepairSetting.element and guildRepairSetting.element.SetParentInitializer and autoRepairSetting and autoRepairSetting.element then
-		guildRepairSetting.element:SetParentInitializer(autoRepairSetting.element, function() return autoRepairSetting.setting:GetValue() end)
-	end
-
-	registerBoolean("EQOL_VendorsSellJunk", L["SettingsVendorSellJunk"], L["SettingsVendorSellJunkDesc"], function() return addon.db["sellAllJunk"] == true end, function(value)
-		local enabled = value == true
-		addon.db["sellAllJunk"] = enabled
-		if enabled then checkBagIgnoreJunk() end
-	end)
-
-	-- Merchant
-	local merchantHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderMerchant"] })
-	Settings.RegisterInitializer(cVendors, merchantHeader)
-
-	registerBoolean(
-		"EQOL_VendorsExtendedMerchant",
-		L["SettingsVendorExtendedMerchant"],
-		L["SettingsVendorExtendedMerchantDesc"],
-		function() return addon.db["enableExtendedMerchant"] == true end,
-		function(value)
-			local enabled = value == true
-			addon.db["enableExtendedMerchant"] = enabled
-			if addon.Merchant then
-				if enabled and addon.Merchant.Enable then
-					addon.Merchant:Enable()
-				elseif not enabled and addon.Merchant.Disable then
-					addon.Merchant:Disable()
-					addon.variables.requireReload = true
-					if addon.functions.checkReloadFrame then addon.functions.checkReloadFrame() end
-				end
-			end
-		end
-	)
-
-	registerBoolean("EQOL_VendorsMarkKnown", L["SettingsVendorKnownHighlights"], L["SettingsVendorKnownHighlightsDesc"], function() return addon.db["markKnownOnMerchant"] == true end, function(value)
-		addon.db["markKnownOnMerchant"] = value == true
-		if MerchantFrame and MerchantFrame:IsShown() then
-			if MerchantFrame.selectedTab == 2 then
-				if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
-			else
-				if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
-			end
-		end
-	end)
-
-	registerBoolean(
-		"EQOL_VendorsMarkPets",
-		L["SettingsVendorPetHighlights"],
-		L["SettingsVendorPetHighlightsDesc"],
-		function() return addon.db["markCollectedPetsOnMerchant"] == true end,
-		function(value)
-			addon.db["markCollectedPetsOnMerchant"] = value == true
-			if MerchantFrame and MerchantFrame:IsShown() then
-				if MerchantFrame.selectedTab == 2 then
-					if MerchantFrame_UpdateBuybackInfo then MerchantFrame_UpdateBuybackInfo() end
-				else
-					if MerchantFrame_UpdateMerchantInfo then MerchantFrame_UpdateMerchantInfo() end
-				end
-			end
-		end
-	)
-
-	-- Mailbox
-	local mailboxHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderMailbox"] })
-	Settings.RegisterInitializer(cVendors, mailboxHeader)
-
-	local mailboxSetting = registerBoolean(
-		"EQOL_VendorsMailbox",
-		L["SettingsVendorMailboxEnable"],
-		L["SettingsVendorMailboxEnableDesc"],
-		function() return addon.db["enableMailboxAddressBook"] == true end,
-		function(value)
-			local enabled = value == true
-			addon.db["enableMailboxAddressBook"] = enabled
-			if addon.Mailbox then
-				if addon.Mailbox.SetEnabled then addon.Mailbox:SetEnabled(enabled) end
-				if enabled and addon.Mailbox.AddSelfToContacts then addon.Mailbox:AddSelfToContacts() end
-				if addon.Mailbox.RefreshList then addon.Mailbox:RefreshList() end
-			end
-		end
-	)
-
-	local function GetMailboxContacts()
-		local opts = {}
-		if addon.db and addon.db["mailboxContacts"] then
-			for key, rec in pairs(addon.db["mailboxContacts"]) do
-				local class = rec and rec.class
-				local col = (CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS)[class or ""] or { r = 1, g = 1, b = 1 }
-				opts[key] = string.format("|cff%02x%02x%02x%s|r", (col.r or 1) * 255, (col.g or 1) * 255, (col.b or 1) * 255, key)
-			end
-		end
-		return opts
-	end
-
-	local suppressMailboxReset = false
-	local mailboxDropdown
-	local mailboxRemoveSetting
-
-	local function ensureMailboxPopup()
-		if StaticPopupDialogs["ENHANCEQOL_MAILBOX_REMOVE"] then return end
-		StaticPopupDialogs["ENHANCEQOL_MAILBOX_REMOVE"] = {
-			text = "",
-			button1 = YES,
-			button2 = NO,
-			OnShow = function(self, data)
-				local msg = L["SettingsVendorMailboxRemoveConfirm"]:format(data and data.contact or "")
-				if self.Text then
-					self.Text:SetText(msg)
-				elseif self.text then
-					self.text:SetText(msg)
-				end
-			end,
-			OnAccept = function(_, data)
-				if data and data.contact and addon.db["mailboxContacts"] then
-					addon.db["mailboxContacts"][data.contact] = nil
-					if addon.Mailbox and addon.Mailbox.RefreshList then addon.Mailbox:RefreshList() end
-				end
-				suppressMailboxReset = true
-				if mailboxRemoveSetting and mailboxRemoveSetting.SetValue then mailboxRemoveSetting:SetValue("") end
-				suppressMailboxReset = false
-				if mailboxDropdown and mailboxDropdown.SetOptionsData then mailboxDropdown:SetOptionsData(createOptionsFromTable(GetMailboxContacts)) end
-				if mailboxDropdown and mailboxDropdown.SetValue then mailboxDropdown:SetValue("") end
-			end,
-			OnCancel = function()
-				suppressMailboxReset = true
-				if mailboxRemoveSetting and mailboxRemoveSetting.SetValue then mailboxRemoveSetting:SetValue("") end
-				suppressMailboxReset = false
-				if mailboxDropdown and mailboxDropdown.SetValue then mailboxDropdown:SetValue("") end
-			end,
-			timeout = 0,
-			whileDead = true,
-			hideOnEscape = true,
-			preferredIndex = 3,
-		}
-	end
-
-	mailboxRemoveSetting = Settings.RegisterProxySetting(cVendors, "EQOL_VendorsMailboxRemove", Settings.VarType.String, L["SettingsVendorMailboxRemove"], "", function() return "" end, function(value)
-		if suppressMailboxReset or not value or value == "" then return end
-		ensureMailboxPopup()
-		StaticPopup_Show("ENHANCEQOL_MAILBOX_REMOVE", nil, nil, { contact = value })
-	end)
-
-	mailboxDropdown = Settings.CreateDropdown(cVendors, mailboxRemoveSetting, function() return createOptionsFromTable(GetMailboxContacts) end, L["SettingsVendorMailboxRemoveDesc"])
-	if mailboxDropdown.SetParentInitializer then
-		mailboxDropdown:SetParentInitializer(mailboxSetting.element, function() return addon.db["enableMailboxAddressBook"] == true end)
-	elseif mailboxDropdown.SetParent then
-		mailboxDropdown:SetParent(mailboxSetting.element)
-	end
-
-	-- Money tracker
-	local moneyHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsVendorHeaderMoney"] })
-	Settings.RegisterInitializer(cVendors, moneyHeader)
-
-	local moneySetting = registerBoolean(
-		"EQOL_VendorsMoneyTracker",
-		L["SettingsVendorMoneyEnable"],
-		L["SettingsVendorMoneyEnableDesc"],
-		function() return addon.db["enableMoneyTracker"] == true end,
-		function(value) addon.db["enableMoneyTracker"] = value == true end
-	)
-
-	local goldOnlySetting = registerBoolean(
-		"EQOL_VendorsMoneyGoldOnly",
-		L["SettingsVendorMoneyGoldOnly"],
-		L["SettingsVendorMoneyGoldOnlyDesc"],
-		function() return addon.db["showOnlyGoldOnMoney"] == true end,
-		function(value) addon.db["showOnlyGoldOnMoney"] = value == true end
-	)
-	goldOnlySetting.element:SetParentInitializer(moneySetting.element, function() return addon.db["enableMoneyTracker"] == true end)
-
-	local function GetMoneyContacts()
-		local opts = {}
-		if addon.db and addon.db["moneyTracker"] then
-			for guid, info in pairs(addon.db["moneyTracker"]) do
-				if guid ~= UnitGUID("player") then
-					local col = (CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS)[info.class] or { r = 1, g = 1, b = 1 }
-					local name = info.name or "?"
-					local realm = info.realm or ""
-					local display = realm ~= "" and string.format("%s-%s", name, realm) or name
-					opts[guid] = string.format("|cff%02x%02x%02x%s|r", (col.r or 1) * 255, (col.g or 1) * 255, (col.b or 1) * 255, display)
-				end
-			end
-		end
-		return opts
-	end
-
-	local suppressMoneyReset = false
-	local moneyDropdown
-	local moneyRemoveSetting
-
-	local function ensureMoneyPopup()
-		if StaticPopupDialogs["ENHANCEQOL_MONEY_REMOVE"] then return end
-		StaticPopupDialogs["ENHANCEQOL_MONEY_REMOVE"] = {
-			text = "",
-			button1 = YES,
-			button2 = NO,
-			OnShow = function(self, data)
-				local msg = L["SettingsVendorMoneyRemoveConfirm"]:format(data and data.displayName or "")
-				if self.Text then
-					self.Text:SetText(msg)
-				elseif self.text then
-					self.text:SetText(msg)
-				end
-			end,
-			OnAccept = function(_, data)
-				if data and data.guid and addon.db["moneyTracker"] then addon.db["moneyTracker"][data.guid] = nil end
-				suppressMoneyReset = true
-				if moneyRemoveSetting and moneyRemoveSetting.SetValue then moneyRemoveSetting:SetValue("") end
-				suppressMoneyReset = false
-				if moneyDropdown and moneyDropdown.SetOptionsData then moneyDropdown:SetOptionsData(createOptionsFromTable(GetMoneyContacts)) end
-				if moneyDropdown and moneyDropdown.SetValue then moneyDropdown:SetValue("") end
-			end,
-			OnCancel = function()
-				suppressMoneyReset = true
-				if moneyRemoveSetting and moneyRemoveSetting.SetValue then moneyRemoveSetting:SetValue("") end
-				suppressMoneyReset = false
-				if moneyDropdown and moneyDropdown.SetValue then moneyDropdown:SetValue("") end
-			end,
-			timeout = 0,
-			whileDead = true,
-			hideOnEscape = true,
-			preferredIndex = 3,
-		}
-	end
-
-	moneyRemoveSetting = Settings.RegisterProxySetting(cVendors, "EQOL_VendorsMoneyRemove", Settings.VarType.String, L["SettingsVendorMoneyRemove"], "", function() return "" end, function(value)
-		if suppressMoneyReset or not value or value == "" then return end
-		local info = addon.db["moneyTracker"] and addon.db["moneyTracker"][value]
-		local displayName
-		if info then
-			local name = info.name or "?"
-			local realm = info.realm or ""
-			if realm ~= "" then
-				displayName = string.format("%s-%s", name, realm)
-			else
-				displayName = name
-			end
-		else
-			displayName = value
-		end
-		ensureMoneyPopup()
-		StaticPopup_Show("ENHANCEQOL_MONEY_REMOVE", nil, nil, { guid = value, displayName = displayName })
-	end)
-
-	moneyDropdown = Settings.CreateDropdown(cVendors, moneyRemoveSetting, function() return createOptionsFromTable(GetMoneyContacts) end, L["SettingsVendorMoneyRemoveDesc"])
-	if moneyDropdown.SetParentInitializer then
-		moneyDropdown:SetParentInitializer(moneySetting.element, function() return addon.db["enableMoneyTracker"] == true end)
-	elseif moneyDropdown.SetParent then
-		moneyDropdown:SetParent(moneySetting.element)
-	end
+	initVendorsEconomyLayout(cItemInv)
 end
 
 function loadMain()
@@ -8860,7 +8861,6 @@ function loadMain()
 
 	initCombatDungeonLayout(cat)
 	initItemInventoryLayout(cat)
-	initVendorsEconomyLayout(cat)
 	--@end-alpha@
 end
 
