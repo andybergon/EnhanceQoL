@@ -208,7 +208,10 @@ L["groupfinderMoveResetButton"] = "Shift the 'Reset Filter' button in the Dungeo
 L["groupfinderSkipRoleSelect"] = "Skip role selection"
 L["groupfinderSkipRolecheckHeadline"] = "Automatic role assignment"
 L["groupfinderSkipRolecheckUseSpec"] = "Use your current spec's role (e.g. Blood Death Knight = Tank)"
+L["groupfinderUseCurSpec"] = "Use your current spec's role"
+L["groupfinderUseCurSpecDesc"] = "e.g. Blood Death Knight = Tank"
 L["groupfinderSkipRolecheckUseLFD"] = "Use roles from Dungeon Finder"
+L["groupfinderSkipRolecheckUseLFDDesc"] = "Choose your role in the Dungeon Finder"
 L["persistSignUpNote"] = "Persist LFG signup note"
 L["skipSignUpDialog"] = "Quick signup"
 

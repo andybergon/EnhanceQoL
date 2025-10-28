@@ -26,6 +26,7 @@ local defaults = {
 }
 
 addon.AceGUI = AceGUI
+addon.SettingsLayout = {}
 local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 addon.functions = addon.functions or {}
@@ -7694,6 +7695,107 @@ local function setAllHooks()
 	end)
 end
 
+local wowSettingsHelper = function(parent, treeName)
+	local cat, layout = Settings.RegisterVerticalLayoutSubcategory(parent, treeName)
+	Settings.RegisterAddOnCategory(cat)
+	return cat, layout
+end
+
+local function SettingsCreateCheckbox(cat, data)
+	local rData = {}
+	for _, cbData in ipairs(data) do
+		rData[cbData.var] = {}
+		local setting = Settings.RegisterProxySetting(
+			cat,
+			"EQOL_" .. cbData.var,
+			Settings.VarType.Boolean,
+			cbData.text,
+			false,
+			function() return addon.db[cbData.var] end, -- Getter
+			cbData.func
+		)
+		rData[cbData.var].setting = setting
+		rData[cbData.var].element = Settings.CreateCheckbox(cat, setting, cbData.desc)
+	end
+	return rData
+end
+
+local function initCombatDungeonLayout(cat)
+	local cCombat, sCombat = wowSettingsHelper(cat, L["CombatDungeons"])
+
+	local data = {
+		{
+			text = L["groupfinderAppText"],
+			var = "groupfinderAppText",
+			func = function(value)
+				addon.db["groupfinderAppText"] = value
+				toggleGroupApplication(value)
+			end,
+		},
+		{
+			text = L["groupfinderMoveResetButton"],
+			var = "groupfinderMoveResetButton",
+			func = function(value)
+				addon.db["groupfinderMoveResetButton"] = value
+				toggleLFGFilterPosition()
+			end,
+		},
+		{
+			text = L["groupfinderSkipRoleSelect"],
+			var = "groupfinderSkipRoleSelect",
+			func = function(value) addon.db["groupfinderSkipRoleSelect"] = value end,
+			desc = L["interruptWithShift"],
+		},
+		{
+			var = "autoChooseDelvePower",
+			text = L["autoChooseDelvePower"],
+			func = function(value) addon.db["autoChooseDelvePower"] = value end,
+		},
+		{
+			var = "persistSignUpNote",
+			text = L["Persist LFG signup note"],
+			func = function(value) addon.db["persistSignUpNote"] = value end,
+		},
+		{
+			var = "skipSignUpDialog",
+			text = L["Quick signup"],
+			func = function(value) addon.db["skipSignUpDialog"] = value end,
+		},
+		{
+			var = "lfgSortByRio",
+			text = L["lfgSortByRio"],
+			func = function(value) addon.db["lfgSortByRio"] = value end,
+		},
+		{
+			var = "enableChatIMRaiderIO",
+			text = L["enableChatIMRaiderIO"],
+			func = function(value) addon.db["enableChatIMRaiderIO"] = value end,
+		},
+	}
+	table.sort(data, function(a, b) return a.text < b.text end)
+
+	local setData = SettingsCreateCheckbox(cCombat, data)
+
+	local modeSetting = Settings.RegisterProxySetting(
+		cat,
+		"EQOL_Mode",
+		Settings.VarType.Number,
+		L["groupfinderSkipRolecheckHeadline"],
+		1,
+		function() return addon.db.groupfinderSkipRoleSelectOption or 1 end,
+		function(v) addon.db.groupfinderSkipRoleSelectOption = v end
+	)
+	local function GetRoleOptions()
+		local opts = Settings.CreateControlTextContainer()
+		opts:Add(1, L["groupfinderUseCurSpec"], L["groupfinderUseCurSpecDesc"])
+		opts:Add(2, L["groupfinderSkipRolecheckUseLFD"], L["groupfinderSkipRolecheckUseLFDDesc"])
+		return opts:GetData()
+	end
+	local dd = Settings.CreateDropdown(cCombat, modeSetting, GetRoleOptions, "Choose the mode")
+
+	dd:SetParentInitializer(setData.groupfinderSkipRoleSelect.element, function() return setData.groupfinderSkipRoleSelect.setting:GetValue() end)
+end
+
 function loadMain()
 	CreateUI()
 
@@ -7781,9 +7883,20 @@ function loadMain()
 
 	-- Frame zu den Interface-Optionen hinzufügen
 	-- InterfaceOptions_AddCategory(configFrame)
-	local category, layout = Settings.RegisterCanvasLayoutCategory(configFrame, configFrame.name)
-	Settings.RegisterAddOnCategory(category)
-	addon.settingsCategory = category
+	-- local category, layout = Settings.RegisterCanvasLayoutCategory(configFrame, configFrame.name)
+	-- Settings.RegisterAddOnCategory(category)
+	-- addon.settingsCategory = category
+
+	local cat, layout = Settings.RegisterVerticalLayoutCategory("Enhance QoL")
+	Settings.RegisterAddOnCategory(cat)
+	addon.SettingsLayout.rootCategory = cat
+	addon.SettingsLayout.rootLayout = layout
+
+	initCombatDungeonLayout(cat)
+
+	wowSettingsHelper(cat, L["ItemsInventory"])
+	wowSettingsHelper(cat, L["MapNavigation"])
+	wowSettingsHelper(cat, L["UIInput"])
 end
 
 -- Erstelle ein Frame f��r Events
