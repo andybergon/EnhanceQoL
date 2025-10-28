@@ -7821,6 +7821,7 @@ local function initItemInventoryLayout(cat)
 		{
 			var = "showIlvlOnBagItems",
 			text = L["SettingsItemInvDisplayBags"],
+			desc = L["SettingsItemInvDisplayBagsDesc"],
 			func = function(value)
 				addon.db["showIlvlOnBagItems"] = value
 				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
@@ -7846,13 +7847,14 @@ local function initItemInventoryLayout(cat)
 			if ContainerFrameCombinedBags:IsShown() then addon.functions.updateBags(ContainerFrameCombinedBags) end
 		end
 	)
-	local ddIlvl = Settings.CreateDropdown(cItemInv, bagIlvlSetting, GetBagAnchorOptions, nil)
+	local ddIlvl = Settings.CreateDropdown(cItemInv, bagIlvlSetting, GetBagAnchorOptions, L["SettingsItemInvBagIlvlPositionDesc"])
 	ddIlvl:SetParentInitializer(displayData.showIlvlOnBagItems.element, function() return displayData.showIlvlOnBagItems.setting:GetValue() end)
 
 	SettingsCreateCheckbox(cItemInv, {
 		{
 			var = "showIlvlOnBankFrame",
-			text = BANK,
+			text = L["SettingsItemInvDisplayBank"],
+			desc = L["SettingsItemInvDisplayBankDesc"],
 			func = function(value)
 				addon.db["showIlvlOnBankFrame"] = value
 				if value then
@@ -7875,7 +7877,8 @@ local function initItemInventoryLayout(cat)
 		},
 		{
 			var = "showIlvlOnMerchantframe",
-			text = MERCHANT,
+			text = L["SettingsItemInvDisplayMerchant"],
+			desc = L["SettingsItemInvDisplayMerchantDesc"],
 			func = function(value) addon.db["showIlvlOnMerchantframe"] = value end,
 		},
 	})
@@ -7899,6 +7902,7 @@ local function initItemInventoryLayout(cat)
 		{
 			var = "fadeBagQualityIcons",
 			text = L["SettingsItemInvFadeQuality"],
+			desc = L["SettingsItemInvFadeQualityDesc"],
 			func = function(value)
 				addon.db["fadeBagQualityIcons"] = value
 				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
@@ -7911,6 +7915,7 @@ local function initItemInventoryLayout(cat)
 		{
 			var = "showUpgradeArrowOnBagItems",
 			text = L["SettingsItemInvShowUpgradeIndicators"],
+			desc = L["SettingsItemInvShowUpgradeIndicatorsDesc"],
 			func = function(value)
 				addon.db["showUpgradeArrowOnBagItems"] = value
 				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
@@ -7948,7 +7953,7 @@ local function initItemInventoryLayout(cat)
 			if EquipmentFlyoutFrame and EquipmentFlyoutFrame:IsShown() and EquipmentFlyout_UpdateItems then EquipmentFlyout_UpdateItems() end
 		end
 	)
-	local ddUpgrade = Settings.CreateDropdown(cItemInv, bagUpgradeSetting, GetBagAnchorOptions, nil)
+	local ddUpgrade = Settings.CreateDropdown(cItemInv, bagUpgradeSetting, GetBagAnchorOptions, L["SettingsItemInvUpgradeIconPositionDesc"])
 	ddUpgrade:SetParentInitializer(overlayData.showUpgradeArrowOnBagItems.element, function() return overlayData.showUpgradeArrowOnBagItems.setting:GetValue() end)
 
 	local interactionHeader = Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", { name = L["SettingsItemInvHeaderBagInteraction"] })
@@ -7986,6 +7991,7 @@ local function initItemInventoryLayout(cat)
 		{
 			var = "closeBagsOnAuctionHouse",
 			text = L["SettingsItemInvCloseBagsAuctionHouse"],
+			desc = L["SettingsItemInvCloseBagsAuctionHouseDesc"],
 			func = function(value) addon.db["closeBagsOnAuctionHouse"] = value end,
 		},
 	})
