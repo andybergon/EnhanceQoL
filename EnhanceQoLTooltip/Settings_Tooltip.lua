@@ -313,10 +313,54 @@ data = {
 		default = false,
 		type = Settings.VarType.Boolean,
 	},
+	{
+		var = "TooltipShowGuildRank",
+		text = L["TooltipShowGuildRank"],
+		func = function(v) addon.db["TooltipShowGuildRank"] = v end,
+		default = false,
+		type = Settings.VarType.Boolean,
+		children = {
+			{
+				var = "TooltipGuildRankColor",
+				text = L["TooltipGuildRankColor"],
+				parent = true,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["TooltipShowGuildRank"]
+						and addon.SettingsLayout.elements["TooltipShowGuildRank"].setting
+						and addon.SettingsLayout.elements["TooltipShowGuildRank"].setting:GetValue() == true
+				end,
+				colorizeLabel = true,
+				sType = "colorpicker",
+			},
+		},
+	},
+	{
+		var = "TooltipColorGuildName",
+		text = L["TooltipColorGuildName"],
+		func = function(v) addon.db["TooltipColorGuildName"] = v end,
+		default = false,
+		type = Settings.VarType.Boolean,
+		children = {
+			{
+				var = "TooltipGuildNameColor",
+				text = L["TooltipGuildNameColor"],
+				parent = true,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["TooltipColorGuildName"]
+						and addon.SettingsLayout.elements["TooltipColorGuildName"].setting
+						and addon.SettingsLayout.elements["TooltipColorGuildName"].setting:GetValue() == true
+				end,
+				colorizeLabel = true,
+				sType = "colorpicker",
+			},
+		},
+	},
 }
 table.sort(data, function(a, b) return a.text < b.text end)
 
 addon.functions.SettingsCreateCheckboxes(cTooltip, data)
+
+local guildRankToggle = addon.SettingsLayout.elements["TooltipShowGuildRank"]
 
 -- Player
 
@@ -532,6 +576,20 @@ data = {
 	default = 0,
 }
 addon.functions.SettingsCreateSlider(cTooltip, data)
+
+addon.functions.SettingsCreateSlider(cTooltip, {
+	var = "TooltipScale",
+	text = L["TooltipScale"],
+	get = function() return addon.db and addon.db["TooltipScale"] or 1 end,
+	set = function(v)
+		addon.db["TooltipScale"] = v
+		if addon.Tooltip and addon.Tooltip.ApplyScale then addon.Tooltip.ApplyScale() end
+	end,
+	min = 0.5,
+	max = 1.5,
+	step = 0.05,
+	default = 1,
+})
 
 addon.functions.SettingsCreateHeadline(cTooltip, CURRENCY)
 data = {

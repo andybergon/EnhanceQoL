@@ -361,6 +361,45 @@ local function checkAdditionalTooltip(tooltip)
 			end
 		end
 	end
+	if unit and UnitIsPlayer(unit) then
+		local guildName, guildRank = GetGuildInfo(unit)
+		if guildName then
+			local ttName = tooltip:GetName()
+			local guildLine
+			for i = 1, tooltip:NumLines() do
+				local line = _G[ttName .. "TextLeft" .. i]
+				local text = line and line:GetText()
+				if text and text:find(guildName, 1, true) then
+					guildLine = line
+					break
+				end
+			end
+
+			local newText
+			local nameText = guildName
+			if addon.db["TooltipColorGuildName"] then
+				local c = addon.db["TooltipGuildNameColor"] or { r = 1, g = 1, b = 1 }
+				nameText = string.format("|cff%02x%02x%02x%s|r", (c.r or 1) * 255, (c.g or 1) * 255, (c.b or 1) * 255, guildName)
+			end
+
+			local rankText
+			if addon.db["TooltipShowGuildRank"] and guildRank then
+				local col = addon.db["TooltipGuildRankColor"] or { r = 1, g = 1, b = 1 }
+				rankText = string.format("|cff%02x%02x%02x%s|r", (col.r or 1) * 255, (col.g or 1) * 255, (col.b or 1) * 255, guildRank)
+			end
+
+			if guildLine then
+				newText = nameText
+				if rankText and not (guildLine:GetText() or ""):find(guildRank or "", 1, true) then newText = newText .. " - " .. rankText end
+				guildLine:SetText(newText)
+			else
+				if rankText then
+					tooltip:AddLine(" ")
+					tooltip:AddDoubleLine(L["GuildRank"] or RANK, rankText)
+				end
+			end
+		end
+	end
 	local showMythic = addon.db["TooltipShowMythicScore"] and unit and UnitExists(unit) and UnitCanAttack("player", unit) == false and addon.Tooltip.variables.maxLevel == UnitLevel(unit)
 	if showMythic and addon.db["TooltipMythicScoreRequireModifier"] and not IsConfiguredModifierDown() then showMythic = false end
 	if showMythic then
@@ -606,7 +645,33 @@ local function checkUnit(tooltip)
 	checkAdditionalTooltip(tooltip)
 end
 
-	local lastEntry
+local tooltipScaleTargets = {
+	"GameTooltip",
+	"ItemRefTooltip",
+	"ShoppingTooltip1",
+	"ShoppingTooltip2",
+	"ShoppingTooltip3",
+	"EmbeddedItemTooltip",
+}
+
+local function ApplyTooltipScale()
+	local scale = addon.db and tonumber(addon.db["TooltipScale"]) or 1
+	if not scale or scale <= 0 then scale = 1 end
+	if scale < 0.5 then
+		scale = 0.5
+	elseif scale > 1.5 then
+		scale = 1.5
+	end
+	for _, name in ipairs(tooltipScaleTargets) do
+		local tt = _G[name]
+		if tt and tt.SetScale then tt:SetScale(scale) end
+	end
+end
+
+addon.Tooltip = addon.Tooltip or {}
+addon.Tooltip.ApplyScale = ApplyTooltipScale
+
+local lastEntry
 local function checkItem(tooltip, id, name, guid)
 	local first = true
 
@@ -639,7 +704,11 @@ local function checkItem(tooltip, id, name, guid)
 			local current = line:GetText() or itemName
 			if current and icon and not current:find("|T", 1, true) then
 				local size = addon.db and addon.db["TooltipItemIconSize"] or 16
-				if size < 10 then size = 10 elseif size > 30 then size = 30 end
+				if size < 10 then
+					size = 10
+				elseif size > 30 then
+					size = 30
+				end
 				local tex = string.format("|T%d:%d:%d:0:0|t ", icon, size, size)
 				line:SetText(tex .. current)
 			end
@@ -807,6 +876,11 @@ if TooltipDataProcessor then
 		end
 	end)
 end
+
+-- Apply initial tooltip scale once the UI is ready
+C_Timer.After(0, function()
+	if addon.Tooltip and addon.Tooltip.ApplyScale then addon.Tooltip.ApplyScale() end
+end)
 
 hooksecurefunc("GameTooltip_SetDefaultAnchor", function(s, p)
 	if addon.db["TooltipAnchorType"] == 1 then return end
