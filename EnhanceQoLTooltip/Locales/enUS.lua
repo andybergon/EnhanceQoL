@@ -76,6 +76,8 @@ L["TooltipItemHideInDungeon"] = "Only hide it in dungeons"
 
 L["ItemID"] = "ItemID"
 L["TooltipShowItemID"] = "Show ItemID on Tooltip"
+L["TooltipShowItemIcon"] = "Show item icon next to the tooltip"
+L["TooltipItemIconSize"] = "Item icon size"
 
 L["TooltipShowItemCount"] = "Show item count on Tooltip"
 L["TooltipShowSeperateItemCount"] = "Show item count separated per location"

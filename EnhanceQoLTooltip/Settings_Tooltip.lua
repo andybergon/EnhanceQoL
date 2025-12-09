@@ -107,6 +107,34 @@ data = {
 		type = Settings.VarType.Boolean,
 	},
 	{
+		var = "TooltipShowItemIcon",
+		text = L["TooltipShowItemIcon"],
+		func = function(v) addon.db["TooltipShowItemIcon"] = v end,
+		default = false,
+		type = Settings.VarType.Boolean,
+		children = {
+
+			{
+				var = "TooltipItemIconSize",
+				text = L["TooltipItemIconSize"],
+				get = function() return addon.db and addon.db["TooltipItemIconSize"] or 16 end,
+				set = function(v) addon.db["TooltipItemIconSize"] = v end,
+				min = 10,
+				max = 30,
+				step = 1,
+				default = 20,
+				sType = "slider",
+				parent = true,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["TooltipShowItemIcon"]
+						and addon.SettingsLayout.elements["TooltipShowItemIcon"].setting
+						and addon.SettingsLayout.elements["TooltipShowItemIcon"].setting:GetValue() == true
+				end,
+				element = addon.SettingsLayout.elements["TooltipShowItemIcon"] and addon.SettingsLayout.elements["TooltipShowItemIcon"].element,
+			},
+		},
+	},
+	{
 		var = "TooltipShowTempEnchant",
 		text = L["TooltipShowTempEnchant"],
 		desc = L["TooltipShowTempEnchantDesc"],

@@ -606,7 +606,7 @@ local function checkUnit(tooltip)
 	checkAdditionalTooltip(tooltip)
 end
 
-local lastEntry
+	local lastEntry
 local function checkItem(tooltip, id, name, guid)
 	local first = true
 
@@ -628,6 +628,24 @@ local function checkItem(tooltip, id, name, guid)
 		end
 		tooltip:AddDoubleLine(name, id)
 	end
+
+	if addon.db["TooltipShowItemIcon"] then
+		local itemName = nil
+		local icon = nil
+		if tooltip and tooltip.GetItem then itemName = select(1, tooltip:GetItem()) end
+		if id then icon = select(5, GetItemInfoInstant(id)) end
+		local line = tooltip and _G[tooltip:GetName() .. "TextLeft1"]
+		if line then
+			local current = line:GetText() or itemName
+			if current and icon and not current:find("|T", 1, true) then
+				local size = addon.db and addon.db["TooltipItemIconSize"] or 16
+				if size < 10 then size = 10 elseif size > 30 then size = 30 end
+				local tex = string.format("|T%d:%d:%d:0:0|t ", icon, size, size)
+				line:SetText(tex .. current)
+			end
+		end
+	end
+
 	if addon.db["TooltipShowTempEnchant"] and guid then
 		local mhHas, mhExp, _, mhID, ohHas, ohExp, _, ohID, rhHas, rhExp = GetWeaponEnchantInfo()
 		if mhHas and guid == Item:CreateFromEquipmentSlot(16):GetItemGUID() then
