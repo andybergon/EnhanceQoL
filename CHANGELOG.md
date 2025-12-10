@@ -36,6 +36,7 @@ Changing minimap Button behaviour
 - Tooltip: Scale slider to resize tooltips
 - Tooltip: Optional guild rank line (configurable color) on unit tooltips
 - Tooltip: Optional hide faction/PvP lines on unit tooltips
+- Tooltip: Spell tooltips can show the spell icon inline (new toggle; uses the tooltip icon size setting)
 
 ### 🔄 Changed
 
@@ -86,6 +87,7 @@ Changing minimap Button behaviour
 - World Map Dungeon Teleports fixed in m+/raid
 - Resource Bars: Health bar now has absorb configuration (enable/disable, custom color, custom texture, sample preview)
 - Loot Spec Quick Switcher: Prevents reselecting the already active spec on right-click (no more pointless progress bar)
+- Tooltip: Inline spell icon no longer requires the "Show Spell Icon ID" toggle
 
 ---
 

@@ -227,6 +227,13 @@ data = {
 		default = false,
 		type = Settings.VarType.Boolean,
 	},
+	{
+		var = "TooltipShowSpellIconInline",
+		text = L["TooltipShowSpellIconInline"],
+		func = function(v) addon.db["TooltipShowSpellIconInline"] = v end,
+		default = false,
+		type = Settings.VarType.Boolean,
+	},
 }
 table.sort(data, function(a, b) return a.text < b.text end)
 

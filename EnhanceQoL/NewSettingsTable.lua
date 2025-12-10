@@ -25,6 +25,7 @@ addon.variables.NewVersionTableEQOL = {
 	["EQOL_TooltipGuildNameColor"] = true,
 	["EQOL_TooltipHideFaction"] = true,
 	["EQOL_TooltipHidePVP"] = true,
+	["EQOL_TooltipShowSpellIconInline"] = true,
 
 	["EQOL_ActionBar"] = true,
 	["EQOL_actionBarHideBorders"] = true,

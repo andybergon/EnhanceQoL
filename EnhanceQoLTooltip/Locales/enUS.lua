@@ -67,6 +67,7 @@ L["SpellID"] = "SpellID"
 L["MacroID"] = "MacroID"
 L["IconID"] = "IconID"
 L["TooltipShowSpellIcon"] = "Show Spell Icon ID on Tooltip"
+L["TooltipShowSpellIconInline"] = "Show spell icon inline on Tooltip"
 
 -- Item
 L["TooltipItemHideType"] = "Hide tooltip on Items"
