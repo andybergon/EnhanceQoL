@@ -937,8 +937,8 @@ local function registerEditModeBars()
 				}
 			end
 
-			-- Druid: Show in (forms), exclude Health
-			if addon.variables.unitClass == "DRUID" and barType ~= "HEALTH" then
+			-- Druid: Show in (forms), exclude Health and enforced Cat-only Combo Points
+			if addon.variables.unitClass == "DRUID" and barType ~= "HEALTH" and barType ~= "COMBO_POINTS" then
 				local forms = { "HUMANOID", "BEAR", "CAT", "TRAVEL", "MOONKIN", "TREANT", "STAG" }
 				local formLabels = {
 					HUMANOID = L["Humanoid"] or "Humanoid",

@@ -1427,19 +1427,27 @@ local function ensureDruidShowFormsDefaults(cfg, pType, specInfo)
 	if addon.variables.unitClass ~= "DRUID" then return end
 	if not cfg or type(cfg) ~= "table" then return end
 	if pType == "HEALTH" then return end
+
+	-- Combo points are only meaningful in Cat; force that mapping regardless of previous user input.
+	if pType == "COMBO_POINTS" then
+		cfg.showForms = {
+			HUMANOID = false,
+			BEAR = false,
+			CAT = true,
+			TRAVEL = false,
+			MOONKIN = false,
+			TREANT = false,
+			STAG = false,
+		}
+		return
+	end
+
+	-- Other bars: only set defaults if the user has not customized the forms table.
 	if type(cfg.showForms) == "table" and next(cfg.showForms) ~= nil then return end
 	local sf = {}
 	local isSecondaryMana = pType == "MANA" and specInfo and specInfo.MAIN ~= "MANA"
 	local isSecondaryEnergy = pType == "ENERGY" and specInfo and specInfo.MAIN ~= "ENERGY"
-	if pType == "COMBO_POINTS" then
-		sf.HUMANOID = false
-		sf.BEAR = false
-		sf.CAT = true
-		sf.TRAVEL = false
-		sf.MOONKIN = false
-		sf.TREANT = false
-		sf.STAG = false
-	elseif isSecondaryMana then
+	if isSecondaryMana then
 		sf.HUMANOID = true
 		sf.BEAR = false
 		sf.CAT = false
