@@ -87,7 +87,7 @@ addon.functions.SettingsCreateCheckboxes(cChatFrame, data)
 
 addon.functions.SettingsCreateHeadline(cChatFrame, CHAT_BUBBLES_TEXT)
 
-local data = {
+data = {
 	{
 		var = "chatBubbleFontOverride",
 		text = L["chatBubbleFontOverride"],
