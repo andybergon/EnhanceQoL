@@ -2,7 +2,7 @@ local addonName, addon = ...
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 
-local cChatFrame = addon.functions.SettingsCreateCategory(nil, HUD_EDIT_MODE_CHAT_FRAME_LABEL, nil, "ChatFrame")
+local cChatFrame = addon.functions.SettingsCreateCategory(nil, COMMUNITIES_ADD_TO_CHAT_DROP_DOWN_TITLE, nil, "ChatFrame")
 addon.SettingsLayout.chatframeCategory = cChatFrame
 
 addon.functions.SettingsCreateHeadline(cChatFrame, CHAT)

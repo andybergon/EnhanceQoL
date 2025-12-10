@@ -211,6 +211,7 @@ globals = {
 	"utf8sub",
 	"AzeriteLevelUpToast",
 	"OrderHallCommandBar",
+	"COMMUNITIES_ADD_TO_CHAT_DROP_DOWN_TITLE",
 	"C_TransmogSets",
 	"string.utf8sub",
 	"CharacterHeadSlot",
