@@ -363,6 +363,24 @@ local function checkAdditionalTooltip(tooltip)
 	end
 	if unit and UnitIsPlayer(unit) then
 		local guildName, guildRank = GetGuildInfo(unit)
+		if addon.db["TooltipHideFaction"] or addon.db["TooltipHidePVP"] then
+			local ttName = tooltip:GetName()
+			local factionName = addon.db["TooltipHideFaction"] and select(2, UnitFactionGroup(unit)) or nil
+			local pvpText = addon.db["TooltipHidePVP"] and (PVP or "PvP") or nil
+			for i = 1, tooltip:NumLines() do
+				local line = _G[ttName .. "TextLeft" .. i]
+				local text = line and line:GetText()
+				if text then
+					if factionName and text == factionName then
+						line:SetText("")
+						line:Hide()
+					elseif pvpText and text == pvpText then
+						line:SetText("")
+						line:Hide()
+					end
+				end
+			end
+		end
 		if guildName then
 			local ttName = tooltip:GetName()
 			local guildLine

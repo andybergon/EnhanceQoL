@@ -48,6 +48,8 @@ addon.functions.InitDBValue("TooltipShowGuildRank", false)
 addon.functions.InitDBValue("TooltipGuildRankColor", { r = 1, g = 1, b = 1 })
 addon.functions.InitDBValue("TooltipColorGuildName", false)
 addon.functions.InitDBValue("TooltipGuildNameColor", { r = 0.11, g = 1, b = 0.11 }) -- Blizzard guild green
+addon.functions.InitDBValue("TooltipHideFaction", false)
+addon.functions.InitDBValue("TooltipHidePVP", false)
 
 -- Buff
 addon.functions.InitDBValue("TooltipBuffHideType", 1)

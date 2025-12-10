@@ -83,6 +83,8 @@ L["TooltipShowGuildRank"] = "Show guild rank on unit tooltips"
 L["TooltipGuildRankColor"] = "Guild rank color"
 L["TooltipColorGuildName"] = "Color guild name on tooltips"
 L["TooltipGuildNameColor"] = "Guild name color"
+L["TooltipHideFaction"] = "Hide faction line on unit tooltips"
+L["TooltipHidePVP"] = "Hide PvP status line on unit tooltips"
 
 L["TooltipShowItemCount"] = "Show item count on Tooltip"
 L["TooltipShowSeperateItemCount"] = "Show item count separated per location"

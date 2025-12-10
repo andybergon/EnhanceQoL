@@ -35,6 +35,7 @@ Changing minimap Button behaviour
 - Tooltip: Optional guild name line (configurable color) on unit tooltips
 - Tooltip: Scale slider to resize tooltips
 - Tooltip: Optional guild rank line (configurable color) on unit tooltips
+- Tooltip: Optional hide faction/PvP lines on unit tooltips
 
 ### 🔄 Changed
 

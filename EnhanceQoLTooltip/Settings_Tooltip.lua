@@ -314,6 +314,20 @@ data = {
 		type = Settings.VarType.Boolean,
 	},
 	{
+		var = "TooltipHideFaction",
+		text = L["TooltipHideFaction"],
+		func = function(v) addon.db["TooltipHideFaction"] = v end,
+		default = false,
+		type = Settings.VarType.Boolean,
+	},
+	{
+		var = "TooltipHidePVP",
+		text = L["TooltipHidePVP"],
+		func = function(v) addon.db["TooltipHidePVP"] = v end,
+		default = false,
+		type = Settings.VarType.Boolean,
+	},
+	{
 		var = "TooltipShowGuildRank",
 		text = L["TooltipShowGuildRank"],
 		func = function(v) addon.db["TooltipShowGuildRank"] = v end,
