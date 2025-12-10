@@ -349,8 +349,6 @@ end
 
 local function mainTemplateMatches(store, barType)
 	if not store or not store.MAIN then return nil end
-	local tag = store._MAIN_TYPE or (store.MAIN and store.MAIN._rbType)
-	if tag and tag ~= barType then return nil end
 	return store.MAIN
 end
 
@@ -1509,50 +1507,50 @@ function updateHealthBar(evt)
 					healthBar:GetStatusBarTexture():SetVertexColor(color:GetRGB())
 				end
 			end
-	end
-	setBarDesaturated(healthBar, true)
+		end
+		setBarDesaturated(healthBar, true)
 
-	local absorbBar = healthBar.absorbBar
-	if absorbBar then
-		local absorbEnabled = settings.absorbEnabled ~= false
-		if not absorbEnabled or maxHealth <= 0 then
-			absorbBar:Hide()
-			absorbBar:SetValue(0)
-			absorbBar._lastVal = 0
-		else
-			if not absorbBar:IsShown() then absorbBar:Show() end
-			-- Texture
-			local absorbTex = resolveTexture({ barTexture = settings.absorbTexture or settings.barTexture })
-			local curTex = absorbBar:GetStatusBarTexture() and absorbBar:GetStatusBarTexture():GetTexture()
-			if curTex ~= absorbTex then absorbBar:SetStatusBarTexture(absorbTex) end
-			-- Color
-			local defAbsorb = { 0.8, 0.8, 0.8, 0.8 }
-			local col = (settings.absorbUseCustomColor and settings.absorbColor) or defAbsorb
-			local ar, ag, ab, aa = col[1] or defAbsorb[1], col[2] or defAbsorb[2], col[3] or defAbsorb[3], col[4] or defAbsorb[4]
-			if not absorbBar._lastColor or absorbBar._lastColor[1] ~= ar or absorbBar._lastColor[2] ~= ag or absorbBar._lastColor[3] ~= ab or absorbBar._lastColor[4] ~= aa then
-				absorbBar:SetStatusBarColor(ar, ag, ab, aa)
-				absorbBar._lastColor = { ar, ag, ab, aa }
-			end
-
-			local abs = UnitGetTotalAbsorbs("player") or 0
-			if settings.absorbSample and abs <= 0 then abs = maxHealth * 0.6 end
-			if addon.variables.isMidnight then
-				absorbBar:SetValue(abs)
-				absorbBar:SetMinMaxValues(0, maxHealth)
+		local absorbBar = healthBar.absorbBar
+		if absorbBar then
+			local absorbEnabled = settings.absorbEnabled ~= false
+			if not absorbEnabled or maxHealth <= 0 then
+				absorbBar:Hide()
+				absorbBar:SetValue(0)
+				absorbBar._lastVal = 0
 			else
-				if abs > maxHealth then abs = maxHealth end
-				if absorbBar._lastMax ~= maxHealth then
-					absorbBar:SetMinMaxValues(0, maxHealth)
-					absorbBar._lastMax = maxHealth
+				if not absorbBar:IsShown() then absorbBar:Show() end
+				-- Texture
+				local absorbTex = resolveTexture({ barTexture = settings.absorbTexture or settings.barTexture })
+				local curTex = absorbBar:GetStatusBarTexture() and absorbBar:GetStatusBarTexture():GetTexture()
+				if curTex ~= absorbTex then absorbBar:SetStatusBarTexture(absorbTex) end
+				-- Color
+				local defAbsorb = { 0.8, 0.8, 0.8, 0.8 }
+				local col = (settings.absorbUseCustomColor and settings.absorbColor) or defAbsorb
+				local ar, ag, ab, aa = col[1] or defAbsorb[1], col[2] or defAbsorb[2], col[3] or defAbsorb[3], col[4] or defAbsorb[4]
+				if not absorbBar._lastColor or absorbBar._lastColor[1] ~= ar or absorbBar._lastColor[2] ~= ag or absorbBar._lastColor[3] ~= ab or absorbBar._lastColor[4] ~= aa then
+					absorbBar:SetStatusBarColor(ar, ag, ab, aa)
+					absorbBar._lastColor = { ar, ag, ab, aa }
 				end
-				if absorbBar._lastVal ~= abs then
+
+				local abs = UnitGetTotalAbsorbs("player") or 0
+				if settings.absorbSample and abs <= 0 then abs = maxHealth * 0.6 end
+				if addon.variables.isMidnight then
 					absorbBar:SetValue(abs)
-					absorbBar._lastVal = abs
+					absorbBar:SetMinMaxValues(0, maxHealth)
+				else
+					if abs > maxHealth then abs = maxHealth end
+					if absorbBar._lastMax ~= maxHealth then
+						absorbBar:SetMinMaxValues(0, maxHealth)
+						absorbBar._lastMax = maxHealth
+					end
+					if absorbBar._lastVal ~= abs then
+						absorbBar:SetValue(abs)
+						absorbBar._lastVal = abs
+					end
 				end
 			end
 		end
 	end
-end
 end
 
 function getAnchor(name, spec)

@@ -3225,6 +3225,8 @@ local function initUI()
 			if button == "LeftButton" then
 				SetLootSpecialization(specId)
 			else
+				local cur = C_SpecializationInfo.GetSpecialization()
+				if index > 0 and cur and cur == index then return end
 				C_SpecializationInfo.SetSpecialization(index)
 			end
 		end)
@@ -3233,6 +3235,8 @@ local function initUI()
 			if button == "LeftButton" then
 				SetLootSpecialization(specId)
 			else
+				local cur = C_SpecializationInfo.GetSpecialization()
+				if index > 0 and cur and cur == index then return end
 				C_SpecializationInfo.SetSpecialization(index)
 			end
 		end)
