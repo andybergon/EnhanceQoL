@@ -85,6 +85,7 @@ Changing minimap Button behaviour
 - BR Tracker working in m+/raid now
 - World Map Dungeon Teleports fixed in m+/raid
 - Resource Bars: Health bar now has absorb configuration (enable/disable, custom color, custom texture, sample preview)
+- Loot Spec Quick Switcher: Prevents reselecting the already active spec on right-click (no more pointless progress bar)
 
 ---
 
