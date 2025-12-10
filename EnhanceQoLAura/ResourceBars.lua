@@ -1237,10 +1237,6 @@ local function resolveRuneReadyColor(cfg)
 		local c = cfg.barColor
 		return c[1] or 1, c[2] or 1, c[3] or 1
 	end
-	if cfg.useClassColor == true then
-		local cr, cg, cb = getPlayerClassColor()
-		return cr or 1, cg or 1, cb or 1
-	end
 	local dk = dkSpecColor()
 	if dk then return dk[1] or 1, dk[2] or 1, dk[3] or 1 end
 	local cc = C_ClassColor and C_ClassColor.GetClassColor and C_ClassColor.GetClassColor("DEATHKNIGHT")
