@@ -119,7 +119,11 @@ local function getFont(path)
 	if path and path ~= "" then return path end
 	return addon.variables and addon.variables.defaultFont or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font)) or STANDARD_TEXT_FONT
 end
-local function isBossUnit(unit) return unit == "boss" or (unit and unit:match("^boss%d+$")) end
+local function isBossUnit(unit)
+	if type(unit) ~= "string" then return false end
+	return unit == "boss" or (unit and unit:match("^boss%d+$"))
+end
+
 local UNITS = {
 	player = {
 		unit = "player",
@@ -505,7 +509,6 @@ local function ensureBossContainer()
 	bossContainer:SetSize(220, 200)
 	bossContainer:SetClampedToScreen(true)
 	bossContainer:SetMovable(true)
-	bossContainer:EnableMouse(true)
 	bossContainer:RegisterForDrag("LeftButton")
 	bossContainer:Hide()
 	anchorBossContainer()
