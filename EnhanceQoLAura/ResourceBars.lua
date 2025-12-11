@@ -1380,6 +1380,26 @@ local function Snap(bar, off)
 	return floor(off * s + 0.5) / s
 end
 
+-- Legacy migration: pull saved Edit Mode layout coords into empty anchors so
+-- old profiles keep their bar positions after a reload.
+local function backfillAnchorFromLayout(anchor, barType)
+	if not anchor or (anchor.x ~= nil and anchor.y ~= nil) then return end
+	if anchor.relativeFrame and anchor.relativeFrame ~= "" and anchor.relativeFrame ~= "UIParent" then return end
+	local editMode = addon and addon.EditMode
+	if not editMode or not editMode.GetLayoutData then return end
+	local layoutName = (editMode.GetActiveLayoutName and editMode:GetActiveLayoutName()) or editMode.activeLayout
+	local frameId = "resourceBar_" .. tostring(barType or "")
+	local data = editMode:GetLayoutData(frameId, layoutName)
+	if not data or data.x == nil or data.y == nil then return end
+	local point = data.point or data.relativePoint
+	if not point then return end
+	anchor.point = anchor.point or point
+	anchor.relativePoint = anchor.relativePoint or data.relativePoint or point
+	anchor.relativeFrame = anchor.relativeFrame or "UIParent"
+	anchor.x = data.x
+	anchor.y = data.y
+end
+
 local FREQUENT = { ENERGY = true, FOCUS = true, RAGE = true, RUNIC_POWER = true, LUNAR_POWER = true }
 local formIndexToKey = {
 	[0] = "HUMANOID",
@@ -1714,6 +1734,7 @@ function getAnchor(name, spec)
 		anchor.matchEssentialWidth = nil
 	end
 	if (anchor.relativeFrame or "UIParent") == "UIParent" then anchor.matchRelativeWidth = nil end
+	backfillAnchorFromLayout(anchor, name)
 	return anchor
 end
 

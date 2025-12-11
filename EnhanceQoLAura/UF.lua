@@ -1844,7 +1844,7 @@ local function ensureFrames(unit)
 	st.frame:HookScript("OnLeave", function()
 		if GameTooltip and not GameTooltip:IsForbidden() then GameTooltip:Hide() end
 	end)
-	st.frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	st.frame:RegisterForClicks("AnyUp")
 	st.frame:Hide()
 	hideSettingsReset(st.frame)
 
