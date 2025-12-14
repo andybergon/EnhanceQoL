@@ -136,7 +136,16 @@ local function getCharacterBucket(create)
 	local characters = realm.characters
 	local charBucket = characters[keys.charKey]
 	if not charBucket and create then
-		charBucket = { name = keys.player, realm = keys.realmName, faction = keys.faction, channels = {} }
+		local className, classFile, classID = UnitClass("player")
+		charBucket = {
+			name = keys.player,
+			realm = keys.realmName,
+			faction = keys.faction,
+			className = className,
+			classFile = classFile,
+			classID = classID,
+			channels = {},
+		}
 		characters[keys.charKey] = charBucket
 	end
 
@@ -211,6 +220,12 @@ function ChannelHistory:Store(event, ...)
 
 	charBucket.channels[channelKey] = channelBucket
 	charBucket.lastUpdated = line.time
+	if not charBucket.classFile then
+		local className, classFile, classID = UnitClass("player")
+		charBucket.className = className
+		charBucket.classFile = classFile
+		charBucket.classID = classID
+	end
 end
 
 local function iterCharacters(scope)
@@ -312,6 +327,215 @@ function ChannelHistory:GetHistory(scope, channelKey)
 	return result
 end
 
+local function getClassStyle(classFile)
+	if not classFile then return nil end
+	local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
+	return color
+end
+
+local function setButtonClassVisual(btn, classFile)
+	local color = getClassStyle(classFile)
+	if color and btn.nameText then btn.nameText:SetTextColor(color.r, color.g, color.b) end
+	if btn.icon and CLASS_ICON_TCOORDS and classFile and CLASS_ICON_TCOORDS[classFile] then
+		btn.icon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
+		btn.icon:SetTexCoord(unpack(CLASS_ICON_TCOORDS[classFile]))
+		btn.icon:Show()
+	elseif btn.icon then
+		btn.icon:SetTexture(nil)
+		btn.icon:Hide()
+	end
+end
+
+-- UI helpers: left tree
+function ChannelHistory:BuildLeftEntries(filterText)
+	if not self.history or not self.keys then self:InitStorage() end
+	local entries = {}
+	local factionBucket = self.history and self.history[self.keys.faction]
+	local state = self.ui and self.ui.leftState or { realms = {}, accountExpanded = true }
+	self.ui = self.ui or {}
+	local playerCharKey = "char:" .. (self.keys.charKey or "")
+	if not self.ui.leftSelected then self.ui.leftSelected = playerCharKey end
+	filterText = filterText and filterText:lower()
+
+	local function matchesFilter(name, realm)
+		if not filterText or filterText == "" then return true end
+		if name and name:lower():find(filterText, 1, true) then return true end
+		if realm and realm:lower():find(filterText, 1, true) then return true end
+		return false
+	end
+
+	-- Account node
+	table.insert(entries, { kind = "header", label = "Account", level = 0, key = "account", expanded = state.accountExpanded ~= false })
+
+	if factionBucket and type(factionBucket) == "table" then
+		local realmKeys = {}
+		for realmKey in pairs(factionBucket) do
+			table.insert(realmKeys, realmKey)
+		end
+		table.sort(realmKeys)
+
+		for _, realmKey in ipairs(realmKeys) do
+			local realmData = factionBucket[realmKey]
+			local realmLabel = realmData and realmData.realmName or realmKey
+			local realmEntry = {
+				kind = "realm",
+				label = realmLabel,
+				level = 1,
+				key = "realm:" .. realmKey,
+				expanded = state.realms[realmKey] ~= false,
+			}
+			table.insert(entries, realmEntry)
+
+			if realmEntry.expanded and realmData and realmData.characters then
+				local charKeys = {}
+				for charKey in pairs(realmData.characters) do
+					table.insert(charKeys, charKey)
+				end
+				table.sort(charKeys)
+				for _, charKey in ipairs(charKeys) do
+					local charData = realmData.characters[charKey]
+					if charData then
+						if matchesFilter(charData.name, realmLabel) then
+							table.insert(entries, {
+								kind = "character",
+								label = charData.name or charKey,
+								level = 2,
+								key = "char:" .. charKey,
+								realm = realmLabel,
+								classFile = charData.classFile,
+								className = charData.className,
+								charKey = charKey,
+							})
+						end
+					end
+				end
+			end
+		end
+	end
+
+	self.ui = self.ui or {}
+	self.ui.leftEntries = entries
+	return entries
+end
+
+local function ensureLeftButtons(self, count)
+	self.ui.leftButtons = self.ui.leftButtons or {}
+	local buttons = self.ui.leftButtons
+	local content = self.ui.leftContent
+	local buttonHeight = 22
+
+	for i = #buttons + 1, count do
+		local btn = CreateFrame("Button", nil, content)
+		btn:SetHeight(buttonHeight)
+		btn:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -((i - 1) * buttonHeight))
+		btn:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, -((i - 1) * buttonHeight))
+
+		btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+		btn.bg:SetAllPoints()
+		btn.bg:SetColorTexture(1, 1, 1, 0)
+
+		btn.icon = btn:CreateTexture(nil, "ARTWORK")
+		btn.icon:SetSize(16, 16)
+		btn.icon:SetPoint("LEFT", btn, "LEFT", 4, 0)
+
+		btn.toggle = btn:CreateTexture(nil, "ARTWORK")
+		btn.toggle:SetSize(12, 12)
+		btn.toggle:SetPoint("LEFT", btn, "LEFT", 2, 0)
+		btn.toggle:Hide()
+
+		btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 6, 0)
+
+		btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+
+		btn:SetScript("OnEnter", function(selfBtn)
+			selfBtn.bg:SetColorTexture(1, 1, 1, 0.08)
+		end)
+		btn:SetScript("OnLeave", function(selfBtn)
+			selfBtn.bg:SetColorTexture(1, 1, 1, 0)
+		end)
+
+		buttons[i] = btn
+	end
+
+	return buttonHeight, buttons
+end
+
+function ChannelHistory:RefreshLeftList()
+	if not self.debugFrame or not self.ui or not self.ui.leftContent then return end
+	local filter = self.ui.leftSearch and self.ui.leftSearch:GetText()
+	local entries = self:BuildLeftEntries(filter)
+	local buttonHeight, buttons = ensureLeftButtons(self, #entries)
+
+	for i, entry in ipairs(entries) do
+		local btn = buttons[i]
+		btn.entry = entry
+		btn:Show()
+
+		btn.bg:SetColorTexture(1, 1, 1, 0)
+		btn.icon:Hide()
+		btn.toggle:Hide()
+
+		local indent = (entry.level or 0) * 14
+		btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 6 + indent, 0)
+
+		if entry.kind == "header" then
+			btn.toggle:Show()
+			btn.toggle:SetAtlas(entry.expanded and "uiTitle-Icon-Chevron-Down" or "uiTitle-Icon-Chevron-Right")
+			btn.nameText:SetText(entry.label)
+			btn.nameText:SetTextColor(1, 0.9, 0.6)
+			btn.icon:Hide()
+		elseif entry.kind == "realm" then
+			btn.toggle:Show()
+			btn.toggle:SetAtlas(entry.expanded and "uiTitle-Icon-Chevron-Down" or "uiTitle-Icon-Chevron-Right")
+			btn.icon:SetTexture("Interface\\FriendsFrame\\PlusManz-Highlight")
+			btn.icon:Show()
+			btn.nameText:SetText(entry.label or entry.key)
+			btn.nameText:SetTextColor(0.85, 0.85, 0.85)
+		elseif entry.kind == "character" then
+			setButtonClassVisual(btn, entry.classFile)
+			btn.nameText:SetText(entry.label)
+			local color = getClassStyle(entry.classFile)
+			if color then
+				btn.nameText:SetTextColor(color.r, color.g, color.b)
+			else
+				btn.nameText:SetTextColor(0.9, 0.9, 0.9)
+			end
+			if self.ui.leftSelected == entry.key then
+				btn.bg:SetColorTexture(1, 1, 1, 0.08)
+			else
+				btn.bg:SetColorTexture(1, 1, 1, 0)
+			end
+		else
+			btn.nameText:SetText(entry.label or entry.key)
+		end
+
+		btn:SetScript("OnClick", function(selfBtn)
+			local data = selfBtn.entry
+			if not data then return end
+			if data.kind == "header" then
+				self.ui.leftState.accountExpanded = not data.expanded
+			elseif data.kind == "realm" then
+				local realmKey = data.key:match("^realm:(.+)$") or data.key
+				self.ui.leftState.realms[realmKey] = not data.expanded
+			elseif data.kind == "character" then
+				self.ui.leftSelected = data.key
+			end
+			self:RefreshLeftList()
+		end)
+	end
+
+	for j = #entries + 1, #buttons do
+		buttons[j]:Hide()
+	end
+
+	local totalHeight = #entries * buttonHeight
+	self.ui.leftContent:SetHeight(totalHeight)
+	if self.ui.leftScroll then
+		self.ui.leftScroll:UpdateScrollChildRect()
+	end
+end
+
 function ChannelHistory:OnEvent(event, ...)
 	if not self.enabled then return end
 	if not self.events or not self.events[event] then return end
@@ -336,6 +560,11 @@ function ChannelHistory:SetEnabled(enabled)
 		self:RegisterEvents()
 		self:CreateDebugFrame()
 		if self.debugFrame then self.debugFrame:Show() end
+		if self.ui and self.ui.leftSearch then
+			self.ui.leftSearch:SetText("")
+			SearchBoxTemplate_OnTextChanged(self.ui.leftSearch)
+		end
+		self:RefreshLeftList()
 	else
 		if self.frame then self.frame:UnregisterAllEvents() end
 		if self.debugFrame then self.debugFrame:Hide() end
@@ -422,6 +651,10 @@ function ChannelHistory:CreateDebugFrame()
 
 	local f = CreateFrame("Frame", "EnhanceQoLChannelHistoryFrame", UIParent, "BackdropTemplate")
 	self.debugFrame = f
+	self.ui = self.ui or {}
+	self.ui.leftButtons = self.ui.leftButtons or {}
+	self.ui.leftEntries = self.ui.leftEntries or {}
+	self.ui.leftState = self.ui.leftState or { realms = {}, accountExpanded = true }
 
 	f:SetSize(1100, 640)
 	f:SetPoint("CENTER")
@@ -518,10 +751,34 @@ function ChannelHistory:CreateDebugFrame()
 	local leftSearch = createSearchBox(f.left, "Search character / realm...")
 	leftSearch:SetPoint("TOPLEFT", f.left, "TOPLEFT", 10, -12)
 	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -10, -12)
+	self.ui.leftSearch = leftSearch
+	leftSearch:SetScript("OnTextChanged", function(box)
+		SearchBoxTemplate_OnTextChanged(box)
+		ChannelHistory:RefreshLeftList()
+	end)
 
 	local rightSearch = createSearchBox(f.right, "Search logs...")
 	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 10, -12)
 	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -10, -12)
+
+	-- Left list scroll
+	local listTopOffset = -40
+	local leftScroll = CreateFrame("ScrollFrame", nil, f.left, "UIPanelScrollFrameTemplate")
+	leftScroll:SetPoint("TOPLEFT", f.left, "TOPLEFT", 8, listTopOffset)
+	leftScroll:SetPoint("BOTTOMRIGHT", f.left, "BOTTOMRIGHT", -28, 12)
+	local sb = leftScroll.ScrollBar or leftScroll.scrollBar
+	if sb then
+		sb:ClearAllPoints()
+		sb:SetPoint("TOPLEFT", leftScroll, "TOPRIGHT", 2, -16)
+		sb:SetPoint("BOTTOMLEFT", leftScroll, "BOTTOMRIGHT", 2, 16)
+	end
+
+	local leftContent = CreateFrame("Frame", nil, leftScroll)
+	leftContent:SetSize(1, 1)
+	leftScroll:SetScrollChild(leftContent)
+
+	self.ui.leftScroll = leftScroll
+	self.ui.leftContent = leftContent
 
 	-- Resize grip
 	local grip = CreateFrame("Button", nil, f)
@@ -544,5 +801,6 @@ function ChannelHistory:CreateDebugFrame()
 	f:SetScript("OnSizeChanged", function(frame, w, h) ChannelHistory:LayoutDebugFrame(w, h) end)
 
 	self:LayoutDebugFrame()
+	self:RefreshLeftList()
 	f:Show()
 end
