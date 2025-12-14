@@ -365,7 +365,7 @@ function ChannelHistory:BuildLeftEntries(filterText)
 	end
 
 	-- Account node
-	table.insert(entries, { kind = "header", label = "Account", level = 0, key = "account", expanded = state.accountExpanded ~= false })
+	table.insert(entries, { kind = "header", label = "All", level = 0, key = "account", expanded = state.accountExpanded ~= false })
 
 	if factionBucket and type(factionBucket) == "table" then
 		local realmKeys = {}
@@ -426,13 +426,21 @@ local function ensureLeftButtons(self, count)
 
 	for i = #buttons + 1, count do
 		local btn = CreateFrame("Button", nil, content)
+		btn:EnableMouse(true)
+		btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 		btn:SetHeight(buttonHeight)
 		btn:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -((i - 1) * buttonHeight))
 		btn:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, -((i - 1) * buttonHeight))
 
 		btn.bg = btn:CreateTexture(nil, "BACKGROUND")
 		btn.bg:SetAllPoints()
-		btn.bg:SetColorTexture(1, 1, 1, 0)
+		btn.bg:SetTexture("Interface\\AuctionFrame\\AuctionHouse-UI-Row-Select")
+		btn.bg:SetTexCoord(0, 1, 0, 1)
+		btn.bg:SetVertexColor(1, 1, 1, 0)
+
+		btn.hl = btn:CreateTexture(nil, "HIGHLIGHT")
+		btn.hl:SetAllPoints()
+		btn.hl:SetColorTexture(1, 1, 1, 0.08)
 
 		btn.icon = btn:CreateTexture(nil, "ARTWORK")
 		btn.icon:SetSize(16, 16)
@@ -449,10 +457,10 @@ local function ensureLeftButtons(self, count)
 		btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 
 		btn:SetScript("OnEnter", function(selfBtn)
-			selfBtn.bg:SetColorTexture(1, 1, 1, 0.08)
+			if selfBtn.hl then selfBtn.hl:Show() end
 		end)
 		btn:SetScript("OnLeave", function(selfBtn)
-			selfBtn.bg:SetColorTexture(1, 1, 1, 0)
+			if selfBtn.hl then selfBtn.hl:Hide() end
 		end)
 
 		buttons[i] = btn
@@ -466,13 +474,21 @@ function ChannelHistory:RefreshLeftList()
 	local filter = self.ui.leftSearch and self.ui.leftSearch:GetText()
 	local entries = self:BuildLeftEntries(filter)
 	local buttonHeight, buttons = ensureLeftButtons(self, #entries)
+	if self.ui.leftScroll and self.ui.leftContent then
+		local width = math.max(1, (self.ui.leftScroll:GetWidth() or 0) - 16)
+		self.ui.leftContent:SetWidth(width)
+	end
 
 	for i, entry in ipairs(entries) do
 		local btn = buttons[i]
 		btn.entry = entry
 		btn:Show()
 
-		btn.bg:SetColorTexture(1, 1, 1, 0)
+		if self.ui.leftSelected == entry.key then
+			btn.bg:SetVertexColor(1, 1, 1, 1)
+		else
+			btn.bg:SetVertexColor(1, 1, 1, 0)
+		end
 		btn.icon:Hide()
 		btn.toggle:Hide()
 
@@ -500,11 +516,6 @@ function ChannelHistory:RefreshLeftList()
 				btn.nameText:SetTextColor(color.r, color.g, color.b)
 			else
 				btn.nameText:SetTextColor(0.9, 0.9, 0.9)
-			end
-			if self.ui.leftSelected == entry.key then
-				btn.bg:SetColorTexture(1, 1, 1, 0.08)
-			else
-				btn.bg:SetColorTexture(1, 1, 1, 0)
 			end
 		else
 			btn.nameText:SetText(entry.label or entry.key)
