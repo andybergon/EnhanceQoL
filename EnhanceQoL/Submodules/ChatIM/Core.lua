@@ -175,6 +175,7 @@ end
 
 function ChatIM:SetEnabled(val)
 	self.enabled = val and true or false
+	if self.ChannelHistory and self.ChannelHistory.SetEnabled then self.ChannelHistory:SetEnabled(self.enabled) end
 	if self.enabled then
 		self:SetMaxHistoryLines(addon.db and addon.db["chatIMMaxHistory"])
 		self:CreateUI()
