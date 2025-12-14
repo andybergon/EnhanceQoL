@@ -736,10 +736,10 @@ function ChannelHistory:CreateFilterUI()
 		{ key = "YELL", label = "|T892447:16:16:0:0|t Yell" },
 		{ key = "WHISPER", label = "|T133458:16:16:0:0|t Whisper" },
 		{ key = "PARTY", label = "|T134149:16:16:0:0|t Party" },
-		{ key = "INSTANCE", label = "|TInterface\\COMMON\\hud-microbutton-LFG-Down:16:16:0:0|t Instance" },
-		{ key = "RAID", label = "Raid" },
+		{ key = "INSTANCE", label = "|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:16:16:0:0|t Instance" },
+		{ key = "RAID", label = "|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:16:16:0:0|t Raid" },
 		{ key = "GUILD", label = "|T514261:16:16:0:0|t Guild" },
-		{ key = "OFFICER", label = "Officer" },
+		{ key = "OFFICER", label = "|T133071:16:16:0:0|t Officer" },
 		{ key = "GENERAL", label = "General" },
 		{ key = "LOOT", label = "|T133639:16:16:0:0|t Loot" },
 	}
