@@ -33,30 +33,12 @@ ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY or {
 	CHAT_MSG_GUILD = "GUILD",
 	CHAT_MSG_OFFICER = "OFFICER",
 	CHAT_MSG_CHANNEL = "GENERAL",
+	CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
 	CHAT_MSG_LOOT = "LOOT",
 	CHAT_MSG_MONEY = "LOOT",
 	CHAT_MSG_CURRENCY = "LOOT",
 }
 ChannelHistory.loggedIn = ChannelHistory.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
-ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY or {
-	CHAT_MSG_SAY = "SAY",
-	CHAT_MSG_YELL = "YELL",
-	CHAT_MSG_WHISPER = "WHISPER",
-	CHAT_MSG_WHISPER_INFORM = "WHISPER",
-	CHAT_MSG_BN_WHISPER = "BN_WHISPER",
-	CHAT_MSG_BN_WHISPER_INFORM = "BN_WHISPER",
-	CHAT_MSG_PARTY = "PARTY",
-	CHAT_MSG_INSTANCE_CHAT = "INSTANCE",
-	CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE",
-	CHAT_MSG_RAID = "RAID",
-	CHAT_MSG_RAID_LEADER = "RAID",
-	CHAT_MSG_GUILD = "GUILD",
-	CHAT_MSG_OFFICER = "OFFICER",
-	CHAT_MSG_CHANNEL = "GENERAL",
-	CHAT_MSG_LOOT = "LOOT",
-	CHAT_MSG_MONEY = "LOOT",
-	CHAT_MSG_CURRENCY = "LOOT",
-}
 ChannelHistory.defaultFilters = {
 	SAY = true,
 	GUILD = true,
@@ -70,7 +52,7 @@ ChannelHistory.defaultFilters = {
 	GENERAL = true,
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
-local getChatColor
+local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, getClassStyle
 
 local IGNORED_EVENTS = {
 	CHAT_MSG_ADDON = true,
@@ -109,19 +91,14 @@ end
 
 local function buildEventSet()
 	local events = {}
-	if ChatTypeGroup then
-		for _, list in pairs(ChatTypeGroup) do
-			if type(list) == "table" then
-				for _, event in ipairs(list) do
-					if type(event) == "string" and event:find("^CHAT_MSG") and not IGNORED_EVENTS[event] then events[event] = true end
-				end
-			end
+	if ChannelHistory.EVENT_FILTER_KEY then
+		for event in pairs(ChannelHistory.EVENT_FILTER_KEY) do
+			if not IGNORED_EVENTS[event] then events[event] = true end
 		end
 	end
 	for _, event in ipairs(ADDITIONAL_EVENTS) do
 		if not IGNORED_EVENTS[event] then events[event] = true end
 	end
-
 	return events
 end
 
@@ -205,15 +182,16 @@ end
 
 local function buildChannelKey(event, ...)
 	local base = event:gsub("^CHAT_MSG_", "")
-	print(...)
 
 	if event == "CHAT_MSG_CHANNEL" then
 		local channelName = safeSelect(4, ...)
 		local channelIndex = safeSelect(8, ...)
 		local channelBaseName = safeSelect(9, ...)
-		local descriptor = channelName or channelBaseName or base
-		if channelIndex then descriptor = tostring(channelIndex) .. ":" .. descriptor end
-		return base .. ":" .. descriptor, descriptor
+		local descriptor = channelBaseName or channelName or base
+		local keyPart = descriptor
+		if channelIndex then keyPart = tostring(channelIndex) .. ":" .. descriptor end
+		local label = channelIndex and (tostring(channelIndex) .. ": " .. descriptor) or descriptor
+		return base .. ":" .. keyPart, label
 	end
 
 	if event == "CHAT_MSG_COMMUNITIES_CHANNEL" then
@@ -248,41 +226,51 @@ function ChannelHistory:Store(event, ...)
 		if not self:IsFilterEnabled(filterKey) then return end
 	end
 	if self.maxLines == 0 then return end
+	if not self.history or not self.keys then self:InitStorage() end
 	local charBucket = getCharacterBucket(true)
 	if not charBucket then return end
+	local currentCharKey = self.keys and self.keys.charKey
 
-	local msg, sender = ...
+	local msg, sender, _, _, _, _, _, _, _, _, lineID, guid, bnetIDAccount = ...
 	local channelKey, channelLabel = buildChannelKey(event, ...)
 	channelKey = channelKey or event
-	local color = getChatColor(filterKey) or { r = 1, g = 0.82, b = 0 }
-	local r = math.floor((color.r or 1) * 255 + 0.5)
-	local g = math.floor((color.g or 1) * 255 + 0.5)
-	local b = math.floor((color.b or 1) * 255 + 0.5)
-	local colorCode = string.format("|cff%02x%02x%02x", r, g, b)
-	local timeText = date("%H:%M:%S", now())
-	timeText = string.format("|cff888888|TInterface\\ChatFrame\\ChatFrameBackground:0:0:0:0|t|cffffff00%s|r", timeText)
-	local senderText = sender and sender ~= "" and (sender .. ": ") or ""
-	local rest = (senderText .. (msg or "")):gsub("|r", "|r" .. colorCode)
-	local formatted = string.format("%s %s%s|r", timeText, colorCode, rest)
+	local senderName, senderRealmKey = splitSender(sender)
+	if (not senderRealmKey or senderRealmKey == "") and self.keys and self.keys.realmKey then senderRealmKey = self.keys.realmKey end
+	local className, classFile = getSenderClass(guid)
+	local classColor = getClassStyle(classFile)
+	local chatColor = getChatColor(filterKey) or { r = 1, g = 0.82, b = 0 }
+	local displayName = senderName or sender or ""
+	if displayName ~= "" then
+		local playerRealm = self.keys and self.keys.realmKey
+		local sameRealm = senderRealmKey and playerRealm and senderRealmKey == playerRealm
+		if senderRealmKey and senderRealmKey ~= "" and not sameRealm then displayName = displayName .. "-" .. senderRealmKey end
+	end
+	local stamp = now()
 
 	charBucket.channels = charBucket.channels or {}
 	local channelBucket = charBucket.channels[channelKey] or { label = channelLabel or channelKey, lines = {} }
 	channelBucket.label = channelLabel or channelBucket.label or channelKey
 
 	local line = {
-		time = now(),
+		time = stamp,
 		event = event,
 		filterKey = filterKey,
 		channel = channelKey,
 		label = channelBucket.label,
 		message = msg or "",
 		sender = sender or "",
-		color = color,
-		formatted = formatted,
-		lineID = safeSelect(11, ...),
-		guid = safeSelect(12, ...),
-		bnetIDAccount = safeSelect(13, ...),
+		senderName = senderName or sender or "",
+		senderRealmKey = senderRealmKey,
+		senderClassName = className,
+		senderClassFile = classFile,
+		classColor = classColor,
+		chatColor = chatColor,
+		displayName = displayName,
+		lineID = lineID,
+		guid = guid,
+		bnetIDAccount = bnetIDAccount,
 	}
+	line.formatted = formatLine(self, line)
 
 	appendLine(channelBucket, line)
 
@@ -294,9 +282,14 @@ function ChannelHistory:Store(event, ...)
 		charBucket.classFile = classFile
 		charBucket.classID = classID
 	end
+	if self.debugFrame and self.debugFrame:IsShown() then
+		if self:ShouldDisplayLive(line, currentCharKey) then
+			self:AppendLineToLog(line)
+		end
+	end
 end
 
-local function iterCharacters(scope)
+local function iterCharacters(scope, realmKey, charKey)
 	if not ChannelHistory.history or not ChannelHistory.keys then
 		return function() end
 	end
@@ -306,15 +299,16 @@ local function iterCharacters(scope)
 		return function() end
 	end
 
-	local realmBucket = factionBucket[ChannelHistory.keys.realmKey]
-
 	if scope == nil or scope == "character" then
-		local bucket = realmBucket and realmBucket.characters and realmBucket.characters[ChannelHistory.keys.charKey]
+		local targetChar = charKey or ChannelHistory.keys.charKey
+		local targetRealm = realmKey or (targetChar and targetChar:match("%-([^-]+)$")) or ChannelHistory.keys.realmKey
+		local targetRealmBucket = factionBucket and factionBucket[targetRealm]
+		local bucket = targetRealmBucket and targetRealmBucket.characters and targetRealmBucket.characters[targetChar]
 		local returned = false
 		return function()
 			if returned or not bucket then return end
 			returned = true
-			return ChannelHistory.keys.charKey, bucket
+			return targetChar, bucket
 		end
 	end
 
@@ -335,7 +329,10 @@ local function iterCharacters(scope)
 		end
 	end
 
-	if scope == "realm" then return yieldFromRealm(realmBucket) end
+	if scope == "realm" then
+		local targetRealm = realmKey or ChannelHistory.keys.realmKey
+		return yieldFromRealm(factionBucket and factionBucket[targetRealm])
+	end
 	if scope == "faction" then
 		local realmKeys = {}
 		for realmKey in pairs(factionBucket) do
@@ -358,7 +355,7 @@ local function iterCharacters(scope)
 		end
 	end
 
-	return yieldFromRealm(realmBucket)
+	return yieldFromRealm(factionBucket and factionBucket[ChannelHistory.keys.realmKey])
 end
 
 function ChannelHistory:GetChannels(scope)
@@ -401,7 +398,7 @@ function ChannelHistory:GetHistory(scope, channelKey)
 	return result
 end
 
-local function getClassStyle(classFile)
+function getClassStyle(classFile)
 	if not classFile then return nil end
 	local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
 	return color
@@ -429,6 +426,7 @@ local CHAT_COLOR_KEYS = {
 	SAY = "SAY",
 	YELL = "YELL",
 	WHISPER = "WHISPER",
+	BN_WHISPER = "BN_WHISPER",
 	PARTY = "PARTY",
 	INSTANCE = "INSTANCE_CHAT",
 	RAID = "RAID",
@@ -442,6 +440,7 @@ local CHAT_COLOR_FALLBACK = {
 	SAY = { r = 1, g = 1, b = 1 },
 	YELL = { r = 1, g = 0.25, b = 0.25 },
 	WHISPER = { r = 1, g = 0.5, b = 1 },
+	BN_WHISPER = { r = 0, g = 1, b = 0.96 },
 	PARTY = { r = 170 / 255, g = 170 / 255, b = 1 },
 	INSTANCE = { r = 170 / 255, g = 170 / 255, b = 1 },
 	RAID = { r = 1, g = 127 / 255, b = 0 },
@@ -451,6 +450,28 @@ local CHAT_COLOR_FALLBACK = {
 	LOOT = { r = 0, g = 170 / 255, b = 0 },
 }
 
+function splitSender(sender)
+	if not sender or sender == "" then return nil, nil end
+	local name, realm = sender:match("^(.-)%-(.+)$")
+	if not name or name == "" then name = sender end
+	if realm and realm ~= "" then realm = sanitizeRealm(realm) end
+	return name, realm
+end
+
+function getSenderClass(guid)
+	if not guid or not GetPlayerInfoByGUID then return nil, nil end
+	local _, _, className, classFile = GetPlayerInfoByGUID(guid)
+	return className, classFile
+end
+
+function toColorCode(color)
+	if not color then return "|r" end
+	local r = math.floor((color.r or 1) * 255 + 0.5)
+	local g = math.floor((color.g or 1) * 255 + 0.5)
+	local b = math.floor((color.b or 1) * 255 + 0.5)
+	return string.format("|cff%02x%02x%02x", r, g, b)
+end
+
 function getChatColor(key)
 	if not key then return nil end
 	local chatKey = CHAT_COLOR_KEYS[key] or key
@@ -458,6 +479,94 @@ function getChatColor(key)
 	if (not info or not info.r) and chatKey == "CHANNEL" then info = ChatTypeInfo and ChatTypeInfo["CHANNEL1"] end
 	if info and info.r and info.g and info.b then return info end
 	return CHAT_COLOR_FALLBACK[key]
+end
+
+function formatLine(self, line)
+	if not line then return "" end
+
+	-- Enrich sender info if it was not stored yet (old lines)
+	if (not line.senderName) or (line.senderRealmKey == nil) then
+		local senderName, senderRealmKey = splitSender(line.sender)
+		line.senderName = line.senderName or senderName or line.sender or ""
+		line.senderRealmKey = line.senderRealmKey or senderRealmKey
+	end
+	if (not line.senderClassFile) and line.guid then
+		local _, classFile = getSenderClass(line.guid)
+		line.senderClassFile = classFile
+	end
+	if not line.classColor then line.classColor = getClassStyle(line.senderClassFile) end
+	local playerRealmKey = self.keys and self.keys.realmKey
+	local senderRealmKey = line.senderRealmKey or playerRealmKey
+	local sameRealm = senderRealmKey and playerRealmKey and senderRealmKey == playerRealmKey
+	if not line.displayName then
+		local display = line.senderName or ""
+		if display ~= "" and not sameRealm and senderRealmKey and senderRealmKey ~= "" then
+			display = display .. "-" .. senderRealmKey
+		end
+		line.displayName = display
+	end
+
+	local timeText = date("%H:%M:%S", line.time or now())
+	timeText = string.format("|cff888888%s|r", timeText)
+
+	local chatColor = line.chatColor or line.color or getChatColor(line.filterKey) or { r = 1, g = 0.82, b = 0 }
+	local chatColorCode = toColorCode(chatColor)
+	line.chatColor = chatColor
+
+	local nameColor = line.classColor or chatColor
+	local nameColorCode = toColorCode(nameColor)
+	local nameText = ""
+	if line.displayName and line.displayName ~= "" then
+		local linkTarget = line.sender and line.sender ~= "" and line.sender or line.displayName
+		nameText = string.format("|Hplayer:%s|h%s[%s]|r|h", linkTarget, nameColorCode, line.displayName)
+	end
+
+	local body = line.message or ""
+	body = body:gsub("|r", "|r" .. chatColorCode)
+
+	local parts = { timeText, " ", chatColorCode }
+	if nameText ~= "" then
+		table.insert(parts, nameText)
+		table.insert(parts, "|r")
+		table.insert(parts, chatColorCode)
+		table.insert(parts, ": ")
+	end
+	table.insert(parts, body)
+	table.insert(parts, "|r")
+
+	local text = table.concat(parts)
+	line.formatted = text
+	return text
+end
+
+local function matchesSearch(searchText, message, sender)
+	if not searchText or searchText == "" then return true end
+	local needle = searchText:lower()
+	if message and message:lower():find(needle, 1, true) then return true end
+	if sender and sender:lower():find(needle, 1, true) then return true end
+	return false
+end
+
+function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
+	if not self.debugFrame or not self.debugFrame:IsShown() then return false end
+	if not self.ui or not self.ui.logFrame then return false end
+	if not self:IsFilterEnabled(line.filterKey) then return false end
+	local scope, realmKey, charKey = deriveScope(self.ui.selection, self.keys)
+	if scope == "character" then
+		if charKey and currentCharKey and charKey ~= currentCharKey then return false end
+	elseif scope == "realm" then
+		if realmKey and self.keys and self.keys.realmKey and realmKey ~= self.keys.realmKey then return false end
+	end
+	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
+	if not matchesSearch(search, line.message, line.sender) then return false end
+	return true
+end
+
+function ChannelHistory:AppendLineToLog(line)
+	if not self.ui or not self.ui.logFrame then return end
+	local text = formatLine(self, line)
+	self.ui.logFrame:AddMessage(text, 1, 1, 1)
+	if self.ui.logFrame.ScrollToBottom then self.ui.logFrame:ScrollToBottom() end
 end
 
 function ChannelHistory:IsFilterEnabled(filterKey)
@@ -479,7 +588,7 @@ function ChannelHistory:LoadFiltersFromDB()
 	end
 end
 
-local function deriveScope(selection, keys)
+function deriveScope(selection, keys)
 	if not selection then return "character", keys and keys.charKey end
 	if selection.type == "header" then return "faction", nil end
 	if selection.type == "realm" then
@@ -498,18 +607,11 @@ local function collectLines(self, scope, realmKey, charKey, searchText)
 	if not self.history or not self.keys then self:InitStorage() end
 	local search = searchText and searchText:lower()
 
-	local function matchesSearch(msg, sender)
-		if not search or search == "" then return true end
-		if msg and msg:lower():find(search, 1, true) then return true end
-		if sender and sender:lower():find(search, 1, true) then return true end
-		return false
-	end
-
 	local function addFromChar(charData, charKeyInner)
 		if not charData or not charData.channels then return end
 		for _, channelData in pairs(charData.channels) do
 			for _, line in ipairs(channelData.lines or {}) do
-				if matchesSearch(line.message, line.sender) and self:IsFilterEnabled(line.filterKey) then
+				if matchesSearch(search, line.message, line.sender) and self:IsFilterEnabled(line.filterKey) then
 					table.insert(results, {
 						charKey = charKeyInner,
 						line = line,
@@ -519,32 +621,8 @@ local function collectLines(self, scope, realmKey, charKey, searchText)
 		end
 	end
 
-	if scope == "faction" then
-		local factionBucket = self.history and self.history[self.keys.faction]
-		if factionBucket then
-			for _, realmData in pairs(factionBucket) do
-				if realmData and realmData.characters then
-					for ck, cd in pairs(realmData.characters) do addFromChar(cd, ck) end
-				end
-			end
-		end
-	elseif scope == "realm" then
-		local factionBucket = self.history and self.history[self.keys.faction]
-		if factionBucket then
-			local realmData = factionBucket[realmKey or self.keys.realmKey]
-			if realmData and realmData.characters then
-				for ck, cd in pairs(realmData.characters) do addFromChar(cd, ck) end
-			end
-		end
-	else -- character
-		local factionBucket = self.history and self.history[self.keys.faction]
-		if factionBucket then
-			local realmData = factionBucket[self.keys.realmKey]
-			if realmData and realmData.characters then
-				local ck = charKey or self.keys.charKey
-				addFromChar(realmData.characters[ck], ck)
-			end
-		end
+	for ck, cd in iterCharacters(scope, realmKey, charKey) do
+		addFromChar(cd, ck)
 	end
 
 	table.sort(results, function(a, b) return (a.line.time or 0) < (b.line.time or 0) end)
@@ -552,15 +630,6 @@ local function collectLines(self, scope, realmKey, charKey, searchText)
 end
 
 local function setLabelText(label, text) if label then label:SetText(text) end end
-
-local function isFilterEnabled(self, filterKey)
-	if not filterKey then return true end
-	self.ui = self.ui or {}
-	self.ui.filters = self.ui.filters or {}
-	local stored = self.ui.filters[filterKey]
-	if stored ~= nil then return stored end
-	return self.defaultFilters[filterKey] ~= false
-end
 
 -- UI helpers: left tree
 function ChannelHistory:BuildLeftEntries(filterText)
@@ -657,6 +726,7 @@ local function ensureLeftButtons(self, count)
 		btn.hl = btn:CreateTexture(nil, "HIGHLIGHT")
 		btn.hl:SetAllPoints()
 		btn.hl:SetColorTexture(1, 1, 1, 0.08)
+		btn.hl:Hide()
 
 		btn.icon = btn:CreateTexture(nil, "ARTWORK")
 		btn.icon:SetSize(16, 16)
@@ -763,15 +833,18 @@ function ChannelHistory:RefreshLeftList()
 				self.ui.selection = { type = "character", key = data.key }
 				print("|cff99e599[EQOL] Selected:|r", data.key or "nil")
 				self:RefreshLeftList()
+				self:RefreshLogView()
 			elseif data.kind == "realm" then
 				local realmKey = data.key:match("^realm:(.+)$") or data.key
 				self.ui.selection = { type = "realm", key = data.key }
 				print("|cff99e599[EQOL] Realm selected:|r", realmKey or "nil")
 				self:RefreshLeftList()
+				self:RefreshLogView()
 			elseif data.kind == "header" then
 				self.ui.selection = { type = "header", key = data.key }
 				print("|cff99e599[EQOL] Scope: All|r")
 				self:RefreshLeftList()
+				self:RefreshLogView()
 			end
 		end)
 
@@ -804,6 +877,7 @@ end
 
 function ChannelHistory:OnEvent(event, ...)
 	if not self.enabled then return end
+	if not self.loggedIn then return end
 	if not self.events or not self.events[event] then return end
 	self:Store(event, ...)
 end
@@ -811,12 +885,13 @@ end
 ChannelHistory.frame:SetScript("OnEvent", function(_, event, ...)
 	if event == "PLAYER_LOGIN" then
 		ChannelHistory.loggedIn = true
+		ChannelHistory:InitStorage()
+		ChannelHistory:SetMaxLines(addon.db and addon.db["chatChannelHistoryMaxLines"])
 		if ChannelHistory.enabled then
+			ChannelHistory:RegisterEvents()
 			ChannelHistory:CreateDebugFrame()
-			ChannelHistory:RefreshLeftList()
-			ChannelHistory:CreateFilterUI()
+			ChannelHistory:RefreshLogView()
 		end
-		ChannelHistory.frame:UnregisterEvent("PLAYER_LOGIN")
 		return
 	end
 	ChannelHistory:OnEvent(event, ...)
@@ -825,19 +900,21 @@ end)
 function ChannelHistory:RegisterEvents()
 	if not self.frame then return end
 	self.frame:UnregisterAllEvents()
-	if not self.loggedIn then self.frame:RegisterEvent("PLAYER_LOGIN") end
-	if not self.events then self.events = buildEventSet() end
-	for event in pairs(self.events or {}) do
-		self.frame:RegisterEvent(event)
-	end
+	self.frame:RegisterEvent("PLAYER_LOGIN")
+	if not self.loggedIn then return end
+	self.events = self.events or buildEventSet()
+	for event in pairs(self.events or {}) do self.frame:RegisterEvent(event) end
 end
 
 function ChannelHistory:SetEnabled(enabled)
 	self.enabled = enabled and true or false
-	self:InitStorage()
-	self.events = self.events or buildEventSet()
-	self:SetMaxLines(addon.db and addon.db["chatChannelHistoryMaxLines"])
+	self:LoadFiltersFromDB()
 	if self.enabled then
+		if self.loggedIn then
+			self:InitStorage()
+			self.events = self.events or buildEventSet()
+			self:SetMaxLines(addon.db and addon.db["chatChannelHistoryMaxLines"])
+		end
 		self:RegisterEvents()
 		if self.loggedIn then
 			self:CreateDebugFrame()
@@ -847,6 +924,7 @@ function ChannelHistory:SetEnabled(enabled)
 				SearchBoxTemplate_OnTextChanged(self.ui.leftSearch)
 			end
 			self:RefreshLeftList()
+			self:RefreshLogView()
 		end
 	else
 		if self.frame then self.frame:UnregisterAllEvents() end
@@ -933,6 +1011,7 @@ function ChannelHistory:CreateFilterUI()
 			row.hl = row:CreateTexture(nil, "HIGHLIGHT")
 			row.hl:SetAllPoints()
 			row.hl:SetColorTexture(1, 1, 1, 0.08)
+			row.hl:Hide()
 			self.ui.filterRows[i] = row
 		end
 		row:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -((i - 1) * (checkHeight + spacing)))
@@ -977,6 +1056,7 @@ function ChannelHistory:CreateFilterUI()
 				addon.db.chatChannelFilters = addon.db.chatChannelFilters or {}
 				addon.db.chatChannelFilters[info.key] = newVal
 			end
+			self:RefreshLogView()
 		end
 
 		cb:SetScript("OnClick", function(btn) applyValue(btn:GetChecked()) end)
@@ -995,7 +1075,11 @@ function ChannelHistory:EnsureLogFrame()
 	local frame = CreateFrame("ScrollingMessageFrame", nil, self.right)
 	frame:SetPoint("TOPLEFT", self.right, "TOPLEFT", 10, -40)
 	frame:SetPoint("BOTTOMRIGHT", self.right, "BOTTOMRIGHT", -10, 10)
-	frame:SetFontObject("GameFontHighlightSmall")
+	self.ui.logFont = self.ui.logFont or CreateFont("EnhanceQoLChannelHistoryLogFont")
+	local fontSource = ChatFontNormal or GameFontNormal or NumberFontNormal
+	local fontFile, fontHeight, fontFlags = fontSource:GetFont()
+	self.ui.logFont:SetFont(fontFile, 14, (fontFlags and (fontFlags .. ",MONOCHROME")) or "MONOCHROME")
+	frame:SetFontObject(self.ui.logFont)
 	frame:SetJustifyH("LEFT")
 	frame:SetFading(false)
 	frame:SetMaxLines(1000)
@@ -1004,10 +1088,14 @@ function ChannelHistory:EnsureLogFrame()
 	frame:SetScript("OnMouseWheel", function(f, delta)
 		if delta > 0 then f:ScrollUp() else f:ScrollDown() end
 	end)
+	frame:SetScript("OnHyperlinkClick", function(_, link, text, button)
+		if SetItemRef then SetItemRef(link, text, button, frame) end
+	end)
 	self.ui.logFrame = frame
 end
 
 function ChannelHistory:RefreshLogView()
+	if not self.history or not self.keys then self:InitStorage() end
 	if not self.debugFrame or not self.ui or not self.ui.logFrame then return end
 	local scope, realmKey, charKey = deriveScope(self.ui.selection, self.keys)
 	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
@@ -1017,22 +1105,7 @@ function ChannelHistory:RefreshLogView()
 	log:Clear()
 	for _, entry in ipairs(lines) do
 		local line = entry.line
-		local text = line.formatted
-		if not text then
-			local t = date("%H:%M:%S", line.time or time())
-			local color = line.color or getChatColor(line.filterKey) or { r = 1, g = 0.82, b = 0 }
-			local r = math.floor((color.r or 1) * 255 + 0.5)
-			local g = math.floor((color.g or 1) * 255 + 0.5)
-			local b = math.floor((color.b or 1) * 255 + 0.5)
-			local colorCode = string.format("|cff%02x%02x%02x", r, g, b)
-			local sender = line.sender and line.sender ~= "" and (line.sender .. ": ") or ""
-			local rest = (sender .. (line.message or "")):gsub("|r", "|r" .. colorCode)
-			local tMono = string.format("|cff888888|TInterface\\ChatFrame\\ChatFrameBackground:0:0:0:0|t|cffffff00%s|r", t)
-			text = string.format("%s %s%s|r", tMono, colorCode, rest)
-			-- cache formatted for future renders
-			line.color = color
-			line.formatted = text
-		end
+		local text = formatLine(self, line)
 		log:AddMessage(text, 1, 1, 1)
 	end
 end
@@ -1082,6 +1155,7 @@ end
 
 function ChannelHistory:CreateDebugFrame()
 	if self.debugFrame then return end
+	self:InitStorage()
 
 	local f = CreateFrame("Frame", "EnhanceQoLChannelHistoryFrame", UIParent, "BackdropTemplate")
 	self.debugFrame = f
@@ -1138,7 +1212,7 @@ function ChannelHistory:CreateDebugFrame()
 	f.right.bg = f.right:CreateTexture(nil, "BACKGROUND", nil, -7)
 	f.right.bg:SetAllPoints()
 	f.right.bg:SetAtlas("communities-widebackground")
-	f.right.bg:SetAlpha(0)
+	f.right.bg:SetAlpha(0.35)
 	self.right = f.right
 
 	-- Placeholder labels
