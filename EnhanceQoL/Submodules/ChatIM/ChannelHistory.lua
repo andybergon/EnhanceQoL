@@ -369,6 +369,15 @@ local function applyPanelBackdrop(panel)
 	panel:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.9)
 end
 
+local function createSearchBox(parent, placeholder)
+	local box = CreateFrame("EditBox", nil, parent, "SearchBoxTemplate")
+	box:SetHeight(22)
+	box:SetAutoFocus(false)
+	box:SetMaxLetters(128)
+	if box.Instructions and placeholder then box.Instructions:SetText(placeholder) end
+	return box
+end
+
 function ChannelHistory:LayoutDebugFrame(width, height)
 	if not self.debugFrame then return end
 	local f = self.debugFrame
@@ -463,9 +472,9 @@ function ChannelHistory:CreateDebugFrame()
 	f.right.bg:SetAlpha(0.78)
 
 	-- Placeholder labels
-	local leftTitle = CreateFrame("Frame", nil, f.left)
-	leftTitle:SetPoint("TOPLEFT", f.left, "TOPLEFT", 4, -6)
-	leftTitle:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -4, -6)
+	local leftTitle = CreateFrame("Frame", nil, f)
+	leftTitle:SetPoint("BOTTOMLEFT", f.left, "TOPLEFT", 0, 4)
+	leftTitle:SetPoint("BOTTOMRIGHT", f.left, "TOPRIGHT", 0, 4)
 	leftTitle:SetHeight(42)
 	local leftTitleText = leftTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	leftTitleText:SetPoint("CENTER")
@@ -477,9 +486,9 @@ function ChannelHistory:CreateDebugFrame()
 	leftLine:SetAtlas("AftLevelup-GlowLine")
 	leftLine:SetAlpha(0.9)
 
-	local midTitle = CreateFrame("Frame", nil, f.middle)
-	midTitle:SetPoint("TOPLEFT", f.middle, "TOPLEFT", 4, -6)
-	midTitle:SetPoint("TOPRIGHT", f.middle, "TOPRIGHT", -4, -6)
+	local midTitle = CreateFrame("Frame", nil, f)
+	midTitle:SetPoint("BOTTOMLEFT", f.middle, "TOPLEFT", 0, 4)
+	midTitle:SetPoint("BOTTOMRIGHT", f.middle, "TOPRIGHT", 0, 4)
 	midTitle:SetHeight(42)
 	local midTitleText = midTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	midTitleText:SetPoint("CENTER")
@@ -491,9 +500,9 @@ function ChannelHistory:CreateDebugFrame()
 	midLine:SetAtlas("AftLevelup-GlowLine")
 	midLine:SetAlpha(0.9)
 
-	local rightTitle = CreateFrame("Frame", nil, f.right)
-	rightTitle:SetPoint("TOPLEFT", f.right, "TOPLEFT", 4, -6)
-	rightTitle:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -4, -6)
+	local rightTitle = CreateFrame("Frame", nil, f)
+	rightTitle:SetPoint("BOTTOMLEFT", f.right, "TOPLEFT", 0, 4)
+	rightTitle:SetPoint("BOTTOMRIGHT", f.right, "TOPRIGHT", 0, 4)
 	rightTitle:SetHeight(42)
 	local rightTitleText = rightTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	rightTitleText:SetPoint("CENTER")
@@ -504,6 +513,15 @@ function ChannelHistory:CreateDebugFrame()
 	rightLine:SetHeight(14)
 	rightLine:SetAtlas("AftLevelup-GlowLine")
 	rightLine:SetAlpha(0.9)
+
+	-- Search bars (debug placeholders)
+	local leftSearch = createSearchBox(f.left, "Search character / realm...")
+	leftSearch:SetPoint("TOPLEFT", f.left, "TOPLEFT", 10, -12)
+	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -10, -12)
+
+	local rightSearch = createSearchBox(f.right, "Search logs...")
+	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 10, -12)
+	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -10, -12)
 
 	-- Resize grip
 	local grip = CreateFrame("Button", nil, f)
