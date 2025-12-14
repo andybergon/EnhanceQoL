@@ -57,7 +57,7 @@ ChannelHistory.defaultFilters = {
 	OPENING = true,
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
-local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope
+local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID
 
 local function getClassStyle(classFile)
 	if not classFile then return nil end
@@ -251,7 +251,14 @@ function ChannelHistory:Store(event, ...)
 	local senderName, senderRealmKey = splitSender(sender)
 	if (not senderRealmKey or senderRealmKey == "") and self.keys and self.keys.realmKey then senderRealmKey = self.keys.realmKey end
 	local className, classFile = getSenderClass(guid)
-	local classColor = getClassStyle(classFile)
+	if not classFile then
+		local token = resolveClassFromGUID(guid)
+		if token then
+			classFile = token
+			className = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token
+		end
+	end
+	local classColor = classFile and getClassStyle(classFile)
 	local chatColor = getChatColor(filterKey) or { r = 1, g = 0.82, b = 0 }
 	local displayName = senderName or sender or ""
 	if displayName ~= "" then
@@ -273,6 +280,9 @@ function ChannelHistory:Store(event, ...)
 		label = channelBucket.label,
 		message = msg or "",
 		sender = sender or "",
+		ownerCharKey = self.keys.charKey,
+		ownerRealmKey = self.keys.realmKey,
+		ownerFaction = self.keys.faction,
 		senderName = senderName or sender or "",
 		senderRealmKey = senderRealmKey,
 		senderClassName = className,
@@ -301,37 +311,14 @@ function ChannelHistory:Store(event, ...)
 	end
 end
 
-local function iterCharacters(scope, realmKey, charKey)
-	if not ChannelHistory.history or not ChannelHistory.keys then
-		return function() end
-	end
-
-	local factionBucket = ChannelHistory.history[ChannelHistory.keys.faction]
-	if not factionBucket then
-		return function() end
-	end
-
-	if scope == nil or scope == "character" then
-		local targetChar = charKey or ChannelHistory.keys.charKey
-		local targetRealm = realmKey or (targetChar and targetChar:match("%-([^-]+)$")) or ChannelHistory.keys.realmKey
-		local targetRealmBucket = factionBucket and factionBucket[targetRealm]
-		local bucket = targetRealmBucket and targetRealmBucket.characters and targetRealmBucket.characters[targetChar]
-		local returned = false
-		return function()
-			if returned or not bucket then return end
-			returned = true
-			return targetChar, bucket
-		end
-	end
+local function iterCharacters(scope, realmKey, charKey, factionKey)
+	if not ChannelHistory.history or not ChannelHistory.keys then return function() end end
 
 	local function yieldFromRealm(realm)
-		if not realm or not realm.characters then
-			return function() end
-		end
+		if not realm or not realm.characters then return function() end end
 		local keyList = {}
-		for charKey in pairs(realm.characters) do
-			table.insert(keyList, charKey)
-		end
+		for charKeyInner in pairs(realm.characters) do table.insert(keyList, charKeyInner) end
+		table.sort(keyList)
 		local i = 0
 		return function()
 			i = i + 1
@@ -341,33 +328,77 @@ local function iterCharacters(scope, realmKey, charKey)
 		end
 	end
 
-	if scope == "realm" then
-		local targetRealm = realmKey or ChannelHistory.keys.realmKey
-		return yieldFromRealm(factionBucket and factionBucket[targetRealm])
-	end
-	if scope == "faction" then
+	local function yieldFromFaction(factionBucket)
+		if not factionBucket then return function() end end
 		local realmKeys = {}
-		for realmKey in pairs(factionBucket) do
-			table.insert(realmKeys, realmKey)
-		end
+		for rKey in pairs(factionBucket) do table.insert(realmKeys, rKey) end
+		table.sort(realmKeys)
 		local realmIndex = 0
 		local charIter = nil
 		return function()
 			while true do
 				if not charIter then
 					realmIndex = realmIndex + 1
-					local realmKey = realmKeys[realmIndex]
-					if not realmKey then return end
-					charIter = yieldFromRealm(factionBucket[realmKey])
+					local rKey = realmKeys[realmIndex]
+					if not rKey then return end
+					charIter = yieldFromRealm(factionBucket[rKey])
 				end
-				local charKey, data = charIter()
-				if charKey then return charKey, data end
+				local ck, data = charIter()
+				if ck then return ck, data end
 				charIter = nil
 			end
 		end
 	end
 
-	return yieldFromRealm(factionBucket and factionBucket[ChannelHistory.keys.realmKey])
+	if scope == nil or scope == "character" then
+		local targetChar = charKey or ChannelHistory.keys.charKey
+		local inferredRealm = targetChar and targetChar:match("%-([^-]+)$")
+		local targetRealm = realmKey or inferredRealm or ChannelHistory.keys.realmKey
+		local targetFaction = factionKey or ChannelHistory.keys.faction
+		local factionBucket = ChannelHistory.history[targetFaction]
+		local realmBucket = factionBucket and factionBucket[targetRealm]
+		local bucket = realmBucket and realmBucket.characters and realmBucket.characters[targetChar]
+		local returned = false
+		return function()
+			if returned or not bucket then return end
+			returned = true
+			return targetChar, bucket
+		end
+	end
+
+	if scope == "realm" then
+		local targetFaction = factionKey or ChannelHistory.keys.faction
+		local factionBucket = ChannelHistory.history[targetFaction]
+		local targetRealm = realmKey or ChannelHistory.keys.realmKey
+		return yieldFromRealm(factionBucket and factionBucket[targetRealm])
+	end
+
+	if scope == "faction" and factionKey then
+		return yieldFromFaction(ChannelHistory.history[factionKey])
+	end
+
+	if scope == "faction" then
+		local factionKeys = {}
+		for fKey in pairs(ChannelHistory.history) do table.insert(factionKeys, fKey) end
+		table.sort(factionKeys)
+		local fIndex = 0
+		local charIter = nil
+		return function()
+			while true do
+				if not charIter then
+					fIndex = fIndex + 1
+					local fKey = factionKeys[fIndex]
+					if not fKey then return end
+					charIter = yieldFromFaction(ChannelHistory.history[fKey])
+				end
+				local ck, data = charIter()
+				if ck then return ck, data end
+				charIter = nil
+			end
+		end
+	end
+
+	return function() end
 end
 
 function ChannelHistory:GetChannels(scope)
@@ -468,10 +499,47 @@ function splitSender(sender)
 	return name, realm
 end
 
+local CLASS_NAME_TO_FILE = nil
+
+local function buildClassLookup()
+	if CLASS_NAME_TO_FILE then return end
+	CLASS_NAME_TO_FILE = {}
+	if LOCALIZED_CLASS_NAMES_MALE then
+		for token, loc in pairs(LOCALIZED_CLASS_NAMES_MALE) do
+			CLASS_NAME_TO_FILE[loc] = token
+		end
+	end
+	if LOCALIZED_CLASS_NAMES_FEMALE then
+		for token, loc in pairs(LOCALIZED_CLASS_NAMES_FEMALE) do
+			CLASS_NAME_TO_FILE[loc] = token
+		end
+	end
+end
+
+local function resolveClassTokenFromValues(values)
+	buildClassLookup()
+	for _, val in ipairs(values) do
+		if type(val) == "string" then
+			local upper = string.upper(val)
+			if RAID_CLASS_COLORS and RAID_CLASS_COLORS[upper] then return upper end
+			if CLASS_NAME_TO_FILE and CLASS_NAME_TO_FILE[val] then return CLASS_NAME_TO_FILE[val] end
+		end
+	end
+	return nil
+end
+
+function resolveClassFromGUID(guid)
+	if not guid or not GetPlayerInfoByGUID then return nil end
+	local info = { GetPlayerInfoByGUID(guid) }
+	if #info == 0 then return nil end
+	return resolveClassTokenFromValues(info)
+end
+
 function getSenderClass(guid)
-	if not guid or not GetPlayerInfoByGUID then return nil, nil end
-	local _, _, className, classFile = GetPlayerInfoByGUID(guid)
-	return className, classFile
+	local token = resolveClassFromGUID(guid)
+	if not token then return nil, nil end
+	local locName = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token
+	return locName, token
 end
 
 function toColorCode(color)
@@ -504,7 +572,14 @@ function formatLine(self, line)
 		local _, classFile = getSenderClass(line.guid)
 		line.senderClassFile = classFile
 	end
-	if not line.classColor then line.classColor = getClassStyle(line.senderClassFile) end
+	if (not line.classColor) and line.senderClassFile then line.classColor = getClassStyle(line.senderClassFile) end
+	if (not line.classColor) and line.guid then
+		local token = resolveClassFromGUID(line.guid)
+		if token then
+			line.senderClassFile = token
+			line.classColor = getClassStyle(token)
+		end
+	end
 	local playerRealmKey = self.keys and self.keys.realmKey
 	local senderRealmKey = line.senderRealmKey or playerRealmKey
 	local sameRealm = senderRealmKey and playerRealmKey and senderRealmKey == playerRealmKey
@@ -558,12 +633,19 @@ end
 function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
 	if not self.debugFrame or not self.debugFrame:IsShown() then return false end
 	if not self.ui or not self.ui.logFrame then return false end
+	if not line.filterKey and line.event and self.EVENT_FILTER_KEY then
+		line.filterKey = self.EVENT_FILTER_KEY[line.event]
+	end
 	if not self:IsFilterEnabled(line.filterKey) then return false end
-	local scope, realmKey, charKey = deriveScope(self.ui.selection, self.keys)
+	local scope, realmKey, charKey, factionKey = deriveScope(self.ui.selection, self.keys)
 	if scope == "character" then
-		if charKey and currentCharKey and charKey ~= currentCharKey then return false end
+		if charKey and line.ownerCharKey and charKey ~= line.ownerCharKey then return false end
 	elseif scope == "realm" then
-		if realmKey and self.keys and self.keys.realmKey and realmKey ~= self.keys.realmKey then return false end
+		local lineRealm = line.ownerRealmKey or (line.ownerCharKey and line.ownerCharKey:match("%-([^-]+)$")) or self.keys.realmKey
+		if realmKey and lineRealm and realmKey ~= lineRealm then return false end
+	elseif scope == "faction" and factionKey then
+		local lineFaction = line.ownerFaction or self.keys.faction
+		if lineFaction and factionKey ~= lineFaction then return false end
 	end
 	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
 	if not matchesSearch(search, line.message, line.sender) then return false end
@@ -597,20 +679,28 @@ function ChannelHistory:LoadFiltersFromDB()
 end
 
 function deriveScope(selection, keys)
-	if not selection then return "character", keys and keys.charKey end
-	if selection.type == "header" then return "faction", nil end
+	if not selection then return "character", keys and keys.charKey, nil, keys and keys.faction end
+	if selection.type == "header" then return "faction", nil, nil, nil end
+	if selection.type == "faction" then
+		local factionKey = selection.key and selection.key:match("^faction:(.+)$") or selection.key
+		return "faction", nil, nil, factionKey
+	end
 	if selection.type == "realm" then
-		local realmKey = selection.key and selection.key:match("^realm:(.+)$") or selection.key
-		return "realm", realmKey
+		local factionKey, realmKey = (selection.key or ""):match("^realm:([^:]+):(.+)$")
+		if not realmKey then realmKey = selection.key and selection.key:match("^realm:(.+)$") or selection.key end
+		if not factionKey then factionKey = keys and keys.faction end
+		return "realm", realmKey, nil, factionKey
 	end
 	if selection.type == "character" then
-		local charKey = selection.key and selection.key:match("^char:(.+)$") or selection.key
-		return "character", nil, charKey
+		local factionKey, charKey = (selection.key or ""):match("^char:([^:]+):(.+)$")
+		if not charKey then charKey = selection.key and selection.key:match("^char:(.+)$") or selection.key end
+		if not factionKey then factionKey = keys and keys.faction end
+		return "character", nil, charKey, factionKey
 	end
-	return "character", nil, keys and keys.charKey
+	return "character", nil, keys and keys.charKey, keys and keys.faction
 end
 
-local function collectLines(self, scope, realmKey, charKey, searchText)
+local function collectLines(self, scope, realmKey, charKey, factionKey, searchText)
 	local results = {}
 	if not self.history or not self.keys then self:InitStorage() end
 	local search = searchText and searchText:lower()
@@ -619,15 +709,20 @@ local function collectLines(self, scope, realmKey, charKey, searchText)
 		if not charData or not charData.channels then return end
 		for _, channelData in pairs(charData.channels) do
 			for _, line in ipairs(channelData.lines or {}) do
-				if matchesSearch(search, line.message, line.sender) and self:IsFilterEnabled(line.filterKey) then table.insert(results, {
-					charKey = charKeyInner,
-					line = line,
-				}) end
+				if not line.filterKey and line.event and self.EVENT_FILTER_KEY then
+					line.filterKey = self.EVENT_FILTER_KEY[line.event]
+				end
+				if matchesSearch(search, line.message, line.sender) and self:IsFilterEnabled(line.filterKey) then
+					table.insert(results, {
+						charKey = charKeyInner,
+						line = line,
+					})
+				end
 			end
 		end
 	end
 
-	for ck, cd in iterCharacters(scope, realmKey, charKey) do
+	for ck, cd in iterCharacters(scope, realmKey, charKey, factionKey) do
 		addFromChar(cd, ck)
 	end
 
@@ -643,11 +738,12 @@ end
 function ChannelHistory:BuildLeftEntries(filterText)
 	if not self.history or not self.keys then self:InitStorage() end
 	local entries = {}
-	local factionBucket = self.history and self.history[self.keys.faction]
-	local state = self.ui and self.ui.leftState or { realms = {}, accountExpanded = true }
+	local state = self.ui and self.ui.leftState or { realms = {}, factions = {}, accountExpanded = true }
+	state.realms = state.realms or {}
+	state.factions = state.factions or {}
 	self.ui = self.ui or {}
-	local playerCharKey = "char:" .. (self.keys.charKey or "")
-	if not self.ui.selection then self.ui.selection = { type = "character", key = playerCharKey } end
+	local playerCharKey = "char:" .. (self.keys.faction or "") .. ":" .. (self.keys.charKey or "")
+	if not self.ui.selection then self.ui.selection = { type = "character", key = playerCharKey, faction = self.keys.faction } end
 	filterText = filterText and filterText:lower()
 
 	local function matchesFilter(name, realm)
@@ -660,45 +756,65 @@ function ChannelHistory:BuildLeftEntries(filterText)
 	-- Account node
 	table.insert(entries, { kind = "header", label = "All", level = 0, key = "account", expanded = state.accountExpanded ~= false })
 
-	if factionBucket and type(factionBucket) == "table" then
-		local realmKeys = {}
-		for realmKey in pairs(factionBucket) do
-			table.insert(realmKeys, realmKey)
-		end
-		table.sort(realmKeys)
+	local history = self.history or {}
+	local factionKeys = {}
+	for fKey in pairs(history) do table.insert(factionKeys, fKey) end
+	table.sort(factionKeys)
 
-		for _, realmKey in ipairs(realmKeys) do
-			local realmData = factionBucket[realmKey]
-			local realmLabel = realmData and realmData.realmName or realmKey
-			local realmEntry = {
-				kind = "realm",
-				label = realmLabel,
-				level = 1,
-				key = "realm:" .. realmKey,
-				expanded = state.realms[realmKey] ~= false,
-			}
-			table.insert(entries, realmEntry)
+	for _, fKey in ipairs(factionKeys) do
+		local factionBucket = history[fKey]
+		local factionEntry = {
+			kind = "faction",
+			label = fKey,
+			level = 1,
+			key = "faction:" .. fKey,
+			factionKey = fKey,
+			expanded = state.factions[fKey] ~= false,
+		}
+		table.insert(entries, factionEntry)
 
-			if realmEntry.expanded and realmData and realmData.characters then
-				local charKeys = {}
-				for charKey in pairs(realmData.characters) do
-					table.insert(charKeys, charKey)
-				end
-				table.sort(charKeys)
-				for _, charKey in ipairs(charKeys) do
-					local charData = realmData.characters[charKey]
-					if charData then
-						if matchesFilter(charData.name, realmLabel) then
-							table.insert(entries, {
-								kind = "character",
-								label = charData.name or charKey,
-								level = 2,
-								key = "char:" .. charKey,
-								realm = realmLabel,
-								classFile = charData.classFile,
-								className = charData.className,
-								charKey = charKey,
-							})
+		if factionEntry.expanded and factionBucket and type(factionBucket) == "table" then
+			local realmKeys = {}
+			for realmKey in pairs(factionBucket) do table.insert(realmKeys, realmKey) end
+			table.sort(realmKeys)
+
+			state.realms[fKey] = state.realms[fKey] or {}
+
+			for _, realmKey in ipairs(realmKeys) do
+				local realmData = factionBucket[realmKey]
+				local realmLabel = realmData and realmData.realmName or realmKey
+				local realmEntry = {
+					kind = "realm",
+					label = realmLabel,
+					level = 2,
+					key = string.format("realm:%s:%s", fKey, realmKey),
+					expanded = state.realms[fKey][realmKey] ~= false,
+					factionKey = fKey,
+					realmKey = realmKey,
+				}
+				table.insert(entries, realmEntry)
+
+				if realmEntry.expanded and realmData and realmData.characters then
+					local charKeys = {}
+					for charKey in pairs(realmData.characters) do table.insert(charKeys, charKey) end
+					table.sort(charKeys)
+					for _, charKey in ipairs(charKeys) do
+						local charData = realmData.characters[charKey]
+						if charData then
+							if matchesFilter(charData.name, realmLabel) then
+								table.insert(entries, {
+									kind = "character",
+									label = charData.name or charKey,
+									level = 3,
+									key = string.format("char:%s:%s", fKey, charKey),
+									realm = realmLabel,
+									factionKey = fKey,
+									realmKey = realmKey,
+									classFile = charData.classFile,
+									className = charData.className,
+									charKey = charKey,
+								})
+							end
 						end
 					end
 				end
@@ -807,6 +923,16 @@ function ChannelHistory:RefreshLeftList()
 			btn.nameText:SetPoint("LEFT", btn, "LEFT", baseX, 0)
 			setLabelText(btn.nameText, entry.label)
 			btn.nameText:SetTextColor(1, 0.9, 0.6)
+		elseif entry.kind == "faction" then
+			btn.toggle:Show()
+			btn.toggle:SetAtlas(entry.expanded and "NPE_ArrowDown" or "NPE_ArrowRight")
+			btn.toggleFrame:Show()
+			btn.icon:SetTexture("Interface\\FriendsFrame\\PlusManz-Highlight")
+			btn.icon:SetPoint("LEFT", btn, "LEFT", baseX - 10, 0)
+			btn.icon:Show()
+			btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 4, 0)
+			setLabelText(btn.nameText, entry.label or entry.key)
+			btn.nameText:SetTextColor(0.9, 0.9, 0.9)
 		elseif entry.kind == "realm" then
 			btn.toggle:Show()
 			btn.toggle:SetAtlas(entry.expanded and "NPE_ArrowDown" or "NPE_ArrowRight")
@@ -838,14 +964,19 @@ function ChannelHistory:RefreshLeftList()
 			local data = selfBtn.entry
 			if not data then return end
 			if data.kind == "character" then
-				self.ui.selection = { type = "character", key = data.key }
+				self.ui.selection = { type = "character", key = data.key, faction = data.factionKey }
 				print("|cff99e599[EQOL] Selected:|r", data.key or "nil")
 				self:RefreshLeftList()
 				self:RefreshLogView()
 			elseif data.kind == "realm" then
-				local realmKey = data.key:match("^realm:(.+)$") or data.key
-				self.ui.selection = { type = "realm", key = data.key }
+				local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
+				self.ui.selection = { type = "realm", key = data.key, faction = data.factionKey }
 				print("|cff99e599[EQOL] Realm selected:|r", realmKey or "nil")
+				self:RefreshLeftList()
+				self:RefreshLogView()
+			elseif data.kind == "faction" then
+				self.ui.selection = { type = "faction", key = data.key, faction = data.factionKey }
+				print("|cff99e599[EQOL] Faction selected:|r", data.factionKey or "nil")
 				self:RefreshLeftList()
 				self:RefreshLogView()
 			elseif data.kind == "header" then
@@ -859,10 +990,20 @@ function ChannelHistory:RefreshLeftList()
 		btn.toggleFrame:SetScript("OnMouseUp", function(_, button)
 			if button ~= "LeftButton" then return end
 			local data = btn.entry
-			if not data or data.kind ~= "realm" then return end
-			local realmKey = data.key:match("^realm:(.+)$") or data.key
-			local newState = not data.expanded
-			self.ui.leftState.realms[realmKey] = newState
+			if not data then return end
+			if data.kind == "realm" then
+				local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
+				local fKey = data.factionKey or self.keys.faction
+				self.ui.leftState.realms[fKey] = self.ui.leftState.realms[fKey] or {}
+				local newState = not data.expanded
+				self.ui.leftState.realms[fKey][realmKey] = newState
+			elseif data.kind == "faction" then
+				local fKey = data.factionKey or data.key:match("^faction:(.+)$") or data.key
+				local newState = not data.expanded
+				self.ui.leftState.factions[fKey] = newState
+			else
+				return
+			end
 			self:RefreshLeftList()
 		end)
 
@@ -1113,9 +1254,9 @@ end
 function ChannelHistory:RefreshLogView()
 	if not self.history or not self.keys then self:InitStorage() end
 	if not self.debugFrame or not self.ui or not self.ui.logFrame then return end
-	local scope, realmKey, charKey = deriveScope(self.ui.selection, self.keys)
+	local scope, realmKey, charKey, factionKey = deriveScope(self.ui.selection, self.keys)
 	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
-	local lines = collectLines(self, scope, realmKey, charKey, search)
+	local lines = collectLines(self, scope, realmKey, charKey, factionKey, search)
 
 	local log = self.ui.logFrame
 	log:Clear()
@@ -1123,6 +1264,11 @@ function ChannelHistory:RefreshLogView()
 		local line = entry.line
 		local text = formatLine(self, line)
 		log:AddMessage(text, 1, 1, 1)
+	end
+	if self.ui.logInfo then
+		local count = #lines
+		local max = self.maxLines or 0
+		self.ui.logInfo:SetText(string.format("Lines: %d / %d", count, max))
 	end
 end
 
@@ -1178,7 +1324,7 @@ function ChannelHistory:CreateDebugFrame()
 	self.ui = self.ui or {}
 	self.ui.leftButtons = self.ui.leftButtons or {}
 	self.ui.leftEntries = self.ui.leftEntries or {}
-	self.ui.leftState = self.ui.leftState or { realms = {}, accountExpanded = true }
+	self.ui.leftState = self.ui.leftState or { realms = {}, factions = {}, accountExpanded = true }
 	self.ui.filters = self.ui.filters or {}
 
 	f:SetSize(950, 500)
@@ -1194,7 +1340,7 @@ function ChannelHistory:CreateDebugFrame()
 	f.bg:SetAllPoints()
 	f.bg:SetAtlas("character-panel-background")
 	f.bg:SetAlpha(0.9)
-	f:SetFrameStrata("DIALOG")
+	f:SetFrameStrata("HIGH")
 
 	f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
 	f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
@@ -1292,6 +1438,9 @@ function ChannelHistory:CreateDebugFrame()
 		SearchBoxTemplate_OnTextChanged(box)
 		ChannelHistory:RefreshLogView()
 	end)
+	self.ui.logInfo = f.right:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	self.ui.logInfo:SetPoint("TOPRIGHT", rightSearch, "BOTTOMRIGHT", 0, -2)
+	self.ui.logInfo:SetText("")
 
 	-- Left list scroll
 	local listTopOffset = -40
