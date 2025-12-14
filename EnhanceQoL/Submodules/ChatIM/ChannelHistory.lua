@@ -336,11 +336,16 @@ end
 local function setButtonClassVisual(btn, classFile)
 	local color = getClassStyle(classFile)
 	if color and btn.nameText then btn.nameText:SetTextColor(color.r, color.g, color.b) end
-	if btn.icon and CLASS_ICON_TCOORDS and classFile and CLASS_ICON_TCOORDS[classFile] then
+end
+
+local function setClassIcon(btn, classFile)
+	if not btn or not btn.icon then return end
+	if CLASS_ICON_TCOORDS and classFile and CLASS_ICON_TCOORDS[classFile] then
+		local coords = CLASS_ICON_TCOORDS[classFile]
 		btn.icon:SetTexture("Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES")
-		btn.icon:SetTexCoord(unpack(CLASS_ICON_TCOORDS[classFile]))
+		btn.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
 		btn.icon:Show()
-	elseif btn.icon then
+	else
 		btn.icon:SetTexture(nil)
 		btn.icon:Hide()
 	end
@@ -451,7 +456,7 @@ local function ensureLeftButtons(self, count)
 		btn.toggle:SetPoint("LEFT", btn, "LEFT", 2, 0)
 		btn.toggle:Hide()
 		btn.toggleFrame = CreateFrame("Button", nil, btn)
-		btn.toggleFrame:SetSize(16, 16)
+		btn.toggleFrame:SetSize(18, 18)
 		btn.toggleFrame:SetPoint("LEFT", btn, "LEFT", 0, 0)
 		btn.toggleFrame:Hide()
 
@@ -498,26 +503,39 @@ function ChannelHistory:RefreshLeftList()
 		btn.toggleFrame:Hide()
 
 		local indent = (entry.level or 0) * 14
-		btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 6 + indent, 0)
+		local baseX = 10 + indent
+
+		btn.icon:ClearAllPoints()
+		btn.nameText:ClearAllPoints()
+		btn.toggleFrame:ClearAllPoints()
+		btn.toggle:ClearAllPoints()
+		btn.toggleFrame:SetPoint("LEFT", btn, "LEFT", baseX - 10, 0)
+		btn.toggle:SetPoint("CENTER", btn.toggleFrame, "CENTER", 0, 0)
 
 		if entry.kind == "header" then
 			btn.toggle:Hide()
 			btn.toggleFrame:Hide()
+			btn.icon:Hide()
+			btn.nameText:SetPoint("LEFT", btn, "LEFT", baseX, 0)
 			btn.nameText:SetText(entry.label)
 			btn.nameText:SetTextColor(1, 0.9, 0.6)
-			btn.icon:Hide()
 		elseif entry.kind == "realm" then
 			btn.toggle:Show()
 			btn.toggle:SetAtlas(entry.expanded and "NPE_ArrowDown" or "NPE_ArrowRight")
 			btn.toggleFrame:Show()
 			btn.icon:SetTexture("Interface\\FriendsFrame\\PlusManz-Highlight")
+			btn.icon:SetPoint("LEFT", btn, "LEFT", baseX - 10, 0)
 			btn.icon:Show()
+			btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 4, 0)
 			btn.nameText:SetText(entry.label or entry.key)
 			btn.nameText:SetTextColor(0.85, 0.85, 0.85)
 		elseif entry.kind == "character" then
-			setButtonClassVisual(btn, entry.classFile)
-			btn.nameText:SetText(entry.label)
-			local color = getClassStyle(entry.classFile)
+			local classFile = entry.classFile or (entry.charKey == (self.keys.charKey or "") and select(2, UnitClass("player")))
+			setClassIcon(btn, classFile)
+			btn.icon:SetPoint("LEFT", btn, "LEFT", baseX + 12, 0)
+			btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 8, 0)
+			btn.nameText:SetText(entry.label or entry.charKey or "")
+			local color = getClassStyle(classFile)
 			if color then
 				btn.nameText:SetTextColor(color.r, color.g, color.b)
 			else
@@ -546,6 +564,9 @@ function ChannelHistory:RefreshLeftList()
 			self.ui.leftState.realms[realmKey] = newState
 			self:RefreshLeftList()
 		end)
+
+		btn.toggleFrame:SetScript("OnEnter", function() if btn.hl then btn.hl:Show() end end)
+		btn.toggleFrame:SetScript("OnLeave", function() if btn.hl then btn.hl:Hide() end end)
 	end
 
 	for j = #entries + 1, #buttons do
@@ -679,14 +700,13 @@ function ChannelHistory:CreateDebugFrame()
 	self.ui.leftEntries = self.ui.leftEntries or {}
 	self.ui.leftState = self.ui.leftState or { realms = {}, accountExpanded = true }
 
-	f:SetSize(1100, 640)
+	f:SetSize(950, 500)
 	f:SetPoint("CENTER")
 	f:SetClampedToScreen(true)
 	f:SetMovable(true)
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")
-	f:SetResizable(true)
-	f:SetResizeBounds(840, 420, 1600, 1100)
+	f:SetResizable(false)
 	f:SetBackdrop(WINDOW_BACKDROP)
 	f:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
 	f.bg = f:CreateTexture(nil, "BACKGROUND")
@@ -812,18 +832,15 @@ function ChannelHistory:CreateDebugFrame()
 	grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
 	grip:SetScript("OnMouseDown", function(frame, button)
 		if button == "LeftButton" then
-			f.isSizing = true
-			f:StartSizing("BOTTOMRIGHT")
+			-- sizing disabled
 		end
 	end)
-	grip:SetScript("OnMouseUp", function()
-		f:StopMovingOrSizing()
-		f.isSizing = false
-	end)
+	grip:SetScript("OnMouseUp", function() end)
+	grip:Hide()
 
 	f:SetScript("OnSizeChanged", function(frame, w, h) ChannelHistory:LayoutDebugFrame(w, h) end)
 
-	self:LayoutDebugFrame()
+	self:LayoutDebugFrame(950, 500)
 	self:RefreshLeftList()
 	f:Show()
 end
