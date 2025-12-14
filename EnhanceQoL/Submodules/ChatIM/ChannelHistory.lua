@@ -450,6 +450,10 @@ local function ensureLeftButtons(self, count)
 		btn.toggle:SetSize(12, 12)
 		btn.toggle:SetPoint("LEFT", btn, "LEFT", 2, 0)
 		btn.toggle:Hide()
+		btn.toggleFrame = CreateFrame("Button", nil, btn)
+		btn.toggleFrame:SetSize(16, 16)
+		btn.toggleFrame:SetPoint("LEFT", btn, "LEFT", 0, 0)
+		btn.toggleFrame:Hide()
 
 		btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 		btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 6, 0)
@@ -491,19 +495,21 @@ function ChannelHistory:RefreshLeftList()
 		end
 		btn.icon:Hide()
 		btn.toggle:Hide()
+		btn.toggleFrame:Hide()
 
 		local indent = (entry.level or 0) * 14
 		btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 6 + indent, 0)
 
 		if entry.kind == "header" then
-			btn.toggle:Show()
-			btn.toggle:SetAtlas(entry.expanded and "uiTitle-Icon-Chevron-Down" or "uiTitle-Icon-Chevron-Right")
+			btn.toggle:Hide()
+			btn.toggleFrame:Hide()
 			btn.nameText:SetText(entry.label)
 			btn.nameText:SetTextColor(1, 0.9, 0.6)
 			btn.icon:Hide()
 		elseif entry.kind == "realm" then
 			btn.toggle:Show()
-			btn.toggle:SetAtlas(entry.expanded and "uiTitle-Icon-Chevron-Down" or "uiTitle-Icon-Chevron-Right")
+			btn.toggle:SetAtlas(entry.expanded and "NPE_ArrowDown" or "NPE_ArrowRight")
+			btn.toggleFrame:Show()
 			btn.icon:SetTexture("Interface\\FriendsFrame\\PlusManz-Highlight")
 			btn.icon:Show()
 			btn.nameText:SetText(entry.label or entry.key)
@@ -521,17 +527,23 @@ function ChannelHistory:RefreshLeftList()
 			btn.nameText:SetText(entry.label or entry.key)
 		end
 
-		btn:SetScript("OnClick", function(selfBtn)
+		btn:SetScript("OnMouseUp", function(selfBtn, button)
+			if button ~= "LeftButton" then return end
 			local data = selfBtn.entry
 			if not data then return end
-			if data.kind == "header" then
-				self.ui.leftState.accountExpanded = not data.expanded
-			elseif data.kind == "realm" then
-				local realmKey = data.key:match("^realm:(.+)$") or data.key
-				self.ui.leftState.realms[realmKey] = not data.expanded
-			elseif data.kind == "character" then
+			if data.kind == "character" then
 				self.ui.leftSelected = data.key
+				self:RefreshLeftList()
 			end
+		end)
+
+		btn.toggleFrame:SetScript("OnMouseUp", function(_, button)
+			if button ~= "LeftButton" then return end
+			local data = btn.entry
+			if not data or data.kind ~= "realm" then return end
+			local realmKey = data.key:match("^realm:(.+)$") or data.key
+			local newState = not data.expanded
+			self.ui.leftState.realms[realmKey] = newState
 			self:RefreshLeftList()
 		end)
 	end
