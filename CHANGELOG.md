@@ -1,5 +1,17 @@
 # Changelog
 
+## [6.4.0] – 2025-12-15
+
+### 🔄 Changed
+
+- Minimap Button Sink frame now uses `DIALOG` strata so it renders above nearby UI elements.
+
+### 🐛 Fixed
+
+- Added missing visibility rule localization (and translations) to eliminate the AceLocale warning when Enhanced Unit Frames locks visibility.
+
+---
+
 ## [6.3.0] – 2025-12-14
 
 ### ✨ Added

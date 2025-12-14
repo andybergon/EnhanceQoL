@@ -57,6 +57,7 @@ ChannelHistory.defaultFilters = {
 	OPENING = true,
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
+ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, refreshPending = false }
 local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID
 
 local function getClassStyle(classFile)
@@ -287,14 +288,12 @@ function ChannelHistory:Store(event, ...)
 		senderRealmKey = senderRealmKey,
 		senderClassName = className,
 		senderClassFile = classFile,
-		classColor = classColor,
-		chatColor = chatColor,
 		displayName = displayName,
 		lineID = lineID,
 		guid = guid,
 		bnetIDAccount = bnetIDAccount,
 	}
-	line.formatted = formatLine(self, line)
+	-- do not pre-format; format on demand
 
 	appendLine(channelBucket, line)
 
@@ -331,7 +330,9 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 	local function yieldFromFaction(factionBucket)
 		if not factionBucket then return function() end end
 		local realmKeys = {}
-		for rKey in pairs(factionBucket) do table.insert(realmKeys, rKey) end
+		for rKey, bucket in pairs(factionBucket) do
+			if type(bucket) == "table" and not tostring(rKey):find("^_") then table.insert(realmKeys, rKey) end
+		end
 		table.sort(realmKeys)
 		local realmIndex = 0
 		local charIter = nil
@@ -374,12 +375,16 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 	end
 
 	if scope == "faction" and factionKey then
-		return yieldFromFaction(ChannelHistory.history[factionKey])
+		local bucket = ChannelHistory.history[factionKey]
+		if type(bucket) ~= "table" then return function() end end
+		return yieldFromFaction(bucket)
 	end
 
 	if scope == "faction" then
 		local factionKeys = {}
-		for fKey in pairs(ChannelHistory.history) do table.insert(factionKeys, fKey) end
+		for fKey, bucket in pairs(ChannelHistory.history) do
+			if type(bucket) == "table" and not tostring(fKey):find("^_") then table.insert(factionKeys, fKey) end
+		end
 		table.sort(factionKeys)
 		local fIndex = 0
 		local charIter = nil
@@ -530,15 +535,27 @@ end
 
 function resolveClassFromGUID(guid)
 	if not guid or not GetPlayerInfoByGUID then return nil end
-	local info = { GetPlayerInfoByGUID(guid) }
-	if #info == 0 then return nil end
-	return resolveClassTokenFromValues(info)
+	local cache = ChannelHistory.runtime and ChannelHistory.runtime.guidClassCache
+	if cache and cache[guid] then return cache[guid].token end
+	local name, realm, className, classFile = GetPlayerInfoByGUID(guid)
+	local token = classFile or resolveClassTokenFromValues({ className })
+	if token then
+		if cache then cache[guid] = { token = token, loc = className or token } end
+	end
+	return token
 end
 
 function getSenderClass(guid)
-	local token = resolveClassFromGUID(guid)
-	if not token then return nil, nil end
-	local locName = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token
+	if not guid or not GetPlayerInfoByGUID then return nil, nil end
+	local cache = ChannelHistory.runtime and ChannelHistory.runtime.guidClassCache
+	if cache and cache[guid] then return cache[guid].loc, cache[guid].token end
+	local name, realm, className, classFile = GetPlayerInfoByGUID(guid)
+	local token = classFile or resolveClassTokenFromValues({ className })
+	local locName = className
+	if not locName and token then
+		locName = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token
+	end
+	if cache and token then cache[guid] = { token = token, loc = locName or token } end
 	return locName, token
 end
 
@@ -659,6 +676,18 @@ function ChannelHistory:AppendLineToLog(line)
 	if self.ui.logFrame.ScrollToBottom then self.ui.logFrame:ScrollToBottom() end
 end
 
+function ChannelHistory:RequestLogRefresh()
+	if self.runtime and self.runtime.refreshPending then return end
+	if not self.runtime then self.runtime = {} end
+	self.runtime.refreshPending = true
+	C_Timer.After(0.15, function()
+		self.runtime.refreshPending = false
+		if self.debugFrame and self.debugFrame:IsShown() then
+			self:RefreshLogView()
+		end
+	end)
+end
+
 function ChannelHistory:IsFilterEnabled(filterKey)
 	if not filterKey then return true end
 	self.ui = self.ui or {}
@@ -758,7 +787,9 @@ function ChannelHistory:BuildLeftEntries(filterText)
 
 	local history = self.history or {}
 	local factionKeys = {}
-	for fKey in pairs(history) do table.insert(factionKeys, fKey) end
+	for fKey, bucket in pairs(history) do
+		if type(bucket) == "table" and not tostring(fKey):find("^_") then table.insert(factionKeys, fKey) end
+	end
 	table.sort(factionKeys)
 
 	for _, fKey in ipairs(factionKeys) do
@@ -967,23 +998,23 @@ function ChannelHistory:RefreshLeftList()
 				self.ui.selection = { type = "character", key = data.key, faction = data.factionKey }
 				print("|cff99e599[EQOL] Selected:|r", data.key or "nil")
 				self:RefreshLeftList()
-				self:RefreshLogView()
+				self:RequestLogRefresh()
 			elseif data.kind == "realm" then
 				local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
 				self.ui.selection = { type = "realm", key = data.key, faction = data.factionKey }
 				print("|cff99e599[EQOL] Realm selected:|r", realmKey or "nil")
 				self:RefreshLeftList()
-				self:RefreshLogView()
+				self:RequestLogRefresh()
 			elseif data.kind == "faction" then
 				self.ui.selection = { type = "faction", key = data.key, faction = data.factionKey }
 				print("|cff99e599[EQOL] Faction selected:|r", data.factionKey or "nil")
 				self:RefreshLeftList()
-				self:RefreshLogView()
+				self:RequestLogRefresh()
 			elseif data.kind == "header" then
 				self.ui.selection = { type = "header", key = data.key }
 				print("|cff99e599[EQOL] Scope: All|r")
 				self:RefreshLeftList()
-				self:RefreshLogView()
+				self:RequestLogRefresh()
 			end
 		end)
 
@@ -1209,7 +1240,7 @@ function ChannelHistory:CreateFilterUI()
 				addon.db.chatChannelFilters = addon.db.chatChannelFilters or {}
 				addon.db.chatChannelFilters[info.key] = newVal
 			end
-			self:RefreshLogView()
+			self:RequestLogRefresh()
 		end
 
 		cb:SetScript("OnClick", function(btn) applyValue(btn:GetChecked()) end)
@@ -1260,8 +1291,10 @@ function ChannelHistory:RefreshLogView()
 
 	local log = self.ui.logFrame
 	log:Clear()
-	for _, entry in ipairs(lines) do
-		local line = entry.line
+	local maxUI = log:GetMaxLines() or 1000
+	local startIndex = math.max(1, #lines - maxUI + 1)
+	for i = startIndex, #lines do
+		local line = lines[i].line
 		local text = formatLine(self, line)
 		log:AddMessage(text, 1, 1, 1)
 	end
@@ -1326,6 +1359,7 @@ function ChannelHistory:CreateDebugFrame()
 	self.ui.leftEntries = self.ui.leftEntries or {}
 	self.ui.leftState = self.ui.leftState or { realms = {}, factions = {}, accountExpanded = true }
 	self.ui.filters = self.ui.filters or {}
+	self.runtime = self.runtime or { guidClassCache = {} }
 
 	f:SetSize(950, 500)
 	f:SetPoint("CENTER")
@@ -1436,7 +1470,7 @@ function ChannelHistory:CreateDebugFrame()
 	self.ui.rightSearch = rightSearch
 	rightSearch:SetScript("OnTextChanged", function(box)
 		SearchBoxTemplate_OnTextChanged(box)
-		ChannelHistory:RefreshLogView()
+		ChannelHistory:RequestLogRefresh()
 	end)
 	self.ui.logInfo = f.right:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	self.ui.logInfo:SetPoint("TOPRIGHT", rightSearch, "BOTTOMRIGHT", 0, -2)

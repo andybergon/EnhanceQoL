@@ -2991,6 +2991,7 @@ local function initUI()
 
 			firstStartButtonSink(0)
 			local buttonBag = CreateFrame("Frame", addonName .. "_ButtonSink", UIParent, "BackdropTemplate")
+			buttonBag:SetFrameStrata("DIALOG")
 			buttonBag:SetSize(150, 150)
 
 			if addon.db["useMinimapButtonBinIcon"] then
