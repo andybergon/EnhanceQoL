@@ -744,31 +744,49 @@ function ChannelHistory:CreateFilterUI()
 		{ key = "LOOT", label = "|T133639:16:16:0:0|t Loot" },
 	}
 
-	local checkHeight = 20
+	local checkHeight = 22
 	local spacing = 4
 
 	self.ui.filterChecks = self.ui.filterChecks or {}
+	self.ui.filterRows = self.ui.filterRows or {}
 
 	for i, info in ipairs(filters) do
+		local row = self.ui.filterRows[i]
+		if not row then
+			row = CreateFrame("Button", nil, container)
+			row:SetHeight(checkHeight)
+			row.bg = row:CreateTexture(nil, "BACKGROUND")
+			row.bg:SetAllPoints()
+			row.bg:SetColorTexture(1, 1, 1, 0)
+			row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+			row.hl:SetAllPoints()
+			row.hl:SetColorTexture(1, 1, 1, 0.08)
+			self.ui.filterRows[i] = row
+		end
+		row:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -((i - 1) * (checkHeight + spacing)))
+		row:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, -((i - 1) * (checkHeight + spacing)))
+
 		local cb = self.ui.filterChecks[i]
 		if not cb then
-			cb = CreateFrame("CheckButton", nil, container, "UICheckButtonTemplate")
+			cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
 			self.ui.filterChecks[i] = cb
 		end
-		cb:SetPoint("TOPLEFT", container, "TOPLEFT", 4, -((i - 1) * (checkHeight + spacing)))
+		cb:ClearAllPoints()
+		cb:SetPoint("LEFT", row, "LEFT", 4, 0)
 		cb:SetChecked(self.ui.filters[info.key] ~= false and (self.defaultFilters[info.key] ~= false))
 
 		local label = cb.Text or cb.text
 		if not label then
-			label = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+			label = cb:CreateFontString(nil, "OVERLAY")
 			cb.Text = label
 		end
 
 		label:ClearAllPoints()
-		label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
-		label:SetPoint("RIGHT", container, "RIGHT", -4, 0)
+		label:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+		label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
 		label:SetJustifyH("LEFT")
 		label:SetWordWrap(false)
+		label:SetFontObject("GameFontNormalLarge")
 		label:SetText(info.label)
 		label:Show()
 		local c = info.color or getChatColor(info.key)
@@ -777,7 +795,20 @@ function ChannelHistory:CreateFilterUI()
 		else
 			label:SetTextColor(1, 0.82, 0)
 		end
-		cb:SetScript("OnClick", function(btn) self.ui.filters[info.key] = btn:GetChecked() and true or false end)
+
+		local function applyValue(val)
+			local newVal = val and true or false
+			self.ui.filters[info.key] = newVal
+			if addon.db then
+				addon.db.chatChannelFilters = addon.db.chatChannelFilters or {}
+				addon.db.chatChannelFilters[info.key] = newVal
+			end
+		end
+
+		cb:SetScript("OnClick", function(btn) applyValue(btn:GetChecked()) end)
+		row:SetScript("OnClick", function() cb:Click() end)
+		row:SetScript("OnEnter", function() row.hl:Show() end)
+		row:SetScript("OnLeave", function() row.hl:Hide() end)
 	end
 
 	local totalHeight = #filters * (checkHeight + spacing)
