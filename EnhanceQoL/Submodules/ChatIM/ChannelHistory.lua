@@ -18,26 +18,29 @@ ChannelHistory.enabled = ChannelHistory.enabled or false
 ChannelHistory.frame = ChannelHistory.frame or CreateFrame("Frame")
 ChannelHistory.events = ChannelHistory.events or nil
 ChannelHistory.debugFrame = ChannelHistory.debugFrame or nil
-ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY or {
-	CHAT_MSG_SAY = "SAY",
-	CHAT_MSG_YELL = "YELL",
-	CHAT_MSG_WHISPER = "WHISPER",
-	CHAT_MSG_WHISPER_INFORM = "WHISPER",
-	CHAT_MSG_BN_WHISPER = "BN_WHISPER",
-	CHAT_MSG_BN_WHISPER_INFORM = "BN_WHISPER",
-	CHAT_MSG_PARTY = "PARTY",
-	CHAT_MSG_INSTANCE_CHAT = "INSTANCE",
-	CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE",
-	CHAT_MSG_RAID = "RAID",
-	CHAT_MSG_RAID_LEADER = "RAID",
-	CHAT_MSG_GUILD = "GUILD",
-	CHAT_MSG_OFFICER = "OFFICER",
-	CHAT_MSG_CHANNEL = "GENERAL",
-	CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
-	CHAT_MSG_LOOT = "LOOT",
-	CHAT_MSG_MONEY = "LOOT",
-	CHAT_MSG_CURRENCY = "LOOT",
-}
+ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY
+	or {
+		CHAT_MSG_SAY = "SAY",
+		CHAT_MSG_YELL = "YELL",
+		CHAT_MSG_WHISPER = "WHISPER",
+		CHAT_MSG_WHISPER_INFORM = "WHISPER",
+		CHAT_MSG_BN_WHISPER = "BN_WHISPER",
+		CHAT_MSG_BN_WHISPER_INFORM = "BN_WHISPER",
+		CHAT_MSG_PARTY = "PARTY",
+		CHAT_MSG_INSTANCE_CHAT = "INSTANCE",
+		CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE",
+		CHAT_MSG_RAID = "RAID",
+		CHAT_MSG_RAID_LEADER = "RAID",
+		CHAT_MSG_GUILD = "GUILD",
+		CHAT_MSG_OFFICER = "OFFICER",
+		CHAT_MSG_CHANNEL = "GENERAL",
+		CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
+		CHAT_MSG_LOOT = "LOOT",
+		CHAT_MSG_MONEY = "LOOT",
+		CHAT_MSG_CURRENCY = "LOOT",
+		CHAT_MSG_SYSTEM = "SYSTEM",
+		CHAT_MSG_OPENING = "OPENING",
+	}
 ChannelHistory.loggedIn = ChannelHistory.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
 ChannelHistory.defaultFilters = {
 	SAY = true,
@@ -50,9 +53,17 @@ ChannelHistory.defaultFilters = {
 	WHISPER = true,
 	BN_WHISPER = true,
 	GENERAL = true,
+	SYSTEM = true,
+	OPENING = true,
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
-local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, getClassStyle
+local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope
+
+local function getClassStyle(classFile)
+	if not classFile then return nil end
+	local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
+	return color
+end
 
 local IGNORED_EVENTS = {
 	CHAT_MSG_ADDON = true,
@@ -232,6 +243,9 @@ function ChannelHistory:Store(event, ...)
 	local currentCharKey = self.keys and self.keys.charKey
 
 	local msg, sender, _, _, _, _, _, _, _, _, lineID, guid, bnetIDAccount = ...
+	-- Skip channel notices and trivial change messages
+	if event == "CHAT_MSG_CHANNEL_NOTICE" or event == "CHAT_MSG_CHANNEL_NOTICE_USER" then return end
+	if msg == "YOU_CHANGED" then return end
 	local channelKey, channelLabel = buildChannelKey(event, ...)
 	channelKey = channelKey or event
 	local senderName, senderRealmKey = splitSender(sender)
@@ -283,9 +297,7 @@ function ChannelHistory:Store(event, ...)
 		charBucket.classID = classID
 	end
 	if self.debugFrame and self.debugFrame:IsShown() then
-		if self:ShouldDisplayLive(line, currentCharKey) then
-			self:AppendLineToLog(line)
-		end
+		if self:ShouldDisplayLive(line, currentCharKey) then self:AppendLineToLog(line) end
 	end
 end
 
@@ -398,12 +410,6 @@ function ChannelHistory:GetHistory(scope, channelKey)
 	return result
 end
 
-function getClassStyle(classFile)
-	if not classFile then return nil end
-	local color = RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
-	return color
-end
-
 local function setButtonClassVisual(btn, classFile)
 	local color = getClassStyle(classFile)
 	if color and btn.nameText then btn.nameText:SetTextColor(color.r, color.g, color.b) end
@@ -434,6 +440,8 @@ local CHAT_COLOR_KEYS = {
 	OFFICER = "OFFICER",
 	GENERAL = "CHANNEL", -- fallback to channel1 if CHANNEL missing
 	LOOT = "LOOT",
+	SYSTEM = "SYSTEM",
+	OPENING = "OPENING",
 }
 
 local CHAT_COLOR_FALLBACK = {
@@ -448,6 +456,8 @@ local CHAT_COLOR_FALLBACK = {
 	OFFICER = { r = 0.25, g = 0.75, b = 0.25 },
 	GENERAL = { r = 192 / 255, g = 128 / 255, b = 128 / 255 },
 	LOOT = { r = 0, g = 170 / 255, b = 0 },
+	SYSTEM = { r = 1, g = 1, b = 0 },
+	OPENING = { r = 128 / 255, g = 128 / 255, b = 1 },
 }
 
 function splitSender(sender)
@@ -500,9 +510,7 @@ function formatLine(self, line)
 	local sameRealm = senderRealmKey and playerRealmKey and senderRealmKey == playerRealmKey
 	if not line.displayName then
 		local display = line.senderName or ""
-		if display ~= "" and not sameRealm and senderRealmKey and senderRealmKey ~= "" then
-			display = display .. "-" .. senderRealmKey
-		end
+		if display ~= "" and not sameRealm and senderRealmKey and senderRealmKey ~= "" then display = display .. "-" .. senderRealmKey end
 		line.displayName = display
 	end
 
@@ -611,12 +619,10 @@ local function collectLines(self, scope, realmKey, charKey, searchText)
 		if not charData or not charData.channels then return end
 		for _, channelData in pairs(charData.channels) do
 			for _, line in ipairs(channelData.lines or {}) do
-				if matchesSearch(search, line.message, line.sender) and self:IsFilterEnabled(line.filterKey) then
-					table.insert(results, {
-						charKey = charKeyInner,
-						line = line,
-					})
-				end
+				if matchesSearch(search, line.message, line.sender) and self:IsFilterEnabled(line.filterKey) then table.insert(results, {
+					charKey = charKeyInner,
+					line = line,
+				}) end
 			end
 		end
 	end
@@ -629,7 +635,9 @@ local function collectLines(self, scope, realmKey, charKey, searchText)
 	return results
 end
 
-local function setLabelText(label, text) if label then label:SetText(text) end end
+local function setLabelText(label, text)
+	if label then label:SetText(text) end
+end
 
 -- UI helpers: left tree
 function ChannelHistory:BuildLeftEntries(filterText)
@@ -903,7 +911,9 @@ function ChannelHistory:RegisterEvents()
 	self.frame:RegisterEvent("PLAYER_LOGIN")
 	if not self.loggedIn then return end
 	self.events = self.events or buildEventSet()
-	for event in pairs(self.events or {}) do self.frame:RegisterEvent(event) end
+	for event in pairs(self.events or {}) do
+		self.frame:RegisterEvent(event)
+	end
 end
 
 function ChannelHistory:SetEnabled(enabled)
@@ -991,6 +1001,8 @@ function ChannelHistory:CreateFilterUI()
 		{ key = "OFFICER", label = "|T133071:16:16:0:0|t Officer" },
 		{ key = "GENERAL", label = "General" },
 		{ key = "LOOT", label = "|T133639:16:16:0:0|t Loot" },
+		{ key = "SYSTEM", label = "System" },
+		{ key = "OPENING", label = "Opening" },
 	}
 
 	local checkHeight = 22
@@ -1086,7 +1098,11 @@ function ChannelHistory:EnsureLogFrame()
 	frame:SetHyperlinksEnabled(true)
 	frame:EnableMouseWheel(true)
 	frame:SetScript("OnMouseWheel", function(f, delta)
-		if delta > 0 then f:ScrollUp() else f:ScrollDown() end
+		if delta > 0 then
+			f:ScrollUp()
+		else
+			f:ScrollDown()
+		end
 	end)
 	frame:SetScript("OnHyperlinkClick", function(_, link, text, button)
 		if SetItemRef then SetItemRef(link, text, button, frame) end
