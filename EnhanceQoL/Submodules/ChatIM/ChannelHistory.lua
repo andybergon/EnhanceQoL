@@ -18,12 +18,33 @@ ChannelHistory.enabled = ChannelHistory.enabled or false
 ChannelHistory.frame = ChannelHistory.frame or CreateFrame("Frame")
 ChannelHistory.events = ChannelHistory.events or nil
 ChannelHistory.debugFrame = ChannelHistory.debugFrame or nil
+ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY or {
+	CHAT_MSG_SAY = "SAY",
+	CHAT_MSG_YELL = "YELL",
+	CHAT_MSG_WHISPER = "WHISPER",
+	CHAT_MSG_WHISPER_INFORM = "WHISPER",
+	CHAT_MSG_BN_WHISPER = "BN_WHISPER",
+	CHAT_MSG_BN_WHISPER_INFORM = "BN_WHISPER",
+	CHAT_MSG_PARTY = "PARTY",
+	CHAT_MSG_INSTANCE_CHAT = "INSTANCE",
+	CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE",
+	CHAT_MSG_RAID = "RAID",
+	CHAT_MSG_RAID_LEADER = "RAID",
+	CHAT_MSG_GUILD = "GUILD",
+	CHAT_MSG_OFFICER = "OFFICER",
+	CHAT_MSG_CHANNEL = "GENERAL",
+	CHAT_MSG_LOOT = "LOOT",
+	CHAT_MSG_MONEY = "LOOT",
+	CHAT_MSG_CURRENCY = "LOOT",
+}
 ChannelHistory.loggedIn = ChannelHistory.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
 ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY or {
 	CHAT_MSG_SAY = "SAY",
 	CHAT_MSG_YELL = "YELL",
 	CHAT_MSG_WHISPER = "WHISPER",
 	CHAT_MSG_WHISPER_INFORM = "WHISPER",
+	CHAT_MSG_BN_WHISPER = "BN_WHISPER",
+	CHAT_MSG_BN_WHISPER_INFORM = "BN_WHISPER",
 	CHAT_MSG_PARTY = "PARTY",
 	CHAT_MSG_INSTANCE_CHAT = "INSTANCE",
 	CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE",
@@ -45,6 +66,7 @@ ChannelHistory.defaultFilters = {
 	RAID = true,
 	YELL = true,
 	WHISPER = true,
+	BN_WHISPER = true,
 	GENERAL = true,
 }
 
@@ -795,6 +817,7 @@ function ChannelHistory:CreateFilterUI()
 		{ key = "SAY", label = "|T2056011:16:16:0:0|t Say" },
 		{ key = "YELL", label = "|T892447:16:16:0:0|t Yell" },
 		{ key = "WHISPER", label = "|T133458:16:16:0:0|t Whisper" },
+		{ key = "BN_WHISPER", label = "|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:16:16:0:0|t BN Whisper" },
 		{ key = "PARTY", label = "|T134149:16:16:0:0|t Party" },
 		{ key = "INSTANCE", label = "|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:16:16:0:0|t Instance" },
 		{ key = "RAID", label = "|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:16:16:0:0|t Raid" },
