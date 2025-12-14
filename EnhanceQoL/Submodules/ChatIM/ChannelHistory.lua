@@ -69,6 +69,8 @@ ChannelHistory.defaultFilters = {
 	BN_WHISPER = true,
 	GENERAL = true,
 }
+ChannelHistory.ui = ChannelHistory.ui or {}
+local getChatColor
 
 local IGNORED_EVENTS = {
 	CHAT_MSG_ADDON = true,
@@ -203,6 +205,7 @@ end
 
 local function buildChannelKey(event, ...)
 	local base = event:gsub("^CHAT_MSG_", "")
+	print(...)
 
 	if event == "CHAT_MSG_CHANNEL" then
 		local channelName = safeSelect(4, ...)
@@ -251,6 +254,16 @@ function ChannelHistory:Store(event, ...)
 	local msg, sender = ...
 	local channelKey, channelLabel = buildChannelKey(event, ...)
 	channelKey = channelKey or event
+	local color = getChatColor(filterKey) or { r = 1, g = 0.82, b = 0 }
+	local r = math.floor((color.r or 1) * 255 + 0.5)
+	local g = math.floor((color.g or 1) * 255 + 0.5)
+	local b = math.floor((color.b or 1) * 255 + 0.5)
+	local colorCode = string.format("|cff%02x%02x%02x", r, g, b)
+	local timeText = date("%H:%M:%S", now())
+	timeText = string.format("|cff888888|TInterface\\ChatFrame\\ChatFrameBackground:0:0:0:0|t|cffffff00%s|r", timeText)
+	local senderText = sender and sender ~= "" and (sender .. ": ") or ""
+	local rest = (senderText .. (msg or "")):gsub("|r", "|r" .. colorCode)
+	local formatted = string.format("%s %s%s|r", timeText, colorCode, rest)
 
 	charBucket.channels = charBucket.channels or {}
 	local channelBucket = charBucket.channels[channelKey] or { label = channelLabel or channelKey, lines = {} }
@@ -259,10 +272,13 @@ function ChannelHistory:Store(event, ...)
 	local line = {
 		time = now(),
 		event = event,
+		filterKey = filterKey,
 		channel = channelKey,
 		label = channelBucket.label,
 		message = msg or "",
 		sender = sender or "",
+		color = color,
+		formatted = formatted,
 		lineID = safeSelect(11, ...),
 		guid = safeSelect(12, ...),
 		bnetIDAccount = safeSelect(13, ...),
@@ -435,7 +451,7 @@ local CHAT_COLOR_FALLBACK = {
 	LOOT = { r = 0, g = 170 / 255, b = 0 },
 }
 
-local function getChatColor(key)
+function getChatColor(key)
 	if not key then return nil end
 	local chatKey = CHAT_COLOR_KEYS[key] or key
 	local info = ChatTypeInfo and ChatTypeInfo[chatKey]
@@ -461,6 +477,78 @@ function ChannelHistory:LoadFiltersFromDB()
 			self.ui.filters[k] = v and true or false
 		end
 	end
+end
+
+local function deriveScope(selection, keys)
+	if not selection then return "character", keys and keys.charKey end
+	if selection.type == "header" then return "faction", nil end
+	if selection.type == "realm" then
+		local realmKey = selection.key and selection.key:match("^realm:(.+)$") or selection.key
+		return "realm", realmKey
+	end
+	if selection.type == "character" then
+		local charKey = selection.key and selection.key:match("^char:(.+)$") or selection.key
+		return "character", nil, charKey
+	end
+	return "character", nil, keys and keys.charKey
+end
+
+local function collectLines(self, scope, realmKey, charKey, searchText)
+	local results = {}
+	if not self.history or not self.keys then self:InitStorage() end
+	local search = searchText and searchText:lower()
+
+	local function matchesSearch(msg, sender)
+		if not search or search == "" then return true end
+		if msg and msg:lower():find(search, 1, true) then return true end
+		if sender and sender:lower():find(search, 1, true) then return true end
+		return false
+	end
+
+	local function addFromChar(charData, charKeyInner)
+		if not charData or not charData.channels then return end
+		for _, channelData in pairs(charData.channels) do
+			for _, line in ipairs(channelData.lines or {}) do
+				if matchesSearch(line.message, line.sender) and self:IsFilterEnabled(line.filterKey) then
+					table.insert(results, {
+						charKey = charKeyInner,
+						line = line,
+					})
+				end
+			end
+		end
+	end
+
+	if scope == "faction" then
+		local factionBucket = self.history and self.history[self.keys.faction]
+		if factionBucket then
+			for _, realmData in pairs(factionBucket) do
+				if realmData and realmData.characters then
+					for ck, cd in pairs(realmData.characters) do addFromChar(cd, ck) end
+				end
+			end
+		end
+	elseif scope == "realm" then
+		local factionBucket = self.history and self.history[self.keys.faction]
+		if factionBucket then
+			local realmData = factionBucket[realmKey or self.keys.realmKey]
+			if realmData and realmData.characters then
+				for ck, cd in pairs(realmData.characters) do addFromChar(cd, ck) end
+			end
+		end
+	else -- character
+		local factionBucket = self.history and self.history[self.keys.faction]
+		if factionBucket then
+			local realmData = factionBucket[self.keys.realmKey]
+			if realmData and realmData.characters then
+				local ck = charKey or self.keys.charKey
+				addFromChar(realmData.characters[ck], ck)
+			end
+		end
+	end
+
+	table.sort(results, function(a, b) return (a.line.time or 0) < (b.line.time or 0) end)
+	return results
 end
 
 local function setLabelText(label, text) if label then label:SetText(text) end end
@@ -617,7 +705,7 @@ function ChannelHistory:RefreshLeftList()
 		btn.entry = entry
 		btn:Show()
 
-		local sel = self.ui.selection or { type = "character", key = self.ui.leftSelected }
+		local sel = self.ui.selection or { type = "character", key = self.keys.charKey and ("char:" .. self.keys.charKey) or nil }
 		local selected = sel and sel.key == entry.key and sel.type == entry.kind
 		btn.bg:SetVertexColor(1, 1, 1, selected and 0.35 or 0)
 		btn.icon:Hide()
@@ -873,7 +961,7 @@ function ChannelHistory:CreateFilterUI()
 		label:SetJustifyH("LEFT")
 		label:SetWordWrap(false)
 		label:SetFontObject("GameFontNormalLarge")
-		setLabelText(label, info.label, addon.db and addon.db.chatChannelFilters ~= nil)
+		setLabelText(label, info.label)
 		label:Show()
 		local c = info.color or getChatColor(info.key)
 		if c then
@@ -900,6 +988,53 @@ function ChannelHistory:CreateFilterUI()
 	local totalHeight = #filters * (checkHeight + spacing)
 	container:SetHeight(totalHeight)
 	container:Show()
+end
+
+function ChannelHistory:EnsureLogFrame()
+	if self.ui.logFrame then return end
+	local frame = CreateFrame("ScrollingMessageFrame", nil, self.right)
+	frame:SetPoint("TOPLEFT", self.right, "TOPLEFT", 10, -40)
+	frame:SetPoint("BOTTOMRIGHT", self.right, "BOTTOMRIGHT", -10, 10)
+	frame:SetFontObject("GameFontHighlightSmall")
+	frame:SetJustifyH("LEFT")
+	frame:SetFading(false)
+	frame:SetMaxLines(1000)
+	frame:SetHyperlinksEnabled(true)
+	frame:EnableMouseWheel(true)
+	frame:SetScript("OnMouseWheel", function(f, delta)
+		if delta > 0 then f:ScrollUp() else f:ScrollDown() end
+	end)
+	self.ui.logFrame = frame
+end
+
+function ChannelHistory:RefreshLogView()
+	if not self.debugFrame or not self.ui or not self.ui.logFrame then return end
+	local scope, realmKey, charKey = deriveScope(self.ui.selection, self.keys)
+	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
+	local lines = collectLines(self, scope, realmKey, charKey, search)
+
+	local log = self.ui.logFrame
+	log:Clear()
+	for _, entry in ipairs(lines) do
+		local line = entry.line
+		local text = line.formatted
+		if not text then
+			local t = date("%H:%M:%S", line.time or time())
+			local color = line.color or getChatColor(line.filterKey) or { r = 1, g = 0.82, b = 0 }
+			local r = math.floor((color.r or 1) * 255 + 0.5)
+			local g = math.floor((color.g or 1) * 255 + 0.5)
+			local b = math.floor((color.b or 1) * 255 + 0.5)
+			local colorCode = string.format("|cff%02x%02x%02x", r, g, b)
+			local sender = line.sender and line.sender ~= "" and (line.sender .. ": ") or ""
+			local rest = (sender .. (line.message or "")):gsub("|r", "|r" .. colorCode)
+			local tMono = string.format("|cff888888|TInterface\\ChatFrame\\ChatFrameBackground:0:0:0:0|t|cffffff00%s|r", t)
+			text = string.format("%s %s%s|r", tMono, colorCode, rest)
+			-- cache formatted for future renders
+			line.color = color
+			line.formatted = text
+		end
+		log:AddMessage(text, 1, 1, 1)
+	end
 end
 
 function ChannelHistory:LayoutDebugFrame(width, height)
@@ -1062,6 +1197,11 @@ function ChannelHistory:CreateDebugFrame()
 	local rightSearch = createSearchBox(f.right, "Search logs...")
 	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 10, -12)
 	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -10, -12)
+	self.ui.rightSearch = rightSearch
+	rightSearch:SetScript("OnTextChanged", function(box)
+		SearchBoxTemplate_OnTextChanged(box)
+		ChannelHistory:RefreshLogView()
+	end)
 
 	-- Left list scroll
 	local listTopOffset = -40
@@ -1102,5 +1242,7 @@ function ChannelHistory:CreateDebugFrame()
 	self:LayoutDebugFrame(950, 500)
 	self:RefreshLeftList()
 	self:CreateFilterUI()
+	self:EnsureLogFrame()
+	self:RefreshLogView()
 	f:Show()
 end
