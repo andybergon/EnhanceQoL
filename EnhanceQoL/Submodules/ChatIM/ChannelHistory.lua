@@ -18,6 +18,18 @@ ChannelHistory.enabled = ChannelHistory.enabled or false
 ChannelHistory.frame = ChannelHistory.frame or CreateFrame("Frame")
 ChannelHistory.events = ChannelHistory.events or nil
 ChannelHistory.debugFrame = ChannelHistory.debugFrame or nil
+ChannelHistory.loggedIn = ChannelHistory.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
+ChannelHistory.defaultFilters = {
+	SAY = true,
+	GUILD = true,
+	PARTY = true,
+	INSTANCE = true,
+	OFFICER = true,
+	RAID = true,
+	YELL = true,
+	WHISPER = true,
+	GENERAL = true,
+}
 
 local IGNORED_EVENTS = {
 	CHAT_MSG_ADDON = true,
@@ -60,9 +72,7 @@ local function buildEventSet()
 		for _, list in pairs(ChatTypeGroup) do
 			if type(list) == "table" then
 				for _, event in ipairs(list) do
-					if type(event) == "string" and event:find("^CHAT_MSG") and not IGNORED_EVENTS[event] then
-						events[event] = true
-					end
+					if type(event) == "string" and event:find("^CHAT_MSG") and not IGNORED_EVENTS[event] then events[event] = true end
 				end
 			end
 		end
@@ -169,9 +179,7 @@ local function buildChannelKey(event, ...)
 		local streamID = safeSelect(19, ...)
 		local channelName = safeSelect(4, ...) or base
 		local descriptor
-		if communityID or streamID then
-			descriptor = string.format("%s:%s", communityID or "COMMUNITY", streamID or "STREAM")
-		end
+		if communityID or streamID then descriptor = string.format("%s:%s", communityID or "COMMUNITY", streamID or "STREAM") end
 		local label = descriptor and (descriptor .. ":" .. channelName) or channelName
 		return base .. ":" .. (descriptor or channelName), label
 	end
@@ -229,10 +237,14 @@ function ChannelHistory:Store(event, ...)
 end
 
 local function iterCharacters(scope)
-	if not ChannelHistory.history or not ChannelHistory.keys then return function() end end
+	if not ChannelHistory.history or not ChannelHistory.keys then
+		return function() end
+	end
 
 	local factionBucket = ChannelHistory.history[ChannelHistory.keys.faction]
-	if not factionBucket then return function() end end
+	if not factionBucket then
+		return function() end
+	end
 
 	local realmBucket = factionBucket[ChannelHistory.keys.realmKey]
 
@@ -247,7 +259,9 @@ local function iterCharacters(scope)
 	end
 
 	local function yieldFromRealm(realm)
-		if not realm or not realm.characters then return function() end end
+		if not realm or not realm.characters then
+			return function() end
+		end
 		local keyList = {}
 		for charKey in pairs(realm.characters) do
 			table.insert(keyList, charKey)
@@ -349,6 +363,41 @@ local function setClassIcon(btn, classFile)
 		btn.icon:SetTexture(nil)
 		btn.icon:Hide()
 	end
+end
+
+local CHAT_COLOR_KEYS = {
+	SAY = "SAY",
+	YELL = "YELL",
+	WHISPER = "WHISPER",
+	PARTY = "PARTY",
+	INSTANCE = "INSTANCE_CHAT",
+	RAID = "RAID",
+	GUILD = "GUILD",
+	OFFICER = "OFFICER",
+	GENERAL = "CHANNEL", -- fallback to channel1 if CHANNEL missing
+	LOOT = "LOOT",
+}
+
+local CHAT_COLOR_FALLBACK = {
+	SAY = { r = 1, g = 1, b = 1 },
+	YELL = { r = 1, g = 0.25, b = 0.25 },
+	WHISPER = { r = 1, g = 0.5, b = 1 },
+	PARTY = { r = 170 / 255, g = 170 / 255, b = 1 },
+	INSTANCE = { r = 170 / 255, g = 170 / 255, b = 1 },
+	RAID = { r = 1, g = 127 / 255, b = 0 },
+	GUILD = { r = 0.25, g = 1, b = 0.25 },
+	OFFICER = { r = 0.25, g = 0.75, b = 0.25 },
+	GENERAL = { r = 192 / 255, g = 128 / 255, b = 128 / 255 },
+	LOOT = { r = 0, g = 170 / 255, b = 0 },
+}
+
+local function getChatColor(key)
+	if not key then return nil end
+	local chatKey = CHAT_COLOR_KEYS[key] or key
+	local info = ChatTypeInfo and ChatTypeInfo[chatKey]
+	if (not info or not info.r) and chatKey == "CHANNEL" then info = ChatTypeInfo and ChatTypeInfo["CHANNEL1"] end
+	if info and info.r and info.g and info.b then return info end
+	return CHAT_COLOR_FALLBACK[key]
 end
 
 -- UI helpers: left tree
@@ -460,7 +509,8 @@ local function ensureLeftButtons(self, count)
 		btn.toggleFrame:SetPoint("LEFT", btn, "LEFT", 0, 0)
 		btn.toggleFrame:Hide()
 
-		btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		btn.nameText = btn:CreateFontString(nil, "OVERLAY")
+		btn.nameText:SetFontObject("GameFontNormal")
 		btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 6, 0)
 
 		btn:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -565,8 +615,12 @@ function ChannelHistory:RefreshLeftList()
 			self:RefreshLeftList()
 		end)
 
-		btn.toggleFrame:SetScript("OnEnter", function() if btn.hl then btn.hl:Show() end end)
-		btn.toggleFrame:SetScript("OnLeave", function() if btn.hl then btn.hl:Hide() end end)
+		btn.toggleFrame:SetScript("OnEnter", function()
+			if btn.hl then btn.hl:Show() end
+		end)
+		btn.toggleFrame:SetScript("OnLeave", function()
+			if btn.hl then btn.hl:Hide() end
+		end)
 	end
 
 	for j = #entries + 1, #buttons do
@@ -575,9 +629,7 @@ function ChannelHistory:RefreshLeftList()
 
 	local totalHeight = #entries * buttonHeight
 	self.ui.leftContent:SetHeight(totalHeight)
-	if self.ui.leftScroll then
-		self.ui.leftScroll:UpdateScrollChildRect()
-	end
+	if self.ui.leftScroll then self.ui.leftScroll:UpdateScrollChildRect() end
 end
 
 function ChannelHistory:OnEvent(event, ...)
@@ -586,9 +638,24 @@ function ChannelHistory:OnEvent(event, ...)
 	self:Store(event, ...)
 end
 
+ChannelHistory.frame:SetScript("OnEvent", function(_, event, ...)
+	if event == "PLAYER_LOGIN" then
+		ChannelHistory.loggedIn = true
+		if ChannelHistory.enabled then
+			ChannelHistory:CreateDebugFrame()
+			ChannelHistory:RefreshLeftList()
+			ChannelHistory:CreateFilterUI()
+		end
+		ChannelHistory.frame:UnregisterEvent("PLAYER_LOGIN")
+		return
+	end
+	ChannelHistory:OnEvent(event, ...)
+end)
+
 function ChannelHistory:RegisterEvents()
 	if not self.frame then return end
 	self.frame:UnregisterAllEvents()
+	if not self.loggedIn then self.frame:RegisterEvent("PLAYER_LOGIN") end
 	if not self.events then self.events = buildEventSet() end
 	for event in pairs(self.events or {}) do
 		self.frame:RegisterEvent(event)
@@ -602,20 +669,20 @@ function ChannelHistory:SetEnabled(enabled)
 	self:SetMaxLines(addon.db and addon.db["chatChannelHistoryMaxLines"])
 	if self.enabled then
 		self:RegisterEvents()
-		self:CreateDebugFrame()
-		if self.debugFrame then self.debugFrame:Show() end
-		if self.ui and self.ui.leftSearch then
-			self.ui.leftSearch:SetText("")
-			SearchBoxTemplate_OnTextChanged(self.ui.leftSearch)
+		if self.loggedIn then
+			self:CreateDebugFrame()
+			if self.debugFrame then self.debugFrame:Show() end
+			if self.ui and self.ui.leftSearch then
+				self.ui.leftSearch:SetText("")
+				SearchBoxTemplate_OnTextChanged(self.ui.leftSearch)
+			end
+			self:RefreshLeftList()
 		end
-		self:RefreshLeftList()
 	else
 		if self.frame then self.frame:UnregisterAllEvents() end
 		if self.debugFrame then self.debugFrame:Hide() end
 	end
 end
-
-ChannelHistory.frame:SetScript("OnEvent", function(_, event, ...) ChannelHistory:OnEvent(event, ...) end)
 
 -- Simple debug frame (no AceGUI) to iterate on layout
 local WINDOW_BACKDROP = {
@@ -651,6 +718,73 @@ local function createSearchBox(parent, placeholder)
 	return box
 end
 
+function ChannelHistory:CreateFilterUI()
+	if not self.debugFrame or not self.middle then return end
+	self.ui.filters = self.ui.filters or {}
+	local container = self.ui.filterContainer
+	if not container then
+		container = CreateFrame("Frame", nil, self.middle)
+		self.ui.filterContainer = container
+	end
+
+	container:ClearAllPoints()
+	container:SetPoint("TOPLEFT", self.middle, "TOPLEFT", 12, -36)
+	container:SetPoint("TOPRIGHT", self.middle, "TOPRIGHT", -12, -36)
+
+	local filters = {
+		{ key = "SAY", label = "|T2056011:16:16:0:0|t Say" },
+		{ key = "YELL", label = "|T892447:16:16:0:0|t Yell" },
+		{ key = "WHISPER", label = "|T133458:16:16:0:0|t Whisper" },
+		{ key = "PARTY", label = "|T134149:16:16:0:0|t Party" },
+		{ key = "INSTANCE", label = "|TInterface\\COMMON\\hud-microbutton-LFG-Down:16:16:0:0|t Instance" },
+		{ key = "RAID", label = "Raid" },
+		{ key = "GUILD", label = "|T514261:16:16:0:0|t Guild" },
+		{ key = "OFFICER", label = "Officer" },
+		{ key = "GENERAL", label = "General" },
+		{ key = "LOOT", label = "|T133639:16:16:0:0|t Loot" },
+	}
+
+	local checkHeight = 20
+	local spacing = 4
+
+	self.ui.filterChecks = self.ui.filterChecks or {}
+
+	for i, info in ipairs(filters) do
+		local cb = self.ui.filterChecks[i]
+		if not cb then
+			cb = CreateFrame("CheckButton", nil, container, "UICheckButtonTemplate")
+			self.ui.filterChecks[i] = cb
+		end
+		cb:SetPoint("TOPLEFT", container, "TOPLEFT", 4, -((i - 1) * (checkHeight + spacing)))
+		cb:SetChecked(self.ui.filters[info.key] ~= false and (self.defaultFilters[info.key] ~= false))
+
+		local label = cb.Text or cb.text
+		if not label then
+			label = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+			cb.Text = label
+		end
+
+		label:ClearAllPoints()
+		label:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+		label:SetPoint("RIGHT", container, "RIGHT", -4, 0)
+		label:SetJustifyH("LEFT")
+		label:SetWordWrap(false)
+		label:SetText(info.label)
+		label:Show()
+		local c = info.color or getChatColor(info.key)
+		if c then
+			label:SetTextColor(c.r, c.g, c.b)
+		else
+			label:SetTextColor(1, 0.82, 0)
+		end
+		cb:SetScript("OnClick", function(btn) self.ui.filters[info.key] = btn:GetChecked() and true or false end)
+	end
+
+	local totalHeight = #filters * (checkHeight + spacing)
+	container:SetHeight(totalHeight)
+	container:Show()
+end
+
 function ChannelHistory:LayoutDebugFrame(width, height)
 	if not self.debugFrame then return end
 	local f = self.debugFrame
@@ -683,6 +817,10 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 	f.middle:SetPoint("TOPLEFT", f.left, "TOPRIGHT", spacing, 0)
 	f.middle:SetPoint("BOTTOMLEFT", f.left, "BOTTOMRIGHT", spacing, 0)
 	f.middle:SetWidth(midWidth)
+	if self.ui and self.ui.filterContainer then
+		self.ui.filterContainer:SetPoint("TOPLEFT", f.middle, "TOPLEFT", 12, -36)
+		self.ui.filterContainer:SetPoint("TOPRIGHT", f.middle, "TOPRIGHT", -12, -36)
+	end
 
 	-- Right panel
 	f.right:SetPoint("TOPLEFT", f.middle, "TOPRIGHT", spacing, 0)
@@ -699,6 +837,7 @@ function ChannelHistory:CreateDebugFrame()
 	self.ui.leftButtons = self.ui.leftButtons or {}
 	self.ui.leftEntries = self.ui.leftEntries or {}
 	self.ui.leftState = self.ui.leftState or { realms = {}, accountExpanded = true }
+	self.ui.filters = self.ui.filters or {}
 
 	f:SetSize(950, 500)
 	f:SetPoint("CENTER")
@@ -732,6 +871,7 @@ function ChannelHistory:CreateDebugFrame()
 	f.left.bg:SetAllPoints()
 	f.left.bg:SetAtlas("QuestLog-main-background")
 	f.left.bg:SetAlpha(0.85)
+	self.left = f.left
 
 	f.middle = CreateFrame("Frame", nil, f, "BackdropTemplate")
 	applyPanelBackdrop(f.middle)
@@ -739,6 +879,7 @@ function ChannelHistory:CreateDebugFrame()
 	f.middle.bg:SetAllPoints()
 	f.middle.bg:SetAtlas("QuestLog-empty-quest-background")
 	f.middle.bg:SetAlpha(0.75)
+	self.middle = f.middle
 
 	f.right = CreateFrame("Frame", nil, f, "BackdropTemplate")
 	applyPanelBackdrop(f.right)
@@ -746,6 +887,7 @@ function ChannelHistory:CreateDebugFrame()
 	f.right.bg:SetAllPoints()
 	f.right.bg:SetAtlas("communities-widebackground")
 	f.right.bg:SetAlpha(0.78)
+	self.right = f.right
 
 	-- Placeholder labels
 	local leftTitle = CreateFrame("Frame", nil, f)
@@ -842,5 +984,6 @@ function ChannelHistory:CreateDebugFrame()
 
 	self:LayoutDebugFrame(950, 500)
 	self:RefreshLeftList()
+	self:CreateFilterUI()
 	f:Show()
 end
