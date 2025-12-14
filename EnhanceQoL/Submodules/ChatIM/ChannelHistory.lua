@@ -19,6 +19,23 @@ ChannelHistory.frame = ChannelHistory.frame or CreateFrame("Frame")
 ChannelHistory.events = ChannelHistory.events or nil
 ChannelHistory.debugFrame = ChannelHistory.debugFrame or nil
 ChannelHistory.loggedIn = ChannelHistory.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
+ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY or {
+	CHAT_MSG_SAY = "SAY",
+	CHAT_MSG_YELL = "YELL",
+	CHAT_MSG_WHISPER = "WHISPER",
+	CHAT_MSG_WHISPER_INFORM = "WHISPER",
+	CHAT_MSG_PARTY = "PARTY",
+	CHAT_MSG_INSTANCE_CHAT = "INSTANCE",
+	CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE",
+	CHAT_MSG_RAID = "RAID",
+	CHAT_MSG_RAID_LEADER = "RAID",
+	CHAT_MSG_GUILD = "GUILD",
+	CHAT_MSG_OFFICER = "OFFICER",
+	CHAT_MSG_CHANNEL = "GENERAL",
+	CHAT_MSG_LOOT = "LOOT",
+	CHAT_MSG_MONEY = "LOOT",
+	CHAT_MSG_CURRENCY = "LOOT",
+}
 ChannelHistory.defaultFilters = {
 	SAY = true,
 	GUILD = true,
@@ -200,6 +217,11 @@ local function appendLine(channelBucket, line)
 end
 
 function ChannelHistory:Store(event, ...)
+	-- respect filters
+	local filterKey = self.EVENT_FILTER_KEY and self.EVENT_FILTER_KEY[event]
+	if filterKey and self.IsFilterEnabled then
+		if not self:IsFilterEnabled(filterKey) then return end
+	end
 	if self.maxLines == 0 then return end
 	local charBucket = getCharacterBucket(true)
 	if not charBucket then return end
@@ -400,6 +422,36 @@ local function getChatColor(key)
 	return CHAT_COLOR_FALLBACK[key]
 end
 
+function ChannelHistory:IsFilterEnabled(filterKey)
+	if not filterKey then return true end
+	self.ui = self.ui or {}
+	self.ui.filters = self.ui.filters or {}
+	local stored = self.ui.filters[filterKey]
+	if stored ~= nil then return stored end
+	return self.defaultFilters[filterKey] ~= false
+end
+
+function ChannelHistory:LoadFiltersFromDB()
+	self.ui = self.ui or {}
+	self.ui.filters = self.ui.filters or {}
+	if addon.db and addon.db.chatChannelFilters then
+		for k, v in pairs(addon.db.chatChannelFilters) do
+			self.ui.filters[k] = v and true or false
+		end
+	end
+end
+
+local function setLabelText(label, text) if label then label:SetText(text) end end
+
+local function isFilterEnabled(self, filterKey)
+	if not filterKey then return true end
+	self.ui = self.ui or {}
+	self.ui.filters = self.ui.filters or {}
+	local stored = self.ui.filters[filterKey]
+	if stored ~= nil then return stored end
+	return self.defaultFilters[filterKey] ~= false
+end
+
 -- UI helpers: left tree
 function ChannelHistory:BuildLeftEntries(filterText)
 	if not self.history or not self.keys then self:InitStorage() end
@@ -408,7 +460,7 @@ function ChannelHistory:BuildLeftEntries(filterText)
 	local state = self.ui and self.ui.leftState or { realms = {}, accountExpanded = true }
 	self.ui = self.ui or {}
 	local playerCharKey = "char:" .. (self.keys.charKey or "")
-	if not self.ui.leftSelected then self.ui.leftSelected = playerCharKey end
+	if not self.ui.selection then self.ui.selection = { type = "character", key = playerCharKey } end
 	filterText = filterText and filterText:lower()
 
 	local function matchesFilter(name, realm)
@@ -543,11 +595,9 @@ function ChannelHistory:RefreshLeftList()
 		btn.entry = entry
 		btn:Show()
 
-		if self.ui.leftSelected == entry.key then
-			btn.bg:SetVertexColor(1, 1, 1, 1)
-		else
-			btn.bg:SetVertexColor(1, 1, 1, 0)
-		end
+		local sel = self.ui.selection or { type = "character", key = self.ui.leftSelected }
+		local selected = sel and sel.key == entry.key and sel.type == entry.kind
+		btn.bg:SetVertexColor(1, 1, 1, selected and 0.35 or 0)
 		btn.icon:Hide()
 		btn.toggle:Hide()
 		btn.toggleFrame:Hide()
@@ -567,7 +617,7 @@ function ChannelHistory:RefreshLeftList()
 			btn.toggleFrame:Hide()
 			btn.icon:Hide()
 			btn.nameText:SetPoint("LEFT", btn, "LEFT", baseX, 0)
-			btn.nameText:SetText(entry.label)
+			setLabelText(btn.nameText, entry.label)
 			btn.nameText:SetTextColor(1, 0.9, 0.6)
 		elseif entry.kind == "realm" then
 			btn.toggle:Show()
@@ -577,14 +627,14 @@ function ChannelHistory:RefreshLeftList()
 			btn.icon:SetPoint("LEFT", btn, "LEFT", baseX - 10, 0)
 			btn.icon:Show()
 			btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 4, 0)
-			btn.nameText:SetText(entry.label or entry.key)
+			setLabelText(btn.nameText, entry.label or entry.key)
 			btn.nameText:SetTextColor(0.85, 0.85, 0.85)
 		elseif entry.kind == "character" then
 			local classFile = entry.classFile or (entry.charKey == (self.keys.charKey or "") and select(2, UnitClass("player")))
 			setClassIcon(btn, classFile)
 			btn.icon:SetPoint("LEFT", btn, "LEFT", baseX + 12, 0)
 			btn.nameText:SetPoint("LEFT", btn.icon, "RIGHT", 8, 0)
-			btn.nameText:SetText(entry.label or entry.charKey or "")
+			setLabelText(btn.nameText, entry.label or entry.charKey or "")
 			local color = getClassStyle(classFile)
 			if color then
 				btn.nameText:SetTextColor(color.r, color.g, color.b)
@@ -592,7 +642,7 @@ function ChannelHistory:RefreshLeftList()
 				btn.nameText:SetTextColor(0.9, 0.9, 0.9)
 			end
 		else
-			btn.nameText:SetText(entry.label or entry.key)
+			setLabelText(btn.nameText, entry.label or entry.key)
 		end
 
 		btn:SetScript("OnMouseUp", function(selfBtn, button)
@@ -600,7 +650,17 @@ function ChannelHistory:RefreshLeftList()
 			local data = selfBtn.entry
 			if not data then return end
 			if data.kind == "character" then
-				self.ui.leftSelected = data.key
+				self.ui.selection = { type = "character", key = data.key }
+				print("|cff99e599[EQOL] Selected:|r", data.key or "nil")
+				self:RefreshLeftList()
+			elseif data.kind == "realm" then
+				local realmKey = data.key:match("^realm:(.+)$") or data.key
+				self.ui.selection = { type = "realm", key = data.key }
+				print("|cff99e599[EQOL] Realm selected:|r", realmKey or "nil")
+				self:RefreshLeftList()
+			elseif data.kind == "header" then
+				self.ui.selection = { type = "header", key = data.key }
+				print("|cff99e599[EQOL] Scope: All|r")
 				self:RefreshLeftList()
 			end
 		end)
@@ -749,6 +809,7 @@ function ChannelHistory:CreateFilterUI()
 
 	self.ui.filterChecks = self.ui.filterChecks or {}
 	self.ui.filterRows = self.ui.filterRows or {}
+	self:LoadFiltersFromDB()
 
 	for i, info in ipairs(filters) do
 		local row = self.ui.filterRows[i]
@@ -773,7 +834,9 @@ function ChannelHistory:CreateFilterUI()
 		end
 		cb:ClearAllPoints()
 		cb:SetPoint("LEFT", row, "LEFT", 4, 0)
-		cb:SetChecked(self.ui.filters[info.key] ~= false and (self.defaultFilters[info.key] ~= false))
+		local stored = self.ui.filters[info.key]
+		local defaultOn = self.defaultFilters[info.key] ~= false
+		cb:SetChecked(stored == nil and defaultOn or stored)
 
 		local label = cb.Text or cb.text
 		if not label then
@@ -787,7 +850,7 @@ function ChannelHistory:CreateFilterUI()
 		label:SetJustifyH("LEFT")
 		label:SetWordWrap(false)
 		label:SetFontObject("GameFontNormalLarge")
-		label:SetText(info.label)
+		setLabelText(label, info.label, addon.db and addon.db.chatChannelFilters ~= nil)
 		label:Show()
 		local c = info.color or getChatColor(info.key)
 		if c then
@@ -917,7 +980,7 @@ function ChannelHistory:CreateDebugFrame()
 	f.right.bg = f.right:CreateTexture(nil, "BACKGROUND", nil, -7)
 	f.right.bg:SetAllPoints()
 	f.right.bg:SetAtlas("communities-widebackground")
-	f.right.bg:SetAlpha(0.78)
+	f.right.bg:SetAlpha(0)
 	self.right = f.right
 
 	-- Placeholder labels
