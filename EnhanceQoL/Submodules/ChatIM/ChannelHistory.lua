@@ -1738,7 +1738,6 @@ function ChannelHistory:EnsureLogFrame()
 	end
 	frame:SetPoint("BOTTOMRIGHT", self.right, "BOTTOMRIGHT", -28, 10)
 
-	frame:SetJustifyH("LEFT")
 	frame:SetFading(false)
 	frame:SetSpacing(1)
 	frame:SetHyperlinksEnabled(true)
@@ -1746,6 +1745,9 @@ function ChannelHistory:EnsureLogFrame()
 
 	-- Ensure font is set so AddMessage renders
 	self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12, frame)
+	frame:SetJustifyH("LEFT")
+	frame:SetJustifyV("TOP")
+	frame:SetIndentedWordWrap(false)
 
 	local maxLines = self.uiMaxLines or (addon.db and addon.db.chatChannelHistoryMaxViewLines) or 1000
 	self.uiMaxLines = maxLines
