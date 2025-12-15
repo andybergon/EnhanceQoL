@@ -217,15 +217,25 @@ local function buildKeys()
 	}
 end
 
+local function isLoggingEnabled(filterKey)
+	if not filterKey then return true end
+	local filters = addon.db and addon.db.chatChannelFiltersEnable
+	if not filters then return true end
+	local val = filters[filterKey]
+	if val == nil then return true end
+	return val and true or false
+end
+
 local function buildEventSet()
 	local events = {}
 	if ChannelHistory.EVENT_FILTER_KEY then
-		for event in pairs(ChannelHistory.EVENT_FILTER_KEY) do
-			if not IGNORED_EVENTS[event] then events[event] = true end
+		for event, filterKey in pairs(ChannelHistory.EVENT_FILTER_KEY) do
+			if not IGNORED_EVENTS[event] and isLoggingEnabled(filterKey) then events[event] = true end
 		end
 	end
 	for _, event in ipairs(ADDITIONAL_EVENTS) do
-		if not IGNORED_EVENTS[event] then events[event] = true end
+		local filterKey = ChannelHistory.EVENT_FILTER_KEY and ChannelHistory.EVENT_FILTER_KEY[event]
+		if not IGNORED_EVENTS[event] and isLoggingEnabled(filterKey) then events[event] = true end
 	end
 	return events
 end
@@ -295,7 +305,7 @@ function ChannelHistory:SetFrameStrata(strata)
 	local value = strata or "MEDIUM"
 	self.frameStrata = value
 	if addon.db then addon.db.chatHistoryFrameStrata = value end
-	if self.debugFrame and self.debugFrame.SetFrameStrata then self.debugFrame:SetFrameStrata(value) end
+	self:ApplyFrameZOrder()
 end
 
 function ChannelHistory:SetFrameLevel(level)
@@ -303,7 +313,30 @@ function ChannelHistory:SetFrameLevel(level)
 	if lvl < 1 then lvl = 1 end
 	self.frameLevel = lvl
 	if addon.db then addon.db.chatHistoryFrameLevel = lvl end
-	if self.debugFrame and self.debugFrame.SetFrameLevel then self.debugFrame:SetFrameLevel(lvl) end
+	self:ApplyFrameZOrder()
+end
+
+function ChannelHistory:ApplyFrameZOrder()
+	local strata = self.frameStrata or (addon.db and addon.db.chatHistoryFrameStrata) or "MEDIUM"
+	local level = self.frameLevel or (addon.db and addon.db.chatHistoryFrameLevel) or 600
+
+	if self.debugFrame then
+		self.debugFrame:SetFrameStrata(strata)
+		self.debugFrame:SetFrameLevel(level)
+	end
+
+	local baseLevel = (self.debugFrame and self.debugFrame:GetFrameLevel()) or level
+	if not self.ui then return end
+
+	local function applyZOrder(frame, offset)
+		if not frame then return end
+		frame:SetFrameStrata(strata)
+		frame:SetFrameLevel(baseLevel + (offset or 0))
+	end
+
+	applyZOrder(self.ui.closeButton, 2)
+	applyZOrder(self.ui.optionsButton, 2)
+	applyZOrder(self.ui.copyButton, 2)
 end
 
 function ChannelHistory:UpdateLogFontSize(size, frame)
@@ -1537,9 +1570,40 @@ function ChannelHistory:RegisterEvents()
 	self.frame:UnregisterAllEvents()
 	self.frame:RegisterEvent("PLAYER_LOGIN")
 	if not self.loggedIn then return end
-	self.events = self.events or buildEventSet()
+	self.events = buildEventSet()
 	for event in pairs(self.events or {}) do
 		self.frame:RegisterEvent(event)
+	end
+end
+
+function ChannelHistory:UpdateLoggingFilter(filterKey)
+	if not filterKey then return end
+	self.events = self.events or buildEventSet()
+	self.loggedIn = self.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
+	local shouldEnable = isLoggingEnabled(filterKey)
+
+	local function apply(event)
+		if not event or IGNORED_EVENTS[event] then return end
+		local hasEvent = self.events and self.events[event]
+		if shouldEnable then
+			if not hasEvent then
+				self.events[event] = true
+				if self.enabled and self.loggedIn and self.frame then self.frame:RegisterEvent(event) end
+			end
+		else
+			if hasEvent then
+				self.events[event] = nil
+				if self.frame then self.frame:UnregisterEvent(event) end
+			end
+		end
+	end
+
+	for event, key in pairs(self.EVENT_FILTER_KEY or {}) do
+		if key == filterKey then apply(event) end
+	end
+	for _, event in ipairs(ADDITIONAL_EVENTS) do
+		local key = self.EVENT_FILTER_KEY and self.EVENT_FILTER_KEY[event]
+		if key == filterKey then apply(event) end
 	end
 end
 
@@ -1553,7 +1617,7 @@ function ChannelHistory:SetEnabled(enabled)
 	if self.enabled then
 		if self.loggedIn then
 			self:InitStorage()
-			self.events = self.events or buildEventSet()
+			self.events = buildEventSet()
 			self:SetMaxLines(addon.db and addon.db["chatChannelHistoryMaxLines"])
 			self:SetUILineLimit(addon.db and addon.db.chatChannelHistoryMaxViewLines or self.uiMaxLines)
 		end
@@ -1944,6 +2008,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 4, 4)
+	self.ui.closeButton = close
 
 	local function openChatSettings()
 		if InCombatLockdown and InCombatLockdown() then
@@ -1971,6 +2036,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	optionsBtn:SetScript("OnLeave", function()
 		if GameTooltip then GameTooltip:Hide() end
 	end)
+	self.ui.optionsButton = optionsBtn
 
 	local copyBtn = CreateFrame("Button", nil, f)
 	copyBtn:SetSize(24, 24)
@@ -1979,6 +2045,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	copyBtn:SetHighlightTexture("Interface\\AddOns\\EnhanceQoL\\Icons\\copy.tga")
 	if copyBtn:GetHighlightTexture() then copyBtn:GetHighlightTexture():SetAlpha(0.6) end
 	copyBtn:SetMotionScriptsWhileDisabled(true)
+	self.ui.copyButton = copyBtn
 
 	local copyPopup
 	local function ensureCopyPopupFrame()
@@ -2200,6 +2267,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f:SetScript("OnHide", function()
 		if ChannelHistory.runtime and ChannelHistory.runtime.formattedCache then wipe(ChannelHistory.runtime.formattedCache) end
 	end)
+
+	self:ApplyFrameZOrder()
 
 	self:LayoutDebugFrame(950, 500)
 	self:RefreshLeftList()

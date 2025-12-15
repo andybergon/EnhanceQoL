@@ -492,7 +492,12 @@ data = {
 				sType = "multidropdown",
 				options = categoryOptions,
 				isSelectedFunc = function(key) return addon.db.chatChannelFiltersEnable[key] end,
-				setSelectedFunc = function(key, shouldSelect) addon.db.chatChannelFiltersEnable[key] = shouldSelect and true or false end,
+				setSelectedFunc = function(key, shouldSelect)
+					addon.db.chatChannelFiltersEnable[key] = shouldSelect and true or false
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateLoggingFilter then
+						addon.ChatIM.ChannelHistory:UpdateLoggingFilter(key)
+					end
+				end,
 			},
 		},
 	},
