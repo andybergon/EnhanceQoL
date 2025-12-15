@@ -58,7 +58,7 @@ ChannelHistory.defaultFilters = {
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
 ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, refreshPending = false, formattedCache = nil }
-local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID, normalizeChannelBucket
+local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID, normalizeChannelBucket, realmFromCharKey
 local MU = MenuUtil
 
 local function getClassStyle(classFile)
@@ -298,11 +298,15 @@ local function getLineAt(channelBucket, pos, countOverride)
 end
 
 local function iterChannelLines(channelBucket)
-	if not channelBucket or not channelBucket.lines then return function() end end
+	if not channelBucket or not channelBucket.lines then
+		return function() end
+	end
 	local lines = channelBucket.lines
 	local cap = channelBucket._cap or #lines
 	local count = channelBucket._count or #lines
-	if count <= 0 then return function() end end
+	if count <= 0 then
+		return function() end
+	end
 	if cap <= 0 then cap = count end
 	local head = channelBucket._head or 1
 	local i = 0
@@ -463,12 +467,18 @@ function ChannelHistory:Store(event, ...)
 end
 
 local function iterCharacters(scope, realmKey, charKey, factionKey)
-	if not ChannelHistory.history or not ChannelHistory.keys then return function() end end
+	if not ChannelHistory.history or not ChannelHistory.keys then
+		return function() end
+	end
 
 	local function yieldFromRealm(realm)
-		if not realm or not realm.characters then return function() end end
+		if not realm or not realm.characters then
+			return function() end
+		end
 		local keyList = {}
-		for charKeyInner in pairs(realm.characters) do table.insert(keyList, charKeyInner) end
+		for charKeyInner in pairs(realm.characters) do
+			table.insert(keyList, charKeyInner)
+		end
 		table.sort(keyList)
 		local i = 0
 		return function()
@@ -480,7 +490,9 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 	end
 
 	local function yieldFromFaction(factionBucket)
-		if not factionBucket then return function() end end
+		if not factionBucket then
+			return function() end
+		end
 		local realmKeys = {}
 		for rKey, bucket in pairs(factionBucket) do
 			if type(bucket) == "table" and isVisibleKey(rKey) then table.insert(realmKeys, rKey) end
@@ -528,9 +540,7 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 		-- aggregate both factions for this realm
 		local factionKeys = {}
 		for fKey, bucket in pairs(ChannelHistory.history) do
-			if type(bucket) == "table" and isVisibleKey(fKey) and bucket[targetRealm] then
-				table.insert(factionKeys, fKey)
-			end
+			if type(bucket) == "table" and isVisibleKey(fKey) and bucket[targetRealm] then table.insert(factionKeys, fKey) end
 		end
 		table.sort(factionKeys)
 		local fIndex = 0
@@ -552,7 +562,9 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 
 	if scope == "faction" and factionKey then
 		local bucket = ChannelHistory.history[factionKey]
-		if type(bucket) ~= "table" then return function() end end
+		if type(bucket) ~= "table" then
+			return function() end
+		end
 		return yieldFromFaction(bucket)
 	end
 
@@ -682,7 +694,7 @@ function splitSender(sender)
 	return name, realm
 end
 
-local function realmFromCharKey(charKey)
+function realmFromCharKey(charKey)
 	if not charKey or charKey == "" then return nil end
 	local _, realm = splitSender(charKey)
 	return realm
@@ -734,9 +746,7 @@ function getSenderClass(guid)
 	local className = locClass
 	local token = classFile or resolveClassToken(className)
 	local locName = className
-	if not locName and token then
-		locName = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token
-	end
+	if not locName and token then locName = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token end
 	if cache and token then cache[guid] = { token = token, loc = locName or token } end
 	return locName, token
 end
@@ -826,9 +836,7 @@ end
 function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
 	if not self.debugFrame or not self.debugFrame:IsShown() then return false end
 	if not self.ui or not self.ui.logFrame then return false end
-	if not line.filterKey and line.event and self.EVENT_FILTER_KEY then
-		line.filterKey = self.EVENT_FILTER_KEY[line.event]
-	end
+	if not line.filterKey and line.event and self.EVENT_FILTER_KEY then line.filterKey = self.EVENT_FILTER_KEY[line.event] end
 	if not self:IsFilterEnabled(line.filterKey) then return false end
 	local scope, realmKey, charKey, factionKey = deriveScope(self.ui.selection, self.keys)
 	if scope == "character" then
@@ -861,9 +869,7 @@ function ChannelHistory:RequestLogRefresh()
 	self.runtime.refreshPending = true
 	C_Timer.After(0.15, function()
 		self.runtime.refreshPending = false
-		if self.debugFrame and self.debugFrame:IsShown() then
-			self:RefreshLogView()
-		end
+		if self.debugFrame and self.debugFrame:IsShown() then self:RefreshLogView() end
 	end)
 end
 
@@ -923,9 +929,7 @@ local function collectLines(self, scope, realmKey, charKey, factionKey, searchNe
 	end
 
 	local function ensureFilter(line)
-		if not line.filterKey and line.event and self.EVENT_FILTER_KEY then
-			line.filterKey = self.EVENT_FILTER_KEY[line.event]
-		end
+		if not line.filterKey and line.event and self.EVENT_FILTER_KEY then line.filterKey = self.EVENT_FILTER_KEY[line.event] end
 		return line.filterKey
 	end
 
@@ -936,9 +940,7 @@ local function collectLines(self, scope, realmKey, charKey, factionKey, searchNe
 		return (a.id or 0) > (b.id or 0)
 	end
 
-	local function getOrderId(line)
-		return line and (line.seq or line.lineID or 0) or 0
-	end
+	local function getOrderId(line) return line and (line.seq or line.lineID or 0) or 0 end
 
 	local heap = {}
 	local function push(entry)
@@ -987,9 +989,7 @@ local function collectLines(self, scope, realmKey, charKey, factionKey, searchNe
 		while stream.index > 0 do
 			local line = getLineAt(stream.bucket, stream.index, stream.count)
 			stream.index = stream.index - 1
-			if line and matches(line) then
-				return line
-			end
+			if line and matches(line) then return line end
 		end
 	end
 
@@ -1000,14 +1000,12 @@ local function collectLines(self, scope, realmKey, charKey, factionKey, searchNe
 				if count > 0 then
 					local stream = { bucket = channelData, count = count, index = count }
 					local line = pullNext(stream)
-					if line then
-						push({
-							line = line,
-							stream = stream,
-							time = line.time or 0,
-							id = getOrderId(line),
-						})
-					end
+					if line then push({
+						line = line,
+						stream = stream,
+						time = line.time or 0,
+						id = getOrderId(line),
+					}) end
 				end
 			end
 		end
@@ -1020,14 +1018,12 @@ local function collectLines(self, scope, realmKey, charKey, factionKey, searchNe
 		if maxResults and #results >= maxResults then break end
 
 		local nextLine = pullNext(entry.stream)
-		if nextLine then
-			push({
-				line = nextLine,
-				stream = entry.stream,
-				time = nextLine.time or 0,
-				id = getOrderId(nextLine),
-			})
-		end
+		if nextLine then push({
+			line = nextLine,
+			stream = entry.stream,
+			time = nextLine.time or 0,
+			id = getOrderId(nextLine),
+		}) end
 	end
 
 	local n = #results
@@ -1083,7 +1079,9 @@ function ChannelHistory:BuildLeftEntries(filterText)
 	end
 
 	local realmKeys = {}
-	for realmKey in pairs(realms) do table.insert(realmKeys, realmKey) end
+	for realmKey in pairs(realms) do
+		table.insert(realmKeys, realmKey)
+	end
 	table.sort(realmKeys)
 
 	for _, realmKey in ipairs(realmKeys) do
@@ -1101,7 +1099,9 @@ function ChannelHistory:BuildLeftEntries(filterText)
 
 		if realmNode.expanded then
 			local factionKeys = {}
-			for fKey in pairs(realmEntry.factions) do table.insert(factionKeys, fKey) end
+			for fKey in pairs(realmEntry.factions) do
+				table.insert(factionKeys, fKey)
+			end
 			table.sort(factionKeys)
 			state.factions[realmKey] = state.factions[realmKey] or {}
 
@@ -1120,7 +1120,9 @@ function ChannelHistory:BuildLeftEntries(filterText)
 
 				if factionNode.expanded and realmData and realmData.characters then
 					local charKeys = {}
-					for charKey in pairs(realmData.characters) do table.insert(charKeys, charKey) end
+					for charKey in pairs(realmData.characters) do
+						table.insert(charKeys, charKey)
+					end
 					table.sort(charKeys)
 					for _, charKey in ipairs(charKeys) do
 						local charData = realmData.characters[charKey]
@@ -1345,7 +1347,6 @@ function ChannelHistory:RefreshLeftList()
 		else
 			setLabelText(btn.nameText, entry.label or entry.key)
 		end
-
 	end
 
 	for j = #entries + 1, #buttons do
@@ -1733,46 +1734,46 @@ function ChannelHistory:CreateDebugFrame()
 
 	-- Placeholder labels
 	local leftTitle = CreateFrame("Frame", nil, f)
-	leftTitle:SetPoint("BOTTOMLEFT", f.left, "TOPLEFT", 0, 4)
-	leftTitle:SetPoint("BOTTOMRIGHT", f.left, "TOPRIGHT", 0, 4)
-	leftTitle:SetHeight(42)
+	leftTitle:SetPoint("BOTTOMLEFT", f.left, "TOPLEFT", 0, -8)
+	leftTitle:SetPoint("BOTTOMRIGHT", f.left, "TOPRIGHT", 0, -8)
+	leftTitle:SetHeight(52)
 	local leftTitleText = leftTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	leftTitleText:SetPoint("CENTER")
 	leftTitleText:SetText("Scope / Characters")
 	local leftLine = leftTitle:CreateTexture(nil, "BACKGROUND")
 	leftLine:SetPoint("BOTTOMLEFT", leftTitle, "BOTTOMLEFT", 12, 4)
 	leftLine:SetPoint("BOTTOMRIGHT", leftTitle, "BOTTOMRIGHT", -12, 4)
-	leftLine:SetHeight(14)
-	leftLine:SetAtlas("AftLevelup-GlowLine")
-	leftLine:SetAlpha(0.9)
+	leftLine:SetHeight(44)
+	leftLine:SetAtlas("thewarwithin-landingpage-renownbutton-flame")
+	leftLine:SetAlpha(1)
 
 	local midTitle = CreateFrame("Frame", nil, f)
-	midTitle:SetPoint("BOTTOMLEFT", f.middle, "TOPLEFT", 0, 4)
-	midTitle:SetPoint("BOTTOMRIGHT", f.middle, "TOPRIGHT", 0, 4)
-	midTitle:SetHeight(42)
+	midTitle:SetPoint("BOTTOMLEFT", f.middle, "TOPLEFT", 0, -8)
+	midTitle:SetPoint("BOTTOMRIGHT", f.middle, "TOPRIGHT", 0, -8)
+	midTitle:SetHeight(52)
 	local midTitleText = midTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	midTitleText:SetPoint("CENTER")
 	midTitleText:SetText("Channel Filters")
 	local midLine = midTitle:CreateTexture(nil, "BACKGROUND")
 	midLine:SetPoint("BOTTOMLEFT", midTitle, "BOTTOMLEFT", 12, 4)
 	midLine:SetPoint("BOTTOMRIGHT", midTitle, "BOTTOMRIGHT", -12, 4)
-	midLine:SetHeight(14)
-	midLine:SetAtlas("AftLevelup-GlowLine")
-	midLine:SetAlpha(0.9)
+	midLine:SetHeight(44)
+	midLine:SetAtlas("thewarwithin-landingpage-renownbutton-flame")
+	midLine:SetAlpha(1)
 
 	local rightTitle = CreateFrame("Frame", nil, f)
-	rightTitle:SetPoint("BOTTOMLEFT", f.right, "TOPLEFT", 0, 4)
-	rightTitle:SetPoint("BOTTOMRIGHT", f.right, "TOPRIGHT", 0, 4)
-	rightTitle:SetHeight(42)
+	rightTitle:SetPoint("BOTTOMLEFT", f.right, "TOPLEFT", 0, -8)
+	rightTitle:SetPoint("BOTTOMRIGHT", f.right, "TOPRIGHT", 0, -8)
+	rightTitle:SetHeight(52)
 	local rightTitleText = rightTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	rightTitleText:SetPoint("CENTER")
 	rightTitleText:SetText("Chat History")
 	local rightLine = rightTitle:CreateTexture(nil, "BACKGROUND")
 	rightLine:SetPoint("BOTTOMLEFT", rightTitle, "BOTTOMLEFT", 12, 4)
 	rightLine:SetPoint("BOTTOMRIGHT", rightTitle, "BOTTOMRIGHT", -12, 4)
-	rightLine:SetHeight(14)
-	rightLine:SetAtlas("AftLevelup-GlowLine")
-	rightLine:SetAlpha(0.9)
+	rightLine:SetHeight(44)
+	rightLine:SetAtlas("thewarwithin-landingpage-renownbutton-flame")
+	rightLine:SetAlpha(1)
 
 	-- Search bars (debug placeholders)
 	local leftSearch = createSearchBox(f.left, "Search character / realm...")
