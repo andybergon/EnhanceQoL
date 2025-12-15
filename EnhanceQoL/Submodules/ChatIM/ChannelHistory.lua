@@ -58,7 +58,7 @@ ChannelHistory.defaultFilters = {
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
 ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, refreshPending = false, formattedCache = nil }
-local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID
+local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID, normalizeChannelBucket
 
 local function getClassStyle(classFile)
 	if not classFile then return nil end
@@ -84,6 +84,11 @@ local function sanitizeRealm(realm)
 	if not realm or realm == "" then realm = GetRealmName() or "Unknown" end
 	realm = realm:gsub("%s+", "")
 	return realm
+end
+
+local function isVisibleKey(key)
+	if type(key) ~= "string" then return true end
+	return key:sub(1, 1) ~= "_"
 end
 
 local function buildKeys()
@@ -128,7 +133,11 @@ function ChannelHistory:InitStorage()
 	self.runtime = self.runtime or {}
 	self.runtime.guidClassCache = self.runtime.guidClassCache or {}
 	self.runtime.refreshPending = false
-	if not self.runtime.formattedCache then self.runtime.formattedCache = setmetatable({}, { __mode = "k" }) end
+	if not self.runtime.formattedCache then
+		self.runtime.formattedCache = setmetatable({}, { __mode = "kv" })
+	else
+		setmetatable(self.runtime.formattedCache, { __mode = "kv" })
+	end
 end
 
 function ChannelHistory:SetMaxLines(value)
@@ -143,11 +152,7 @@ function ChannelHistory:SetMaxLines(value)
 					for _, charData in pairs(chars) do
 						if charData.channels then
 							for _, channel in pairs(charData.channels) do
-								if channel.lines then
-									while #channel.lines > self.maxLines do
-										table.remove(channel.lines, 1)
-									end
-								end
+								normalizeChannelBucket(channel, self.maxLines)
 							end
 						end
 					end
@@ -197,7 +202,7 @@ local function getCharacterBucket(create)
 end
 
 local function buildChannelKey(event, ...)
-	local base = event:gsub("^CHAT_MSG_", "")
+	local base = event:sub(10)
 
 	if event == "CHAT_MSG_CHANNEL" then
 		local channelName = safeSelect(4, ...)
@@ -226,15 +231,133 @@ local function buildChannelKey(event, ...)
 	return base, base
 end
 
-local function appendLine(channelBucket, line)
-	channelBucket.lines = channelBucket.lines or {}
+local function getLineCount(channelBucket)
+	if not channelBucket or not channelBucket.lines then return 0 end
+	return channelBucket._count or #channelBucket.lines
+end
+
+local function getLineAt(channelBucket, pos, countOverride)
+	if not channelBucket or not channelBucket.lines then return nil end
 	local lines = channelBucket.lines
-	lines[#lines + 1] = line
-	if #lines > ChannelHistory.maxLines then
-		table.remove(lines, 1)
+	local count = countOverride or channelBucket._count or #lines
+	if pos < 1 or pos > count then return nil end
+	local cap = channelBucket._cap or #lines
+	if cap <= 0 then cap = count end
+	local head = channelBucket._head or 1
+	local idx = (head + pos - 2) % cap + 1
+	return lines[idx]
+end
+
+local function iterChannelLines(channelBucket)
+	if not channelBucket or not channelBucket.lines then return function() end end
+	local lines = channelBucket.lines
+	local cap = channelBucket._cap or #lines
+	local count = channelBucket._count or #lines
+	if count <= 0 then return function() end end
+	if cap <= 0 then cap = count end
+	local head = channelBucket._head or 1
+	local i = 0
+
+	return function()
+		i = i + 1
+		if i > count then return end
+		local idx = (head + i - 2) % cap + 1
+		return lines[idx]
 	end
+end
+
+local function appendLine(channelBucket, line)
+	local cap = ChannelHistory.maxLines or 0
+	if cap <= 0 then return end
+
+	local lines = channelBucket.lines
+	if not lines then
+		lines = {}
+		channelBucket.lines = lines
+	end
+
+	local bucketCap = channelBucket._cap
+	local head = channelBucket._head or 1
+	local count = channelBucket._count or #lines
+	if not bucketCap or bucketCap <= 0 then bucketCap = #lines end
+
+	if bucketCap ~= cap or count > cap then
+		local newLines = {}
+		local start = math.max(1, count - cap + 1)
+		for i = start, count do
+			local idx
+			if channelBucket._cap and bucketCap > 0 then
+				idx = (head + i - 2) % bucketCap + 1
+			else
+				idx = i
+			end
+			newLines[#newLines + 1] = lines[idx]
+		end
+		lines = newLines
+		channelBucket.lines = lines
+		bucketCap = cap
+		head = 1
+		count = #lines
+	end
+
+	local insertIdx = (head + count - 1) % cap + 1
+	lines[insertIdx] = line
+
+	if count < cap then
+		count = count + 1
+	else
+		head = head % cap + 1
+	end
+
+	channelBucket._cap = cap
+	channelBucket._head = head
+	channelBucket._count = count
 	channelBucket.lastUpdated = line.time
 end
+
+local function normalizeChannelBucketInner(channelBucket, cap)
+	if not channelBucket then return end
+	cap = cap or ChannelHistory.maxLines or 0
+	channelBucket.lines = channelBucket.lines or {}
+	if cap <= 0 then
+		wipe(channelBucket.lines)
+		channelBucket._cap = cap
+		channelBucket._head = 1
+		channelBucket._count = 0
+		return
+	end
+
+	local count = channelBucket._count or #channelBucket.lines
+	local head = channelBucket._head or 1
+	local oldCap = channelBucket._cap or #channelBucket.lines
+	if oldCap <= 0 then oldCap = count end
+
+	if count <= cap and channelBucket._cap == cap and channelBucket._head then
+		channelBucket._count = count
+		channelBucket._cap = channelBucket._cap or cap
+		channelBucket._head = head
+		return
+	end
+
+	local newLines = {}
+	local start = math.max(1, count - cap + 1)
+	for i = start, count do
+		local idx
+		if channelBucket._cap and oldCap > 0 then
+			idx = (head + i - 2) % oldCap + 1
+		else
+			idx = i
+		end
+		newLines[#newLines + 1] = channelBucket.lines[idx]
+	end
+
+	channelBucket.lines = newLines
+	channelBucket._cap = cap
+	channelBucket._head = 1
+	channelBucket._count = #newLines
+end
+
+normalizeChannelBucket = normalizeChannelBucketInner
 
 function ChannelHistory:Store(event, ...)
 	-- respect filters
@@ -248,28 +371,13 @@ function ChannelHistory:Store(event, ...)
 	if not charBucket then return end
 	local currentCharKey = self.keys and self.keys.charKey
 
-	local msg, sender, _, _, _, _, _, _, _, _, lineID, guid, bnetIDAccount = ...
+	local msg, sender, _, _, _, _, _, _, _, _, lineID, guid = ...
 	-- Skip channel notices and trivial change messages
 	if event == "CHAT_MSG_CHANNEL_NOTICE" or event == "CHAT_MSG_CHANNEL_NOTICE_USER" then return end
 	if msg == "YOU_CHANGED" then return end
 	local channelKey, channelLabel = buildChannelKey(event, ...)
 	channelKey = channelKey or event
-	local senderName, senderRealmKey = splitSender(sender)
-	if (not senderRealmKey or senderRealmKey == "") and self.keys and self.keys.realmKey then senderRealmKey = self.keys.realmKey end
-	local className, classFile = getSenderClass(guid)
-	if not classFile then
-		local token = resolveClassFromGUID(guid)
-		if token then
-			classFile = token
-			className = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token
-		end
-	end
-	local displayName = senderName or sender or ""
-	if displayName ~= "" then
-		local playerRealm = self.keys and self.keys.realmKey
-		local sameRealm = senderRealmKey and playerRealm and senderRealmKey == playerRealm
-		if senderRealmKey and senderRealmKey ~= "" and not sameRealm then displayName = displayName .. "-" .. senderRealmKey end
-	end
+	local _, classFile = getSenderClass(guid)
 	local stamp = now()
 
 	charBucket.channels = charBucket.channels or {}
@@ -278,22 +386,13 @@ function ChannelHistory:Store(event, ...)
 
 	local line = {
 		time = stamp,
-		event = event,
 		filterKey = filterKey,
-		channel = channelKey,
-		label = channelBucket.label,
 		message = msg or "",
 		sender = sender or "",
 		ownerCharKey = self.keys.charKey,
-		ownerRealmKey = self.keys.realmKey,
-		ownerFaction = self.keys.faction,
-		senderName = senderName or sender or "",
-		senderRealmKey = senderRealmKey,
-		senderClassName = className,
 		senderClassFile = classFile,
 		lineID = lineID,
 		guid = guid,
-		bnetIDAccount = bnetIDAccount,
 	}
 	-- do not pre-format; format on demand
 
@@ -333,7 +432,7 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 		if not factionBucket then return function() end end
 		local realmKeys = {}
 		for rKey, bucket in pairs(factionBucket) do
-			if type(bucket) == "table" and not tostring(rKey):find("^_") then table.insert(realmKeys, rKey) end
+			if type(bucket) == "table" and isVisibleKey(rKey) then table.insert(realmKeys, rKey) end
 		end
 		table.sort(realmKeys)
 		local realmIndex = 0
@@ -378,7 +477,7 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 		-- aggregate both factions for this realm
 		local factionKeys = {}
 		for fKey, bucket in pairs(ChannelHistory.history) do
-			if type(bucket) == "table" and not tostring(fKey):find("^_") and bucket[targetRealm] then
+			if type(bucket) == "table" and isVisibleKey(fKey) and bucket[targetRealm] then
 				table.insert(factionKeys, fKey)
 			end
 		end
@@ -409,7 +508,7 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 	if scope == "faction" then
 		local factionKeys = {}
 		for fKey, bucket in pairs(ChannelHistory.history) do
-			if type(bucket) == "table" and not tostring(fKey):find("^_") then table.insert(factionKeys, fKey) end
+			if type(bucket) == "table" and isVisibleKey(fKey) then table.insert(factionKeys, fKey) end
 		end
 		table.sort(factionKeys)
 		local fIndex = 0
@@ -440,7 +539,7 @@ function ChannelHistory:GetChannels(scope)
 		if charData and charData.channels then
 			for channelKey, channelData in pairs(charData.channels) do
 				channels[channelKey] = channels[channelKey] or { label = channelData.label or channelKey, count = 0 }
-				if channelData.lines then channels[channelKey].count = channels[channelKey].count + #channelData.lines end
+				channels[channelKey].count = channels[channelKey].count + getLineCount(channelData)
 			end
 		end
 	end
@@ -455,7 +554,7 @@ function ChannelHistory:GetHistory(scope, channelKey)
 
 	for charKey, charData in iterCharacters(scope) do
 		if charData and charData.channels and charData.channels[channelKey] and charData.channels[channelKey].lines then
-			for _, line in ipairs(charData.channels[channelKey].lines) do
+			for line in iterChannelLines(charData.channels[channelKey]) do
 				table.insert(result, {
 					character = charKey,
 					faction = charData.faction or self.keys and self.keys.faction,
@@ -547,16 +646,12 @@ local function buildClassLookup()
 	end
 end
 
-local function resolveClassTokenFromValues(values)
+local function resolveClassToken(val)
 	buildClassLookup()
-	for _, val in ipairs(values) do
-		if type(val) == "string" then
-			local upper = string.upper(val)
-			if RAID_CLASS_COLORS and RAID_CLASS_COLORS[upper] then return upper end
-			if CLASS_NAME_TO_FILE and CLASS_NAME_TO_FILE[val] then return CLASS_NAME_TO_FILE[val] end
-		end
-	end
-	return nil
+	if type(val) ~= "string" then return nil end
+	local upper = val:upper()
+	if RAID_CLASS_COLORS and RAID_CLASS_COLORS[upper] then return upper end
+	return CLASS_NAME_TO_FILE and CLASS_NAME_TO_FILE[val] or nil
 end
 
 function resolveClassFromGUID(guid)
@@ -565,7 +660,7 @@ function resolveClassFromGUID(guid)
 	if cache and cache[guid] then return cache[guid].token end
 	local locClass, classFile = GetPlayerInfoByGUID(guid)
 	local className = locClass
-	local token = classFile or resolveClassTokenFromValues({ className })
+	local token = classFile or resolveClassToken(className)
 	if token then
 		if cache then cache[guid] = { token = token, loc = className or token } end
 	end
@@ -578,7 +673,7 @@ function getSenderClass(guid)
 	if cache and cache[guid] then return cache[guid].loc, cache[guid].token end
 	local locClass, classFile = GetPlayerInfoByGUID(guid)
 	local className = locClass
-	local token = classFile or resolveClassTokenFromValues({ className })
+	local token = classFile or resolveClassToken(className)
 	local locName = className
 	if not locName and token then
 		locName = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token
@@ -682,8 +777,10 @@ function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
 	elseif scope == "realm" then
 		local lineRealm = line.ownerRealmKey or (line.ownerCharKey and line.ownerCharKey:match("%-([^-]+)$")) or self.keys.realmKey
 		if realmKey and lineRealm and realmKey ~= lineRealm then return false end
+		local lineFaction = line.ownerFaction or (self.keys and self.keys.faction)
+		if factionKey and lineFaction and factionKey ~= lineFaction then return false end
 	elseif scope == "faction" and factionKey then
-		local lineFaction = line.ownerFaction
+		local lineFaction = line.ownerFaction or (self.keys and self.keys.faction)
 		if lineFaction and factionKey ~= lineFaction then return false end
 	end
 	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
@@ -753,32 +850,124 @@ function deriveScope(selection, keys)
 	return "character", nil, keys and keys.charKey, keys and keys.faction
 end
 
-local function collectLines(self, scope, realmKey, charKey, factionKey, searchNeedle)
+local function collectLines(self, scope, realmKey, charKey, factionKey, searchNeedle, limit)
 	local results = {}
 	if not self.history or not self.keys then self:InitStorage() end
 
-	local function addFromChar(charData, charKeyInner)
-		if not charData or not charData.channels then return end
-		for _, channelData in pairs(charData.channels) do
-			for _, line in ipairs(channelData.lines or {}) do
-				if not line.filterKey and line.event and self.EVENT_FILTER_KEY then
-					line.filterKey = self.EVENT_FILTER_KEY[line.event]
+	local filters = self.ui and self.ui.filters or {}
+	local defaults = self.defaultFilters or {}
+	local function isEnabled(key)
+		if not key then return true end
+		local v = filters[key]
+		if v ~= nil then return v end
+		return defaults[key] ~= false
+	end
+
+	local function ensureFilter(line)
+		if not line.filterKey and line.event and self.EVENT_FILTER_KEY then
+			line.filterKey = self.EVENT_FILTER_KEY[line.event]
+		end
+		return line.filterKey
+	end
+
+	local maxResults = limit and limit > 0 and limit or nil
+
+	if not searchNeedle or searchNeedle == "" then
+		local heap = {}
+		local function pushHeap(entry)
+			local idx = #heap + 1
+			heap[idx] = entry
+			while idx > 1 do
+				local parent = math.floor(idx / 2)
+				if heap[parent].time >= entry.time then break end
+				heap[idx] = heap[parent]
+				idx = parent
+			end
+			heap[idx] = entry
+		end
+
+		local function popHeap()
+			local root = heap[1]
+			if not root then return nil end
+			local last = heap[#heap]
+			heap[#heap] = nil
+			if #heap == 0 then return root end
+			heap[1] = last
+			local i = 1
+			local size = #heap
+			while true do
+				local left = i * 2
+				local right = left + 1
+				local largest = i
+				if left <= size and heap[left].time > heap[largest].time then largest = left end
+				if right <= size and heap[right].time > heap[largest].time then largest = right end
+				if largest == i then break end
+				heap[i], heap[largest] = heap[largest], heap[i]
+				i = largest
+			end
+			return root
+		end
+
+		local function pullNext(stream)
+			while stream.index > 0 do
+				local line = getLineAt(stream.bucket, stream.index, stream.count)
+				stream.index = stream.index - 1
+				if line then
+					ensureFilter(line)
+					if isEnabled(line.filterKey) then return line end
 				end
-				if matchesSearchLower(searchNeedle, line.message, line.sender) and self:IsFilterEnabled(line.filterKey) then
-					table.insert(results, {
-						charKey = charKeyInner,
-						line = line,
-					})
+			end
+		end
+
+		for _, cd in iterCharacters(scope, realmKey, charKey, factionKey) do
+			if cd and cd.channels then
+				for _, channelData in pairs(cd.channels) do
+					local count = getLineCount(channelData)
+					if count > 0 then
+						local stream = { bucket = channelData, count = count, index = count }
+						local line = pullNext(stream)
+						if line then pushHeap({ line = line, stream = stream, time = line.time or 0 }) end
+					end
+				end
+			end
+		end
+
+		while #heap > 0 do
+			local entry = popHeap()
+			if not entry then break end
+			results[#results + 1] = entry.line
+			if maxResults and #results >= maxResults then break end
+			local nextLine = pullNext(entry.stream)
+			if nextLine then pushHeap({ line = nextLine, stream = entry.stream, time = nextLine.time or 0 }) end
+		end
+
+		local n = #results
+		for i = 1, math.floor(n / 2) do
+			results[i], results[n - i + 1] = results[n - i + 1], results[i]
+		end
+		return results
+	end
+
+	for _, cd in iterCharacters(scope, realmKey, charKey, factionKey) do
+		if cd and cd.channels then
+			for _, channelData in pairs(cd.channels) do
+				for line in iterChannelLines(channelData) do
+					ensureFilter(line)
+					if isEnabled(line.filterKey) and matchesSearchLower(searchNeedle, line.message, line.sender) then
+						results[#results + 1] = line
+					end
 				end
 			end
 		end
 	end
 
-	for ck, cd in iterCharacters(scope, realmKey, charKey, factionKey) do
-		addFromChar(cd, ck)
+	table.sort(results, function(a, b) return (a.time or 0) < (b.time or 0) end)
+	if maxResults and #results > maxResults then
+		local start = #results - maxResults + 1
+		local trimmed = {}
+		for i = start, #results do trimmed[#trimmed + 1] = results[i] end
+		results = trimmed
 	end
-
-	table.sort(results, function(a, b) return (a.line.time or 0) < (b.line.time or 0) end)
 	return results
 end
 
@@ -812,9 +1001,9 @@ function ChannelHistory:BuildLeftEntries(filterText)
 	local history = self.history or {}
 	local realms = {}
 	for fKey, factionBucket in pairs(history) do
-		if type(factionBucket) == "table" and not tostring(fKey):find("^_") then
+		if type(factionBucket) == "table" and isVisibleKey(fKey) then
 			for realmKey, realmData in pairs(factionBucket) do
-				if type(realmData) == "table" and not tostring(realmKey):find("^_") then
+				if type(realmData) == "table" and isVisibleKey(realmKey) then
 					local entry = realms[realmKey]
 					if not entry then
 						entry = { label = realmData.realmName or realmKey, factions = {} }
@@ -893,6 +1082,67 @@ function ChannelHistory:BuildLeftEntries(filterText)
 	return entries
 end
 
+local function handleLeftClick(btn, button)
+	if button ~= "LeftButton" then return end
+	local data = btn.entry
+	if not data then return end
+	local selfRef = ChannelHistory
+	if data.kind == "character" then
+		selfRef.ui.selection = { type = "character", key = data.key, faction = data.factionKey }
+		print("|cff99e599[EQOL] Selected:|r", data.key or "nil")
+		selfRef:RefreshLeftList()
+		selfRef:RequestLogRefresh()
+	elseif data.kind == "realm" then
+		local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
+		selfRef.ui.selection = { type = "realm", key = data.key, realm = realmKey }
+		print("|cff99e599[EQOL] Realm selected:|r", realmKey or "nil")
+		selfRef:RefreshLeftList()
+		selfRef:RequestLogRefresh()
+	elseif data.kind == "faction" then
+		selfRef.ui.selection = { type = "faction", key = data.key, faction = data.factionKey, realm = data.realmKey }
+		print("|cff99e599[EQOL] Faction selected:|r", data.factionKey or "nil")
+		selfRef:RefreshLeftList()
+		selfRef:RequestLogRefresh()
+	elseif data.kind == "header" then
+		selfRef.ui.selection = { type = "header", key = data.key }
+		print("|cff99e599[EQOL] Scope: All|r")
+		selfRef:RefreshLeftList()
+		selfRef:RequestLogRefresh()
+	end
+end
+
+local function handleToggleClick(toggleFrame, button)
+	if button ~= "LeftButton" then return end
+	local btn = toggleFrame:GetParent()
+	local data = btn and btn.entry
+	if not data then return end
+	local selfRef = ChannelHistory
+	if data.kind == "realm" then
+		local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
+		local newState = not data.expanded
+		selfRef.ui.leftState.realms[realmKey] = newState
+	elseif data.kind == "faction" then
+		local realmKey = data.realmKey or selfRef.keys.realmKey
+		selfRef.ui.leftState.factions[realmKey] = selfRef.ui.leftState.factions[realmKey] or {}
+		local fKey = data.factionKey or (data.key and data.key:match("^faction:[^:]+:(.+)$")) or data.key
+		local newState = not data.expanded
+		selfRef.ui.leftState.factions[realmKey][fKey] = newState
+	else
+		return
+	end
+	selfRef:RefreshLeftList()
+end
+
+local function handleToggleEnter(toggleFrame)
+	local btn = toggleFrame:GetParent()
+	if btn and btn.hl then btn.hl:Show() end
+end
+
+local function handleToggleLeave(toggleFrame)
+	local btn = toggleFrame:GetParent()
+	if btn and btn.hl then btn.hl:Hide() end
+end
+
 local function ensureLeftButtons(self, count)
 	self.ui.leftButtons = self.ui.leftButtons or {}
 	local buttons = self.ui.leftButtons
@@ -943,6 +1193,10 @@ local function ensureLeftButtons(self, count)
 		btn:SetScript("OnLeave", function(selfBtn)
 			if selfBtn.hl then selfBtn.hl:Hide() end
 		end)
+		btn:SetScript("OnMouseUp", handleLeftClick)
+		btn.toggleFrame:SetScript("OnMouseUp", handleToggleClick)
+		btn.toggleFrame:SetScript("OnEnter", handleToggleEnter)
+		btn.toggleFrame:SetScript("OnLeave", handleToggleLeave)
 
 		buttons[i] = btn
 	end
@@ -1025,60 +1279,6 @@ function ChannelHistory:RefreshLeftList()
 			setLabelText(btn.nameText, entry.label or entry.key)
 		end
 
-		btn:SetScript("OnMouseUp", function(selfBtn, button)
-			if button ~= "LeftButton" then return end
-			local data = selfBtn.entry
-			if not data then return end
-			if data.kind == "character" then
-				self.ui.selection = { type = "character", key = data.key, faction = data.factionKey }
-				print("|cff99e599[EQOL] Selected:|r", data.key or "nil")
-				self:RefreshLeftList()
-				self:RequestLogRefresh()
-			elseif data.kind == "realm" then
-				local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
-				self.ui.selection = { type = "realm", key = data.key, realm = realmKey }
-				print("|cff99e599[EQOL] Realm selected:|r", realmKey or "nil")
-				self:RefreshLeftList()
-				self:RequestLogRefresh()
-			elseif data.kind == "faction" then
-				self.ui.selection = { type = "faction", key = data.key, faction = data.factionKey, realm = data.realmKey }
-				print("|cff99e599[EQOL] Faction selected:|r", data.factionKey or "nil")
-				self:RefreshLeftList()
-				self:RequestLogRefresh()
-			elseif data.kind == "header" then
-				self.ui.selection = { type = "header", key = data.key }
-				print("|cff99e599[EQOL] Scope: All|r")
-				self:RefreshLeftList()
-				self:RequestLogRefresh()
-			end
-		end)
-
-		btn.toggleFrame:SetScript("OnMouseUp", function(_, button)
-			if button ~= "LeftButton" then return end
-			local data = btn.entry
-			if not data then return end
-			if data.kind == "realm" then
-				local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
-				local newState = not data.expanded
-				self.ui.leftState.realms[realmKey] = newState
-			elseif data.kind == "faction" then
-				local realmKey = data.realmKey or self.keys.realmKey
-				self.ui.leftState.factions[realmKey] = self.ui.leftState.factions[realmKey] or {}
-				local fKey = data.factionKey or (data.key and data.key:match("^faction:[^:]+:(.+)$")) or data.key
-				local newState = not data.expanded
-				self.ui.leftState.factions[realmKey][fKey] = newState
-			else
-				return
-			end
-			self:RefreshLeftList()
-		end)
-
-		btn.toggleFrame:SetScript("OnEnter", function()
-			if btn.hl then btn.hl:Show() end
-		end)
-		btn.toggleFrame:SetScript("OnLeave", function()
-			if btn.hl then btn.hl:Hide() end
-		end)
 	end
 
 	for j = #entries + 1, #buttons do
@@ -1323,7 +1523,9 @@ function ChannelHistory:RefreshLogView()
 	local scope, realmKey, charKey, factionKey = deriveScope(self.ui.selection, self.keys)
 	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
 	local needle = search and search:lower()
-	local lines = collectLines(self, scope, realmKey, charKey, factionKey, needle)
+	local log = self.ui.logFrame
+	local maxUI = (log and log:GetMaxLines()) or 1000
+	local lines = collectLines(self, scope, realmKey, charKey, factionKey, needle, maxUI)
 
 	local scopeLabel = "All"
 	if scope == "faction" then
@@ -1337,13 +1539,9 @@ function ChannelHistory:RefreshLogView()
 		if charKey then scopeLabel = scopeLabel .. ": " .. charKey end
 	end
 
-	local log = self.ui.logFrame
 	log:Clear()
-	local maxUI = log:GetMaxLines() or 1000
-	local startIndex = math.max(1, #lines - maxUI + 1)
-	for i = startIndex, #lines do
-		local line = lines[i].line
-		local text = formatLine(self, line)
+	for i = 1, #lines do
+		local text = formatLine(self, lines[i])
 		log:AddMessage(text, 1, 1, 1)
 	end
 	if self.ui.logInfo then
@@ -1559,6 +1757,9 @@ function ChannelHistory:CreateDebugFrame()
 	grip:Hide()
 
 	f:SetScript("OnSizeChanged", function(frame, w, h) ChannelHistory:LayoutDebugFrame(w, h) end)
+	f:SetScript("OnHide", function()
+		if ChannelHistory.runtime and ChannelHistory.runtime.formattedCache then wipe(ChannelHistory.runtime.formattedCache) end
+	end)
 
 	self:LayoutDebugFrame(950, 500)
 	self:RefreshLeftList()
