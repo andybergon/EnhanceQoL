@@ -1737,25 +1737,105 @@ function ChannelHistory:CreateDebugFrame()
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 4, 4)
 
-	local help = CreateFrame("Button", nil, f)
-	help:SetSize(32, 32)
-	help:SetPoint("RIGHT", close, "RIGHT", 0, -32)
-	help:SetNormalTexture("Interface\\Common\\help-i")
-	help:SetHighlightTexture("Interface\\Common\\help-i")
-	help:GetHighlightTexture():SetAlpha(0.6)
-	help:SetMotionScriptsWhileDisabled(true)
-	help:SetScript("OnEnter", function(btn)
+	local copyBtn = CreateFrame("Button", nil, f)
+	copyBtn:SetSize(24, 24)
+	copyBtn:SetPoint("RIGHT", close, "RIGHT", -6, -32)
+	copyBtn:SetNormalTexture("Interface\\AddOns\\EnhanceQoL\\Icons\\copy.tga")
+	copyBtn:SetHighlightTexture("Interface\\AddOns\\EnhanceQoL\\Icons\\copy.tga")
+	if copyBtn:GetHighlightTexture() then copyBtn:GetHighlightTexture():SetAlpha(0.6) end
+	copyBtn:SetMotionScriptsWhileDisabled(true)
+
+	local copyPopup
+	local function ensureCopyPopupFrame()
+		if copyPopup then return copyPopup end
+		local popup = CreateFrame("Frame", "EnhanceQoLChannelHistoryCopy", UIParent, "BackdropTemplate")
+		popup:SetSize(640, 400)
+		popup:SetPoint("CENTER")
+		popup:SetBackdrop(PANEL_BACKDROP)
+		popup:SetBackdropColor(0, 0, 0, 0.8)
+		popup:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+		popup:SetFrameStrata("DIALOG")
+		popup:EnableMouse(true)
+		popup:SetMovable(true)
+		popup:RegisterForDrag("LeftButton")
+		popup:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
+		popup:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
+
+		local closeCopy = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
+		closeCopy:SetPoint("TOPRIGHT", popup, "TOPRIGHT", 4, 4)
+
+		local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		title:SetPoint("TOPLEFT", popup, "TOPLEFT", 16, -12)
+		title:SetText(L["CH_COPY_TITLE"])
+
+		local scroll = CreateFrame("ScrollFrame", nil, popup, "UIPanelScrollFrameTemplate")
+		scroll:SetPoint("TOPLEFT", popup, "TOPLEFT", 12, -36)
+		scroll:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -32, 12)
+
+		local editBox = CreateFrame("EditBox", nil, scroll)
+		editBox:SetMultiLine(true)
+		editBox:SetAutoFocus(true)
+		editBox:SetFontObject(ChatFontNormal or GameFontNormal or SystemFont_Shadow_Med1)
+		editBox:SetWidth(580)
+		editBox:SetScript("OnEscapePressed", function() popup:Hide() end)
+		editBox:SetScript("OnTextChanged", function(selfEdit)
+			if selfEdit._justSet then
+				selfEdit._justSet = nil
+				return
+			end
+		end)
+		editBox:SetScript("OnCursorChanged", function(selfEdit, _, y, _, h)
+			local min, max = scroll:GetVerticalScrollRange()
+			local offset = scroll:GetVerticalScroll()
+			local viewHeight = scroll:GetHeight()
+			if y - offset < 0 then
+				scroll:SetVerticalScroll(y)
+			elseif (y + h - offset) > viewHeight then
+				local diff = (y + h) - viewHeight
+				scroll:SetVerticalScroll(math.min(max, offset + diff))
+			end
+		end)
+
+		scroll:SetScrollChild(editBox)
+
+		popup.editBox = editBox
+		popup.scroll = scroll
+		copyPopup = popup
+		return popup
+	end
+
+	local function copyVisibleLines()
+		if not self.ui or not self.ui.logFrame then return end
+		local log = self.ui.logFrame
+		local num = log:GetNumMessages()
+		if not num or num == 0 then return end
+		local lines = {}
+		for i = 1, num do
+			local text = log:GetMessageInfo(i)
+			if text then lines[#lines + 1] = text end
+		end
+		local popup = ensureCopyPopupFrame()
+		popup:Show()
+		popup.editBox._justSet = true
+		local text = table.concat(lines, "\n")
+		popup.editBox:SetText(text)
+		popup.editBox:SetCursorPosition(0)
+		if popup.scroll then popup.scroll:SetVerticalScroll(0) end
+		popup.editBox:SetFocus()
+	end
+
+	copyBtn:SetScript("OnClick", function()
+		copyVisibleLines()
+	end)
+	copyBtn:SetScript("OnEnter", function(btn)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(btn, "ANCHOR_TOPRIGHT", -2, -2)
 		GameTooltip:ClearLines()
-		GameTooltip:AddLine(L["CH_HELP_TITLE"], 1, 0.82, 0)
-		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine(L["CH_HELP_HINT_NAME"], 1, 1, 1, true)
-		GameTooltip:AddLine(L["CH_HELP_HINT_LINE"], 1, 1, 1, true)
-		GameTooltip:AddLine(L["CH_HELP_HINT_HOVER"], 1, 1, 1, true)
+		GameTooltip:AddLine(L["CH_COPY_TITLE"], 1, 0.82, 0)
+		GameTooltip:AddLine(L["CH_COPY_HINT"], 1, 1, 1, true)
 		GameTooltip:Show()
 	end)
-	help:SetScript("OnLeave", function()
+	copyBtn:SetScript("OnLeave", function()
 		if GameTooltip then GameTooltip:Hide() end
 	end)
 
