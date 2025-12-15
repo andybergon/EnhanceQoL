@@ -39,8 +39,10 @@ ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY
 		CHAT_MSG_CHANNEL = "GENERAL",
 		CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
 		CHAT_MSG_LOOT = "LOOT",
-		CHAT_MSG_MONEY = "LOOT",
+		CHAT_MSG_MONEY = "MONEY",
 		CHAT_MSG_CURRENCY = "LOOT",
+		CHAT_MSG_ACHIEVEMENT = "ACHIEVEMENT",
+		CHAT_MSG_GUILD_ACHIEVEMENT = "GUILD",
 		CHAT_MSG_SYSTEM = "SYSTEM",
 		CHAT_MSG_OPENING = "OPENING",
 	}
@@ -56,6 +58,8 @@ ChannelHistory.defaultFilters = {
 	WHISPER = true,
 	BN_WHISPER = true,
 	GENERAL = true,
+	MONEY = true,
+	ACHIEVEMENT = true,
 	SYSTEM = true,
 	OPENING = true,
 }
@@ -769,6 +773,8 @@ local CHAT_COLOR_KEYS = {
 	OFFICER = "OFFICER",
 	GENERAL = "CHANNEL", -- fallback to channel1 if CHANNEL missing
 	LOOT = "LOOT",
+	MONEY = "MONEY",
+	ACHIEVEMENT = "ACHIEVEMENT",
 	SYSTEM = "SYSTEM",
 	OPENING = "OPENING",
 }
@@ -785,6 +791,8 @@ local CHAT_COLOR_FALLBACK = {
 	OFFICER = { r = 0.25, g = 0.75, b = 0.25 },
 	GENERAL = { r = 192 / 255, g = 128 / 255, b = 128 / 255 },
 	LOOT = { r = 0, g = 170 / 255, b = 0 },
+	MONEY = { r = 0, g = 170 / 255, b = 0 },
+	ACHIEVEMENT = { r = 1, g = 0.75, b = 0.25 },
 	SYSTEM = { r = 1, g = 1, b = 0 },
 	OPENING = { r = 128 / 255, g = 128 / 255, b = 1 },
 }
@@ -1486,6 +1494,7 @@ function ChannelHistory:RefreshLeftList()
 end
 
 function ChannelHistory:OnEvent(event, ...)
+	print(event, ...)
 	if not self.enabled then return end
 	if not self.loggedIn then return end
 	if not self.events or not self.events[event] then return end
@@ -1621,6 +1630,8 @@ function ChannelHistory:CreateFilterUI()
 		{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
 		{ key = "GENERAL", label = GENERAL },
 		{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
+		{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
+		{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
 		{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
 		{ key = "OPENING", label = OPENING },
 	}
