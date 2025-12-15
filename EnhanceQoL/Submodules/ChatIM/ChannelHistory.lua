@@ -143,9 +143,7 @@ local function showPlayerMenu(owner, rawName, isBN, bnetID)
 					unit = string.format("%s-%s", gameInfo.characterName, realmKey)
 				end
 			else
-				if unit and not unit:match("%-") then
-					unit = unit .. "-" .. sanitizeRealm(GetRealmName() or "")
-				end
+				if unit and not unit:match("%-") then unit = unit .. "-" .. sanitizeRealm(GetRealmName() or "") end
 			end
 
 			if unit then root:CreateButton(INVITE, function(u) C_PartyInfo.InviteUnit(u) end, unit) end
@@ -173,7 +171,9 @@ local function showPlayerMenu(owner, rawName, isBN, bnetID)
 			local regionKey = regionTable[GetCurrentRegion()] or "EU"
 			local char, realm = target:match("^([^%-]+)%-(.+)$")
 			local rioChar, rioRealm = char, realm
-			if not rioChar and unit and unit:match("%-") then rioChar, rioRealm = unit:match("^([^%-]+)%-(.+)$") end
+			if not rioChar and unit and unit:match("%-") then
+				rioChar, rioRealm = unit:match("^([^%-]+)%-(.+)$")
+			end
 			if rioChar and rioRealm and addon and addon.db then
 				local lowerRealm = rioRealm:gsub("%s+", "-"):lower()
 				local lowerChar = rioChar:lower()
@@ -301,9 +301,7 @@ function ChannelHistory:UpdateLogFontSize(size, frame)
 	if target then target:SetFontObject(fontObj) end
 end
 
-function ChannelHistory:ApplyFontSize()
-	self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12)
-end
+function ChannelHistory:ApplyFontSize() self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12) end
 
 local function getCharacterBucket(create)
 	if not ChannelHistory.keys then ChannelHistory:InitStorage() end
@@ -515,6 +513,11 @@ function ChannelHistory:Store(event, ...)
 	local filterKey = self.EVENT_FILTER_KEY and self.EVENT_FILTER_KEY[event]
 	if filterKey and self.IsFilterEnabled then
 		if not self:IsFilterEnabled(filterKey) then return end
+	end
+	-- Skip learn/unlearn spam unconditionally
+	if filterKey == "SYSTEM" and addon.functions and addon.functions.ChatLearnFilter then
+		local firstArg = ...
+		if addon.functions.ChatLearnFilter(nil, nil, firstArg) then return end
 	end
 	if self.maxLines == 0 then return end
 	if not self.history or not self.keys then self:InitStorage() end
@@ -1732,9 +1735,7 @@ function ChannelHistory:EnsureLogFrame()
 			if payload and (linkType == "player" or linkType == "BNplayer") then
 				local namePart = payload:match("^[^:]+")
 				local accountID
-				if linkType == "BNplayer" then
-					accountID = tonumber(select(2, strsplit(":", payload)))
-				end
+				if linkType == "BNplayer" then accountID = tonumber(select(2, strsplit(":", payload))) end
 				if namePart and showPlayerMenu(frame, namePart, linkType == "BNplayer", accountID) then return end
 			end
 		end
@@ -1865,11 +1866,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 			if UIErrorsFrame and ERR_NOT_IN_COMBAT then UIErrorsFrame:AddMessage(ERR_NOT_IN_COMBAT, 1, 0, 0) end
 			return
 		end
-		if Settings and addon.SettingsLayout and addon.SettingsLayout.chatframeCategory then
-			Settings.OpenToCategory(addon.SettingsLayout.chatframeCategory:GetID())
-		elseif Settings and addon.SettingsLayout and addon.SettingsLayout.rootCategory then
-			Settings.OpenToCategory(addon.SettingsLayout.rootCategory:GetID())
-		end
+
+		Settings.OpenToCategory(addon.SettingsLayout.chatframeCategory:GetID(), L["CH_TITLE_HISTORY"])
 	end
 
 	local optionsBtn = CreateFrame("Button", nil, f)
@@ -1977,9 +1975,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		popup.editBox:SetFocus()
 	end
 
-	copyBtn:SetScript("OnClick", function()
-		copyVisibleLines()
-	end)
+	copyBtn:SetScript("OnClick", function() copyVisibleLines() end)
 	copyBtn:SetScript("OnEnter", function(btn)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(btn, "ANCHOR_TOPRIGHT", -2, -2)
@@ -2029,9 +2025,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		local line = hdr:CreateTexture(nil, "ARTWORK")
 		line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, 2)
 		line:SetPoint("TOPRIGHT", hdr, "BOTTOMRIGHT", 0, 2)
-		line:SetHeight(18)
-		line:SetAtlas("characterupdate_green-glow-and-filigree", true)
-		line:SetAlpha(0.32)
+		line:SetHeight(1)
+		line:SetColorTexture(1, 1, 1, 0.15)
 		return hdr
 	end
 

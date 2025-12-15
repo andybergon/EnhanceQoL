@@ -4,7 +4,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 local wipe = wipe
 
 local cProfiles = addon.functions.SettingsCreateCategory(nil, L["Profiles"], nil, "Profiles")
-addon.SettingsLayout.chatframeCategory = cProfiles
+addon.SettingsLayout.profilesCategory = cProfiles
 local profileOrderActive, profileOrderGlobal, profileOrderCopy, profileOrderDelete = {}, {}, {}, {}
 
 -- Build a sorted dropdown list, optionally keeping an empty entry pinned to the top
