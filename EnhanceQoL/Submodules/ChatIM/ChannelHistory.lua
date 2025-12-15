@@ -59,6 +59,7 @@ ChannelHistory.defaultFilters = {
 ChannelHistory.ui = ChannelHistory.ui or {}
 ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, refreshPending = false, formattedCache = nil }
 local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID, normalizeChannelBucket
+local MU = MenuUtil
 
 local function getClassStyle(classFile)
 	if not classFile then return nil end
@@ -84,6 +85,49 @@ local function sanitizeRealm(realm)
 	if not realm or realm == "" then realm = GetRealmName() or "Unknown" end
 	realm = realm:gsub("%s+", "")
 	return realm
+end
+
+local function ensureCopyPopup()
+	if not StaticPopupDialogs then return end
+	if StaticPopupDialogs["EQOL_URL_COPY"] then return end
+	StaticPopupDialogs["EQOL_URL_COPY"] = {
+		text = CALENDAR_COPY_EVENT,
+		button1 = CLOSE,
+		hasEditBox = true,
+		editBoxWidth = 320,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnShow = function(self, data)
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			if editBox then
+				editBox:SetText(data or "")
+				editBox:SetFocus()
+				editBox:HighlightText()
+			end
+		end,
+	}
+end
+
+local function showCopyDialog(text)
+	ensureCopyPopup()
+	if StaticPopup_Show then StaticPopup_Show("EQOL_URL_COPY", nil, nil, text or "") end
+end
+
+local function showPlayerMenu(owner, rawName)
+	if not rawName then return false end
+	local name = Ambiguate and Ambiguate(rawName, "none") or rawName
+	if MU and MU.CreateContextMenu then
+		MU.CreateContextMenu(owner, function(_, root, target)
+			root:CreateTitle(target)
+			root:CreateDivider()
+			root:CreateButton(COPY_CHARACTER_NAME, function(unit) showCopyDialog(unit) end, target)
+		end, name)
+		return true
+	end
+	showCopyDialog(name)
+	return true
 end
 
 local function isVisibleKey(key)
@@ -133,15 +177,19 @@ function ChannelHistory:InitStorage()
 	self.runtime = self.runtime or {}
 	self.runtime.guidClassCache = self.runtime.guidClassCache or {}
 	self.runtime.refreshPending = false
-	if not self.runtime.formattedCache then
-		self.runtime.formattedCache = setmetatable({}, { __mode = "kv" })
-	else
-		setmetatable(self.runtime.formattedCache, { __mode = "kv" })
-	end
+	self.runtime.seq = self.runtime.seq or 0
+	self.runtime.formattedCache = self.runtime.formattedCache or {}
+	setmetatable(self.runtime.formattedCache, { __mode = "k" })
 end
 
 function ChannelHistory:SetMaxLines(value)
-	self.maxLines = value or self.maxLines or 500
+	local runtime = self.runtime or {}
+	self.runtime = runtime
+	local oldMax = self.maxLines or 500
+	local newMax = value or oldMax or 500
+	local needsNormalize = (newMax ~= oldMax) or not runtime.didNormalize
+	self.maxLines = newMax
+	if not needsNormalize then return end
 	if not self.history then return end
 
 	for _, realms in pairs(self.history) do
@@ -160,6 +208,7 @@ function ChannelHistory:SetMaxLines(value)
 			end
 		end
 	end
+	runtime.didNormalize = true
 end
 
 local function getCharacterBucket(create)
@@ -379,6 +428,7 @@ function ChannelHistory:Store(event, ...)
 	channelKey = channelKey or event
 	local _, classFile = getSenderClass(guid)
 	local stamp = now()
+	self.runtime.seq = (self.runtime.seq or 0) + 1
 
 	charBucket.channels = charBucket.channels or {}
 	local channelBucket = charBucket.channels[channelKey] or { label = channelLabel or channelKey, lines = {} }
@@ -393,6 +443,7 @@ function ChannelHistory:Store(event, ...)
 		senderClassFile = classFile,
 		lineID = lineID,
 		guid = guid,
+		seq = self.runtime.seq,
 	}
 	-- do not pre-format; format on demand
 
@@ -454,7 +505,7 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 
 	if scope == nil or scope == "character" then
 		local targetChar = charKey or ChannelHistory.keys.charKey
-		local inferredRealm = targetChar and targetChar:match("%-([^-]+)$")
+		local inferredRealm = realmFromCharKey(targetChar)
 		local targetRealm = realmKey or inferredRealm or ChannelHistory.keys.realmKey
 		local targetFaction = factionKey or ChannelHistory.keys.faction
 		local factionBucket = ChannelHistory.history[targetFaction]
@@ -567,13 +618,15 @@ function ChannelHistory:GetHistory(scope, channelKey)
 		end
 	end
 
-	table.sort(result, function(a, b) return (a.data.time or 0) < (b.data.time or 0) end)
+	table.sort(result, function(a, b)
+		local at = a.data.time or 0
+		local bt = b.data.time or 0
+		if at ~= bt then return at < bt end
+		local aid = (a.data.seq or a.data.lineID or 0)
+		local bid = (b.data.seq or b.data.lineID or 0)
+		return aid < bid
+	end)
 	return result
-end
-
-local function setButtonClassVisual(btn, classFile)
-	local color = getClassStyle(classFile)
-	if color and btn.nameText then btn.nameText:SetTextColor(color.r, color.g, color.b) end
 end
 
 local function setClassIcon(btn, classFile)
@@ -627,6 +680,12 @@ function splitSender(sender)
 	if not name or name == "" then name = sender end
 	if realm and realm ~= "" then realm = sanitizeRealm(realm) end
 	return name, realm
+end
+
+local function realmFromCharKey(charKey)
+	if not charKey or charKey == "" then return nil end
+	local _, realm = splitSender(charKey)
+	return realm
 end
 
 local CLASS_NAME_TO_FILE = nil
@@ -775,7 +834,7 @@ function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
 	if scope == "character" then
 		if charKey and line.ownerCharKey and charKey ~= line.ownerCharKey then return false end
 	elseif scope == "realm" then
-		local lineRealm = line.ownerRealmKey or (line.ownerCharKey and line.ownerCharKey:match("%-([^-]+)$")) or self.keys.realmKey
+		local lineRealm = line.ownerRealmKey or realmFromCharKey(line.ownerCharKey) or self.keys.realmKey
 		if realmKey and lineRealm and realmKey ~= lineRealm then return false end
 		local lineFaction = line.ownerFaction or (self.keys and self.keys.faction)
 		if factionKey and lineFaction and factionKey ~= lineFaction then return false end
@@ -870,104 +929,112 @@ local function collectLines(self, scope, realmKey, charKey, factionKey, searchNe
 		return line.filterKey
 	end
 
-	local maxResults = limit and limit > 0 and limit or nil
+	local maxResults = (limit and limit > 0) and limit or nil
 
-	if not searchNeedle or searchNeedle == "" then
-		local heap = {}
-		local function pushHeap(entry)
-			local idx = #heap + 1
-			heap[idx] = entry
-			while idx > 1 do
-				local parent = math.floor(idx / 2)
-				if heap[parent].time >= entry.time then break end
-				heap[idx] = heap[parent]
-				idx = parent
+	local function higher(a, b)
+		if a.time ~= b.time then return a.time > b.time end
+		return (a.id or 0) > (b.id or 0)
+	end
+
+	local function getOrderId(line)
+		return line and (line.seq or line.lineID or 0) or 0
+	end
+
+	local heap = {}
+	local function push(entry)
+		local idx = #heap + 1
+		heap[idx] = entry
+		while idx > 1 do
+			local parent = math.floor(idx / 2)
+			if not higher(entry, heap[parent]) then break end
+			heap[idx] = heap[parent]
+			idx = parent
+		end
+		heap[idx] = entry
+	end
+
+	local function pop()
+		local root = heap[1]
+		if not root then return nil end
+		local last = heap[#heap]
+		heap[#heap] = nil
+		if #heap == 0 then return root end
+
+		heap[1] = last
+		local i = 1
+		local size = #heap
+		while true do
+			local left = i * 2
+			local right = left + 1
+			local largest = i
+
+			if left <= size and higher(heap[left], heap[largest]) then largest = left end
+			if right <= size and higher(heap[right], heap[largest]) then largest = right end
+			if largest == i then break end
+			heap[i], heap[largest] = heap[largest], heap[i]
+			i = largest
+		end
+		return root
+	end
+
+	local function matches(line)
+		ensureFilter(line)
+		if not isEnabled(line.filterKey) then return false end
+		return matchesSearchLower(searchNeedle, line.message, line.sender)
+	end
+
+	local function pullNext(stream)
+		while stream.index > 0 do
+			local line = getLineAt(stream.bucket, stream.index, stream.count)
+			stream.index = stream.index - 1
+			if line and matches(line) then
+				return line
 			end
-			heap[idx] = entry
 		end
-
-		local function popHeap()
-			local root = heap[1]
-			if not root then return nil end
-			local last = heap[#heap]
-			heap[#heap] = nil
-			if #heap == 0 then return root end
-			heap[1] = last
-			local i = 1
-			local size = #heap
-			while true do
-				local left = i * 2
-				local right = left + 1
-				local largest = i
-				if left <= size and heap[left].time > heap[largest].time then largest = left end
-				if right <= size and heap[right].time > heap[largest].time then largest = right end
-				if largest == i then break end
-				heap[i], heap[largest] = heap[largest], heap[i]
-				i = largest
-			end
-			return root
-		end
-
-		local function pullNext(stream)
-			while stream.index > 0 do
-				local line = getLineAt(stream.bucket, stream.index, stream.count)
-				stream.index = stream.index - 1
-				if line then
-					ensureFilter(line)
-					if isEnabled(line.filterKey) then return line end
-				end
-			end
-		end
-
-		for _, cd in iterCharacters(scope, realmKey, charKey, factionKey) do
-			if cd and cd.channels then
-				for _, channelData in pairs(cd.channels) do
-					local count = getLineCount(channelData)
-					if count > 0 then
-						local stream = { bucket = channelData, count = count, index = count }
-						local line = pullNext(stream)
-						if line then pushHeap({ line = line, stream = stream, time = line.time or 0 }) end
-					end
-				end
-			end
-		end
-
-		while #heap > 0 do
-			local entry = popHeap()
-			if not entry then break end
-			results[#results + 1] = entry.line
-			if maxResults and #results >= maxResults then break end
-			local nextLine = pullNext(entry.stream)
-			if nextLine then pushHeap({ line = nextLine, stream = entry.stream, time = nextLine.time or 0 }) end
-		end
-
-		local n = #results
-		for i = 1, math.floor(n / 2) do
-			results[i], results[n - i + 1] = results[n - i + 1], results[i]
-		end
-		return results
 	end
 
 	for _, cd in iterCharacters(scope, realmKey, charKey, factionKey) do
 		if cd and cd.channels then
 			for _, channelData in pairs(cd.channels) do
-				for line in iterChannelLines(channelData) do
-					ensureFilter(line)
-					if isEnabled(line.filterKey) and matchesSearchLower(searchNeedle, line.message, line.sender) then
-						results[#results + 1] = line
+				local count = getLineCount(channelData)
+				if count > 0 then
+					local stream = { bucket = channelData, count = count, index = count }
+					local line = pullNext(stream)
+					if line then
+						push({
+							line = line,
+							stream = stream,
+							time = line.time or 0,
+							id = getOrderId(line),
+						})
 					end
 				end
 			end
 		end
 	end
 
-	table.sort(results, function(a, b) return (a.time or 0) < (b.time or 0) end)
-	if maxResults and #results > maxResults then
-		local start = #results - maxResults + 1
-		local trimmed = {}
-		for i = start, #results do trimmed[#trimmed + 1] = results[i] end
-		results = trimmed
+	while #heap > 0 do
+		local entry = pop()
+		if not entry then break end
+		results[#results + 1] = entry.line
+		if maxResults and #results >= maxResults then break end
+
+		local nextLine = pullNext(entry.stream)
+		if nextLine then
+			push({
+				line = nextLine,
+				stream = entry.stream,
+				time = nextLine.time or 0,
+				id = getOrderId(nextLine),
+			})
+		end
 	end
+
+	local n = #results
+	for i = 1, math.floor(n / 2) do
+		results[i], results[n - i + 1] = results[n - i + 1], results[i]
+	end
+
 	return results
 end
 
@@ -1512,6 +1579,13 @@ function ChannelHistory:EnsureLogFrame()
 		end
 	end)
 	frame:SetScript("OnHyperlinkClick", function(_, link, text, button)
+		if button == "RightButton" then
+			local linkType, payload = link:match("^(%a+):(.+)$")
+			if payload and (linkType == "player" or linkType == "BNplayer") then
+				local target = payload:match("([^:]+)")
+				if target and showPlayerMenu(frame, target) then return end
+			end
+		end
 		if SetItemRef then SetItemRef(link, text, button, frame) end
 	end)
 	self.ui.logFrame = frame
