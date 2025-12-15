@@ -344,6 +344,21 @@ addon.functions.SettingsCreateButton(cChatFrame, data)
 
 addon.functions.SettingsCreateHeadline(cChatFrame, L["CH_TITLE_HISTORY"])
 
+local chatHistoryStrataOptions = {}
+local strataOrder = {
+	"BACKGROUND",
+	"LOW",
+	"MEDIUM",
+	"HIGH",
+	"DIALOG",
+	"FULLSCREEN",
+	"FULLSCREEN_DIALOG",
+	"TOOLTIP",
+}
+for _, strata in ipairs(strataOrder) do
+	chatHistoryStrataOptions[strata] = strata
+end
+
 data = {
 	{
 		var = "enableChatHistory",
@@ -351,9 +366,7 @@ data = {
 		desc = L["CH_OPTION_ENABLE_DESC"],
 		func = function(val)
 			addon.db["enableChatHistory"] = val
-			if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetEnabled then
-				addon.ChatIM.ChannelHistory:SetEnabled(val)
-			end
+			if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetEnabled then addon.ChatIM.ChannelHistory:SetEnabled(val) end
 		end,
 		default = false,
 		children = {
@@ -391,9 +404,7 @@ data = {
 				get = function() return addon.db and addon.db.chatChannelHistoryMaxViewLines or 1000 end,
 				set = function(value)
 					addon.db["chatChannelHistoryMaxViewLines"] = value
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetUILineLimit then
-						addon.ChatIM.ChannelHistory:SetUILineLimit(value)
-					end
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetUILineLimit then addon.ChatIM.ChannelHistory:SetUILineLimit(value) end
 				end,
 				min = 100,
 				max = 2000,
@@ -414,15 +425,56 @@ data = {
 				get = function() return addon.db and addon.db.chatChannelHistoryFontSize or 12 end,
 				set = function(value)
 					addon.db["chatChannelHistoryFontSize"] = value
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateLogFontSize then
-						addon.ChatIM.ChannelHistory:UpdateLogFontSize(value)
-					end
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateLogFontSize then addon.ChatIM.ChannelHistory:UpdateLogFontSize(value) end
 				end,
 				min = 8,
 				max = 18,
 				step = 0.5,
 				parent = true,
 				default = 12,
+				sType = "slider",
+			},
+			{
+				var = "chatHistoryFrameStrata",
+				text = L["CH_OPTION_FRAME_STRATA"],
+				desc = L["CH_OPTION_FRAME_STRATA_DESC"],
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				get = function() return addon.db and addon.db.chatHistoryFrameStrata or "MEDIUM" end,
+				set = function(value)
+					addon.db.chatHistoryFrameStrata = value or "MEDIUM"
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetFrameStrata then addon.ChatIM.ChannelHistory:SetFrameStrata(value) end
+				end,
+				list = chatHistoryStrataOptions,
+				parent = true,
+				default = "MEDIUM",
+				sType = "dropdown",
+				type = Settings.VarType.String,
+				order = strataOrder,
+			},
+			{
+				var = "chatHistoryFrameLevel",
+				text = L["CH_OPTION_FRAME_LEVEL"],
+				desc = L["CH_OPTION_FRAME_LEVEL_DESC"],
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				get = function() return addon.db and addon.db.chatHistoryFrameLevel or 600 end,
+				set = function(value)
+					local lvl = tonumber(value) or 600
+					addon.db.chatHistoryFrameLevel = lvl
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetFrameLevel then addon.ChatIM.ChannelHistory:SetFrameLevel(lvl) end
+				end,
+				min = 1,
+				max = 1000,
+				step = 1,
+				parent = true,
+				default = 600,
 				sType = "slider",
 			},
 		},

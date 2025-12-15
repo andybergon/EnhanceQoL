@@ -224,6 +224,12 @@ L["CH_BINDING_TOGGLE"] = "Toggle Chat History"
 L["CH_TO_PREFIX"] = "To"
 L["CH_OPTION_FONT"] = "Log font size"
 L["CH_OPTION_FONT_DESC"] = "Adjust the font size used in the Chat History log."
+L["CH_OPTION_FRAME_STRATA"] = "History window strata"
+L["CH_OPTION_FRAME_STRATA_DESC"] = "Control the frame strata of the Chat History window."
+L["CH_OPTION_FRAME_LEVEL"] = "History window frame level"
+L["CH_OPTION_FRAME_LEVEL_DESC"] = "Control the frame level of the Chat History window (higher draws on top)."
+L["CH_OPTION_FILTER_SELECTION"] = "Logged chat categories"
+L["CH_OPTION_FILTER_SELECTION_DESC"] = "Pick which chat channels and systems are stored in Chat History. All are enabled by default."
 L["enableGemHelperDesc"] = "Displays a helper panel when you open the socketing UI.\nLeft-click a gem to pick it up."
 
 L["deleteItemFillDialog"] = 'Add "%s" to the "Delete confirmation Popup"'
