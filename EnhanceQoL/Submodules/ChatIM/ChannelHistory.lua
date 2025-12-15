@@ -1042,7 +1042,7 @@ function deriveScope(selection, keys)
 		local realmKey, factionKey = (selection.key or ""):match("^faction:([^:]+):(.+)$")
 		if not factionKey then factionKey = selection.faction or (selection.key and selection.key:match("^faction:(.+)$")) end
 		if not realmKey then realmKey = selection.realm or (keys and keys.realmKey) end
-		return "realm", realmKey, nil, factionKey
+		return "faction", realmKey, nil, factionKey
 	end
 	if selection.type == "character" then
 		local realmKey, factionKey, charKey = (selection.key or ""):match("^char:([^:]+):([^:]+):(.+)$")
@@ -1860,7 +1860,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f.bg:SetAtlas("character-panel-background")
 	f.bg:SetAlpha(0.9)
 	f:SetFrameStrata("MEDIUM")
-	f:SetFrameLevel(50)
+	f:SetFrameLevel(600)
 
 	f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
 	f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
