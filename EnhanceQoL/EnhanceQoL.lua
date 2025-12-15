@@ -2497,7 +2497,9 @@ local function initChatFrame()
 	addon.functions.InitDBValue("chatIMUseCustomSound", false)
 	addon.functions.InitDBValue("chatIMCustomSoundFile", "")
 	addon.functions.InitDBValue("chatIMMaxHistory", 250)
+	addon.functions.InitDBValue("enableChatHistory", false)
 	addon.functions.InitDBValue("chatChannelHistoryMaxLines", 500)
+	addon.functions.InitDBValue("chatChannelHistoryMaxViewLines", 1000)
 	addon.functions.InitDBValue("chatChannelFilters", {})
 	addon.functions.InitDBValue("chatIMFrameData", {})
 	addon.functions.InitDBValue("chatIMHideInCombat", false)
@@ -3582,6 +3584,13 @@ local function CreateUI()
 		DoDevider()
 		root:CreateTitle(L["DataPanel"])
 		root:CreateButton(L["SettingsDataPanelCreate"], function() local dialog = StaticPopup_Show("EQOL_CREATE_DATAPANEL") end)
+
+		if addon.db["enableChatHistory"] and addon.ChatIM and addon.ChatIM.ChannelHistory then
+			DoDevider()
+			root:CreateButton(L["CH_TITLE_HISTORY"], function()
+				if addon.ChatIM.ChannelHistory.ToggleWindow then addon.ChatIM.ChannelHistory:ToggleWindow() end
+			end)
+		end
 
 		DoDevider()
 		root:CreateButton(LFG_LIST_LEGACY .. " " .. SETTINGS, function()

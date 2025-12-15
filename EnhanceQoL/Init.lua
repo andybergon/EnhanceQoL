@@ -45,6 +45,7 @@ addon.general.variables.autoOpen = {
 	[246937] = true, -- Perfected Epoch Memento
 	[246936] = true, -- Resonant Epoch Memento
 	[249784] = true, -- Legionfall Champions Insignia (2k Rep)
+	[253227] = true, -- Flawless Thread of Time
 
 	[253224] = {
 		minStack = 10,
@@ -808,27 +809,27 @@ do
 	end
 end
 
-	addon.variables.unitFrameNames = {
-		{ name = "PlayerFrame", var = "unitframeSettingPlayerFrame", text = HUD_EDIT_MODE_PLAYER_FRAME_LABEL, unitToken = "player" },
-		{
-			name = "BossTargetFrameContainer",
-			var = "unitframeSettingBossTargetFrame",
+addon.variables.unitFrameNames = {
+	{ name = "PlayerFrame", var = "unitframeSettingPlayerFrame", text = HUD_EDIT_MODE_PLAYER_FRAME_LABEL, unitToken = "player" },
+	{
+		name = "BossTargetFrameContainer",
+		var = "unitframeSettingBossTargetFrame",
 		text = HUD_EDIT_MODE_BOSS_FRAMES_LABEL,
 		allowedVisibility = { "NONE", "MOUSEOVER", "HIDE" },
-			onlyChildren = { "Boss1TargetFrame", "Boss2TargetFrame", "Boss3TargetFrame", "Boss4TargetFrame", "Boss5TargetFrame" },
-		},
-		{ name = "TargetFrame", var = "unitframeSettingTargetFrame", text = HUD_EDIT_MODE_TARGET_FRAME_LABEL },
-		{
-			name = "FocusFrame",
-			var = "unitframeSettingFocusFrame",
-			text = _G.HUD_EDIT_MODE_FOCUS_FRAME_LABEL or "Focus Frame",
-			allowedVisibility = { "NONE", "MOUSEOVER", "HIDE" },
-		},
-		{
-			name = "PetFrame",
-			var = "unitframeSettingPetFrame",
-			text = _G.HUD_EDIT_MODE_PET_FRAME_LABEL or "Pet Frame",
-			children = petChildren or {},
+		onlyChildren = { "Boss1TargetFrame", "Boss2TargetFrame", "Boss3TargetFrame", "Boss4TargetFrame", "Boss5TargetFrame" },
+	},
+	{ name = "TargetFrame", var = "unitframeSettingTargetFrame", text = HUD_EDIT_MODE_TARGET_FRAME_LABEL },
+	{
+		name = "FocusFrame",
+		var = "unitframeSettingFocusFrame",
+		text = _G.HUD_EDIT_MODE_FOCUS_FRAME_LABEL or "Focus Frame",
+		allowedVisibility = { "NONE", "MOUSEOVER", "HIDE" },
+	},
+	{
+		name = "PetFrame",
+		var = "unitframeSettingPetFrame",
+		text = _G.HUD_EDIT_MODE_PET_FRAME_LABEL or "Pet Frame",
+		children = petChildren or {},
 		revealAllChilds = true,
 	},
 	{

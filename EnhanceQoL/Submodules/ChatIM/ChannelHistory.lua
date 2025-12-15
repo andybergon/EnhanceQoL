@@ -6,6 +6,7 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
+_G["BINDING_NAME_EQOL_TOGGLE_CHATHISTORY"] = L["CH_BINDING_TOGGLE"]
 
 addon.ChatIM = addon.ChatIM or {}
 local ChatIM = addon.ChatIM
@@ -15,6 +16,7 @@ local ChannelHistory = ChatIM.ChannelHistory
 
 ChannelHistory.version = 1
 ChannelHistory.maxLines = ChannelHistory.maxLines or 500
+ChannelHistory.uiMaxLines = ChannelHistory.uiMaxLines or 1000
 ChannelHistory.enabled = ChannelHistory.enabled or false
 ChannelHistory.frame = ChannelHistory.frame or CreateFrame("Frame")
 ChannelHistory.events = ChannelHistory.events or nil
@@ -211,15 +213,18 @@ function ChannelHistory:InitStorage()
 	self.runtime.seq = self.runtime.seq or 0
 	self.runtime.formattedCache = self.runtime.formattedCache or {}
 	setmetatable(self.runtime.formattedCache, { __mode = "k" })
+	if addon.db and addon.db.chatChannelHistoryMaxViewLines then self.uiMaxLines = addon.db.chatChannelHistoryMaxViewLines end
 end
 
 function ChannelHistory:SetMaxLines(value)
+	if not self.history or not self.keys then self:InitStorage() end
 	local runtime = self.runtime or {}
 	self.runtime = runtime
 	local oldMax = self.maxLines or 500
 	local newMax = value or oldMax or 500
 	local needsNormalize = (newMax ~= oldMax) or not runtime.didNormalize
 	self.maxLines = newMax
+	if addon.db then addon.db.chatChannelHistoryMaxLines = newMax end
 	if not needsNormalize then return end
 	if not self.history then return end
 
@@ -240,6 +245,16 @@ function ChannelHistory:SetMaxLines(value)
 		end
 	end
 	runtime.didNormalize = true
+end
+
+function ChannelHistory:SetUILineLimit(value)
+	local limit = tonumber(value) or 1000
+	self.uiMaxLines = limit
+	if addon.db then addon.db.chatChannelHistoryMaxViewLines = limit end
+	if self.ui and self.ui.logFrame then
+		self.ui.logFrame:SetMaxLines(limit)
+		self:RequestLogRefresh()
+	end
 end
 
 local function getCharacterBucket(create)
@@ -1195,23 +1210,19 @@ local function handleLeftClick(btn, button)
 	local selfRef = ChannelHistory
 	if data.kind == "character" then
 		selfRef.ui.selection = { type = "character", key = data.key, faction = data.factionKey }
-		print(string.format("|cff99e599%s|r", L["CH_SELECTED_LABEL"]), data.key or "nil")
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "realm" then
 		local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
 		selfRef.ui.selection = { type = "realm", key = data.key, realm = realmKey }
-		print(string.format("|cff99e599%s|r", L["CH_REALM_SELECTED_LABEL"]), realmKey or "nil")
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "faction" then
 		selfRef.ui.selection = { type = "faction", key = data.key, faction = data.factionKey, realm = data.realmKey }
-		print(string.format("|cff99e599%s|r", L["CH_FACTION_SELECTED_LABEL"]), data.factionKey or "nil")
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "header" then
 		selfRef.ui.selection = { type = "header", key = data.key }
-		print(string.format("|cff99e599%s|r", L["CH_SCOPE_ALL_LABEL"]))
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	end
@@ -1407,6 +1418,7 @@ ChannelHistory.frame:SetScript("OnEvent", function(_, event, ...)
 		ChannelHistory.loggedIn = true
 		ChannelHistory:InitStorage()
 		ChannelHistory:SetMaxLines(addon.db and addon.db["chatChannelHistoryMaxLines"])
+		ChannelHistory:SetUILineLimit(addon.db and addon.db.chatChannelHistoryMaxViewLines)
 		if ChannelHistory.enabled then
 			ChannelHistory:RegisterEvents()
 			ChannelHistory:CreateDebugFrame()
@@ -1419,6 +1431,7 @@ end)
 
 function ChannelHistory:RegisterEvents()
 	if not self.frame then return end
+	self.loggedIn = self.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
 	self.frame:UnregisterAllEvents()
 	self.frame:RegisterEvent("PLAYER_LOGIN")
 	if not self.loggedIn then return end
@@ -1430,17 +1443,20 @@ end
 
 function ChannelHistory:SetEnabled(enabled)
 	self.enabled = enabled and true or false
+	if addon.db then addon.db.enableChatHistory = self.enabled end
+	self.loggedIn = self.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
 	self:LoadFiltersFromDB()
+	self:SetUILineLimit(addon.db and addon.db.chatChannelHistoryMaxViewLines or self.uiMaxLines)
 	if self.enabled then
 		if self.loggedIn then
 			self:InitStorage()
 			self.events = self.events or buildEventSet()
 			self:SetMaxLines(addon.db and addon.db["chatChannelHistoryMaxLines"])
+			self:SetUILineLimit(addon.db and addon.db.chatChannelHistoryMaxViewLines or self.uiMaxLines)
 		end
 		self:RegisterEvents()
 		if self.loggedIn then
 			self:CreateDebugFrame()
-			if self.debugFrame then self.debugFrame:Show() end
 			if self.ui and self.ui.leftSearch then
 				self.ui.leftSearch:SetText("")
 				SearchBoxTemplate_OnTextChanged(self.ui.leftSearch)
@@ -1451,6 +1467,18 @@ function ChannelHistory:SetEnabled(enabled)
 	else
 		if self.frame then self.frame:UnregisterAllEvents() end
 		if self.debugFrame then self.debugFrame:Hide() end
+	end
+end
+
+function ChannelHistory:ToggleWindow()
+	if not self.enabled then return end
+	if not self.debugFrame then self:CreateDebugFrame() end
+	if not self.debugFrame then return end
+	if self.debugFrame:IsShown() then
+		self.debugFrame:Hide()
+	else
+		self.debugFrame:Show()
+		self:RefreshLogView()
 	end
 end
 
@@ -1606,7 +1634,9 @@ function ChannelHistory:EnsureLogFrame()
 	frame:SetFontObject(self.ui.logFont)
 	frame:SetJustifyH("LEFT")
 	frame:SetFading(false)
-	frame:SetMaxLines(1000)
+	local maxLines = self.uiMaxLines or (addon.db and addon.db.chatChannelHistoryMaxViewLines) or 1000
+	self.uiMaxLines = maxLines
+	frame:SetMaxLines(maxLines)
 	frame:SetHyperlinksEnabled(true)
 	frame:EnableMouseWheel(true)
 	frame:SetScript("OnMouseWheel", function(f, delta)
@@ -1636,14 +1666,15 @@ function ChannelHistory:RefreshLogView()
 	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
 	local needle = search and search:lower()
 	local log = self.ui.logFrame
-	local maxUI = (log and log:GetMaxLines()) or 1000
+	local maxUI = (log and log:GetMaxLines()) or self.uiMaxLines or 1000
 	local lines = collectLines(self, scope, realmKey, charKey, factionKey, needle, maxUI)
 
 	local scopeLabel = ALL
 	if scope == "faction" and factionKey then scopeLabel = FACTION .. ": " .. factionKey end
-	if scope == "realm" and realmKey then scopeLabel = REALM .. ": " .. realmKey end
+	if scope == "realm" and realmKey then scopeLabel = L["IgnoreServer"] .. ": " .. realmKey end
 	if scope == "character" and charKey then scopeLabel = CHARACTER .. ": " .. charKey end
 
+	if self.ui.selectionInfo then self.ui.selectionInfo:SetText(scopeLabel or "") end
 	log:Clear()
 	for i = 1, #lines do
 		local text = formatLine(self, lines[i])
@@ -1651,7 +1682,7 @@ function ChannelHistory:RefreshLogView()
 	end
 	if self.ui.logInfo then
 		local count = #lines
-		local max = self.maxLines or 0
+		local max = maxUI or self.uiMaxLines or 0
 		self.ui.logInfo:SetText(string.format(L["CH_LOG_INFO"], scopeLabel, count, max))
 	end
 end
@@ -1699,7 +1730,7 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 	f.right:SetWidth(rightWidth)
 end
 
-function ChannelHistory:CreateDebugFrame()
+function ChannelHistory:CreateDebugFrame(showImmediately)
 	if self.debugFrame then return end
 	self:InitStorage()
 
@@ -1725,7 +1756,8 @@ function ChannelHistory:CreateDebugFrame()
 	f.bg:SetAllPoints()
 	f.bg:SetAtlas("character-panel-background")
 	f.bg:SetAlpha(0.9)
-	f:SetFrameStrata("HIGH")
+	f:SetFrameStrata("MEDIUM")
+	f:SetFrameLevel(50)
 
 	f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
 	f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
@@ -1736,6 +1768,36 @@ function ChannelHistory:CreateDebugFrame()
 
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 4, 4)
+
+	local function openChatSettings()
+		if InCombatLockdown and InCombatLockdown() then
+			if UIErrorsFrame and ERR_NOT_IN_COMBAT then UIErrorsFrame:AddMessage(ERR_NOT_IN_COMBAT, 1, 0, 0) end
+			return
+		end
+		if Settings and addon.SettingsLayout and addon.SettingsLayout.chatframeCategory then
+			Settings.OpenToCategory(addon.SettingsLayout.chatframeCategory:GetID())
+		elseif Settings and addon.SettingsLayout and addon.SettingsLayout.rootCategory then
+			Settings.OpenToCategory(addon.SettingsLayout.rootCategory:GetID())
+		end
+	end
+
+	local optionsBtn = CreateFrame("Button", nil, f)
+	optionsBtn:SetSize(20, 20)
+	optionsBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -6)
+	optionsBtn:SetNormalAtlas("OptionsIcon-Brown")
+	optionsBtn:SetHighlightAtlas("OptionsIcon-Brown")
+	optionsBtn:SetScript("OnClick", openChatSettings)
+	optionsBtn:SetScript("OnEnter", function(btn)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(btn, "ANCHOR_RIGHT", -2, 0)
+		GameTooltip:ClearLines()
+		GameTooltip:AddLine(OPTIONS, 1, 0.82, 0)
+		GameTooltip:AddLine(CHAT, 1, 1, 1)
+		GameTooltip:Show()
+	end)
+	optionsBtn:SetScript("OnLeave", function()
+		if GameTooltip then GameTooltip:Hide() end
+	end)
 
 	local copyBtn = CreateFrame("Button", nil, f)
 	copyBtn:SetSize(24, 24)
@@ -1925,6 +1987,10 @@ function ChannelHistory:CreateDebugFrame()
 		SearchBoxTemplate_OnTextChanged(box)
 		ChannelHistory:RequestLogRefresh()
 	end)
+	self.ui.selectionInfo = f.right:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	self.ui.selectionInfo:SetPoint("BOTTOMLEFT", rightSearch, "TOPLEFT", 0, 4)
+	self.ui.selectionInfo:SetPoint("BOTTOMRIGHT", rightSearch, "TOPRIGHT", 0, 4)
+	self.ui.selectionInfo:SetJustifyH("LEFT")
 	self.ui.logInfo = f.right:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	self.ui.logInfo:SetPoint("TOPRIGHT", rightSearch, "BOTTOMRIGHT", 0, -2)
 	self.ui.logInfo:SetText("")
@@ -1973,5 +2039,5 @@ function ChannelHistory:CreateDebugFrame()
 	self:CreateFilterUI()
 	self:EnsureLogFrame()
 	self:RefreshLogView()
-	f:Show()
+	if showImmediately then f:Show() end
 end

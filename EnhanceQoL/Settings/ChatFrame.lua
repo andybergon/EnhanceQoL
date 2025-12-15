@@ -341,6 +341,72 @@ data = {
 	end,
 }
 addon.functions.SettingsCreateButton(cChatFrame, data)
+
+addon.functions.SettingsCreateHeadline(cChatFrame, L["CH_TITLE_HISTORY"])
+
+data = {
+	{
+		var = "enableChatHistory",
+		text = L["CH_OPTION_ENABLE"],
+		desc = L["CH_OPTION_ENABLE_DESC"],
+		func = function(val)
+			addon.db["enableChatHistory"] = val
+			if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetEnabled then
+				addon.ChatIM.ChannelHistory:SetEnabled(val)
+			end
+		end,
+		default = false,
+		children = {
+			{
+				var = "chatChannelHistoryMaxLines",
+				text = L["CH_OPTION_MAX_LINES"],
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				get = function() return addon.db and addon.db.chatChannelHistoryMaxLines or 500 end,
+				set = function(value)
+					addon.db["chatChannelHistoryMaxLines"] = value
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetMaxLines then
+						addon.ChatIM.ChannelHistory:SetMaxLines(value)
+						addon.ChatIM.ChannelHistory:RequestLogRefresh()
+					end
+				end,
+				min = 0,
+				max = 2000,
+				step = 10,
+				parent = true,
+				default = 500,
+				sType = "slider",
+			},
+			{
+				var = "chatChannelHistoryMaxViewLines",
+				text = L["CH_OPTION_MAX_VIEW"],
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				get = function() return addon.db and addon.db.chatChannelHistoryMaxViewLines or 1000 end,
+				set = function(value)
+					addon.db["chatChannelHistoryMaxViewLines"] = value
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.SetUILineLimit then
+						addon.ChatIM.ChannelHistory:SetUILineLimit(value)
+					end
+				end,
+				min = 100,
+				max = 2000,
+				step = 50,
+				parent = true,
+				default = 1000,
+				sType = "slider",
+			},
+		},
+	},
+}
+
+addon.functions.SettingsCreateCheckboxes(cChatFrame, data)
 ----- REGION END
 
 function addon.functions.initChatFrame() end

@@ -216,6 +216,11 @@ L["CH_HELP_HINT_LINE"] = "Right-click a line: copy message to popup"
 L["CH_HELP_HINT_HOVER"] = "Hover over log: highlights the line for easier targeting"
 L["CH_COPY_TITLE"] = "Copy Chat"
 L["CH_COPY_HINT"] = "Copy all currently displayed lines into a text box."
+L["CH_OPTION_ENABLE"] = "Enable Chat History"
+L["CH_OPTION_ENABLE_DESC"] = "Collect chat lines per channel/character and browse them in the Chat History window."
+L["CH_OPTION_MAX_LINES"] = "Max lines per channel / character"
+L["CH_OPTION_MAX_VIEW"] = "Max lines shown in history view"
+L["CH_BINDING_TOGGLE"] = "Toggle Chat History"
 L["enableGemHelperDesc"] = "Displays a helper panel when you open the socketing UI.\nLeft-click a gem to pick it up."
 
 L["deleteItemFillDialog"] = 'Add "%s" to the "Delete confirmation Popup"'
