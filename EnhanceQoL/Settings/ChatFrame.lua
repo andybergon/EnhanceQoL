@@ -402,6 +402,29 @@ data = {
 				default = 1000,
 				sType = "slider",
 			},
+			{
+				var = "chatChannelHistoryFontSize",
+				text = L["CH_OPTION_FONT"],
+				desc = L["CH_OPTION_FONT_DESC"],
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				get = function() return addon.db and addon.db.chatChannelHistoryFontSize or 12 end,
+				set = function(value)
+					addon.db["chatChannelHistoryFontSize"] = value
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateLogFontSize then
+						addon.ChatIM.ChannelHistory:UpdateLogFontSize(value)
+					end
+				end,
+				min = 8,
+				max = 18,
+				step = 0.5,
+				parent = true,
+				default = 12,
+				sType = "slider",
+			},
 		},
 	},
 }

@@ -221,6 +221,9 @@ L["CH_OPTION_ENABLE_DESC"] = "Collect chat lines per channel/character and brows
 L["CH_OPTION_MAX_LINES"] = "Max lines per channel / character"
 L["CH_OPTION_MAX_VIEW"] = "Max lines shown in history view"
 L["CH_BINDING_TOGGLE"] = "Toggle Chat History"
+L["CH_TO_PREFIX"] = "To"
+L["CH_OPTION_FONT"] = "Log font size"
+L["CH_OPTION_FONT_DESC"] = "Adjust the font size used in the Chat History log."
 L["enableGemHelperDesc"] = "Displays a helper panel when you open the socketing UI.\nLeft-click a gem to pick it up."
 
 L["deleteItemFillDialog"] = 'Add "%s" to the "Delete confirmation Popup"'

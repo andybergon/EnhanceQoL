@@ -117,14 +117,38 @@ local function showCopyDialog(text)
 	if StaticPopup_Show then StaticPopup_Show("EQOL_URL_COPY", nil, nil, text or "") end
 end
 
-local function showPlayerMenu(owner, rawName)
+local function showPlayerMenu(owner, rawName, isBN, bnetID)
 	if not rawName then return false end
 	local name = Ambiguate and Ambiguate(rawName, "none") or rawName
 	if MU and MU.CreateContextMenu then
 		MU.CreateContextMenu(owner, function(_, root, target)
 			root:CreateTitle(target)
 			root:CreateDivider()
-			root:CreateButton(INVITE, function(unit) C_PartyInfo.InviteUnit(unit) end, target)
+			local unit = target
+			local accountID = bnetID
+			if isBN and not accountID and BNet_GetBNetIDAccount then accountID = BNet_GetBNetIDAccount(target) end
+			if isBN and accountID and C_BattleNet and C_BattleNet.GetAccountInfoByID then
+				local info = C_BattleNet.GetAccountInfoByID(accountID)
+				local gameInfo = info and info.gameAccountInfo
+				if
+					gameInfo
+					and gameInfo.isOnline
+					and gameInfo.clientProgram == BNET_CLIENT_WOW
+					and WOW_PROJECT_ID == gameInfo.wowProjectID
+					and gameInfo.regionID == GetCurrentRegion()
+					and gameInfo.characterName
+					and gameInfo.realmName
+				then
+					local realmKey = sanitizeRealm(gameInfo.realmName)
+					unit = string.format("%s-%s", gameInfo.characterName, realmKey)
+				end
+			else
+				if unit and not unit:match("%-") then
+					unit = unit .. "-" .. sanitizeRealm(GetRealmName() or "")
+				end
+			end
+
+			if unit then root:CreateButton(INVITE, function(u) C_PartyInfo.InviteUnit(u) end, unit) end
 			local function toggleIgnore(unitName)
 				if ChatIM and ChatIM.ToggleIgnore then
 					ChatIM:ToggleIgnore(unitName)
@@ -140,13 +164,19 @@ local function showPlayerMenu(owner, rawName)
 			root:CreateButton(ignoreLabel, toggleIgnore, target)
 			root:CreateDivider()
 			root:CreateTitle(UNIT_FRAME_DROPDOWN_SUBSECTION_TITLE_OTHER)
-			root:CreateButton(COPY_CHARACTER_NAME, function(unit) showCopyDialog(unit) end, target)
+			if unit then
+				root:CreateButton(COPY_CHARACTER_NAME, function(u) showCopyDialog(u) end, unit)
+			else
+				root:CreateButton(COPY_CHARACTER_NAME, function(u) showCopyDialog(u) end, target)
+			end
 			local regionTable = { "US", "KR", "EU", "TW", "CN" }
 			local regionKey = regionTable[GetCurrentRegion()] or "EU"
 			local char, realm = target:match("^([^%-]+)%-(.+)$")
-			if char and realm and addon and addon.db then
-				local lowerRealm = realm:gsub("%s+", "-"):lower()
-				local lowerChar = char:lower()
+			local rioChar, rioRealm = char, realm
+			if not rioChar and unit and unit:match("%-") then rioChar, rioRealm = unit:match("^([^%-]+)%-(.+)$") end
+			if rioChar and rioRealm and addon and addon.db then
+				local lowerRealm = rioRealm:gsub("%s+", "-"):lower()
+				local lowerChar = rioChar:lower()
 				if addon.db["enableChatIMRaiderIO"] then
 					local rio = string.format("https://raider.io/characters/%s/%s/%s", regionKey:lower(), lowerRealm, lowerChar)
 					root:CreateButton("RaiderIO", function(link) showCopyDialog(link) end, rio)
@@ -255,6 +285,24 @@ function ChannelHistory:SetUILineLimit(value)
 		self.ui.logFrame:SetMaxLines(limit)
 		self:RequestLogRefresh()
 	end
+end
+
+function ChannelHistory:UpdateLogFontSize(size, frame)
+	local fontSource = ChatFontNormal or GameFontNormal or NumberFontNormal
+	local fontFile, fontHeight, fontFlags = fontSource:GetFont()
+	local target = frame or (self.ui and self.ui.logFrame)
+	local fontObj = self.ui and self.ui.logFont
+	if not fontObj then
+		fontObj = CreateFont("EnhanceQoLChannelHistoryLogFont")
+		if self.ui then self.ui.logFont = fontObj end
+	end
+	local resolvedSize = size or (addon.db and addon.db.chatChannelHistoryFontSize) or fontHeight or 12
+	fontObj:SetFont(fontFile, resolvedSize, fontFlags or "")
+	if target then target:SetFontObject(fontObj) end
+end
+
+function ChannelHistory:ApplyFontSize()
+	self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12)
 end
 
 local function getCharacterBucket(create)
@@ -474,7 +522,7 @@ function ChannelHistory:Store(event, ...)
 	if not charBucket then return end
 	local currentCharKey = self.keys and self.keys.charKey
 
-	local msg, sender, _, _, _, _, _, _, _, _, lineID, guid = ...
+	local msg, sender, _, _, _, _, _, _, _, _, lineID, guid, _, _, _, bnetIDAccount = ...
 	-- Skip channel notices and trivial change messages
 	if event == "CHAT_MSG_CHANNEL_NOTICE" or event == "CHAT_MSG_CHANNEL_NOTICE_USER" then return end
 	if msg == "YOU_CHANGED" then return end
@@ -494,6 +542,7 @@ function ChannelHistory:Store(event, ...)
 	if cache then cache[slot] = nil end
 	slot.time = stamp
 	slot.filterKey = filterKey
+	slot.outbound = event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM"
 	slot.message = msg or ""
 	slot.sender = sender or ""
 	slot.ownerCharKey = self.keys.charKey
@@ -501,6 +550,7 @@ function ChannelHistory:Store(event, ...)
 	slot.lineID = lineID
 	slot.guid = guid
 	slot.seq = self.runtime.seq
+	slot.bnetIDAccount = bnetIDAccount
 	channelBucket.lastUpdated = stamp
 	-- do not pre-format; format on demand
 	charBucket.channels[channelKey] = channelBucket
@@ -830,6 +880,22 @@ function formatLine(self, line)
 		senderName, senderRealmKey = splitSender(line.sender)
 	end
 
+	local playerName = self.keys and self.keys.player
+	local playerGUID = self.runtime and self.runtime.playerGUID
+	if not playerGUID and UnitGUID then
+		playerGUID = UnitGUID("player")
+		if self.runtime then self.runtime.playerGUID = playerGUID end
+	end
+	local isOutbound = line.outbound or (line.event == "CHAT_MSG_WHISPER_INFORM" or line.event == "CHAT_MSG_BN_WHISPER_INFORM")
+	local isSelf = false
+	if isOutbound then
+		isSelf = true
+	elseif playerGUID and line.guid and line.guid == playerGUID then
+		isSelf = true
+	elseif playerName and senderName and senderName == playerName then
+		isSelf = true
+	end
+
 	local classFile = line.senderClassFile
 	if not classFile and line.guid then
 		local _, classTok = getSenderClass(line.guid)
@@ -843,10 +909,15 @@ function formatLine(self, line)
 	local senderRealmKey = senderRealmKey or playerRealmKey
 	local sameRealm = senderRealmKey and playerRealmKey and senderRealmKey == playerRealmKey
 	local displayName = senderName or ""
-	if displayName ~= "" and not sameRealm and senderRealmKey and senderRealmKey ~= "" then displayName = displayName .. "-" .. senderRealmKey end
+	if isSelf then
+		local toPrefix = L["CH_TO_PREFIX"] or ""
+		sameRealm = true
+	elseif displayName ~= "" and not sameRealm and senderRealmKey and senderRealmKey ~= "" then
+		displayName = displayName .. "-" .. senderRealmKey
+	end
 
 	local timeText = date("%H:%M:%S", line.time or now())
-	timeText = string.format("|cff888888%s|r", timeText)
+	timeText = string.format("|cff666666%s|r", timeText)
 
 	local chatColor = line.color or getChatColor(line.filterKey) or { r = 1, g = 0.82, b = 0 }
 	local chatColorCode = toColorCode(chatColor)
@@ -856,7 +927,12 @@ function formatLine(self, line)
 	local nameText = ""
 	if displayName and displayName ~= "" then
 		local linkTarget = line.sender and line.sender ~= "" and line.sender or displayName
-		nameText = string.format("|Hplayer:%s|h%s[%s]|r|h", linkTarget, nameColorCode, displayName)
+		local prefix = ""
+		if isSelf then
+			local toPrefix = L["CH_TO_PREFIX"]
+			if toPrefix and toPrefix ~= "" then prefix = toPrefix .. " " end
+		end
+		nameText = string.format("%s|Hplayer:%s|h%s[%s]|r|h", prefix, linkTarget, nameColorCode, displayName)
 	end
 
 	local body = line.message or ""
@@ -1447,6 +1523,7 @@ function ChannelHistory:SetEnabled(enabled)
 	self.loggedIn = self.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
 	self:LoadFiltersFromDB()
 	self:SetUILineLimit(addon.db and addon.db.chatChannelHistoryMaxViewLines or self.uiMaxLines)
+	self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12)
 	if self.enabled then
 		if self.loggedIn then
 			self:InitStorage()
@@ -1530,23 +1607,23 @@ function ChannelHistory:CreateFilterUI()
 	container:SetPoint("TOPRIGHT", self.middle, "TOPRIGHT", -12, -36)
 
 	local filters = {
-		{ key = "SAY", label = string.format("|T2056011:16:16:0:0|t %s", SAY) },
-		{ key = "YELL", label = string.format("|T892447:16:16:0:0|t %s", YELL) },
-		{ key = "WHISPER", label = string.format("|T133458:16:16:0:0|t %s", WHISPER) },
-		{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:16:16:0:0|t %s", BN_WHISPER) },
-		{ key = "PARTY", label = string.format("|T134149:16:16:0:0|t %s", PARTY) },
-		{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:16:16:0:0|t %s", INSTANCE) },
-		{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:16:16:0:0|t %s", RAID) },
-		{ key = "GUILD", label = string.format("|T514261:16:16:0:0|t %s", GUILD) },
-		{ key = "OFFICER", label = string.format("|T133071:16:16:0:0|t %s", OFFICER) },
+		{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
+		{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
+		{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
+		{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
+		{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
+		{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
+		{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
+		{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
+		{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
 		{ key = "GENERAL", label = GENERAL },
-		{ key = "LOOT", label = string.format("|T133639:16:16:0:0|t %s", LOOT) },
+		{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
 		{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
 		{ key = "OPENING", label = OPENING },
 	}
 
-	local checkHeight = 22
-	local spacing = 4
+	local checkHeight = 20
+	local spacing = 3
 
 	self.ui.filterChecks = self.ui.filterChecks or {}
 	self.ui.filterRows = self.ui.filterRows or {}
@@ -1574,6 +1651,7 @@ function ChannelHistory:CreateFilterUI()
 			cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
 			self.ui.filterChecks[i] = cb
 		end
+		cb:SetScale(0.9)
 		cb:ClearAllPoints()
 		cb:SetPoint("LEFT", row, "LEFT", 4, 0)
 		local stored = self.ui.filters[info.key]
@@ -1591,7 +1669,7 @@ function ChannelHistory:CreateFilterUI()
 		label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
 		label:SetJustifyH("LEFT")
 		label:SetWordWrap(false)
-		label:SetFontObject("GameFontNormalLarge")
+		label:SetFontObject("GameFontNormal")
 		setLabelText(label, info.label)
 		label:Show()
 		local c = info.color or getChatColor(info.key)
@@ -1625,15 +1703,17 @@ end
 function ChannelHistory:EnsureLogFrame()
 	if self.ui.logFrame then return end
 	local frame = CreateFrame("ScrollingMessageFrame", nil, self.right)
-	frame:SetPoint("TOPLEFT", self.right, "TOPLEFT", 10, -40)
+	if self.ui.statusBar then
+		frame:SetPoint("TOPLEFT", self.ui.statusBar, "BOTTOMLEFT", 0, -6)
+	else
+		frame:SetPoint("TOPLEFT", self.right, "TOPLEFT", 10, -62)
+	end
 	frame:SetPoint("BOTTOMRIGHT", self.right, "BOTTOMRIGHT", -10, 10)
 	self.ui.logFont = self.ui.logFont or CreateFont("EnhanceQoLChannelHistoryLogFont")
-	local fontSource = ChatFontNormal or GameFontNormal or NumberFontNormal
-	local fontFile, fontHeight, fontFlags = fontSource:GetFont()
-	self.ui.logFont:SetFont(fontFile, 14, fontFlags or "")
-	frame:SetFontObject(self.ui.logFont)
+	self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12, frame)
 	frame:SetJustifyH("LEFT")
 	frame:SetFading(false)
+	frame:SetSpacing(1)
 	local maxLines = self.uiMaxLines or (addon.db and addon.db.chatChannelHistoryMaxViewLines) or 1000
 	self.uiMaxLines = maxLines
 	frame:SetMaxLines(maxLines)
@@ -1650,8 +1730,10 @@ function ChannelHistory:EnsureLogFrame()
 		if button == "RightButton" then
 			local linkType, payload = link:match("^(%a+):(.+)$")
 			if payload and (linkType == "player" or linkType == "BNplayer") then
-				local target = payload:match("([^:]+)")
-				if target and showPlayerMenu(frame, target) then return end
+				local target, id = payload:match("^([^:]+):(%d+)")
+				if not target then target = payload:match("([^:]+)") end
+				local bnetID = id and tonumber(id) or nil
+				if target and showPlayerMenu(frame, target, linkType == "BNplayer", bnetID) then return end
 			end
 		end
 		if SetItemRef then SetItemRef(link, text, button, frame) end
@@ -1674,16 +1756,15 @@ function ChannelHistory:RefreshLogView()
 	if scope == "realm" and realmKey then scopeLabel = L["IgnoreServer"] .. ": " .. realmKey end
 	if scope == "character" and charKey then scopeLabel = CHARACTER .. ": " .. charKey end
 
-	if self.ui.selectionInfo then self.ui.selectionInfo:SetText(scopeLabel or "") end
+	if self.ui.statusBar and self.ui.statusBar.text then
+		local count = #lines
+		local max = maxUI or self.uiMaxLines or 0
+		self.ui.statusBar.text:SetText(string.format("%s   •   %d / %d", scopeLabel, count, max))
+	end
 	log:Clear()
 	for i = 1, #lines do
 		local text = formatLine(self, lines[i])
 		log:AddMessage(text, 1, 1, 1)
-	end
-	if self.ui.logInfo then
-		local count = #lines
-		local max = maxUI or self.uiMaxLines or 0
-		self.ui.logInfo:SetText(string.format(L["CH_LOG_INFO"], scopeLabel, count, max))
 	end
 end
 
@@ -1926,53 +2007,45 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f.right.bg:SetAlpha(0.35)
 	self.right = f.right
 
-	-- Placeholder labels
-	local leftTitle = CreateFrame("Frame", nil, f)
-	leftTitle:SetPoint("BOTTOMLEFT", f.left, "TOPLEFT", 0, -8)
-	leftTitle:SetPoint("BOTTOMRIGHT", f.left, "TOPRIGHT", 0, -8)
-	leftTitle:SetHeight(52)
-	local leftTitleText = leftTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-	leftTitleText:SetPoint("CENTER")
-	leftTitleText:SetText(L["CH_TITLE_SCOPE"])
-	local leftLine = leftTitle:CreateTexture(nil, "BACKGROUND")
-	leftLine:SetPoint("BOTTOMLEFT", leftTitle, "BOTTOMLEFT", 12, 4)
-	leftLine:SetPoint("BOTTOMRIGHT", leftTitle, "BOTTOMRIGHT", -12, 4)
-	leftLine:SetHeight(44)
-	leftLine:SetAtlas("thewarwithin-landingpage-renownbutton-flame")
-	leftLine:SetAlpha(1)
+	local function createPanelHeader(parent, label)
+		local hdr = CreateFrame("Frame", nil, parent)
+		hdr:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -6)
+		hdr:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -8, -6)
+		hdr:SetHeight(24)
+		local text = hdr:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		text:SetPoint("LEFT", hdr, "LEFT", 4, 0)
+		text:SetText(label)
+		text:SetTextColor(1, 0.88, 0.5)
+		local line = hdr:CreateTexture(nil, "ARTWORK")
+		line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, 2)
+		line:SetPoint("TOPRIGHT", hdr, "BOTTOMRIGHT", 0, 2)
+		line:SetHeight(18)
+		line:SetAtlas("characterupdate_green-glow-and-filigree", true)
+		line:SetAlpha(0.32)
+		return hdr
+	end
 
-	local midTitle = CreateFrame("Frame", nil, f)
-	midTitle:SetPoint("BOTTOMLEFT", f.middle, "TOPLEFT", 0, -8)
-	midTitle:SetPoint("BOTTOMRIGHT", f.middle, "TOPRIGHT", 0, -8)
-	midTitle:SetHeight(52)
-	local midTitleText = midTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-	midTitleText:SetPoint("CENTER")
-	midTitleText:SetText(L["CH_TITLE_FILTERS"])
-	local midLine = midTitle:CreateTexture(nil, "BACKGROUND")
-	midLine:SetPoint("BOTTOMLEFT", midTitle, "BOTTOMLEFT", 12, 4)
-	midLine:SetPoint("BOTTOMRIGHT", midTitle, "BOTTOMRIGHT", -12, 4)
-	midLine:SetHeight(44)
-	midLine:SetAtlas("thewarwithin-landingpage-renownbutton-flame")
-	midLine:SetAlpha(1)
+	createPanelHeader(f.left, L["CH_TITLE_SCOPE"])
+	createPanelHeader(f.middle, L["CH_TITLE_FILTERS"])
+	createPanelHeader(f.right, L["CH_TITLE_HISTORY"])
 
-	local rightTitle = CreateFrame("Frame", nil, f)
-	rightTitle:SetPoint("BOTTOMLEFT", f.right, "TOPLEFT", 0, -8)
-	rightTitle:SetPoint("BOTTOMRIGHT", f.right, "TOPRIGHT", 0, -8)
-	rightTitle:SetHeight(52)
-	local rightTitleText = rightTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-	rightTitleText:SetPoint("CENTER")
-	rightTitleText:SetText(L["CH_TITLE_HISTORY"])
-	local rightLine = rightTitle:CreateTexture(nil, "BACKGROUND")
-	rightLine:SetPoint("BOTTOMLEFT", rightTitle, "BOTTOMLEFT", 12, 4)
-	rightLine:SetPoint("BOTTOMRIGHT", rightTitle, "BOTTOMRIGHT", -12, 4)
-	rightLine:SetHeight(44)
-	rightLine:SetAtlas("thewarwithin-landingpage-renownbutton-flame")
-	rightLine:SetAlpha(1)
+	-- Vertical separators between panels
+	local sepColor = { 1, 1, 1, 0.2 }
+	local sepLM = f:CreateTexture(nil, "BORDER")
+	sepLM:SetColorTexture(unpack(sepColor))
+	sepLM:SetPoint("TOPLEFT", f.middle, "TOPLEFT", -4, -2)
+	sepLM:SetPoint("BOTTOMLEFT", f.middle, "BOTTOMLEFT", -4, 4)
+	sepLM:SetWidth(1.5)
+	local sepMR = f:CreateTexture(nil, "BORDER")
+	sepMR:SetColorTexture(unpack(sepColor))
+	sepMR:SetPoint("TOPLEFT", f.right, "TOPLEFT", -4, -2)
+	sepMR:SetPoint("BOTTOMLEFT", f.right, "BOTTOMLEFT", -4, 4)
+	sepMR:SetWidth(1.5)
 
 	-- Search bars (debug placeholders)
 	local leftSearch = createSearchBox(f.left, L["CH_SEARCH_CHAR_REALM"])
-	leftSearch:SetPoint("TOPLEFT", f.left, "TOPLEFT", 10, -12)
-	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -10, -12)
+	leftSearch:SetPoint("TOPLEFT", f.left, "TOPLEFT", 10, -34)
+	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -10, -34)
 	self.ui.leftSearch = leftSearch
 	leftSearch:SetScript("OnTextChanged", function(box)
 		SearchBoxTemplate_OnTextChanged(box)
@@ -1980,23 +2053,28 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	end)
 
 	local rightSearch = createSearchBox(f.right, L["CH_SEARCH_LOGS"])
-	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 10, -12)
-	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -10, -12)
+	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 10, -34)
+	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -10, -34)
 	self.ui.rightSearch = rightSearch
 	rightSearch:SetScript("OnTextChanged", function(box)
 		SearchBoxTemplate_OnTextChanged(box)
 		ChannelHistory:RequestLogRefresh()
 	end)
-	self.ui.selectionInfo = f.right:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	self.ui.selectionInfo:SetPoint("BOTTOMLEFT", rightSearch, "TOPLEFT", 0, 4)
-	self.ui.selectionInfo:SetPoint("BOTTOMRIGHT", rightSearch, "TOPRIGHT", 0, 4)
-	self.ui.selectionInfo:SetJustifyH("LEFT")
-	self.ui.logInfo = f.right:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	self.ui.logInfo:SetPoint("TOPRIGHT", rightSearch, "BOTTOMRIGHT", 0, -2)
-	self.ui.logInfo:SetText("")
+	self.ui.statusBar = CreateFrame("Frame", nil, f.right, "BackdropTemplate")
+	self.ui.statusBar:SetPoint("TOPLEFT", rightSearch, "BOTTOMLEFT", 0, -4)
+	self.ui.statusBar:SetPoint("TOPRIGHT", rightSearch, "BOTTOMRIGHT", 0, -4)
+	self.ui.statusBar:SetHeight(18)
+	self.ui.statusBar.bg = self.ui.statusBar:CreateTexture(nil, "BACKGROUND")
+	self.ui.statusBar.bg:SetAllPoints()
+	self.ui.statusBar.bg:SetColorTexture(0, 0, 0, 0.35)
+	self.ui.statusBar.text = self.ui.statusBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	self.ui.statusBar.text:SetPoint("LEFT", self.ui.statusBar, "LEFT", 6, 0)
+	self.ui.statusBar.text:SetPoint("RIGHT", self.ui.statusBar, "RIGHT", -6, 0)
+	self.ui.statusBar.text:SetJustifyH("LEFT")
+	self.ui.statusBar.text:SetText("")
 
 	-- Left list scroll
-	local listTopOffset = -40
+	local listTopOffset = -62
 	local leftScroll = CreateFrame("ScrollFrame", nil, f.left, "UIPanelScrollFrameTemplate")
 	leftScroll:SetPoint("TOPLEFT", f.left, "TOPLEFT", 8, listTopOffset)
 	leftScroll:SetPoint("BOTTOMRIGHT", f.left, "BOTTOMRIGHT", -28, 12)
