@@ -87,34 +87,6 @@ local function sanitizeRealm(realm)
 	realm = realm:gsub("%s+", "")
 	return realm
 end
-
-local function getMessageAtCursor(frame, font)
-	if not frame or not font then return end
-	local num = frame:GetNumMessages()
-	if not num or num == 0 then return end
-
-	local _, lineHeight = font:GetFont()
-	lineHeight = (lineHeight or 0) + (frame:GetSpacing() or 0)
-	if lineHeight <= 0 then return end
-
-	local cursorX, cursorY = GetCursorPosition()
-	local scale = frame:GetEffectiveScale() or 1
-	cursorX, cursorY = cursorX / scale, cursorY / scale
-	local left, bottom = frame:GetLeft(), frame:GetBottom()
-	local width, height = frame:GetWidth(), frame:GetHeight()
-	if not left or not bottom or not width or not height then return end
-	if cursorX < left or cursorX > left + width or cursorY < bottom or cursorY > bottom + height then return end
-
-	local relY = cursorY - bottom
-	local lineFromBottom = math.floor(relY / lineHeight)
-	local scrollOffset = (frame.GetScrollOffset and frame:GetScrollOffset()) or 0
-	local index = num - scrollOffset - lineFromBottom
-	if index < 1 or index > num then return end
-
-	local message = frame:GetMessageInfo(index)
-	return message, index, lineFromBottom, lineHeight
-end
-
 local function ensureCopyPopup()
 	if not StaticPopupDialogs then return end
 	if StaticPopupDialogs["EQOL_URL_COPY"] then return end
@@ -761,12 +733,6 @@ function realmFromCharKey(charKey)
 	if not charKey or charKey == "" then return nil end
 	local _, realm = splitSender(charKey)
 	return realm
-end
-
-local function stripColors(text)
-	if not text or text == "" then return text end
-	local withoutColor = text:gsub("|c%x%x%x%x%x%x%x%x", "")
-	return withoutColor:gsub("|r", "")
 end
 
 local CLASS_NAME_TO_FILE = nil
@@ -1642,48 +1608,12 @@ function ChannelHistory:EnsureLogFrame()
 	frame:SetFading(false)
 	frame:SetMaxLines(1000)
 	frame:SetHyperlinksEnabled(true)
-	frame:EnableMouse(true)
 	frame:EnableMouseWheel(true)
-	local hover = frame:CreateTexture(nil, "BACKGROUND")
-	hover:SetColorTexture(1, 1, 1, 0.08)
-	hover:Hide()
-	self.ui.logHover = hover
-
-	local function updateHover()
-		local msg, _, lineFromBottom, lineHeight = getMessageAtCursor(frame, self.ui.logFont)
-		if not msg or not lineHeight then
-			hover:Hide()
-			return
-		end
-		local y = lineFromBottom * lineHeight
-		hover:ClearAllPoints()
-		hover:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", -2, y)
-		hover:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 2, y)
-		hover:SetHeight(lineHeight)
-		hover:Show()
-	end
-
 	frame:SetScript("OnMouseWheel", function(f, delta)
 		if delta > 0 then
 			f:ScrollUp()
 		else
 			f:ScrollDown()
-		end
-		updateHover()
-	end)
-	frame:SetScript("OnEnter", function()
-		updateHover()
-		frame:SetScript("OnUpdate", updateHover)
-	end)
-	frame:SetScript("OnLeave", function()
-		hover:Hide()
-		frame:SetScript("OnUpdate", nil)
-	end)
-	frame:SetScript("OnMouseUp", function(f, button)
-		updateHover()
-		if button == "RightButton" then
-			local msg = getMessageAtCursor(f, self.ui.logFont)
-			if msg then showCopyDialog(stripColors(msg)) end
 		end
 	end)
 	frame:SetScript("OnHyperlinkClick", function(_, link, text, button)
