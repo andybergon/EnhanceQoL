@@ -2991,7 +2991,6 @@ local function initUI()
 
 			firstStartButtonSink(0)
 			local buttonBag = CreateFrame("Frame", addonName .. "_ButtonSink", UIParent, "BackdropTemplate")
-			buttonBag:SetFrameStrata("DIALOG")
 			buttonBag:SetSize(150, 150)
 
 			if addon.db["useMinimapButtonBinIcon"] then
@@ -3077,7 +3076,8 @@ local function initUI()
 							if pData.point and pData.relativePoint and pData.relativeTo and pData.xOfs and pData.yOfs then
 								button:SetPoint(pData.point, pData.relativeTo, pData.relativePoint, pData.xOfs, pData.yOfs)
 							end
-							if button:GetFrameStrata() == "LOW" then button:SetFrameStrata("MEDIUM") end
+							button:SetFrameStrata(pData.strata or "MEDIUM")
+							if pData.level then button:SetFrameLevel(pData.level) end
 						end
 					elseif addon.variables.bagButtonState[name] then
 						index = index + 1
@@ -3086,6 +3086,8 @@ local function initUI()
 						local row = math.floor((index - 1) / columns)
 
 						button:SetParent(addon.variables.buttonSink)
+						button:SetFrameStrata("DIALOG")
+						button:SetFrameLevel(100)
 						button:SetSize(ICON_SIZE, ICON_SIZE)
 						button:SetPoint("TOPLEFT", addon.variables.buttonSink, "TOPLEFT", col * (ICON_SIZE + PADDING) + PADDING, -row * (ICON_SIZE + PADDING) - PADDING)
 						button:Show()
@@ -3117,7 +3119,8 @@ local function initUI()
 					else
 						LDBIcon:Show(name)
 					end
-					if button:GetFrameStrata() == "LOW" then button:SetFrameStrata("MEDIUM") end
+					button:SetFrameStrata(pData.strata or "MEDIUM")
+					if pData.level then button:SetFrameLevel(pData.level) end
 					addon.variables.bagButtonPoint[name] = nil
 				end
 			end
@@ -3141,16 +3144,18 @@ local function initUI()
 						or btnName == "ZygorGuidesViewerMapIcon"
 					)
 				then
-					if not addon.variables.bagButtonPoint[btnName] or not addon.variables.bagButtonPoint[btnName].point then
+					local pData = addon.variables.bagButtonPoint[btnName] or {}
+					if not pData.point then
 						local point, relativeTo, relativePoint, xOfs, yOfs = child:GetPoint()
-						addon.variables.bagButtonPoint[btnName] = {
-							point = point,
-							relativeTo = relativeTo,
-							relativePoint = relativePoint,
-							xOfs = xOfs,
-							yOfs = yOfs,
-						}
+						pData.point = point
+						pData.relativeTo = relativeTo
+						pData.relativePoint = relativePoint
+						pData.xOfs = xOfs
+						pData.yOfs = yOfs
 					end
+					pData.strata = pData.strata or child:GetFrameStrata()
+					pData.level = pData.level or child:GetFrameLevel()
+					addon.variables.bagButtonPoint[btnName] = pData
 					if (child.db and child.db.hide) or not child:IsVisible() then
 						addon.variables.bagButtonState[btnName] = false
 					else

@@ -4,7 +4,7 @@
 
 ### 🔄 Changed
 
-- Minimap Button Sink frame now uses `DIALOG` strata so it renders above nearby UI elements.
+- Minimap Button Sink frame now uses `DIALOG` strata for its buttons inherit that strata with elevated frame levels so the bin stays above nearby UI elements.
 
 ### 🐛 Fixed
 
