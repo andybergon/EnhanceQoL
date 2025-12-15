@@ -359,6 +359,8 @@ for _, strata in ipairs(strataOrder) do
 	chatHistoryStrataOptions[strata] = strata
 end
 
+local categoryOptions = {}
+
 data = {
 	{
 		var = "enableChatHistory",
@@ -477,6 +479,21 @@ data = {
 				default = 600,
 				sType = "slider",
 			},
+			{
+				var = "chatChannelFiltersEnable",
+				text = L["CH_OPTION_FILTER_SELECTION"],
+				desc = L["CH_OPTION_FILTER_SELECTION_DESC"],
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				parent = true,
+				sType = "multidropdown",
+				options = categoryOptions,
+				isSelectedFunc = function(key) return addon.db.chatChannelFiltersEnable[key] end,
+				setSelectedFunc = function(key, shouldSelect) addon.db.chatChannelFiltersEnable[key] = shouldSelect and true or false end,
+			},
 		},
 	},
 }
@@ -484,7 +501,14 @@ data = {
 addon.functions.SettingsCreateCheckboxes(cChatFrame, data)
 ----- REGION END
 
-function addon.functions.initChatFrame() end
+function addon.functions.initChatFrame()
+	addon.db.chatChannelFiltersEnable = addon.db.chatChannelFiltersEnable or {}
+	for i in pairs(addon.ChatIM.ChannelHistory.defaultFilters) do
+		table.insert(categoryOptions, { value = i, text = _G[i] })
+
+		if addon.db.chatChannelFiltersEnable[i] == nil then addon.db.chatChannelFiltersEnable[i] = true end
+	end
+end
 
 local eventHandlers = {}
 

@@ -47,7 +47,6 @@ Events\LegionRemixPhaseData.lua
 Events\LegionRemix.lua
 Modules\ActionBarLabels.lua
 EnhanceQoL.lua
-Settings\SettingsUI.xml
 Core\DataHub.lua
 Core\DataPanel.lua
 Core\MovementSpeedStat.lua
@@ -68,3 +67,4 @@ Submodules\Merchant.lua
 Submodules\HealthText.lua
 Submodules\Mailbox.lua
 Submodules\Mailbox.xml
+Settings\SettingsUI.xml
