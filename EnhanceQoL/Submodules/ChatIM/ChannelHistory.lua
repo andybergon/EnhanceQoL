@@ -291,6 +291,21 @@ function ChannelHistory:SetUILineLimit(value)
 	end
 end
 
+function ChannelHistory:SetFrameStrata(strata)
+	local value = strata or "MEDIUM"
+	self.frameStrata = value
+	if addon.db then addon.db.chatHistoryFrameStrata = value end
+	if self.debugFrame and self.debugFrame.SetFrameStrata then self.debugFrame:SetFrameStrata(value) end
+end
+
+function ChannelHistory:SetFrameLevel(level)
+	local lvl = tonumber(level) or 600
+	if lvl < 1 then lvl = 1 end
+	self.frameLevel = lvl
+	if addon.db then addon.db.chatHistoryFrameLevel = lvl end
+	if self.debugFrame and self.debugFrame.SetFrameLevel then self.debugFrame:SetFrameLevel(lvl) end
+end
+
 function ChannelHistory:UpdateLogFontSize(size, frame)
 	local fontSource = ChatFontNormal or GameFontNormal or NumberFontNormal
 	local fontFile, fontHeight, fontFlags = fontSource:GetFont()
@@ -1494,7 +1509,6 @@ function ChannelHistory:RefreshLeftList()
 end
 
 function ChannelHistory:OnEvent(event, ...)
-	print(event, ...)
 	if not self.enabled then return end
 	if not self.loggedIn then return end
 	if not self.events or not self.events[event] then return end
@@ -1722,24 +1736,21 @@ function ChannelHistory:EnsureLogFrame()
 	else
 		frame:SetPoint("TOPLEFT", self.right, "TOPLEFT", 10, -62)
 	end
-	frame:SetPoint("BOTTOMRIGHT", self.right, "BOTTOMRIGHT", -10, 10)
-	self.ui.logFont = self.ui.logFont or CreateFont("EnhanceQoLChannelHistoryLogFont")
-	self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12, frame)
+	frame:SetPoint("BOTTOMRIGHT", self.right, "BOTTOMRIGHT", -28, 10)
+
 	frame:SetJustifyH("LEFT")
 	frame:SetFading(false)
 	frame:SetSpacing(1)
+	frame:SetHyperlinksEnabled(true)
+	frame:EnableMouseWheel(true)
+
+	-- Ensure font is set so AddMessage renders
+	self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12, frame)
+
 	local maxLines = self.uiMaxLines or (addon.db and addon.db.chatChannelHistoryMaxViewLines) or 1000
 	self.uiMaxLines = maxLines
 	frame:SetMaxLines(maxLines)
-	frame:SetHyperlinksEnabled(true)
-	frame:EnableMouseWheel(true)
-	frame:SetScript("OnMouseWheel", function(f, delta)
-		if delta > 0 then
-			f:ScrollUp()
-		else
-			f:ScrollDown()
-		end
-	end)
+
 	frame:SetScript("OnHyperlinkClick", function(_, link, text, button)
 		if button == "RightButton" then
 			local linkType, payload = link:match("^(%a+):(.+)$")
@@ -1752,7 +1763,48 @@ function ChannelHistory:EnsureLogFrame()
 		end
 		if SetItemRef then SetItemRef(link, text, button, frame) end
 	end)
+
+	-- Slider (visible scrollbar)
+	local slider = CreateFrame("Slider", nil, self.right, "UIPanelScrollBarTemplate")
+	slider:SetPoint("TOPLEFT", frame, "TOPRIGHT", 4, 0)
+	slider:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 4, 0)
+	slider:SetWidth(16)
+	slider:SetValueStep(1)
+	slider:SetObeyStepOnDrag(true)
+	slider._suppress = false
+
+	slider:SetScript("OnValueChanged", function(sl, value)
+		if sl._suppress then return end
+		local log = self.ui and self.ui.logFrame
+		if not log then return end
+		value = math.floor((value or 0) + 0.5)
+		local minVal, maxVal = sl:GetMinMaxValues()
+		local desiredOffset = (maxVal or 0) - value
+
+		if log.SetScrollOffset then
+			log:SetScrollOffset(desiredOffset)
+		else
+			local cur = log:GetScrollOffset() or 0
+			local delta = desiredOffset - cur
+			if delta > 0 then
+				for _ = 1, delta do log:ScrollUp() end
+			elseif delta < 0 then
+				for _ = 1, -delta do log:ScrollDown() end
+			end
+		end
+	end)
+
+	frame:SetScript("OnMouseWheel", function(_, delta)
+		local minVal, maxVal = slider:GetMinMaxValues()
+		local cur = slider:GetValue() or maxVal or 0
+		local newVal = cur - delta
+		if newVal < (minVal or 0) then newVal = minVal end
+		if maxVal and newVal > maxVal then newVal = maxVal end
+		slider:SetValue(newVal)
+	end)
+
 	self.ui.logFrame = frame
+	self.ui.logScroll = slider
 end
 
 function ChannelHistory:RefreshLogView()
@@ -1784,9 +1836,28 @@ function ChannelHistory:RefreshLogView()
 		self.ui.statusBar.text:SetText(string.format("%s   •   %d / %d", scopeLabel, count, max))
 	end
 	log:Clear()
+	local lastDate
 	for i = 1, #lines do
+		local lt = lines[i].time or now()
+		local currDate = date("%Y-%m-%d", lt)
+		if currDate ~= lastDate then
+			log:AddMessage(string.format("|cff777777----- %s -----|r", currDate or ""), 1, 1, 1)
+			lastDate = currDate
+		end
 		local text = formatLine(self, lines[i])
 		log:AddMessage(text, 1, 1, 1)
+	end
+	log:ScrollToBottom()
+	if self.ui.logScroll then
+		local slider = self.ui.logScroll
+		local numMessages = log:GetNumMessages() or 0
+		local maxVal = math.max(0, numMessages - 1)
+		local offset = log:GetScrollOffset() or 0
+		local sliderValue = maxVal - offset
+		slider._suppress = true
+		slider:SetMinMaxValues(0, maxVal)
+		slider:SetValue(sliderValue)
+		slider._suppress = false
 	end
 end
 
@@ -1859,8 +1930,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f.bg:SetAllPoints()
 	f.bg:SetAtlas("character-panel-background")
 	f.bg:SetAlpha(0.9)
-	f:SetFrameStrata("MEDIUM")
-	f:SetFrameLevel(600)
+	self:SetFrameStrata((addon.db and addon.db.chatHistoryFrameStrata) or self.frameStrata or "MEDIUM")
+	self:SetFrameLevel((addon.db and addon.db.chatHistoryFrameLevel) or self.frameLevel or 600)
 
 	f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
 	f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
