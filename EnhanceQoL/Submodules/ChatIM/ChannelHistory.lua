@@ -1565,7 +1565,7 @@ function ChannelHistory:EnsureLogFrame()
 	self.ui.logFont = self.ui.logFont or CreateFont("EnhanceQoLChannelHistoryLogFont")
 	local fontSource = ChatFontNormal or GameFontNormal or NumberFontNormal
 	local fontFile, fontHeight, fontFlags = fontSource:GetFont()
-	self.ui.logFont:SetFont(fontFile, 14, (fontFlags and (fontFlags .. ",MONOCHROME")) or "MONOCHROME")
+	self.ui.logFont:SetFont(fontFile, 14, fontFlags or "")
 	frame:SetFontObject(self.ui.logFont)
 	frame:SetJustifyH("LEFT")
 	frame:SetFading(false)
