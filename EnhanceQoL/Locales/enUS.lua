@@ -198,6 +198,22 @@ L["hideHitIndicatorPlayer"] = "Hide floating combat text (damage and healing) ov
 L["hideHitIndicatorPet"] = "Hide floating combat text (damage and healing) over your pet"
 L["SellJunkIgnoredBag"] = "You have ignored junk on %d bags.\nThis may prevent selling all junk items automatically."
 L["enableGemHelper"] = "Enable Gem-Socket Helper"
+
+-- Chat History
+L["CH_TITLE_SCOPE"] = "Scope / Characters"
+L["CH_TITLE_FILTERS"] = "Channel Filters"
+L["CH_TITLE_HISTORY"] = "Chat History"
+L["CH_SEARCH_CHAR_REALM"] = "Search character / realm..."
+L["CH_SEARCH_LOGS"] = "Search logs..."
+L["CH_LOG_INFO"] = "%s • Lines: %d / %d"
+L["CH_SELECTED_LABEL"] = "[EQOL] Selected:"
+L["CH_REALM_SELECTED_LABEL"] = "[EQOL] Realm selected:"
+L["CH_FACTION_SELECTED_LABEL"] = "[EQOL] Faction selected:"
+L["CH_SCOPE_ALL_LABEL"] = "[EQOL] Scope: All"
+L["CH_HELP_TITLE"] = "Channel History Help"
+L["CH_HELP_HINT_NAME"] = "Right-click a name: context menu (invite, ignore, copy, links)"
+L["CH_HELP_HINT_LINE"] = "Right-click a line: copy message to popup"
+L["CH_HELP_HINT_HOVER"] = "Hover over log: highlights the line for easier targeting"
 L["enableGemHelperDesc"] = "Displays a helper panel when you open the socketing UI.\nLeft-click a gem to pick it up."
 
 L["deleteItemFillDialog"] = 'Add "%s" to the "Delete confirmation Popup"'

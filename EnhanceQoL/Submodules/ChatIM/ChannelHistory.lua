@@ -5,6 +5,7 @@ if _G[parentAddonName] then
 else
 	error(parentAddonName .. " is not loaded")
 end
+local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 
 addon.ChatIM = addon.ChatIM or {}
 local ChatIM = addon.ChatIM
@@ -87,6 +88,33 @@ local function sanitizeRealm(realm)
 	return realm
 end
 
+local function getMessageAtCursor(frame, font)
+	if not frame or not font then return end
+	local num = frame:GetNumMessages()
+	if not num or num == 0 then return end
+
+	local _, lineHeight = font:GetFont()
+	lineHeight = (lineHeight or 0) + (frame:GetSpacing() or 0)
+	if lineHeight <= 0 then return end
+
+	local cursorX, cursorY = GetCursorPosition()
+	local scale = frame:GetEffectiveScale() or 1
+	cursorX, cursorY = cursorX / scale, cursorY / scale
+	local left, bottom = frame:GetLeft(), frame:GetBottom()
+	local width, height = frame:GetWidth(), frame:GetHeight()
+	if not left or not bottom or not width or not height then return end
+	if cursorX < left or cursorX > left + width or cursorY < bottom or cursorY > bottom + height then return end
+
+	local relY = cursorY - bottom
+	local lineFromBottom = math.floor(relY / lineHeight)
+	local scrollOffset = (frame.GetScrollOffset and frame:GetScrollOffset()) or 0
+	local index = num - scrollOffset - lineFromBottom
+	if index < 1 or index > num then return end
+
+	local message = frame:GetMessageInfo(index)
+	return message, index, lineFromBottom, lineHeight
+end
+
 local function ensureCopyPopup()
 	if not StaticPopupDialogs then return end
 	if StaticPopupDialogs["EQOL_URL_COPY"] then return end
@@ -100,7 +128,7 @@ local function ensureCopyPopup()
 		hideOnEscape = true,
 		preferredIndex = 3,
 		OnShow = function(self, data)
-			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			local editBox = self.editBox or (self.GetEditBox and self:GetEditBox())
 			if editBox then
 				editBox:SetText(data or "")
 				editBox:SetFocus()
@@ -122,7 +150,38 @@ local function showPlayerMenu(owner, rawName)
 		MU.CreateContextMenu(owner, function(_, root, target)
 			root:CreateTitle(target)
 			root:CreateDivider()
+			root:CreateButton(INVITE, function(unit) C_PartyInfo.InviteUnit(unit) end, target)
+			local function toggleIgnore(unitName)
+				if ChatIM and ChatIM.ToggleIgnore then
+					ChatIM:ToggleIgnore(unitName)
+				elseif C_FriendList and C_FriendList.IsIgnored then
+					if C_FriendList.IsIgnored(unitName) then
+						C_FriendList.DelIgnore(unitName)
+					else
+						C_FriendList.AddIgnore(unitName)
+					end
+				end
+			end
+			local ignoreLabel = (C_FriendList and C_FriendList.IsIgnored and C_FriendList.IsIgnored(target)) and UNIGNORE_QUEST or IGNORE
+			root:CreateButton(ignoreLabel, toggleIgnore, target)
+			root:CreateDivider()
+			root:CreateTitle(UNIT_FRAME_DROPDOWN_SUBSECTION_TITLE_OTHER)
 			root:CreateButton(COPY_CHARACTER_NAME, function(unit) showCopyDialog(unit) end, target)
+			local regionTable = { "US", "KR", "EU", "TW", "CN" }
+			local regionKey = regionTable[GetCurrentRegion()] or "EU"
+			local char, realm = target:match("^([^%-]+)%-(.+)$")
+			if char and realm and addon and addon.db then
+				local lowerRealm = realm:gsub("%s+", "-"):lower()
+				local lowerChar = char:lower()
+				if addon.db["enableChatIMRaiderIO"] then
+					local rio = string.format("https://raider.io/characters/%s/%s/%s", regionKey:lower(), lowerRealm, lowerChar)
+					root:CreateButton("RaiderIO", function(link) showCopyDialog(link) end, rio)
+				end
+				if addon.db["enableChatIMWCL"] then
+					local wcl = string.format("https://www.warcraftlogs.com/character/%s/%s/%s", regionKey:lower(), lowerRealm, lowerChar)
+					root:CreateButton("WarcraftLogs", function(link) showCopyDialog(link) end, wcl)
+				end
+			end
 		end, name)
 		return true
 	end
@@ -319,9 +378,9 @@ local function iterChannelLines(channelBucket)
 	end
 end
 
-local function appendLine(channelBucket, line)
+local function appendLine(channelBucket)
 	local cap = ChannelHistory.maxLines or 0
-	if cap <= 0 then return end
+	if cap <= 0 then return nil end
 
 	local lines = channelBucket.lines
 	if not lines then
@@ -354,7 +413,11 @@ local function appendLine(channelBucket, line)
 	end
 
 	local insertIdx = (head + count - 1) % cap + 1
-	lines[insertIdx] = line
+	local slot = lines[insertIdx]
+	if not slot then
+		slot = {}
+		lines[insertIdx] = slot
+	end
 
 	if count < cap then
 		count = count + 1
@@ -365,7 +428,7 @@ local function appendLine(channelBucket, line)
 	channelBucket._cap = cap
 	channelBucket._head = head
 	channelBucket._count = count
-	channelBucket.lastUpdated = line.time
+	return slot
 end
 
 local function normalizeChannelBucketInner(channelBucket, cap)
@@ -438,23 +501,23 @@ function ChannelHistory:Store(event, ...)
 	local channelBucket = charBucket.channels[channelKey] or { label = channelLabel or channelKey, lines = {} }
 	channelBucket.label = channelLabel or channelBucket.label or channelKey
 
-	local line = {
-		time = stamp,
-		filterKey = filterKey,
-		message = msg or "",
-		sender = sender or "",
-		ownerCharKey = self.keys.charKey,
-		senderClassFile = classFile,
-		lineID = lineID,
-		guid = guid,
-		seq = self.runtime.seq,
-	}
+	local slot = appendLine(channelBucket)
+	if not slot then return end
+	local cache = self.runtime and self.runtime.formattedCache
+	if cache then cache[slot] = nil end
+	slot.time = stamp
+	slot.filterKey = filterKey
+	slot.message = msg or ""
+	slot.sender = sender or ""
+	slot.ownerCharKey = self.keys.charKey
+	slot.senderClassFile = classFile
+	slot.lineID = lineID
+	slot.guid = guid
+	slot.seq = self.runtime.seq
+	channelBucket.lastUpdated = stamp
 	-- do not pre-format; format on demand
-
-	appendLine(channelBucket, line)
-
 	charBucket.channels[channelKey] = channelBucket
-	charBucket.lastUpdated = line.time
+	charBucket.lastUpdated = slot.time
 	if not charBucket.classFile then
 		local className, classFile, classID = UnitClass("player")
 		charBucket.className = className
@@ -462,7 +525,7 @@ function ChannelHistory:Store(event, ...)
 		charBucket.classID = classID
 	end
 	if self.debugFrame and self.debugFrame:IsShown() then
-		if self:ShouldDisplayLive(line, currentCharKey) then self:AppendLineToLog(line) end
+		if self:ShouldDisplayLive(slot, currentCharKey) then self:AppendLineToLog(slot) end
 	end
 end
 
@@ -700,6 +763,12 @@ function realmFromCharKey(charKey)
 	return realm
 end
 
+local function stripColors(text)
+	if not text or text == "" then return text end
+	local withoutColor = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+	return withoutColor:gsub("|r", "")
+end
+
 local CLASS_NAME_TO_FILE = nil
 
 local function buildClassLookup()
@@ -788,7 +857,8 @@ function formatLine(self, line)
 	end
 	local classColor = classFile and getClassStyle(classFile) or nil
 
-	local playerRealmKey = self.keys and self.keys.realmKey
+	local ownerRealmKey = line.ownerRealmKey or realmFromCharKey(line.ownerCharKey) or (self.keys and self.keys.realmKey)
+	local playerRealmKey = ownerRealmKey
 	local senderRealmKey = senderRealmKey or playerRealmKey
 	local sameRealm = senderRealmKey and playerRealmKey and senderRealmKey == playerRealmKey
 	local displayName = senderName or ""
@@ -834,6 +904,7 @@ local function matchesSearchLower(needle, message, sender)
 end
 
 function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
+	if not line then return false end
 	if not self.debugFrame or not self.debugFrame:IsShown() then return false end
 	if not self.ui or not self.ui.logFrame then return false end
 	if not line.filterKey and line.event and self.EVENT_FILTER_KEY then line.filterKey = self.EVENT_FILTER_KEY[line.event] end
@@ -1058,7 +1129,7 @@ function ChannelHistory:BuildLeftEntries(filterText)
 	end
 
 	-- Account node
-	table.insert(entries, { kind = "header", label = "All", level = 0, key = "account", expanded = state.accountExpanded ~= false })
+	table.insert(entries, { kind = "header", label = ALL, level = 0, key = "account", expanded = state.accountExpanded ~= false })
 
 	-- Build realm -> faction -> chars map
 	local history = self.history or {}
@@ -1158,23 +1229,23 @@ local function handleLeftClick(btn, button)
 	local selfRef = ChannelHistory
 	if data.kind == "character" then
 		selfRef.ui.selection = { type = "character", key = data.key, faction = data.factionKey }
-		print("|cff99e599[EQOL] Selected:|r", data.key or "nil")
+		print(string.format("|cff99e599%s|r", L["CH_SELECTED_LABEL"]), data.key or "nil")
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "realm" then
 		local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
 		selfRef.ui.selection = { type = "realm", key = data.key, realm = realmKey }
-		print("|cff99e599[EQOL] Realm selected:|r", realmKey or "nil")
+		print(string.format("|cff99e599%s|r", L["CH_REALM_SELECTED_LABEL"]), realmKey or "nil")
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "faction" then
 		selfRef.ui.selection = { type = "faction", key = data.key, faction = data.factionKey, realm = data.realmKey }
-		print("|cff99e599[EQOL] Faction selected:|r", data.factionKey or "nil")
+		print(string.format("|cff99e599%s|r", L["CH_FACTION_SELECTED_LABEL"]), data.factionKey or "nil")
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "header" then
 		selfRef.ui.selection = { type = "header", key = data.key }
-		print("|cff99e599[EQOL] Scope: All|r")
+		print(string.format("|cff99e599%s|r", L["CH_SCOPE_ALL_LABEL"]))
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	end
@@ -1465,19 +1536,19 @@ function ChannelHistory:CreateFilterUI()
 	container:SetPoint("TOPRIGHT", self.middle, "TOPRIGHT", -12, -36)
 
 	local filters = {
-		{ key = "SAY", label = "|T2056011:16:16:0:0|t Say" },
-		{ key = "YELL", label = "|T892447:16:16:0:0|t Yell" },
-		{ key = "WHISPER", label = "|T133458:16:16:0:0|t Whisper" },
-		{ key = "BN_WHISPER", label = "|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:16:16:0:0|t BN Whisper" },
-		{ key = "PARTY", label = "|T134149:16:16:0:0|t Party" },
-		{ key = "INSTANCE", label = "|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:16:16:0:0|t Instance" },
-		{ key = "RAID", label = "|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:16:16:0:0|t Raid" },
-		{ key = "GUILD", label = "|T514261:16:16:0:0|t Guild" },
-		{ key = "OFFICER", label = "|T133071:16:16:0:0|t Officer" },
-		{ key = "GENERAL", label = "General" },
-		{ key = "LOOT", label = "|T133639:16:16:0:0|t Loot" },
-		{ key = "SYSTEM", label = "System" },
-		{ key = "OPENING", label = "Opening" },
+		{ key = "SAY", label = string.format("|T2056011:16:16:0:0|t %s", SAY) },
+		{ key = "YELL", label = string.format("|T892447:16:16:0:0|t %s", YELL) },
+		{ key = "WHISPER", label = string.format("|T133458:16:16:0:0|t %s", WHISPER) },
+		{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:16:16:0:0|t %s", BN_WHISPER) },
+		{ key = "PARTY", label = string.format("|T134149:16:16:0:0|t %s", PARTY) },
+		{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:16:16:0:0|t %s", INSTANCE) },
+		{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:16:16:0:0|t %s", RAID) },
+		{ key = "GUILD", label = string.format("|T514261:16:16:0:0|t %s", GUILD) },
+		{ key = "OFFICER", label = string.format("|T133071:16:16:0:0|t %s", OFFICER) },
+		{ key = "GENERAL", label = GENERAL },
+		{ key = "LOOT", label = string.format("|T133639:16:16:0:0|t %s", LOOT) },
+		{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
+		{ key = "OPENING", label = OPENING },
 	}
 
 	local checkHeight = 22
@@ -1571,12 +1642,48 @@ function ChannelHistory:EnsureLogFrame()
 	frame:SetFading(false)
 	frame:SetMaxLines(1000)
 	frame:SetHyperlinksEnabled(true)
+	frame:EnableMouse(true)
 	frame:EnableMouseWheel(true)
+	local hover = frame:CreateTexture(nil, "BACKGROUND")
+	hover:SetColorTexture(1, 1, 1, 0.08)
+	hover:Hide()
+	self.ui.logHover = hover
+
+	local function updateHover()
+		local msg, _, lineFromBottom, lineHeight = getMessageAtCursor(frame, self.ui.logFont)
+		if not msg or not lineHeight then
+			hover:Hide()
+			return
+		end
+		local y = lineFromBottom * lineHeight
+		hover:ClearAllPoints()
+		hover:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", -2, y)
+		hover:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 2, y)
+		hover:SetHeight(lineHeight)
+		hover:Show()
+	end
+
 	frame:SetScript("OnMouseWheel", function(f, delta)
 		if delta > 0 then
 			f:ScrollUp()
 		else
 			f:ScrollDown()
+		end
+		updateHover()
+	end)
+	frame:SetScript("OnEnter", function()
+		updateHover()
+		frame:SetScript("OnUpdate", updateHover)
+	end)
+	frame:SetScript("OnLeave", function()
+		hover:Hide()
+		frame:SetScript("OnUpdate", nil)
+	end)
+	frame:SetScript("OnMouseUp", function(f, button)
+		updateHover()
+		if button == "RightButton" then
+			local msg = getMessageAtCursor(f, self.ui.logFont)
+			if msg then showCopyDialog(stripColors(msg)) end
 		end
 	end)
 	frame:SetScript("OnHyperlinkClick", function(_, link, text, button)
@@ -1602,17 +1709,10 @@ function ChannelHistory:RefreshLogView()
 	local maxUI = (log and log:GetMaxLines()) or 1000
 	local lines = collectLines(self, scope, realmKey, charKey, factionKey, needle, maxUI)
 
-	local scopeLabel = "All"
-	if scope == "faction" then
-		scopeLabel = "Faction"
-		if factionKey then scopeLabel = scopeLabel .. ": " .. factionKey end
-	elseif scope == "realm" then
-		scopeLabel = "Realm"
-		if realmKey then scopeLabel = scopeLabel .. ": " .. realmKey end
-	elseif scope == "character" then
-		scopeLabel = "Character"
-		if charKey then scopeLabel = scopeLabel .. ": " .. charKey end
-	end
+	local scopeLabel = ALL
+	if scope == "faction" and factionKey then scopeLabel = FACTION .. ": " .. factionKey end
+	if scope == "realm" and realmKey then scopeLabel = REALM .. ": " .. realmKey end
+	if scope == "character" and charKey then scopeLabel = CHARACTER .. ": " .. charKey end
 
 	log:Clear()
 	for i = 1, #lines do
@@ -1622,7 +1722,7 @@ function ChannelHistory:RefreshLogView()
 	if self.ui.logInfo then
 		local count = #lines
 		local max = self.maxLines or 0
-		self.ui.logInfo:SetText(string.format("%s • Lines: %d / %d", scopeLabel, count, max))
+		self.ui.logInfo:SetText(string.format(L["CH_LOG_INFO"], scopeLabel, count, max))
 	end
 end
 
@@ -1707,6 +1807,28 @@ function ChannelHistory:CreateDebugFrame()
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 4, 4)
 
+	local help = CreateFrame("Button", nil, f)
+	help:SetSize(32, 32)
+	help:SetPoint("RIGHT", close, "RIGHT", 0, -32)
+	help:SetNormalTexture("Interface\\Common\\help-i")
+	help:SetHighlightTexture("Interface\\Common\\help-i")
+	help:GetHighlightTexture():SetAlpha(0.6)
+	help:SetMotionScriptsWhileDisabled(true)
+	help:SetScript("OnEnter", function(btn)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(btn, "ANCHOR_TOPRIGHT", -2, -2)
+		GameTooltip:ClearLines()
+		GameTooltip:AddLine(L["CH_HELP_TITLE"], 1, 0.82, 0)
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine(L["CH_HELP_HINT_NAME"], 1, 1, 1, true)
+		GameTooltip:AddLine(L["CH_HELP_HINT_LINE"], 1, 1, 1, true)
+		GameTooltip:AddLine(L["CH_HELP_HINT_HOVER"], 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	help:SetScript("OnLeave", function()
+		if GameTooltip then GameTooltip:Hide() end
+	end)
+
 	-- Panels
 	f.left = CreateFrame("Frame", nil, f, "BackdropTemplate")
 	applyPanelBackdrop(f.left)
@@ -1739,7 +1861,7 @@ function ChannelHistory:CreateDebugFrame()
 	leftTitle:SetHeight(52)
 	local leftTitleText = leftTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	leftTitleText:SetPoint("CENTER")
-	leftTitleText:SetText("Scope / Characters")
+	leftTitleText:SetText(L["CH_TITLE_SCOPE"])
 	local leftLine = leftTitle:CreateTexture(nil, "BACKGROUND")
 	leftLine:SetPoint("BOTTOMLEFT", leftTitle, "BOTTOMLEFT", 12, 4)
 	leftLine:SetPoint("BOTTOMRIGHT", leftTitle, "BOTTOMRIGHT", -12, 4)
@@ -1753,7 +1875,7 @@ function ChannelHistory:CreateDebugFrame()
 	midTitle:SetHeight(52)
 	local midTitleText = midTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	midTitleText:SetPoint("CENTER")
-	midTitleText:SetText("Channel Filters")
+	midTitleText:SetText(L["CH_TITLE_FILTERS"])
 	local midLine = midTitle:CreateTexture(nil, "BACKGROUND")
 	midLine:SetPoint("BOTTOMLEFT", midTitle, "BOTTOMLEFT", 12, 4)
 	midLine:SetPoint("BOTTOMRIGHT", midTitle, "BOTTOMRIGHT", -12, 4)
@@ -1767,7 +1889,7 @@ function ChannelHistory:CreateDebugFrame()
 	rightTitle:SetHeight(52)
 	local rightTitleText = rightTitle:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	rightTitleText:SetPoint("CENTER")
-	rightTitleText:SetText("Chat History")
+	rightTitleText:SetText(L["CH_TITLE_HISTORY"])
 	local rightLine = rightTitle:CreateTexture(nil, "BACKGROUND")
 	rightLine:SetPoint("BOTTOMLEFT", rightTitle, "BOTTOMLEFT", 12, 4)
 	rightLine:SetPoint("BOTTOMRIGHT", rightTitle, "BOTTOMRIGHT", -12, 4)
@@ -1776,7 +1898,7 @@ function ChannelHistory:CreateDebugFrame()
 	rightLine:SetAlpha(1)
 
 	-- Search bars (debug placeholders)
-	local leftSearch = createSearchBox(f.left, "Search character / realm...")
+	local leftSearch = createSearchBox(f.left, L["CH_SEARCH_CHAR_REALM"])
 	leftSearch:SetPoint("TOPLEFT", f.left, "TOPLEFT", 10, -12)
 	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -10, -12)
 	self.ui.leftSearch = leftSearch
@@ -1785,7 +1907,7 @@ function ChannelHistory:CreateDebugFrame()
 		ChannelHistory:RefreshLeftList()
 	end)
 
-	local rightSearch = createSearchBox(f.right, "Search logs...")
+	local rightSearch = createSearchBox(f.right, L["CH_SEARCH_LOGS"])
 	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 10, -12)
 	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -10, -12)
 	self.ui.rightSearch = rightSearch
