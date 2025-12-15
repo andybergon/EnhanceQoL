@@ -910,7 +910,6 @@ function formatLine(self, line)
 	local sameRealm = senderRealmKey and playerRealmKey and senderRealmKey == playerRealmKey
 	local displayName = senderName or ""
 	if isSelf then
-		local toPrefix = L["CH_TO_PREFIX"] or ""
 		sameRealm = true
 	elseif displayName ~= "" and not sameRealm and senderRealmKey and senderRealmKey ~= "" then
 		displayName = displayName .. "-" .. senderRealmKey
@@ -928,7 +927,7 @@ function formatLine(self, line)
 	if displayName and displayName ~= "" then
 		local linkTarget = line.sender and line.sender ~= "" and line.sender or displayName
 		local prefix = ""
-		if isSelf then
+		if isOutbound and (line.filterKey == "WHISPER" or line.filterKey == "BN_WHISPER") then
 			local toPrefix = L["CH_TO_PREFIX"]
 			if toPrefix and toPrefix ~= "" then prefix = toPrefix .. " " end
 		end
@@ -953,10 +952,11 @@ function formatLine(self, line)
 	return text
 end
 
-local function matchesSearchLower(needle, message, sender)
+local function matchesSearchLower(needle, message, sender, channelKey)
 	if not needle or needle == "" then return true end
 	if message and message:lower():find(needle, 1, true) then return true end
 	if sender and sender:lower():find(needle, 1, true) then return true end
+	if channelKey and type(channelKey) == "string" and channelKey:lower():find(needle, 1, true) then return true end
 	return false
 end
 
@@ -980,7 +980,7 @@ function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
 	end
 	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
 	local needle = search and search:lower()
-	if not matchesSearchLower(needle, line.message, line.sender) then return false end
+	if not matchesSearchLower(needle, line.message, line.sender, line.filterKey) then return false end
 	return true
 end
 
@@ -1110,7 +1110,7 @@ local function collectLines(self, scope, realmKey, charKey, factionKey, searchNe
 	local function matches(line)
 		ensureFilter(line)
 		if not isEnabled(line.filterKey) then return false end
-		return matchesSearchLower(searchNeedle, line.message, line.sender)
+		return matchesSearchLower(searchNeedle, line.message, line.sender, line.filterKey)
 	end
 
 	local function pullNext(stream)
@@ -1730,10 +1730,12 @@ function ChannelHistory:EnsureLogFrame()
 		if button == "RightButton" then
 			local linkType, payload = link:match("^(%a+):(.+)$")
 			if payload and (linkType == "player" or linkType == "BNplayer") then
-				local target, id = payload:match("^([^:]+):(%d+)")
-				if not target then target = payload:match("([^:]+)") end
-				local bnetID = id and tonumber(id) or nil
-				if target and showPlayerMenu(frame, target, linkType == "BNplayer", bnetID) then return end
+				local namePart = payload:match("^[^:]+")
+				local accountID
+				if linkType == "BNplayer" then
+					accountID = tonumber(select(2, strsplit(":", payload)))
+				end
+				if namePart and showPlayerMenu(frame, namePart, linkType == "BNplayer", accountID) then return end
 			end
 		end
 		if SetItemRef then SetItemRef(link, text, button, frame) end
@@ -1752,9 +1754,17 @@ function ChannelHistory:RefreshLogView()
 	local lines = collectLines(self, scope, realmKey, charKey, factionKey, needle, maxUI)
 
 	local scopeLabel = ALL
-	if scope == "faction" and factionKey then scopeLabel = FACTION .. ": " .. factionKey end
-	if scope == "realm" and realmKey then scopeLabel = L["IgnoreServer"] .. ": " .. realmKey end
-	if scope == "character" and charKey then scopeLabel = CHARACTER .. ": " .. charKey end
+	if scope == "faction" then
+		if factionKey then
+			scopeLabel = string.format("%s: %s (%s)", L["IgnoreServer"] or REALM, realmKey or (self.keys and self.keys.realmKey) or "", factionKey)
+		else
+			scopeLabel = ALL
+		end
+	elseif scope == "realm" and realmKey then
+		scopeLabel = (L["IgnoreServer"] or REALM) .. ": " .. realmKey
+	elseif scope == "character" and charKey then
+		scopeLabel = CHARACTER .. ": " .. charKey
+	end
 
 	if self.ui.statusBar and self.ui.statusBar.text then
 		local count = #lines
