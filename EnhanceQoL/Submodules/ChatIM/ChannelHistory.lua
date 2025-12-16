@@ -975,7 +975,7 @@ function formatLine(self, line)
 	end
 
 	local timeText = date("%H:%M:%S", line.time or now())
-	timeText = string.format("|cff666666%s|r", timeText)
+	timeText = string.format("|cffb0b0b0%s|r", timeText)
 
 	local chatColor = line.color or getChatColor(line.filterKey) or { r = 1, g = 0.82, b = 0 }
 	local chatColorCode = toColorCode(chatColor)
@@ -1750,6 +1750,103 @@ local function applyInsetBorder(frame, offset)
 	right:SetVertTile(true)
 end
 
+-- Thin scrollbar helpers for the log frame
+function ChannelHistory:CreateThinScrollbar(parent, logFrame, xOffset)
+	local sb = CreateFrame("Slider", nil, parent)
+	sb:SetOrientation("VERTICAL")
+	sb:SetWidth(10)
+	sb:SetPoint("TOPLEFT", logFrame, "TOPRIGHT", xOffset or 6, 0)
+	sb:SetPoint("BOTTOMLEFT", logFrame, "BOTTOMRIGHT", xOffset or 6, 0)
+	sb:SetValueStep(1)
+	sb:SetObeyStepOnDrag(true)
+
+	sb.track = sb:CreateTexture(nil, "BACKGROUND")
+	sb.track:SetPoint("TOP", sb, "TOP", 0, -2)
+	sb.track:SetPoint("BOTTOM", sb, "BOTTOM", 0, 2)
+	sb.track:SetWidth(1)
+	sb.track:SetColorTexture(1, 1, 1, 0.22)
+
+	sb.channel = sb:CreateTexture(nil, "BACKGROUND", nil, -1)
+	sb.channel:SetPoint("TOP", sb, "TOP", 0, 0)
+	sb.channel:SetPoint("BOTTOM", sb, "BOTTOM", 0, 0)
+	sb.channel:SetWidth(6)
+	sb.channel:SetColorTexture(0, 0, 0, 0.28)
+
+	local thumb = sb:CreateTexture(nil, "ARTWORK")
+	thumb:SetSize(6, 22)
+	thumb:SetColorTexture(1, 1, 1, 0.45)
+	sb:SetThumbTexture(thumb)
+	sb.thumb = thumb
+
+	sb:EnableMouse(true)
+	sb:SetScript("OnEnter", function()
+		sb.track:SetColorTexture(1, 1, 1, 0.32)
+		sb.thumb:SetColorTexture(1, 1, 1, 0.65)
+	end)
+	sb:SetScript("OnLeave", function()
+		sb.track:SetColorTexture(1, 1, 1, 0.22)
+		sb.thumb:SetColorTexture(1, 1, 1, 0.45)
+	end)
+
+	sb._suppress = false
+
+	local function setOffsetSafe(offset)
+		offset = math.max(0, math.floor((offset or 0) + 0.5))
+		if logFrame.SetScrollOffset then
+			logFrame:SetScrollOffset(offset)
+			return
+		end
+
+		local cur = logFrame:GetScrollOffset() or 0
+		local delta = offset - cur
+		if delta > 0 then
+			for _ = 1, delta do logFrame:ScrollUp() end
+		elseif delta < 0 then
+			for _ = 1, -delta do logFrame:ScrollDown() end
+		end
+	end
+
+	sb:SetScript("OnValueChanged", function(sl, value)
+		if sl._suppress then return end
+		local minVal, maxVal = sl:GetMinMaxValues()
+		value = math.max(minVal or 0, math.min(maxVal or 0, math.floor((value or 0) + 0.5)))
+
+		local desiredOffset = (maxVal or 0) - value
+		setOffsetSafe(desiredOffset)
+
+		self:UpdateThinScrollbar(sl, logFrame)
+	end)
+
+	logFrame:SetScript("OnMouseWheel", function(_, delta)
+		local minVal, maxVal = sb:GetMinMaxValues()
+		local cur = sb:GetValue() or maxVal or 0
+		local newVal = cur - delta
+		if minVal and newVal < minVal then newVal = minVal end
+		if maxVal and newVal > maxVal then newVal = maxVal end
+		sb:SetValue(newVal)
+	end)
+
+	return sb
+end
+
+function ChannelHistory:UpdateThinScrollbar(sb, logFrame)
+	if not sb or not logFrame then return end
+
+	local num = logFrame:GetNumMessages() or 0
+	local maxVal = math.max(0, num - 1)
+	local offset = logFrame:GetScrollOffset() or 0
+	local sliderValue = maxVal - offset
+
+	sb._suppress = true
+	sb:SetMinMaxValues(0, maxVal)
+	sb:SetValue(sliderValue)
+	sb._suppress = false
+
+	local hasScroll = maxVal > 0
+	if sb.thumb then sb.thumb:SetAlpha(hasScroll and 0.28 or 0) end
+	if sb.track then sb.track:SetAlpha(hasScroll and 0.12 or 0) end
+	if sb.channel then sb.channel:SetAlpha(hasScroll and 0.18 or 0) end
+end
 local function createSearchBox(parent, placeholder)
 	local box = CreateFrame("EditBox", nil, parent, "SearchBoxTemplate")
 	box:SetHeight(22)
@@ -1907,61 +2004,10 @@ function ChannelHistory:EnsureLogFrame()
 		if SetItemRef then SetItemRef(link, text, button, frame) end
 	end)
 
-	-- Slider (visible scrollbar)
-	local slider = CreateFrame("Slider", nil, self.right, "UIPanelScrollBarTemplate")
-	slider:SetPoint("TOPLEFT", frame, "TOPRIGHT", -8, -15)
-	slider:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 0, 14)
-	slider:SetValueStep(1)
-	slider:SetObeyStepOnDrag(true)
-	slider._suppress = false
-
-	slider:SetScript("OnValueChanged", function(sl, value)
-		if sl._suppress then return end
-		local log = self.ui and self.ui.logFrame
-		if not log then return end
-		value = math.floor((value or 0) + 0.5)
-		local minVal, maxVal = sl:GetMinMaxValues()
-		local desiredOffset = (maxVal or 0) - value
-
-		if log.SetScrollOffset then
-			log:SetScrollOffset(desiredOffset)
-		else
-			local cur = log:GetScrollOffset() or 0
-			local delta = desiredOffset - cur
-			if delta > 0 then
-				for _ = 1, delta do
-					log:ScrollUp()
-				end
-			elseif delta < 0 then
-				for _ = 1, -delta do
-					log:ScrollDown()
-				end
-			end
-		end
-	end)
-
-	frame:SetScript("OnMouseWheel", function(_, delta)
-		local minVal, maxVal = slider:GetMinMaxValues()
-		local cur = slider:GetValue() or maxVal or 0
-		local newVal = cur - delta
-		if newVal < (minVal or 0) then newVal = minVal end
-		if maxVal and newVal > maxVal then newVal = maxVal end
-		slider:SetValue(newVal)
-	end)
-
+	-- Thin scrollbar
+	local slider = self:CreateThinScrollbar(self.right, frame, -4)
 	self.ui.logFrame = frame
 	self.ui.logScroll = slider
-
-	-- Adjust scrollbar textures to sit inside the panel border
-	if slider.ThumbTexture then slider.ThumbTexture:SetWidth(14) end
-	if slider.ScrollUpButton then
-		slider.ScrollUpButton:ClearAllPoints()
-		slider.ScrollUpButton:SetPoint("BOTTOM", slider, "TOP", 0, 2)
-	end
-	if slider.ScrollDownButton then
-		slider.ScrollDownButton:ClearAllPoints()
-		slider.ScrollDownButton:SetPoint("TOP", slider, "BOTTOM", 0, -2)
-	end
 end
 
 function ChannelHistory:RefreshLogView()
@@ -2005,17 +2051,7 @@ function ChannelHistory:RefreshLogView()
 		log:AddMessage(text, 1, 1, 1)
 	end
 	log:ScrollToBottom()
-	if self.ui.logScroll then
-		local slider = self.ui.logScroll
-		local numMessages = log:GetNumMessages() or 0
-		local maxVal = math.max(0, numMessages - 1)
-		local offset = log:GetScrollOffset() or 0
-		local sliderValue = maxVal - offset
-		slider._suppress = true
-		slider:SetMinMaxValues(0, maxVal)
-		slider:SetValue(sliderValue)
-		slider._suppress = false
-	end
+	if self.ui.logScroll then self:UpdateThinScrollbar(self.ui.logScroll, log) end
 end
 
 function ChannelHistory:LayoutDebugFrame(width, height)
