@@ -2729,20 +2729,13 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		editBox:SetFontObject(ChatFontNormal or GameFontNormal)
 		editBox:SetJustifyH("LEFT")
 		editBox:SetJustifyV("TOP")
-		editBox:SetSpacing(2)
 		editBox:SetTextColor(1, 1, 1, 1)
 		editBox:SetMaxLetters(15000)
 		editBox:ClearAllPoints()
-		editBox:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
-		editBox:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", 0, 0)
+		editBox:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, -10)
+		editBox:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", 0, -10)
 		editBox:SetWidth(580)
-		editBox:SetHeight(1)
 		editBox:SetScript("OnEscapePressed", function() popup:Hide() end)
-		editBox:SetScript("OnEditFocusGained", function(selfEdit) selfEdit:HighlightText() end)
-		editBox:SetScript("OnTextChanged", function(selfEdit)
-			if selfEdit._justSet then selfEdit._justSet = nil end
-			if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
-		end)
 
 		scroll:SetScrollChild(editBox)
 
@@ -2762,15 +2755,6 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		end
 
 		scroll:SetScript("OnSizeChanged", function() popup:RefreshScrollHeight() end)
-		popup:SetScript("OnShow", function()
-			if C_Timer and C_Timer.After then
-				C_Timer.After(0, function()
-					if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
-				end)
-			else
-				if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
-			end
-		end)
 
 		copyPopup = popup
 		return popup
@@ -2814,15 +2798,15 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		popup.editBox._justSet = true
 		popup.editBox:SetText(text or "")
 
-		C_Timer.After(0, function()
-			if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
-			if popup.scroll then popup.scroll:SetVerticalScroll(0) end
-			if popup.scrollBar and ChannelHistory and ChannelHistory.UpdateThinScrollFrameBar then ChannelHistory:UpdateThinScrollFrameBar(popup.scrollBar, popup.scroll) end
+		-- C_Timer.After(0, function()
+		-- 	if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
+		-- 	if popup.scroll then popup.scroll:SetVerticalScroll(0) end
+		-- 	if popup.scrollBar and ChannelHistory and ChannelHistory.UpdateThinScrollFrameBar then ChannelHistory:UpdateThinScrollFrameBar(popup.scrollBar, popup.scroll) end
 
-			popup.editBox:SetCursorPosition(0)
-			popup.editBox:SetFocus()
-			popup.editBox:HighlightText()
-		end)
+		-- 	popup.editBox:SetCursorPosition(0)
+		-- 	popup.editBox:SetFocus()
+		-- 	popup.editBox:HighlightText()
+		-- end)
 	end
 
 	copyBtn:SetScript("OnClick", function() copyVisibleLines() end)
