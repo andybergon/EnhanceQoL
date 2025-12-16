@@ -1871,7 +1871,7 @@ function ChannelHistory:EnsureLogFrame()
 	if self.ui.logFrame then return end
 	local frame = CreateFrame("ScrollingMessageFrame", nil, self.right)
 	if self.ui.statusBar then
-		frame:SetPoint("TOPLEFT", self.ui.statusBar, "BOTTOMLEFT", 0, -6)
+		frame:SetPoint("TOPLEFT", self.ui.statusBar, "BOTTOMLEFT", 0, -8)
 	else
 		frame:SetPoint("TOPLEFT", self.right, "TOPLEFT", 10, -62)
 	end
@@ -1907,9 +1907,8 @@ function ChannelHistory:EnsureLogFrame()
 
 	-- Slider (visible scrollbar)
 	local slider = CreateFrame("Slider", nil, self.right, "UIPanelScrollBarTemplate")
-	slider:SetPoint("TOPLEFT", frame, "TOPRIGHT", 0, -10)
-	slider:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 0, 10)
-	slider:SetWidth(14)
+	slider:SetPoint("TOPLEFT", frame, "TOPRIGHT", -8, -15)
+	slider:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 0, 14)
 	slider:SetValueStep(1)
 	slider:SetObeyStepOnDrag(true)
 	slider._suppress = false
@@ -2023,8 +2022,8 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 	width = width or f:GetWidth()
 	height = height or f:GetHeight()
 
-	local padding = 17
-	local spacing = 10
+	local padding = 18
+	local spacing = 18
 	local headerOffset = 17
 
 	local availableWidth = width - (padding * 2) - (spacing * 2)
@@ -2042,7 +2041,7 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 
 	-- Left panel
 	f.left:SetPoint("TOPLEFT", f, "TOPLEFT", padding, -headerOffset)
-	f.left:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", padding, padding)
+	f.left:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", padding, padding + 3)
 	f.left:SetWidth(leftWidth)
 
 	-- Middle panel
@@ -2056,7 +2055,7 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 
 	-- Right panel
 	f.right:SetPoint("TOPLEFT", f.middle, "TOPRIGHT", spacing, 0)
-	f.right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -padding, padding)
+	f.right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -(padding / 2), padding + 3)
 	f.right:SetWidth(rightWidth)
 end
 
@@ -2084,7 +2083,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f:SetBackdropBorderColor(0, 0, 0, 0)
 	f.bg = f:CreateTexture(nil, "BACKGROUND")
 	f.bg:SetAllPoints()
-	f.bg:SetAtlas("character-panel-background")
+	f.bg:SetTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\background_dark.tga")
 	f.bg:SetAlpha(0.9)
 	self:SetFrameStrata((addon.db and addon.db.chatHistoryFrameStrata) or self.frameStrata or "MEDIUM")
 	self:SetFrameLevel((addon.db and addon.db.chatHistoryFrameLevel) or self.frameLevel or 600)
@@ -2100,9 +2099,9 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	-- Alliance-styled frame tiles
 	local borderLayer, borderSubLevel = "BORDER", 0
 	local borderPath = "Interface\\AddOns\\EnhanceQoL\\Assets\\PanelBorder_"
-	local cornerSize = 32
-	local edgeThickness = 32
-	local cornerOffsets = 0
+	local cornerSize = 70
+	local edgeThickness = 70
+	local cornerOffsets = 13
 
 	local function makeTex(key, layer, subLevel)
 		local tex = f:CreateTexture(nil, layer or borderLayer, nil, subLevel or borderSubLevel)
@@ -2112,7 +2111,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 
 	local tl = makeTex("tl", borderLayer, borderSubLevel + 1)
 	tl:SetSize(cornerSize, cornerSize)
-	tl:SetPoint("TOPLEFT", f, "TOPLEFT", cornerOffsets, cornerOffsets)
+	tl:SetPoint("TOPLEFT", f, "TOPLEFT", -cornerOffsets, cornerOffsets)
 
 	local tr = makeTex("tr", borderLayer, borderSubLevel + 1)
 	tr:SetSize(cornerSize, cornerSize)
@@ -2158,7 +2157,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f:SetScript("OnMouseUp", function(frame) frame:StopMovingOrSizing() end)
 
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 8, -2)
+	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 20, 12)
 	self.ui.closeButton = close
 	-- Exit button border
 	local closeBorder = close:CreateTexture(nil, "ARTWORK", nil, 1)
@@ -2176,8 +2175,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	end
 
 	local optionsBtn = CreateFrame("Button", nil, f)
-	optionsBtn:SetSize(20, 20)
-	optionsBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -25, -20)
+	optionsBtn:SetSize(16, 16)
+	optionsBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -16, -22)
 	optionsBtn:SetNormalAtlas("QuestLog-icon-setting")
 	optionsBtn:SetHighlightAtlas("QuestLog-icon-setting")
 	optionsBtn:SetScript("OnClick", openChatSettings)
@@ -2308,22 +2307,22 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	applyInsetBorder(f.left, -4)
 
 	f.middle = CreateFrame("Frame", nil, f, "BackdropTemplate")
-	applyPanelBackdrop(f.middle)
+	-- applyPanelBackdrop(f.middle)
 	f.middle.bg = f.middle:CreateTexture(nil, "BACKGROUND", nil, -7)
 	f.middle.bg:SetAllPoints()
-	f.middle.bg:SetAtlas("QuestLog-empty-quest-background")
+	f.middle.bg:SetTexture(assetPath .. "background_gray.tga")
 	f.middle.bg:SetAlpha(0.75)
 	self.middle = f.middle
-	applyInsetBorder(f.middle, 2)
+	applyInsetBorder(f.middle, -4)
 
 	f.right = CreateFrame("Frame", nil, f, "BackdropTemplate")
-	applyPanelBackdrop(f.right)
+	-- applyPanelBackdrop(f.right)
 	f.right.bg = f.right:CreateTexture(nil, "BACKGROUND", nil, -7)
 	f.right.bg:SetAllPoints()
-	f.right.bg:SetAtlas("communities-widebackground")
+	f.right.bg:SetTexture(assetPath .. "background_gray.tga")
 	f.right.bg:SetAlpha(0.35)
 	self.right = f.right
-	applyInsetBorder(f.right, 2)
+	applyInsetBorder(f.right, -4)
 
 	local function createPanelHeader(parent, label)
 		local hdr = CreateFrame("Frame", nil, parent)
