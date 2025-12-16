@@ -306,6 +306,7 @@ function ChannelHistory:SetFrameStrata(strata)
 	self.frameStrata = value
 	if addon.db then addon.db.chatHistoryFrameStrata = value end
 	self:ApplyFrameZOrder()
+	self:UpdateToggleButtonStrata()
 end
 
 function ChannelHistory:SetFrameLevel(level)
@@ -314,6 +315,7 @@ function ChannelHistory:SetFrameLevel(level)
 	self.frameLevel = lvl
 	if addon.db then addon.db.chatHistoryFrameLevel = lvl end
 	self:ApplyFrameZOrder()
+	self:UpdateToggleButtonStrata()
 end
 
 function ChannelHistory:ApplyFrameZOrder()
@@ -1615,6 +1617,7 @@ function ChannelHistory:SetEnabled(enabled)
 	self:LoadFiltersFromDB()
 	self:SetUILineLimit(addon.db and addon.db.chatChannelHistoryMaxViewLines or self.uiMaxLines)
 	self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12)
+	self:EnsureToggleButton()
 	if self.enabled then
 		if self.loggedIn then
 			self:InitStorage()
@@ -1635,6 +1638,7 @@ function ChannelHistory:SetEnabled(enabled)
 	else
 		if self.frame then self.frame:UnregisterAllEvents() end
 		if self.debugFrame then self.debugFrame:Hide() end
+		if self.toggleButton then self.toggleButton:Hide() end
 	end
 end
 
@@ -1749,6 +1753,38 @@ local function applyInsetBorder(frame, offset)
 	right:SetPoint("BOTTOMRIGHT", br, "TOPRIGHT", 0, 0)
 	right:SetWidth(edgeSize)
 	right:SetVertTile(true)
+end
+
+function ChannelHistory:UpdateToggleButtonPosition()
+	if not self.toggleButton then return end
+	local anchor = QuickJoinToastButton or UIParent
+	local x = (addon.db and addon.db.chatHistoryButtonOffsetX) or 0
+	local y = (addon.db and addon.db.chatHistoryButtonOffsetY) or -10
+	self.toggleButton:ClearAllPoints()
+	self.toggleButton:SetPoint("TOP", anchor, "BOTTOM", x, y)
+end
+
+function ChannelHistory:EnsureToggleButton()
+	if not addon.db or not addon.db.enableChatHistory then
+		if self.toggleButton then self.toggleButton:Hide() end
+		return
+	end
+	if not self.toggleButton then
+		local btn = CreateFrame("Button", nil, UIParent, "UIPanelButtonTemplate")
+		btn:SetSize(80, 22)
+		btn:SetText("History")
+		btn:SetScript("OnClick", function() self:ToggleWindow() end)
+		btn:SetFrameStrata("MEDIUM")
+		self.toggleButton = btn
+	end
+	self.toggleButton:Show()
+	self:UpdateToggleButtonPosition()
+end
+
+function ChannelHistory:UpdateToggleButtonStrata()
+	if not self.toggleButton then return end
+	self.toggleButton:SetFrameStrata(self.frameStrata or "MEDIUM")
+	self.toggleButton:SetFrameLevel((self.frameLevel or 600) + 10)
 end
 
 -- Thin scrollbar helpers for the log frame
@@ -2242,6 +2278,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f.bg:SetAlpha(0.9)
 	self:SetFrameStrata((addon.db and addon.db.chatHistoryFrameStrata) or self.frameStrata or "MEDIUM")
 	self:SetFrameLevel((addon.db and addon.db.chatHistoryFrameLevel) or self.frameLevel or 600)
+	self:UpdateToggleButtonStrata()
 
 	local function applyAtlas(texture, atlas)
 		if not texture or not atlas then return end

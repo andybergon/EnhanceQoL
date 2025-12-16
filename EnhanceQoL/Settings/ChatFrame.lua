@@ -480,6 +480,52 @@ data = {
 				sType = "slider",
 			},
 			{
+				var = "chatHistoryButtonOffsetX",
+				text = "History button offset X",
+				desc = "Adjust horizontal offset of the Chat History toggle button relative to Quick Join.",
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				get = function() return addon.db and addon.db.chatHistoryButtonOffsetX or 0 end,
+				set = function(value)
+					addon.db.chatHistoryButtonOffsetX = value or 0
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateToggleButtonPosition then
+						addon.ChatIM.ChannelHistory:UpdateToggleButtonPosition()
+					end
+				end,
+				min = -200,
+				max = 200,
+				step = 1,
+				parent = true,
+				default = 0,
+				sType = "slider",
+			},
+			{
+				var = "chatHistoryButtonOffsetY",
+				text = "History button offset Y",
+				desc = "Adjust vertical offset of the Chat History toggle button relative to Quick Join.",
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				get = function() return addon.db and addon.db.chatHistoryButtonOffsetY or -10 end,
+				set = function(value)
+					addon.db.chatHistoryButtonOffsetY = value or 0
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateToggleButtonPosition then
+						addon.ChatIM.ChannelHistory:UpdateToggleButtonPosition()
+					end
+				end,
+				min = -200,
+				max = 200,
+				step = 1,
+				parent = true,
+				default = -10,
+				sType = "slider",
+			},
+			{
 				var = "chatChannelFiltersEnable",
 				text = L["CH_OPTION_FILTER_SELECTION"],
 				desc = L["CH_OPTION_FILTER_SELECTION_DESC"],
