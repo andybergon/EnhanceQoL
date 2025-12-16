@@ -1,6 +1,13 @@
 # Changelog
 
-## [6.4.0] – 2025-12-15
+## [6.4.0] – 2025-12-17
+
+### ✨ Added
+
+- Chat History safer
+  - Safe your history of chat messages per character with a limit of up to 1000 lines per char per channel
+  - Select your alts to look into old chats with fulltext search and Hyperlinks/Item/Achivement etc. working
+  - Copy selected text, filter different channels
 
 ### 🔄 Changed
 

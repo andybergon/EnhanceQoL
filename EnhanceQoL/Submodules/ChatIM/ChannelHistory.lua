@@ -1023,7 +1023,7 @@ function formatLine(self, line)
 
 	local ownerRealmKey = line.ownerRealmKey or realmFromCharKey(line.ownerCharKey) or (self.keys and self.keys.realmKey)
 	local playerRealmKey = ownerRealmKey
-	local senderRealmKey = senderRealmKey or playerRealmKey
+	senderRealmKey = senderRealmKey or playerRealmKey
 	local sameRealm = senderRealmKey and playerRealmKey and senderRealmKey == playerRealmKey
 	local displayName = senderName or ""
 	if isSelf then
@@ -2726,7 +2726,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		local editBox = CreateFrame("EditBox", nil, scroll)
 		editBox:SetMultiLine(true)
 		editBox:SetAutoFocus(true)
-		editBox:SetFontObject(ChatFontNormal or GameFontNormal or SystemFont_Shadow_Med1)
+		editBox:SetFontObject(ChatFontNormal or GameFontNormal)
 		editBox:SetJustifyH("LEFT")
 		editBox:SetJustifyV("TOP")
 		editBox:SetSpacing(2)
