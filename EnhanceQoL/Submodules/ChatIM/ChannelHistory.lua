@@ -73,10 +73,7 @@ ChannelHistory.ui = ChannelHistory.ui or {}
 ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, refreshPending = false, formattedCache = nil }
 local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID, normalizeChannelBucket, realmFromCharKey
 local MU = MenuUtil
-local function isTableEmpty(t)
-	if not t then return true end
-	return next(t) == nil
-end
+local function isTableEmpty(t) return type(t) ~= "table" or next(t) == nil end
 
 local function getClassStyle(classFile)
 	if not classFile then return nil end
@@ -1124,17 +1121,29 @@ function ChannelHistory:ForEachSelectedCharacter(fn)
 end
 
 local function wipeEmptyContainers(history)
-	if not history then return end
+	if type(history) ~= "table" then return end
+
 	for fKey, faction in pairs(history) do
-		for realmKey, realm in pairs(faction or {}) do
-			if realm.characters then
-				for charKey, bucket in pairs(realm.characters) do
-					if not bucket or not bucket.channels or isTableEmpty(bucket.channels) then realm.characters[charKey] = nil end
+		-- skip metadata keys like _version and skip non-tables
+		if isVisibleKey(fKey) and type(faction) == "table" then
+			for realmKey, realm in pairs(faction) do
+				if type(realm) == "table" then
+					local characters = realm.characters
+					if type(characters) == "table" then
+						for charKey, bucket in pairs(characters) do
+							-- bucket/channels must be tables, otherwise treat as empty
+							if type(bucket) ~= "table" or type(bucket.channels) ~= "table" or isTableEmpty(bucket.channels) then characters[charKey] = nil end
+						end
+
+						-- remove empty realm
+						if isTableEmpty(characters) then faction[realmKey] = nil end
+					end
 				end
-				if isTableEmpty(realm.characters) then faction[realmKey] = nil end
 			end
+
+			-- remove empty faction bucket (Alliance/Horde)
+			if isTableEmpty(faction) then history[fKey] = nil end
 		end
-		if isTableEmpty(faction) then history[fKey] = nil end
 	end
 end
 
@@ -1153,15 +1162,20 @@ end
 function ChannelHistory:WipeChannelHistory(filterKey)
 	if not self.history or not filterKey then return end
 	local removed = 0
+
 	self:ForEachSelectedCharacter(function(bucket)
-		if not bucket.channels then return end
+		if type(bucket.channels) ~= "table" then return end
+
 		for chKey, chData in pairs(bucket.channels) do
 			if chData and chData.lines then
+				local originalCount = getLineCount(chData)
+
 				local keep = {}
-				for _, line in ipairs(chData.lines) do
-					if line.filterKey ~= filterKey then table.insert(keep, line) end
+				for line in iterChannelLines(chData) do
+					if line.filterKey ~= filterKey then keep[#keep + 1] = line end
 				end
-				local delta = #chData.lines - #keep
+
+				local delta = originalCount - #keep
 				if delta > 0 then
 					removed = removed + delta
 					chData.lines = keep
@@ -1173,6 +1187,7 @@ function ChannelHistory:WipeChannelHistory(filterKey)
 			end
 		end
 	end)
+
 	wipeEmptyContainers(self.history)
 	self:RefreshLeftList()
 	self:RequestLogRefresh()
