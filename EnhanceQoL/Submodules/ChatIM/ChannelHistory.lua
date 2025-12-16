@@ -34,23 +34,23 @@ ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY
 		CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE",
 		CHAT_MSG_RAID = "RAID",
 		CHAT_MSG_RAID_LEADER = "RAID",
-	CHAT_MSG_GUILD = "GUILD",
-	CHAT_MSG_OFFICER = "OFFICER",
-	CHAT_MSG_CHANNEL = "GENERAL",
-	CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
-	CHAT_MSG_LOOT = "LOOT",
+		CHAT_MSG_GUILD = "GUILD",
+		CHAT_MSG_OFFICER = "OFFICER",
+		CHAT_MSG_CHANNEL = "GENERAL",
+		CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
+		CHAT_MSG_LOOT = "LOOT",
 		CHAT_MSG_MONEY = "MONEY",
 		CHAT_MSG_CURRENCY = "LOOT",
 		CHAT_MSG_ACHIEVEMENT = "ACHIEVEMENT",
 		CHAT_MSG_GUILD_ACHIEVEMENT = "GUILD",
-	CHAT_MSG_SYSTEM = "SYSTEM",
-	CHAT_MSG_OPENING = "OPENING",
-	CHAT_MSG_MONSTER_EMOTE = "MONSTER",
-	CHAT_MSG_MONSTER_PARTY = "MONSTER",
-	CHAT_MSG_MONSTER_SAY = "MONSTER",
-	CHAT_MSG_MONSTER_WHISPER = "MONSTER",
-	CHAT_MSG_MONSTER_YELL = "MONSTER",
-}
+		CHAT_MSG_SYSTEM = "SYSTEM",
+		CHAT_MSG_OPENING = "OPENING",
+		CHAT_MSG_MONSTER_EMOTE = "MONSTER",
+		CHAT_MSG_MONSTER_PARTY = "MONSTER",
+		CHAT_MSG_MONSTER_SAY = "MONSTER",
+		CHAT_MSG_MONSTER_WHISPER = "MONSTER",
+		CHAT_MSG_MONSTER_YELL = "MONSTER",
+	}
 ChannelHistory.loggedIn = ChannelHistory.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
 ChannelHistory.defaultFilters = {
 	SAY = true,
@@ -131,6 +131,13 @@ local function showCopyDialog(text)
 	if StaticPopup_Show then StaticPopup_Show("EQOL_URL_COPY", nil, nil, text or "") end
 end
 
+local function sanitizeCopyText(text)
+	if not text then return "" end
+	text = text:gsub("\r", "")
+	text = text:gsub("[\001-\008\011\012\014-\031]", "")
+	return text
+end
+
 local function ensureClearPopups()
 	if not StaticPopupDialogs then return end
 	if not StaticPopupDialogs["EQOL_CLEAR_HISTORY_CHAR"] then
@@ -143,9 +150,7 @@ local function ensureClearPopups()
 			hideOnEscape = true,
 			preferredIndex = 3,
 			OnAccept = function(selfPopup, data)
-				if data and data.faction and data.realm and data.char then
-					ChannelHistory:WipeCharacterHistory(data.faction, data.realm, data.char)
-				end
+				if data and data.faction and data.realm and data.char then ChannelHistory:WipeCharacterHistory(data.faction, data.realm, data.char) end
 			end,
 		}
 	end
@@ -1102,12 +1107,14 @@ function ChannelHistory:ForEachSelectedCharacter(fn)
 	if not self.history then return end
 	local selType, selFaction, selRealm, selChar = parseSelection(self)
 	for fKey, faction in pairs(self.history) do
-		if selType ~= "faction" or not selFaction or fKey == selFaction then
-			for realmKey, realm in pairs(faction or {}) do
-				if selType ~= "realm" or not selRealm or realmKey == selRealm then
-					for charKey, bucket in pairs(realm.characters or {}) do
-						if selType ~= "character" or not selChar or charKey == selChar then
-							fn(bucket, fKey, realmKey, charKey, realm)
+		if isVisibleKey(fKey) and type(faction) == "table" then
+			if selType ~= "faction" or not selFaction or fKey == selFaction then
+				for realmKey, realm in pairs(faction or {}) do
+					if type(realm) == "table" then
+						if selType ~= "realm" or not selRealm or realmKey == selRealm then
+							for charKey, bucket in pairs(realm.characters or {}) do
+								if selType ~= "character" or not selChar or charKey == selChar then fn(bucket, fKey, realmKey, charKey, realm) end
+							end
 						end
 					end
 				end
@@ -1154,7 +1161,7 @@ function ChannelHistory:WipeChannelHistory(filterKey)
 				for _, line in ipairs(chData.lines) do
 					if line.filterKey ~= filterKey then table.insert(keep, line) end
 				end
-				local delta = (#chData.lines) - (#keep)
+				local delta = #chData.lines - #keep
 				if delta > 0 then
 					removed = removed + delta
 					chData.lines = keep
@@ -1987,9 +1994,7 @@ function ChannelHistory:ShowCharacterContextMenu(entry)
 	ensureClearPopups()
 	MU.CreateContextMenu(UIParent, function(_, root)
 		root:CreateTitle(name)
-		root:CreateButton("Clear history", function()
-			StaticPopup_Show("EQOL_CLEAR_HISTORY_CHAR", name, nil, { faction = factionKey, realm = realmKey, char = charKey })
-		end)
+		root:CreateButton("Clear history", function() StaticPopup_Show("EQOL_CLEAR_HISTORY_CHAR", name, nil, { faction = factionKey, realm = realmKey, char = charKey }) end)
 	end)
 end
 
@@ -1999,9 +2004,7 @@ function ChannelHistory:ShowChannelContextMenu(filterInfo)
 	ensureClearPopups()
 	MU.CreateContextMenu(UIParent, function(_, root)
 		root:CreateTitle(label)
-		root:CreateButton("Clear history in current scope", function()
-			StaticPopup_Show("EQOL_CLEAR_HISTORY_CHANNEL", label, nil, { filterKey = filterInfo.key })
-		end)
+		root:CreateButton("Clear history in current scope", function() StaticPopup_Show("EQOL_CLEAR_HISTORY_CHANNEL", label, nil, { filterKey = filterInfo.key }) end)
 	end)
 end
 
@@ -2353,9 +2356,7 @@ function ChannelHistory:CreateFilterUI()
 		row:SetScript("OnLeave", function() row.hl:Hide() end)
 		row:SetScript("OnMouseUp", function(_, button)
 			if button == "RightButton" then
-				if ChannelHistory.ShowChannelContextMenu then
-					ChannelHistory:ShowChannelContextMenu({ key = info.key, label = info.label })
-				end
+				if ChannelHistory.ShowChannelContextMenu then ChannelHistory:ShowChannelContextMenu({ key = info.key, label = info.label }) end
 			end
 		end)
 	end
@@ -2670,18 +2671,20 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	local copyPopup
 	local function ensureCopyPopupFrame()
 		if copyPopup then return copyPopup end
+		local assetPath = "Interface\\AddOns\\EnhanceQoL\\Assets\\"
 		local popup = CreateFrame("Frame", "EnhanceQoLChannelHistoryCopy", UIParent, "BackdropTemplate")
 		popup:SetSize(640, 400)
 		popup:SetPoint("CENTER")
-		popup:SetBackdrop(PANEL_BACKDROP)
-		popup:SetBackdropColor(0, 0, 0, 0.8)
-		popup:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
 		popup:SetFrameStrata("DIALOG")
+		popup:SetClampedToScreen(true)
 		popup:EnableMouse(true)
 		popup:SetMovable(true)
-		popup:RegisterForDrag("LeftButton")
-		popup:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
-		popup:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
+
+		popup.bg = popup:CreateTexture(nil, "BACKGROUND")
+		popup.bg:SetAllPoints()
+		popup.bg:SetTexture(assetPath .. "background_gray.tga")
+		popup.bg:SetAlpha(0.9)
+		applyInsetBorder(popup, -6)
 
 		local closeCopy = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
 		closeCopy:SetPoint("TOPRIGHT", popup, "TOPRIGHT", 4, 4)
@@ -2690,60 +2693,121 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		title:SetPoint("TOPLEFT", popup, "TOPLEFT", 16, -12)
 		title:SetText(L["CH_COPY_TITLE"])
 
-		local scroll = CreateFrame("ScrollFrame", nil, popup, "UIPanelScrollFrameTemplate")
+		-- Drag handle on the outer/top border only (keeps the edit box selectable)
+		local dragHandle = CreateFrame("Frame", nil, popup)
+		dragHandle:SetPoint("TOPLEFT", popup, "TOPLEFT", 0, 0)
+		dragHandle:SetPoint("TOPRIGHT", popup, "TOPRIGHT", 0, 0)
+		dragHandle:SetHeight(28)
+		dragHandle:EnableMouse(true)
+		dragHandle:RegisterForDrag("LeftButton")
+		dragHandle:SetScript("OnDragStart", function() popup:StartMoving() end)
+		dragHandle:SetScript("OnDragStop", function() popup:StopMovingOrSizing() end)
+
+		local scroll = CreateFrame("ScrollFrame", nil, popup)
 		scroll:SetPoint("TOPLEFT", popup, "TOPLEFT", 12, -36)
-		scroll:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -32, 12)
+		scroll:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -18, 12)
+		scroll:EnableMouseWheel(true)
 
 		local editBox = CreateFrame("EditBox", nil, scroll)
 		editBox:SetMultiLine(true)
 		editBox:SetAutoFocus(true)
 		editBox:SetFontObject(ChatFontNormal or GameFontNormal or SystemFont_Shadow_Med1)
+		editBox:SetJustifyH("LEFT")
+		editBox:SetJustifyV("TOP")
+		editBox:SetSpacing(2)
+		editBox:SetTextColor(1, 1, 1, 1)
+		editBox:SetMaxLetters(15000)
+		editBox:ClearAllPoints()
+		editBox:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, 0)
+		editBox:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", 0, 0)
 		editBox:SetWidth(580)
+		editBox:SetHeight(1)
 		editBox:SetScript("OnEscapePressed", function() popup:Hide() end)
+		editBox:SetScript("OnEditFocusGained", function(selfEdit) selfEdit:HighlightText() end)
 		editBox:SetScript("OnTextChanged", function(selfEdit)
-			if selfEdit._justSet then
-				selfEdit._justSet = nil
-				return
-			end
-		end)
-		editBox:SetScript("OnCursorChanged", function(selfEdit, _, y, _, h)
-			local min, max = scroll:GetVerticalScrollRange()
-			local offset = scroll:GetVerticalScroll()
-			local viewHeight = scroll:GetHeight()
-			if y - offset < 0 then
-				scroll:SetVerticalScroll(y)
-			elseif (y + h - offset) > viewHeight then
-				local diff = (y + h) - viewHeight
-				scroll:SetVerticalScroll(math.min(max, offset + diff))
-			end
+			if selfEdit._justSet then selfEdit._justSet = nil end
+			if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
 		end)
 
 		scroll:SetScrollChild(editBox)
 
 		popup.editBox = editBox
 		popup.scroll = scroll
+		popup.scrollBar = self:CreateThinScrollFrameBar(scroll, 6)
+
+		function popup:RefreshScrollHeight()
+			if not self.editBox or not self.scroll then return end
+			local width = (self.scroll:GetWidth() or 0)
+			if width < 50 then return end -- layout not ready yet
+			self.editBox:SetWidth(width - 4)
+			local textHeight = self.editBox.GetTextHeight and self.editBox:GetTextHeight() or 0
+			local minHeight = self.scroll:GetHeight() or 0
+			self.editBox:SetHeight(math.max(textHeight + 16, minHeight))
+			if self.scrollBar and ChannelHistory and ChannelHistory.UpdateThinScrollFrameBar then ChannelHistory:UpdateThinScrollFrameBar(self.scrollBar, self.scroll) end
+		end
+
+		scroll:SetScript("OnSizeChanged", function() popup:RefreshScrollHeight() end)
+		popup:SetScript("OnShow", function()
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0, function()
+					if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
+				end)
+			else
+				if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
+			end
+		end)
+
 		copyPopup = popup
 		return popup
 	end
 
-	local function copyVisibleLines()
-		if not self.ui or not self.ui.logFrame then return end
-		local log = self.ui.logFrame
-		local num = log:GetNumMessages()
-		if not num or num == 0 then return end
-		local lines = {}
-		for i = 1, num do
-			local text = log:GetMessageInfo(i)
-			if text then lines[#lines + 1] = text end
+	local function buildCopyTextFromData()
+		if not self.history or not self.keys then self:InitStorage() end
+
+		local scope, realmKey, charKey, factionKey = deriveScope(self.ui.selection, self.keys)
+		local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
+		local needle = search and search:lower()
+
+		local maxUI = (self.ui.logFrame and self.ui.logFrame:GetMaxLines()) or self.uiMaxLines or 1000
+		local dataLines = collectLines(self, scope, realmKey, charKey, factionKey, needle, maxUI)
+
+		local out = {}
+		local lastDate
+
+		for i = 1, #dataLines do
+			local lt = dataLines[i].time or now()
+			local currDate = date("%Y-%m-%d", lt)
+
+			if currDate ~= lastDate then
+				out[#out + 1] = string.format("|cff777777----- %s -----|r", currDate or "")
+				lastDate = currDate
+			end
+
+			out[#out + 1] = formatLine(self, dataLines[i])
 		end
+
+		return table.concat(out, "\n")
+	end
+
+	local function copyVisibleLines()
 		local popup = ensureCopyPopupFrame()
 		popup:Show()
+
+		local text = sanitizeCopyText(buildCopyTextFromData())
+		local maxLetters = 15000
+		if text and #text > maxLetters then text = string.sub(text, -maxLetters) end
 		popup.editBox._justSet = true
-		local text = table.concat(lines, "\n")
-		popup.editBox:SetText(text)
-		popup.editBox:SetCursorPosition(0)
-		if popup.scroll then popup.scroll:SetVerticalScroll(0) end
-		popup.editBox:SetFocus()
+		popup.editBox:SetText(text or "")
+
+		C_Timer.After(0, function()
+			if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
+			if popup.scroll then popup.scroll:SetVerticalScroll(0) end
+			if popup.scrollBar and ChannelHistory and ChannelHistory.UpdateThinScrollFrameBar then ChannelHistory:UpdateThinScrollFrameBar(popup.scrollBar, popup.scroll) end
+
+			popup.editBox:SetCursorPosition(0)
+			popup.editBox:SetFocus()
+			popup.editBox:HighlightText()
+		end)
 	end
 
 	copyBtn:SetScript("OnClick", function() copyVisibleLines() end)
