@@ -575,7 +575,10 @@ addon.functions.SettingsCreateCheckboxes(cChatFrame, data)
 function addon.functions.initChatFrame()
 	addon.db.chatChannelFiltersEnable = addon.db.chatChannelFiltersEnable or {}
 	for i in pairs(addon.ChatIM.ChannelHistory.defaultFilters) do
-		table.insert(categoryOptions, { value = i, text = _G[i] })
+		local label = _G[i]
+		if not label and i == "MONSTER" then label = _G["EXAMPLE_TARGET_MONSTER"] end
+		if not label then label = i end
+		table.insert(categoryOptions, { value = i, text = label })
 
 		if addon.db.chatChannelFiltersEnable[i] == nil then addon.db.chatChannelFiltersEnable[i] = true end
 	end

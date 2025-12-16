@@ -34,18 +34,23 @@ ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY
 		CHAT_MSG_INSTANCE_CHAT_LEADER = "INSTANCE",
 		CHAT_MSG_RAID = "RAID",
 		CHAT_MSG_RAID_LEADER = "RAID",
-		CHAT_MSG_GUILD = "GUILD",
-		CHAT_MSG_OFFICER = "OFFICER",
-		CHAT_MSG_CHANNEL = "GENERAL",
-		CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
-		CHAT_MSG_LOOT = "LOOT",
+	CHAT_MSG_GUILD = "GUILD",
+	CHAT_MSG_OFFICER = "OFFICER",
+	CHAT_MSG_CHANNEL = "GENERAL",
+	CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
+	CHAT_MSG_LOOT = "LOOT",
 		CHAT_MSG_MONEY = "MONEY",
 		CHAT_MSG_CURRENCY = "LOOT",
 		CHAT_MSG_ACHIEVEMENT = "ACHIEVEMENT",
 		CHAT_MSG_GUILD_ACHIEVEMENT = "GUILD",
-		CHAT_MSG_SYSTEM = "SYSTEM",
-		CHAT_MSG_OPENING = "OPENING",
-	}
+	CHAT_MSG_SYSTEM = "SYSTEM",
+	CHAT_MSG_OPENING = "OPENING",
+	CHAT_MSG_MONSTER_EMOTE = "MONSTER",
+	CHAT_MSG_MONSTER_PARTY = "MONSTER",
+	CHAT_MSG_MONSTER_SAY = "MONSTER",
+	CHAT_MSG_MONSTER_WHISPER = "MONSTER",
+	CHAT_MSG_MONSTER_YELL = "MONSTER",
+}
 ChannelHistory.loggedIn = ChannelHistory.loggedIn or (IsLoggedIn and IsLoggedIn()) or false
 ChannelHistory.defaultFilters = {
 	SAY = true,
@@ -62,11 +67,16 @@ ChannelHistory.defaultFilters = {
 	ACHIEVEMENT = true,
 	SYSTEM = true,
 	OPENING = true,
+	MONSTER = true,
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
 ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, refreshPending = false, formattedCache = nil }
 local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID, normalizeChannelBucket, realmFromCharKey
 local MU = MenuUtil
+local function isTableEmpty(t)
+	if not t then return true end
+	return next(t) == nil
+end
 
 local function getClassStyle(classFile)
 	if not classFile then return nil end
@@ -119,6 +129,40 @@ end
 local function showCopyDialog(text)
 	ensureCopyPopup()
 	if StaticPopup_Show then StaticPopup_Show("EQOL_URL_COPY", nil, nil, text or "") end
+end
+
+local function ensureClearPopups()
+	if not StaticPopupDialogs then return end
+	if not StaticPopupDialogs["EQOL_CLEAR_HISTORY_CHAR"] then
+		StaticPopupDialogs["EQOL_CLEAR_HISTORY_CHAR"] = {
+			text = "Clear chat history for %s?",
+			button1 = YES,
+			button2 = CANCEL,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+			OnAccept = function(selfPopup, data)
+				if data and data.faction and data.realm and data.char then
+					ChannelHistory:WipeCharacterHistory(data.faction, data.realm, data.char)
+				end
+			end,
+		}
+	end
+	if not StaticPopupDialogs["EQOL_CLEAR_HISTORY_CHANNEL"] then
+		StaticPopupDialogs["EQOL_CLEAR_HISTORY_CHANNEL"] = {
+			text = "Clear chat history for %s in current scope?",
+			button1 = YES,
+			button2 = CANCEL,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+			OnAccept = function(selfPopup, data)
+				if data and data.filterKey then ChannelHistory:WipeChannelHistory(data.filterKey) end
+			end,
+		}
+	end
 end
 
 local function showPlayerMenu(owner, rawName, isBN, bnetID)
@@ -827,6 +871,7 @@ local CHAT_COLOR_KEYS = {
 	ACHIEVEMENT = "ACHIEVEMENT",
 	SYSTEM = "SYSTEM",
 	OPENING = "OPENING",
+	MONSTER = "MONSTER_SAY",
 }
 
 local CHAT_COLOR_FALLBACK = {
@@ -845,6 +890,7 @@ local CHAT_COLOR_FALLBACK = {
 	ACHIEVEMENT = { r = 1, g = 0.75, b = 0.25 },
 	SYSTEM = { r = 1, g = 1, b = 0 },
 	OPENING = { r = 128 / 255, g = 128 / 255, b = 1 },
+	MONSTER = { r = 0.9, g = 0.7, b = 0.3 },
 }
 
 function splitSender(sender)
@@ -994,13 +1040,17 @@ function formatLine(self, line)
 	local nameColorCode = toColorCode(nameColor)
 	local nameText = ""
 	if displayName and displayName ~= "" then
-		local linkTarget = line.sender and line.sender ~= "" and line.sender or displayName
-		local prefix = ""
-		if isOutbound and (line.filterKey == "WHISPER" or line.filterKey == "BN_WHISPER") then
-			local toPrefix = L["CH_TO_PREFIX"]
-			if toPrefix and toPrefix ~= "" then prefix = toPrefix .. " " end
+		if line.filterKey == "MONSTER" then
+			nameText = string.format("%s%s|r", nameColorCode, displayName)
+		else
+			local linkTarget = line.sender and line.sender ~= "" and line.sender or displayName
+			local prefix = ""
+			if isOutbound and (line.filterKey == "WHISPER" or line.filterKey == "BN_WHISPER") then
+				local toPrefix = L["CH_TO_PREFIX"]
+				if toPrefix and toPrefix ~= "" then prefix = toPrefix .. " " end
+			end
+			nameText = string.format("%s|Hplayer:%s|h%s[%s]|r|h", prefix, linkTarget, nameColorCode, displayName)
 		end
-		nameText = string.format("%s|Hplayer:%s|h%s[%s]|r|h", prefix, linkTarget, nameColorCode, displayName)
 	end
 
 	local body = formatURLs(line.message or "")
@@ -1027,6 +1077,99 @@ local function matchesSearchLower(needle, message, sender, channelKey)
 	if sender and sender:lower():find(needle, 1, true) then return true end
 	if channelKey and type(channelKey) == "string" and channelKey:lower():find(needle, 1, true) then return true end
 	return false
+end
+
+local function parseSelection(self)
+	local sel = self.ui and self.ui.selection or {}
+	local selType = sel.type or "character"
+	local selChar = sel.charKey
+	local selRealm = sel.realmKey or sel.realm
+	local selFaction = sel.factionKey or sel.faction
+	if selType == "character" and not selChar and sel.key then selChar = sel.key:match("^char:[^:]+:[^:]+:(.+)$") end
+	if selType == "realm" and not selRealm and sel.key then selRealm = sel.key:match("^realm:(.+)$") end
+	if selType == "faction" and (not selFaction or not selRealm) and sel.key then
+		local rKey, fKey = sel.key:match("^faction:([^:]+):(.+)$")
+		selRealm = selRealm or rKey
+		selFaction = selFaction or fKey
+	end
+	selFaction = selFaction or (self.keys and self.keys.faction)
+	selRealm = selRealm or (self.keys and self.keys.realmKey)
+	selChar = selChar or (self.keys and self.keys.charKey)
+	return selType, selFaction, selRealm, selChar
+end
+
+function ChannelHistory:ForEachSelectedCharacter(fn)
+	if not self.history then return end
+	local selType, selFaction, selRealm, selChar = parseSelection(self)
+	for fKey, faction in pairs(self.history) do
+		if selType ~= "faction" or not selFaction or fKey == selFaction then
+			for realmKey, realm in pairs(faction or {}) do
+				if selType ~= "realm" or not selRealm or realmKey == selRealm then
+					for charKey, bucket in pairs(realm.characters or {}) do
+						if selType ~= "character" or not selChar or charKey == selChar then
+							fn(bucket, fKey, realmKey, charKey, realm)
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+local function wipeEmptyContainers(history)
+	if not history then return end
+	for fKey, faction in pairs(history) do
+		for realmKey, realm in pairs(faction or {}) do
+			if realm.characters then
+				for charKey, bucket in pairs(realm.characters) do
+					if not bucket or not bucket.channels or isTableEmpty(bucket.channels) then realm.characters[charKey] = nil end
+				end
+				if isTableEmpty(realm.characters) then faction[realmKey] = nil end
+			end
+		end
+		if isTableEmpty(faction) then history[fKey] = nil end
+	end
+end
+
+function ChannelHistory:WipeCharacterHistory(factionKey, realmKey, charKey)
+	if not self.history or not factionKey or not realmKey or not charKey then return end
+	local faction = self.history[factionKey]
+	if not faction then return end
+	local realm = faction[realmKey]
+	if not realm or not realm.characters then return end
+	realm.characters[charKey] = nil
+	wipeEmptyContainers(self.history)
+	self:RefreshLeftList()
+	self:RequestLogRefresh()
+end
+
+function ChannelHistory:WipeChannelHistory(filterKey)
+	if not self.history or not filterKey then return end
+	local removed = 0
+	self:ForEachSelectedCharacter(function(bucket)
+		if not bucket.channels then return end
+		for chKey, chData in pairs(bucket.channels) do
+			if chData and chData.lines then
+				local keep = {}
+				for _, line in ipairs(chData.lines) do
+					if line.filterKey ~= filterKey then table.insert(keep, line) end
+				end
+				local delta = (#chData.lines) - (#keep)
+				if delta > 0 then
+					removed = removed + delta
+					chData.lines = keep
+					chData._count = #keep
+					chData._head = 1
+					chData._cap = #keep
+					if #keep == 0 then bucket.channels[chKey] = nil end
+				end
+			end
+		end
+	end)
+	wipeEmptyContainers(self.history)
+	self:RefreshLeftList()
+	self:RequestLogRefresh()
+	return removed
 end
 
 function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
@@ -1354,16 +1497,29 @@ local function handleLeftClick(btn, button)
 	if not data then return end
 	local selfRef = ChannelHistory
 	if data.kind == "character" then
-		selfRef.ui.selection = { type = "character", key = data.key, faction = data.factionKey }
+		selfRef.ui.selection = {
+			type = "character",
+			key = data.key,
+			faction = data.factionKey,
+			factionKey = data.factionKey,
+			realmKey = data.realmKey,
+			charKey = data.charKey,
+		}
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "realm" then
 		local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
-		selfRef.ui.selection = { type = "realm", key = data.key, realm = realmKey }
+		selfRef.ui.selection = { type = "realm", key = data.key, realm = realmKey, realmKey = realmKey }
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "faction" then
-		selfRef.ui.selection = { type = "faction", key = data.key, faction = data.factionKey, realm = data.realmKey }
+		selfRef.ui.selection = {
+			type = "faction",
+			key = data.key,
+			faction = data.factionKey,
+			factionKey = data.factionKey,
+			realmKey = data.realmKey,
+		}
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "header" then
@@ -1455,7 +1611,13 @@ local function ensureLeftButtons(self, count)
 		btn:SetScript("OnLeave", function(selfBtn)
 			if selfBtn.hl then selfBtn.hl:Hide() end
 		end)
-		btn:SetScript("OnMouseUp", handleLeftClick)
+		btn:SetScript("OnMouseUp", function(selfBtn, button)
+			if button == "RightButton" then
+				if ChannelHistory.ShowCharacterContextMenu then ChannelHistory:ShowCharacterContextMenu(selfBtn.entry) end
+				return
+			end
+			handleLeftClick(selfBtn, button)
+		end)
 		btn.toggleFrame:SetScript("OnMouseUp", handleToggleClick)
 		btn.toggleFrame:SetScript("OnEnter", handleToggleEnter)
 		btn.toggleFrame:SetScript("OnLeave", handleToggleLeave)
@@ -1816,6 +1978,33 @@ function ChannelHistory:UpdateToggleButtonStrata()
 	self.toggleButton:SetFrameLevel((self.frameLevel or 600) + 10)
 end
 
+function ChannelHistory:ShowCharacterContextMenu(entry)
+	if not entry or entry.kind ~= "character" then return end
+	local name = entry.label or entry.charKey or "Character"
+	local charKey = entry.charKey
+	local realmKey = entry.realmKey or (entry.key and entry.key:match("^char:([^:]+):[^:]+:.+$"))
+	local factionKey = entry.factionKey or (entry.key and entry.key:match("^char:[^:]+:([^:]+):.+$"))
+	ensureClearPopups()
+	MU.CreateContextMenu(UIParent, function(_, root)
+		root:CreateTitle(name)
+		root:CreateButton("Clear history", function()
+			StaticPopup_Show("EQOL_CLEAR_HISTORY_CHAR", name, nil, { faction = factionKey, realm = realmKey, char = charKey })
+		end)
+	end)
+end
+
+function ChannelHistory:ShowChannelContextMenu(filterInfo)
+	if not filterInfo or not filterInfo.key then return end
+	local label = filterInfo.label or filterInfo.key
+	ensureClearPopups()
+	MU.CreateContextMenu(UIParent, function(_, root)
+		root:CreateTitle(label)
+		root:CreateButton("Clear history in current scope", function()
+			StaticPopup_Show("EQOL_CLEAR_HISTORY_CHANNEL", label, nil, { filterKey = filterInfo.key })
+		end)
+	end)
+end
+
 function ChannelHistory:SaveFramePosition()
 	if not addon.db or not self.debugFrame then return end
 	local point, _, relativePoint, xOfs, yOfs = self.debugFrame:GetPoint(1)
@@ -2087,6 +2276,7 @@ function ChannelHistory:CreateFilterUI()
 		{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
 		{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
 		{ key = "OPENING", label = OPENING },
+		{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
 	}
 
 	local checkHeight = 20
@@ -2161,6 +2351,13 @@ function ChannelHistory:CreateFilterUI()
 		row:SetScript("OnClick", function() cb:Click() end)
 		row:SetScript("OnEnter", function() row.hl:Show() end)
 		row:SetScript("OnLeave", function() row.hl:Hide() end)
+		row:SetScript("OnMouseUp", function(_, button)
+			if button == "RightButton" then
+				if ChannelHistory.ShowChannelContextMenu then
+					ChannelHistory:ShowChannelContextMenu({ key = info.key, label = info.label })
+				end
+			end
+		end)
 	end
 
 	local totalHeight = #filters * (checkHeight + spacing)
