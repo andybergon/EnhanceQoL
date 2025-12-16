@@ -437,6 +437,7 @@ local function getCharacterBucket(create)
 			channels = {},
 		}
 		characters[keys.charKey] = charBucket
+		ChannelHistory:RefreshLeftList()
 	end
 
 	return charBucket, characters, realm, faction
