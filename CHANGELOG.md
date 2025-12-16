@@ -9,6 +9,7 @@
 ### 🐛 Fixed
 
 - Added missing visibility rule localization (and translations) to eliminate the AceLocale warning when Enhanced Unit Frames locks visibility.
+- Assisted Combat Button Rotation border hide had an error with updating the button
 
 ---
 

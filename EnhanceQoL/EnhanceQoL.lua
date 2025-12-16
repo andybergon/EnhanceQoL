@@ -1616,11 +1616,15 @@ local function EnsureAssistedCombatFrameHidden(button)
 	if not frame.EQOL_AssistedHideHooked then
 		frame.EQOL_AssistedHideHooked = true
 		frame:HookScript("OnShow", function(self)
-			if addon.db and addon.db.actionBarHideAssistedRotation then self:Hide() end
+			if addon.db and addon.db.actionBarHideAssistedRotation then
+				self:SetAlpha(0)
+			elseif self:GetAlpha() ~= 1 then
+				self:SetAlpha(1)
+			end
 		end)
 	end
 
-	if addon.db.actionBarHideAssistedRotation then frame:Hide() end
+	if addon.db.actionBarHideAssistedRotation then frame:SetAlpha(0) end
 end
 
 local function UpdateAssistedCombatFrameHiding()
@@ -2505,6 +2509,8 @@ local function initChatFrame()
 	addon.functions.InitDBValue("chatHistoryFrameLevel", 600)
 	addon.functions.InitDBValue("chatHistoryButtonOffsetX", 0)
 	addon.functions.InitDBValue("chatHistoryButtonOffsetY", -10)
+	addon.functions.InitDBValue("chatHistoryShowButton", true)
+	addon.functions.InitDBValue("chatHistoryButtonScale", 1)
 	addon.functions.InitDBValue("chatChannelFilters", {})
 	addon.functions.InitDBValue("chatChannelFiltersEnable", {})
 	addon.functions.InitDBValue("chatIMFrameData", {})

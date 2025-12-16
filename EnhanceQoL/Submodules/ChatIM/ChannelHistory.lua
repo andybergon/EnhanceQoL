@@ -1764,19 +1764,37 @@ function ChannelHistory:UpdateToggleButtonPosition()
 	self.toggleButton:SetPoint("TOP", anchor, "BOTTOM", x, y)
 end
 
+function ChannelHistory:UpdateToggleButtonSize()
+	if not self.toggleButton then return end
+	local scale = (addon.db and addon.db.chatHistoryButtonScale) or 1
+	local baseW, baseH = 64, 80
+	local w, h = baseW * scale, baseH * scale
+	self.toggleButton:SetSize(w, h)
+	if self.toggleButton.icon then
+		local iconSize = math.min(w, h) * 0.55
+		self.toggleButton.icon:SetSize(iconSize, iconSize)
+		self.toggleButton.icon:SetPoint("CENTER", self.toggleButton, "CENTER", 0, -1)
+	end
+end
+
 function ChannelHistory:EnsureToggleButton()
-	if not addon.db or not addon.db.enableChatHistory then
+	if not addon.db or not addon.db.enableChatHistory or addon.db.chatHistoryShowButton == false then
 		if self.toggleButton then self.toggleButton:Hide() end
 		return
 	end
 	if not self.toggleButton then
-		local btn = CreateFrame("Button", nil, UIParent, "UIPanelButtonTemplate")
-		btn:SetSize(80, 22)
-		btn:SetText("History")
+		local btn = CreateFrame("Button", nil, UIParent, "BackdropTemplate")
+		btn.icon = btn:CreateTexture(nil, "OVERLAY", nil, 1)
+		btn.icon:SetPoint("CENTER", btn, "CENTER", 0, -1)
+		btn.icon:SetSize(16, 16)
+		btn.icon:SetTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\history.tga")
+		btn.icon:SetAlpha(1)
+		btn:SetText("")
 		btn:SetScript("OnClick", function() self:ToggleWindow() end)
 		btn:SetFrameStrata("MEDIUM")
 		self.toggleButton = btn
 	end
+	self:UpdateToggleButtonSize()
 	self.toggleButton:Show()
 	self:UpdateToggleButtonPosition()
 end
@@ -2279,6 +2297,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	self:SetFrameStrata((addon.db and addon.db.chatHistoryFrameStrata) or self.frameStrata or "MEDIUM")
 	self:SetFrameLevel((addon.db and addon.db.chatHistoryFrameLevel) or self.frameLevel or 600)
 	self:UpdateToggleButtonStrata()
+	self:UpdateToggleButtonSize()
 
 	local function applyAtlas(texture, atlas)
 		if not texture or not atlas then return end
@@ -2626,5 +2645,6 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	self:CreateFilterUI()
 	self:EnsureLogFrame()
 	self:RefreshLogView()
+	f:Hide()
 	if showImmediately then f:Show() end
 end
