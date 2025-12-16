@@ -920,6 +920,14 @@ function toColorCode(color)
 	return string.format("|cff%02x%02x%02x", r, g, b)
 end
 
+local function formatURLs(text)
+	if not text or text == "" then return text end
+	local function repl(url) return "|Hurl:" .. url .. "|h[|cffffffff" .. url .. "|r]|h" end
+	text = text:gsub("https?://%S+", repl)
+	text = text:gsub("www%.%S+", repl)
+	return text
+end
+
 function getChatColor(key)
 	if not key then return nil end
 	local chatKey = CHAT_COLOR_KEYS[key] or key
@@ -995,7 +1003,7 @@ function formatLine(self, line)
 		nameText = string.format("%s|Hplayer:%s|h%s[%s]|r|h", prefix, linkTarget, nameColorCode, displayName)
 	end
 
-	local body = line.message or ""
+	local body = formatURLs(line.message or "")
 	if body:find("|r", 1, true) then body = body:gsub("|r", "|r" .. chatColorCode) end
 
 	local parts = { timeText, " ", chatColorCode }
@@ -2195,6 +2203,11 @@ function ChannelHistory:EnsureLogFrame()
 				if namePart and showPlayerMenu(frame, namePart, linkType == "BNplayer", accountID) then return end
 			end
 		end
+		if link and link:match("^url:") then
+			local payload = link:match("^url:(.+)$")
+			showCopyDialog(payload)
+			return
+		end
 		if SetItemRef then SetItemRef(link, text, button, frame) end
 	end)
 
@@ -2246,6 +2259,18 @@ function ChannelHistory:RefreshLogView()
 	end
 	log:ScrollToBottom()
 	if self.ui.logScroll then self:UpdateThinScrollbar(self.ui.logScroll, log) end
+	-- Enable hyperlink handling for URLs inserted by formatURLs
+	if log and not log._urlHooked then
+		log:SetScript("OnHyperlinkClick", function(_, link, text, button)
+			if link and link:match("^url:") then
+				local payload = link:match("^url:(.+)$")
+				showCopyDialog(payload)
+				return
+			end
+			if SetItemRef then SetItemRef(link, text, button, log) end
+		end)
+		log._urlHooked = true
+	end
 end
 
 function ChannelHistory:LayoutDebugFrame(width, height)
