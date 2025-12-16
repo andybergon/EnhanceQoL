@@ -1670,8 +1670,83 @@ local PANEL_BACKDROP = {
 
 local function applyPanelBackdrop(panel)
 	panel:SetBackdrop(PANEL_BACKDROP)
-	panel:SetBackdropColor(0, 0, 0, 0.4)
-	panel:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.9)
+	panel:SetBackdropColor(0, 0, 0, 0.55)
+	panel:SetBackdropBorderColor(0.75, 0.65, 0.4, 0.95)
+end
+
+local function applyInsetBorder(frame, offset)
+	if not frame then return end
+	offset = offset or 10
+
+	-- Clean up legacy single-texture border
+	if frame.eqolInsetBorder then
+		frame.eqolInsetBorder:Hide()
+		frame.eqolInsetBorder = nil
+	end
+
+	local layer, subLevel = "BORDER", 2
+	local path = "Interface\\AddOns\\EnhanceQoL\\Assets\\border_round_"
+	local cornerSize = 36
+	local edgeSize = 36
+
+	frame.eqolInsetParts = frame.eqolInsetParts or {}
+	local parts = frame.eqolInsetParts
+
+	local function tex(name)
+		if not parts[name] then parts[name] = frame:CreateTexture(nil, layer, nil, subLevel) end
+		local t = parts[name]
+		t:SetTexture(path .. name .. ".tga")
+		t:SetDrawLayer(layer, subLevel)
+		return t
+	end
+
+	local tl = tex("tl")
+	tl:SetSize(cornerSize, cornerSize)
+	tl:ClearAllPoints()
+	tl:SetPoint("TOPLEFT", frame, "TOPLEFT", offset, -offset)
+
+	local tr = tex("tr")
+	tr:SetSize(cornerSize, cornerSize)
+	tr:ClearAllPoints()
+	tr:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -offset, -offset)
+
+	local bl = tex("bl")
+	bl:SetSize(cornerSize, cornerSize)
+	bl:ClearAllPoints()
+	bl:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", offset, offset)
+
+	local br = tex("br")
+	br:SetSize(cornerSize, cornerSize)
+	br:ClearAllPoints()
+	br:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -offset, offset)
+
+	local top = tex("t")
+	top:ClearAllPoints()
+	top:SetPoint("TOPLEFT", tl, "TOPRIGHT", 0, 0)
+	top:SetPoint("TOPRIGHT", tr, "TOPLEFT", 0, 0)
+	top:SetHeight(edgeSize)
+	top:SetHorizTile(true)
+
+	local bottom = tex("b")
+	bottom:ClearAllPoints()
+	bottom:SetPoint("BOTTOMLEFT", bl, "BOTTOMRIGHT", 0, 0)
+	bottom:SetPoint("BOTTOMRIGHT", br, "BOTTOMLEFT", 0, 0)
+	bottom:SetHeight(edgeSize)
+	bottom:SetHorizTile(true)
+
+	local left = tex("l")
+	left:ClearAllPoints()
+	left:SetPoint("TOPLEFT", tl, "BOTTOMLEFT", 0, 0)
+	left:SetPoint("BOTTOMLEFT", bl, "TOPLEFT", 0, 0)
+	left:SetWidth(edgeSize)
+	left:SetVertTile(true)
+
+	local right = tex("r")
+	right:ClearAllPoints()
+	right:SetPoint("TOPRIGHT", tr, "BOTTOMRIGHT", 0, 0)
+	right:SetPoint("BOTTOMRIGHT", br, "TOPRIGHT", 0, 0)
+	right:SetWidth(edgeSize)
+	right:SetVertTile(true)
 end
 
 local function createSearchBox(parent, placeholder)
@@ -1800,7 +1875,7 @@ function ChannelHistory:EnsureLogFrame()
 	else
 		frame:SetPoint("TOPLEFT", self.right, "TOPLEFT", 10, -62)
 	end
-	frame:SetPoint("BOTTOMRIGHT", self.right, "BOTTOMRIGHT", -28, 10)
+	frame:SetPoint("BOTTOMRIGHT", self.right, "BOTTOMRIGHT", -18, 10)
 
 	frame:SetFading(false)
 	frame:SetSpacing(1)
@@ -1832,9 +1907,9 @@ function ChannelHistory:EnsureLogFrame()
 
 	-- Slider (visible scrollbar)
 	local slider = CreateFrame("Slider", nil, self.right, "UIPanelScrollBarTemplate")
-	slider:SetPoint("TOPLEFT", frame, "TOPRIGHT", 4, 0)
-	slider:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 4, 0)
-	slider:SetWidth(16)
+	slider:SetPoint("TOPLEFT", frame, "TOPRIGHT", 0, -10)
+	slider:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 0, 10)
+	slider:SetWidth(14)
 	slider:SetValueStep(1)
 	slider:SetObeyStepOnDrag(true)
 	slider._suppress = false
@@ -1853,9 +1928,13 @@ function ChannelHistory:EnsureLogFrame()
 			local cur = log:GetScrollOffset() or 0
 			local delta = desiredOffset - cur
 			if delta > 0 then
-				for _ = 1, delta do log:ScrollUp() end
+				for _ = 1, delta do
+					log:ScrollUp()
+				end
 			elseif delta < 0 then
-				for _ = 1, -delta do log:ScrollDown() end
+				for _ = 1, -delta do
+					log:ScrollDown()
+				end
 			end
 		end
 	end)
@@ -1871,6 +1950,17 @@ function ChannelHistory:EnsureLogFrame()
 
 	self.ui.logFrame = frame
 	self.ui.logScroll = slider
+
+	-- Adjust scrollbar textures to sit inside the panel border
+	if slider.ThumbTexture then slider.ThumbTexture:SetWidth(14) end
+	if slider.ScrollUpButton then
+		slider.ScrollUpButton:ClearAllPoints()
+		slider.ScrollUpButton:SetPoint("BOTTOM", slider, "TOP", 0, 2)
+	end
+	if slider.ScrollDownButton then
+		slider.ScrollDownButton:ClearAllPoints()
+		slider.ScrollDownButton:SetPoint("TOP", slider, "BOTTOM", 0, -2)
+	end
 end
 
 function ChannelHistory:RefreshLogView()
@@ -1933,9 +2023,9 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 	width = width or f:GetWidth()
 	height = height or f:GetHeight()
 
-	local padding = 12
+	local padding = 17
 	local spacing = 10
-	local headerOffset = 40
+	local headerOffset = 17
 
 	local availableWidth = width - (padding * 2) - (spacing * 2)
 	local availableHeight = height - padding - headerOffset
@@ -1990,14 +2080,75 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")
 	f:SetResizable(false)
-	f:SetBackdrop(WINDOW_BACKDROP)
-	f:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+	f:SetBackdrop(nil)
+	f:SetBackdropBorderColor(0, 0, 0, 0)
 	f.bg = f:CreateTexture(nil, "BACKGROUND")
 	f.bg:SetAllPoints()
 	f.bg:SetAtlas("character-panel-background")
 	f.bg:SetAlpha(0.9)
 	self:SetFrameStrata((addon.db and addon.db.chatHistoryFrameStrata) or self.frameStrata or "MEDIUM")
 	self:SetFrameLevel((addon.db and addon.db.chatHistoryFrameLevel) or self.frameLevel or 600)
+
+	local function applyAtlas(texture, atlas)
+		if not texture or not atlas then return end
+		texture:SetAtlas(atlas, true)
+		local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas)
+		if info then texture:SetSize(info.width or texture:GetWidth(), info.height or texture:GetHeight()) end
+		return info
+	end
+
+	-- Alliance-styled frame tiles
+	local borderLayer, borderSubLevel = "BORDER", 0
+	local borderPath = "Interface\\AddOns\\EnhanceQoL\\Assets\\PanelBorder_"
+	local cornerSize = 32
+	local edgeThickness = 32
+	local cornerOffsets = 0
+
+	local function makeTex(key, layer, subLevel)
+		local tex = f:CreateTexture(nil, layer or borderLayer, nil, subLevel or borderSubLevel)
+		tex:SetTexture(borderPath .. key .. ".tga")
+		return tex
+	end
+
+	local tl = makeTex("tl", borderLayer, borderSubLevel + 1)
+	tl:SetSize(cornerSize, cornerSize)
+	tl:SetPoint("TOPLEFT", f, "TOPLEFT", cornerOffsets, cornerOffsets)
+
+	local tr = makeTex("tr", borderLayer, borderSubLevel + 1)
+	tr:SetSize(cornerSize, cornerSize)
+	tr:SetPoint("TOPRIGHT", f, "TOPRIGHT", cornerOffsets + 8, cornerOffsets)
+
+	local bl = makeTex("bl", borderLayer, borderSubLevel + 1)
+	bl:SetSize(cornerSize, cornerSize)
+	bl:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", -cornerOffsets, -cornerOffsets)
+
+	local br = makeTex("br", borderLayer, borderSubLevel + 1)
+	br:SetSize(cornerSize, cornerSize)
+	br:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", cornerOffsets + 8, -cornerOffsets)
+
+	local top = makeTex("t", borderLayer, borderSubLevel)
+	top:SetPoint("TOPLEFT", tl, "TOPRIGHT", 0, 0)
+	top:SetPoint("TOPRIGHT", tr, "TOPLEFT", 0, 0)
+	top:SetHeight(edgeThickness)
+	top:SetHorizTile(true)
+
+	local bottom = makeTex("b", borderLayer, borderSubLevel)
+	bottom:SetPoint("BOTTOMLEFT", bl, "BOTTOMRIGHT", 0, 0)
+	bottom:SetPoint("BOTTOMRIGHT", br, "BOTTOMLEFT", 0, 0)
+	bottom:SetHeight(edgeThickness)
+	bottom:SetHorizTile(true)
+
+	local left = makeTex("l", borderLayer, borderSubLevel)
+	left:SetPoint("TOPLEFT", tl, "BOTTOMLEFT", 0, 0)
+	left:SetPoint("BOTTOMLEFT", bl, "TOPLEFT", 0, 0)
+	left:SetWidth(edgeThickness)
+	left:SetVertTile(true)
+
+	local right = makeTex("r", borderLayer, borderSubLevel)
+	right:SetPoint("TOPRIGHT", tr, "BOTTOMRIGHT", 0, 0)
+	right:SetPoint("BOTTOMRIGHT", br, "TOPRIGHT", 0, 0)
+	right:SetWidth(edgeThickness)
+	right:SetVertTile(true)
 
 	f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
 	f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
@@ -2007,8 +2158,13 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f:SetScript("OnMouseUp", function(frame) frame:StopMovingOrSizing() end)
 
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 4, 4)
+	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 8, -2)
 	self.ui.closeButton = close
+	-- Exit button border
+	local closeBorder = close:CreateTexture(nil, "ARTWORK", nil, 1)
+	closeBorder:SetAtlas("AllianceFrame_ExitBorder", true)
+	closeBorder:SetPoint("CENTER", close, "CENTER", 0, 0)
+	self.ui.closeBorder = closeBorder
 
 	local function openChatSettings()
 		if InCombatLockdown and InCombatLockdown() then
@@ -2021,9 +2177,9 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 
 	local optionsBtn = CreateFrame("Button", nil, f)
 	optionsBtn:SetSize(20, 20)
-	optionsBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -6)
-	optionsBtn:SetNormalAtlas("OptionsIcon-Brown")
-	optionsBtn:SetHighlightAtlas("OptionsIcon-Brown")
+	optionsBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -25, -20)
+	optionsBtn:SetNormalAtlas("QuestLog-icon-setting")
+	optionsBtn:SetHighlightAtlas("QuestLog-icon-setting")
 	optionsBtn:SetScript("OnClick", openChatSettings)
 	optionsBtn:SetScript("OnEnter", function(btn)
 		if not GameTooltip then return end
@@ -2040,7 +2196,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 
 	local copyBtn = CreateFrame("Button", nil, f)
 	copyBtn:SetSize(24, 24)
-	copyBtn:SetPoint("RIGHT", close, "RIGHT", -6, -32)
+	copyBtn:SetPoint("RIGHT", optionsBtn, "RIGHT", -25, 0)
 	copyBtn:SetNormalTexture("Interface\\AddOns\\EnhanceQoL\\Icons\\copy.tga")
 	copyBtn:SetHighlightTexture("Interface\\AddOns\\EnhanceQoL\\Icons\\copy.tga")
 	if copyBtn:GetHighlightTexture() then copyBtn:GetHighlightTexture():SetAlpha(0.6) end
@@ -2139,14 +2295,17 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		if GameTooltip then GameTooltip:Hide() end
 	end)
 
+	local assetPath = "Interface\\AddOns\\EnhanceQoL\\Assets\\"
+
 	-- Panels
 	f.left = CreateFrame("Frame", nil, f, "BackdropTemplate")
-	applyPanelBackdrop(f.left)
+	-- applyPanelBackdrop(f.left)
 	f.left.bg = f.left:CreateTexture(nil, "BACKGROUND", nil, -7)
 	f.left.bg:SetAllPoints()
-	f.left.bg:SetAtlas("QuestLog-main-background")
-	f.left.bg:SetAlpha(0.85)
+	f.left.bg:SetTexture(assetPath .. "background_gray.tga")
+	f.left.bg:SetAlpha(0.75)
 	self.left = f.left
+	applyInsetBorder(f.left, -4)
 
 	f.middle = CreateFrame("Frame", nil, f, "BackdropTemplate")
 	applyPanelBackdrop(f.middle)
@@ -2155,6 +2314,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f.middle.bg:SetAtlas("QuestLog-empty-quest-background")
 	f.middle.bg:SetAlpha(0.75)
 	self.middle = f.middle
+	applyInsetBorder(f.middle, 2)
 
 	f.right = CreateFrame("Frame", nil, f, "BackdropTemplate")
 	applyPanelBackdrop(f.right)
@@ -2163,6 +2323,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f.right.bg:SetAtlas("communities-widebackground")
 	f.right.bg:SetAlpha(0.35)
 	self.right = f.right
+	applyInsetBorder(f.right, 2)
 
 	local function createPanelHeader(parent, label)
 		local hdr = CreateFrame("Frame", nil, parent)
@@ -2185,23 +2346,10 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	createPanelHeader(f.middle, L["CH_TITLE_FILTERS"])
 	createPanelHeader(f.right, L["CH_TITLE_HISTORY"])
 
-	-- Vertical separators between panels
-	local sepColor = { 1, 1, 1, 0.2 }
-	local sepLM = f:CreateTexture(nil, "BORDER")
-	sepLM:SetColorTexture(unpack(sepColor))
-	sepLM:SetPoint("TOPLEFT", f.middle, "TOPLEFT", -4, -2)
-	sepLM:SetPoint("BOTTOMLEFT", f.middle, "BOTTOMLEFT", -4, 4)
-	sepLM:SetWidth(1.5)
-	local sepMR = f:CreateTexture(nil, "BORDER")
-	sepMR:SetColorTexture(unpack(sepColor))
-	sepMR:SetPoint("TOPLEFT", f.right, "TOPLEFT", -4, -2)
-	sepMR:SetPoint("BOTTOMLEFT", f.right, "BOTTOMLEFT", -4, 4)
-	sepMR:SetWidth(1.5)
-
 	-- Search bars (debug placeholders)
 	local leftSearch = createSearchBox(f.left, L["CH_SEARCH_CHAR_REALM"])
 	leftSearch:SetPoint("TOPLEFT", f.left, "TOPLEFT", 10, -34)
-	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -10, -34)
+	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -3, -34)
 	self.ui.leftSearch = leftSearch
 	leftSearch:SetScript("OnTextChanged", function(box)
 		SearchBoxTemplate_OnTextChanged(box)
@@ -2230,15 +2378,16 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	self.ui.statusBar.text:SetText("")
 
 	-- Left list scroll
-	local listTopOffset = -62
+	local listTopOffset = -70
 	local leftScroll = CreateFrame("ScrollFrame", nil, f.left, "UIPanelScrollFrameTemplate")
 	leftScroll:SetPoint("TOPLEFT", f.left, "TOPLEFT", 8, listTopOffset)
-	leftScroll:SetPoint("BOTTOMRIGHT", f.left, "BOTTOMRIGHT", -28, 12)
+	leftScroll:SetPoint("BOTTOMRIGHT", f.left, "BOTTOMRIGHT", -3, 15)
 	local sb = leftScroll.ScrollBar or leftScroll.scrollBar
 	if sb then
 		sb:ClearAllPoints()
-		sb:SetPoint("TOPLEFT", leftScroll, "TOPRIGHT", 2, -16)
-		sb:SetPoint("BOTTOMLEFT", leftScroll, "BOTTOMRIGHT", 2, 16)
+		sb:SetPoint("TOPRIGHT", leftScroll, "TOPRIGHT", -2, -12)
+		sb:SetPoint("BOTTOMRIGHT", leftScroll, "BOTTOMRIGHT", -2, 12)
+		sb:SetWidth(16)
 	end
 
 	local leftContent = CreateFrame("Frame", nil, leftScroll)
