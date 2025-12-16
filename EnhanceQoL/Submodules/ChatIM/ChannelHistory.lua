@@ -2731,7 +2731,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		editBox:SetJustifyH("LEFT")
 		editBox:SetJustifyV("TOP")
 		editBox:SetTextColor(1, 1, 1, 1)
-		editBox:SetMaxLetters(15000)
+		editBox:SetMaxLetters(100000)
 		editBox:ClearAllPoints()
 		editBox:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, -10)
 		editBox:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", 0, -10)
@@ -2909,7 +2909,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	local listTopOffset = -63
 	local leftScroll = CreateFrame("ScrollFrame", nil, f.left, "UIPanelScrollFrameTemplate")
 	leftScroll:SetPoint("TOPLEFT", f.left, "TOPLEFT", 2, listTopOffset)
-	leftScroll:SetPoint("BOTTOMRIGHT", f.left, "BOTTOMRIGHT", -7, 15)
+	leftScroll:SetPoint("BOTTOMRIGHT", f.left, "BOTTOMRIGHT", -22, 15)
 	local sb = leftScroll.ScrollBar or leftScroll.scrollBar
 	if sb then
 		sb:ClearAllPoints()
