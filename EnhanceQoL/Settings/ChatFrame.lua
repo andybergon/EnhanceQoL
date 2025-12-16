@@ -526,29 +526,6 @@ data = {
 				sType = "slider",
 			},
 			{
-				var = "chatHistoryButtonScale",
-				text = "History button scale",
-				desc = "Adjust size of the Chat History toggle icon.",
-				parentCheck = function()
-					return addon.SettingsLayout.elements["enableChatHistory"]
-						and addon.SettingsLayout.elements["enableChatHistory"].setting
-						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
-				end,
-				get = function() return addon.db and addon.db.chatHistoryButtonScale or 1 end,
-				set = function(value)
-					addon.db.chatHistoryButtonScale = value or 1
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateToggleButtonSize then
-						addon.ChatIM.ChannelHistory:UpdateToggleButtonSize()
-					end
-				end,
-				min = 0.5,
-				max = 2,
-				step = 0.05,
-				parent = true,
-				default = 1,
-				sType = "slider",
-			},
-			{
 				var = "chatHistoryShowButton",
 				text = "Show History toggle icon",
 				desc = "Show a small icon below the Quick Join toast to open/close Chat History.",

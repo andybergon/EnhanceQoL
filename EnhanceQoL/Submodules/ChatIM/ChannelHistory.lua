@@ -1766,12 +1766,12 @@ end
 
 function ChannelHistory:UpdateToggleButtonSize()
 	if not self.toggleButton then return end
-	local scale = (addon.db and addon.db.chatHistoryButtonScale) or 1
-	local baseW, baseH = 64, 80
-	local w, h = baseW * scale, baseH * scale
+	-- Square base for the new icon
+	local baseW, baseH = 30, 30
+	local w, h = baseW, baseH
 	self.toggleButton:SetSize(w, h)
 	if self.toggleButton.icon then
-		local iconSize = math.min(w, h) * 0.55
+		local iconSize = baseW
 		self.toggleButton.icon:SetSize(iconSize, iconSize)
 		self.toggleButton.icon:SetPoint("CENTER", self.toggleButton, "CENTER", 0, -1)
 	end
@@ -1784,10 +1784,13 @@ function ChannelHistory:EnsureToggleButton()
 	end
 	if not self.toggleButton then
 		local btn = CreateFrame("Button", nil, UIParent, "BackdropTemplate")
+		btn:SetNormalAtlas("chatframe-button-up")
+		btn:SetHighlightAtlas("chatframe-button-up")
+		btn:SetPushedAtlas("chatframe-button-up")
 		btn.icon = btn:CreateTexture(nil, "OVERLAY", nil, 1)
 		btn.icon:SetPoint("CENTER", btn, "CENTER", 0, -1)
-		btn.icon:SetSize(16, 16)
-		btn.icon:SetTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\history.tga")
+		btn.icon:SetSize(32, 32)
+		btn.icon:SetAtlas("lorewalking-map-icon")
 		btn.icon:SetAlpha(1)
 		btn:SetText("")
 		btn:SetScript("OnClick", function() self:ToggleWindow() end)
@@ -1803,6 +1806,28 @@ function ChannelHistory:UpdateToggleButtonStrata()
 	if not self.toggleButton then return end
 	self.toggleButton:SetFrameStrata(self.frameStrata or "MEDIUM")
 	self.toggleButton:SetFrameLevel((self.frameLevel or 600) + 10)
+end
+
+function ChannelHistory:SaveFramePosition()
+	if not addon.db or not self.debugFrame then return end
+	local point, _, relativePoint, xOfs, yOfs = self.debugFrame:GetPoint(1)
+	addon.db.chatHistoryFramePos = {
+		point = point or "CENTER",
+		relativePoint = relativePoint or "CENTER",
+		x = xOfs or 0,
+		y = yOfs or 0,
+	}
+end
+
+function ChannelHistory:RestoreFramePosition()
+	if not self.debugFrame then return end
+	local pos = addon.db and addon.db.chatHistoryFramePos
+	self.debugFrame:ClearAllPoints()
+	if pos and pos.point and pos.relativePoint then
+		self.debugFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x or 0, pos.y or 0)
+	else
+		self.debugFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	end
 end
 
 -- Thin scrollbar helpers for the log frame
@@ -2280,7 +2305,6 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	self.runtime = self.runtime or { guidClassCache = {} }
 
 	f:SetSize(950, 500)
-	f:SetPoint("CENTER")
 	f:SetClampedToScreen(true)
 	f:SetMovable(true)
 	f:EnableMouse(true)
@@ -2294,6 +2318,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f.bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 10)
 	f.bg:SetTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\background_dark.tga")
 	f.bg:SetAlpha(0.9)
+	self:RestoreFramePosition()
 	self:SetFrameStrata((addon.db and addon.db.chatHistoryFrameStrata) or self.frameStrata or "MEDIUM")
 	self:SetFrameLevel((addon.db and addon.db.chatHistoryFrameLevel) or self.frameLevel or 600)
 	self:UpdateToggleButtonStrata()
@@ -2362,11 +2387,17 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	right:SetVertTile(true)
 
 	f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
-	f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
+	f:SetScript("OnDragStop", function(frame)
+		frame:StopMovingOrSizing()
+		self:SaveFramePosition()
+	end)
 	f:SetScript("OnMouseDown", function(frame, button)
 		if button == "LeftButton" and not frame.isSizing then frame:StartMoving() end
 	end)
-	f:SetScript("OnMouseUp", function(frame) frame:StopMovingOrSizing() end)
+	f:SetScript("OnMouseUp", function(frame)
+		frame:StopMovingOrSizing()
+		self:SaveFramePosition()
+	end)
 
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 20, 12)
@@ -2636,6 +2667,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f:SetScript("OnSizeChanged", function(frame, w, h) ChannelHistory:LayoutDebugFrame(w, h) end)
 	f:SetScript("OnHide", function()
 		if ChannelHistory.runtime and ChannelHistory.runtime.formattedCache then wipe(ChannelHistory.runtime.formattedCache) end
+		self:SaveFramePosition()
 	end)
 
 	self:ApplyFrameZOrder()
