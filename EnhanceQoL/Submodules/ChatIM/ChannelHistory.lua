@@ -1539,6 +1539,7 @@ function ChannelHistory:RefreshLeftList()
 	local totalHeight = #entries * buttonHeight
 	self.ui.leftContent:SetHeight(totalHeight)
 	if self.ui.leftScroll then self.ui.leftScroll:UpdateScrollChildRect() end
+	if self.ui.leftScroll and self.ui.leftScrollThin then self:UpdateThinScrollFrameBar(self.ui.leftScrollThin, self.ui.leftScroll) end
 end
 
 function ChannelHistory:OnEvent(event, ...)
@@ -1800,9 +1801,13 @@ function ChannelHistory:CreateThinScrollbar(parent, logFrame, xOffset)
 		local cur = logFrame:GetScrollOffset() or 0
 		local delta = offset - cur
 		if delta > 0 then
-			for _ = 1, delta do logFrame:ScrollUp() end
+			for _ = 1, delta do
+				logFrame:ScrollUp()
+			end
 		elseif delta < 0 then
-			for _ = 1, -delta do logFrame:ScrollDown() end
+			for _ = 1, -delta do
+				logFrame:ScrollDown()
+			end
 		end
 	end
 
@@ -1846,6 +1851,116 @@ function ChannelHistory:UpdateThinScrollbar(sb, logFrame)
 	if sb.thumb then sb.thumb:SetAlpha(hasScroll and 0.28 or 0) end
 	if sb.track then sb.track:SetAlpha(hasScroll and 0.12 or 0) end
 	if sb.channel then sb.channel:SetAlpha(hasScroll and 0.18 or 0) end
+end
+
+function ChannelHistory:CreateThinScrollFrameBar(scrollFrame, xOffset)
+	if not scrollFrame then return nil end
+	local parent = scrollFrame:GetParent() or scrollFrame
+	local sb = CreateFrame("Slider", nil, parent)
+	sb:SetOrientation("VERTICAL")
+	sb:SetWidth(10)
+	sb:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", xOffset or 4, 0)
+	sb:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", xOffset or 4, 0)
+	sb:SetValueStep(1)
+	sb:SetObeyStepOnDrag(true)
+
+	sb.track = sb:CreateTexture(nil, "BACKGROUND")
+	sb.track:SetPoint("TOP", sb, "TOP", 0, -2)
+	sb.track:SetPoint("BOTTOM", sb, "BOTTOM", 0, 2)
+	sb.track:SetWidth(1)
+	sb.track:SetColorTexture(1, 1, 1, 0.22)
+
+	sb.channel = sb:CreateTexture(nil, "BACKGROUND", nil, -1)
+	sb.channel:SetPoint("TOP", sb, "TOP", 0, 0)
+	sb.channel:SetPoint("BOTTOM", sb, "BOTTOM", 0, 0)
+	sb.channel:SetWidth(6)
+	sb.channel:SetColorTexture(0, 0, 0, 0.28)
+
+	local thumb = sb:CreateTexture(nil, "ARTWORK")
+	thumb:SetSize(6, 22)
+	thumb:SetColorTexture(1, 1, 1, 0.45)
+	sb:SetThumbTexture(thumb)
+	sb.thumb = thumb
+
+	sb:EnableMouse(true)
+	sb:SetScript("OnEnter", function()
+		sb.track:SetColorTexture(1, 1, 1, 0.32)
+		sb.thumb:SetColorTexture(1, 1, 1, 0.65)
+	end)
+	sb:SetScript("OnLeave", function()
+		sb.track:SetColorTexture(1, 1, 1, 0.22)
+		sb.thumb:SetColorTexture(1, 1, 1, 0.45)
+	end)
+
+	sb._suppress = false
+
+	local function applyVisibility(range)
+		local hasScroll = range and range > 0
+		if sb.thumb then sb.thumb:SetAlpha(hasScroll and 0.45 or 0) end
+		if sb.track then sb.track:SetAlpha(hasScroll and 0.22 or 0) end
+		if sb.channel then sb.channel:SetAlpha(hasScroll and 0.28 or 0) end
+	end
+
+	local function updateRange(_, _, yRange)
+		local vrange = yRange
+		if vrange == nil and scrollFrame.GetVerticalScrollRange then vrange = scrollFrame:GetVerticalScrollRange() end
+		local maxRange = math.max(0, vrange or 0)
+		sb._suppress = true
+		sb:SetMinMaxValues(0, maxRange)
+		local cur = sb:GetValue() or 0
+		if cur > maxRange then sb:SetValue(maxRange) end
+		sb._suppress = false
+		applyVisibility(maxRange)
+	end
+
+	scrollFrame:SetScript("OnScrollRangeChanged", updateRange)
+
+	sb:SetScript("OnValueChanged", function(sl, value)
+		if sl._suppress then return end
+		local minVal, maxVal = sl:GetMinMaxValues()
+		value = math.max(minVal or 0, math.min(maxVal or 0, math.floor((value or 0) + 0.5)))
+		sl._suppress = true
+		sl:SetValue(value)
+		sl._suppress = false
+		scrollFrame:SetVerticalScroll(value)
+	end)
+
+	scrollFrame:SetScript("OnVerticalScroll", function(_, offset)
+		sb._suppress = true
+		sb:SetValue(offset or 0)
+		sb._suppress = false
+	end)
+
+	scrollFrame:EnableMouseWheel(true)
+	scrollFrame:SetScript("OnMouseWheel", function(_, delta)
+		local minVal, maxVal = sb:GetMinMaxValues()
+		local cur = sb:GetValue() or 0
+		local step = 30
+		local newVal = cur - (delta * step)
+		if minVal and newVal < minVal then newVal = minVal end
+		if maxVal and newVal > maxVal then newVal = maxVal end
+		sb:SetValue(newVal)
+	end)
+
+	local initialRange = scrollFrame.GetVerticalScrollRange and scrollFrame:GetVerticalScrollRange() or 0
+	updateRange(nil, nil, initialRange)
+
+	return sb
+end
+
+function ChannelHistory:UpdateThinScrollFrameBar(sb, scrollFrame)
+	if not sb or not scrollFrame then return end
+	local yRange = scrollFrame.GetVerticalScrollRange and scrollFrame:GetVerticalScrollRange() or 0
+	local maxRange = math.max(0, yRange or 0)
+	local offset = scrollFrame:GetVerticalScroll() or 0
+	sb._suppress = true
+	sb:SetMinMaxValues(0, maxRange)
+	sb:SetValue(math.min(offset, maxRange))
+	sb._suppress = false
+	local hasScroll = maxRange > 0
+	if sb.thumb then sb.thumb:SetAlpha(hasScroll and 0.45 or 0) end
+	if sb.track then sb.track:SetAlpha(hasScroll and 0.22 or 0) end
+	if sb.channel then sb.channel:SetAlpha(hasScroll and 0.28 or 0) end
 end
 local function createSearchBox(parent, placeholder)
 	local box = CreateFrame("EditBox", nil, parent, "SearchBoxTemplate")
@@ -1916,7 +2031,7 @@ function ChannelHistory:CreateFilterUI()
 			cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
 			self.ui.filterChecks[i] = cb
 		end
-		cb:SetSize(21,21)
+		cb:SetSize(21, 21)
 		cb:SetScale(1.05)
 		cb:ClearAllPoints()
 		cb:SetPoint("LEFT", row, "LEFT", 4, 0)
@@ -2120,7 +2235,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f:SetBackdrop(nil)
 	f:SetBackdropBorderColor(0, 0, 0, 0)
 	f.bg = f:CreateTexture(nil, "BACKGROUND")
-	f.bg:SetPoint("TOPLEFT", f, "TOPLEFT", 8,-8)
+	f.bg:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -8)
 	f.bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 8)
 	f.bg:SetTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\background_dark.tga")
 	f.bg:SetAlpha(0.9)
@@ -2234,8 +2349,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	self.ui.optionsButton = optionsBtn
 
 	local copyBtn = CreateFrame("Button", nil, f)
-	copyBtn:SetSize(24, 24)
-	copyBtn:SetPoint("RIGHT", optionsBtn, "RIGHT", -25, 0)
+	copyBtn:SetSize(20, 20)
+	copyBtn:SetPoint("RIGHT", optionsBtn, "RIGHT", -25, -1)
 	copyBtn:SetNormalTexture("Interface\\AddOns\\EnhanceQoL\\Icons\\copy.tga")
 	copyBtn:SetHighlightTexture("Interface\\AddOns\\EnhanceQoL\\Icons\\copy.tga")
 	if copyBtn:GetHighlightTexture() then copyBtn:GetHighlightTexture():SetAlpha(0.6) end
@@ -2435,6 +2550,16 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 
 	self.ui.leftScroll = leftScroll
 	self.ui.leftContent = leftContent
+
+	-- Hide default scrollbar and apply thin variant
+	local defaultSB = leftScroll.ScrollBar or leftScroll.scrollBar
+	if defaultSB then
+		defaultSB:Hide()
+		defaultSB:EnableMouse(false)
+		if defaultSB.ScrollUpButton then defaultSB.ScrollUpButton:Hide() end
+		if defaultSB.ScrollDownButton then defaultSB.ScrollDownButton:Hide() end
+	end
+	self.ui.leftScrollThin = self:CreateThinScrollFrameBar(leftScroll, 4)
 
 	-- Resize grip
 	local grip = CreateFrame("Button", nil, f)
