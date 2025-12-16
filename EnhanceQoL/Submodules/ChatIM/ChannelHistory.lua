@@ -1695,6 +1695,7 @@ local function applyInsetBorder(frame, offset)
 	local function tex(name)
 		if not parts[name] then parts[name] = frame:CreateTexture(nil, layer, nil, subLevel) end
 		local t = parts[name]
+		t:SetAlpha(0.7)
 		t:SetTexture(path .. name .. ".tga")
 		t:SetDrawLayer(layer, subLevel)
 		return t
@@ -1790,7 +1791,7 @@ function ChannelHistory:CreateFilterUI()
 	}
 
 	local checkHeight = 20
-	local spacing = 3
+	local spacing = 2
 
 	self.ui.filterChecks = self.ui.filterChecks or {}
 	self.ui.filterRows = self.ui.filterRows or {}
@@ -1818,7 +1819,8 @@ function ChannelHistory:CreateFilterUI()
 			cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
 			self.ui.filterChecks[i] = cb
 		end
-		cb:SetScale(0.9)
+		cb:SetSize(21,21)
+		cb:SetScale(1.05)
 		cb:ClearAllPoints()
 		cb:SetPoint("LEFT", row, "LEFT", 4, 0)
 		local stored = self.ui.filters[info.key]
@@ -1832,7 +1834,7 @@ function ChannelHistory:CreateFilterUI()
 		end
 
 		label:ClearAllPoints()
-		label:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+		label:SetPoint("LEFT", cb, "RIGHT", 2, 0)
 		label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
 		label:SetJustifyH("LEFT")
 		label:SetWordWrap(false)
@@ -2030,13 +2032,13 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 	local availableHeight = height - padding - headerOffset
 
 	local leftWidth = math.max(220, math.floor(availableWidth * 0.28))
-	local midWidth = math.max(200, math.floor(availableWidth * 0.22))
+	local midWidth = math.max(190, math.floor(availableWidth * 0.17))
 	local rightWidth = availableWidth - leftWidth - midWidth
 	if rightWidth < 280 then
 		local deficit = 280 - rightWidth
 		rightWidth = 280
-		leftWidth = math.max(180, leftWidth - math.floor(deficit * 0.5))
-		midWidth = math.max(160, midWidth - math.ceil(deficit * 0.5))
+		leftWidth = math.max(180, leftWidth - math.floor(deficit * 0.55))
+		midWidth = math.max(160, midWidth - math.ceil(deficit * 0.55))
 	end
 
 	-- Left panel
@@ -2082,7 +2084,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f:SetBackdrop(nil)
 	f:SetBackdropBorderColor(0, 0, 0, 0)
 	f.bg = f:CreateTexture(nil, "BACKGROUND")
-	f.bg:SetAllPoints()
+	f.bg:SetPoint("TOPLEFT", f, "TOPLEFT", 8,-8)
+	f.bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 8)
 	f.bg:SetTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\background_dark.tga")
 	f.bg:SetAlpha(0.9)
 	self:SetFrameStrata((addon.db and addon.db.chatHistoryFrameStrata) or self.frameStrata or "MEDIUM")
@@ -2106,6 +2109,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	local function makeTex(key, layer, subLevel)
 		local tex = f:CreateTexture(nil, layer or borderLayer, nil, subLevel or borderSubLevel)
 		tex:SetTexture(borderPath .. key .. ".tga")
+		tex:SetAlpha(0.85)
 		return tex
 	end
 
@@ -2334,8 +2338,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		text:SetText(label)
 		text:SetTextColor(1, 0.88, 0.5)
 		local line = hdr:CreateTexture(nil, "ARTWORK")
-		line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, 2)
-		line:SetPoint("TOPRIGHT", hdr, "BOTTOMRIGHT", 0, 2)
+		line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 2, 2)
+		line:SetPoint("TOPRIGHT", hdr, "BOTTOMRIGHT", -1, 2)
 		line:SetHeight(1)
 		line:SetColorTexture(1, 1, 1, 0.15)
 		return hdr
@@ -2347,8 +2351,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 
 	-- Search bars (debug placeholders)
 	local leftSearch = createSearchBox(f.left, L["CH_SEARCH_CHAR_REALM"])
-	leftSearch:SetPoint("TOPLEFT", f.left, "TOPLEFT", 10, -34)
-	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -3, -34)
+	leftSearch:SetPoint("TOPLEFT", f.left, "TOPLEFT", 14, -34)
+	leftSearch:SetPoint("TOPRIGHT", f.left, "TOPRIGHT", -7, -34)
 	self.ui.leftSearch = leftSearch
 	leftSearch:SetScript("OnTextChanged", function(box)
 		SearchBoxTemplate_OnTextChanged(box)
@@ -2356,15 +2360,15 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	end)
 
 	local rightSearch = createSearchBox(f.right, L["CH_SEARCH_LOGS"])
-	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 10, -34)
-	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -10, -34)
+	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 14, -34)
+	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -6, -34)
 	self.ui.rightSearch = rightSearch
 	rightSearch:SetScript("OnTextChanged", function(box)
 		SearchBoxTemplate_OnTextChanged(box)
 		ChannelHistory:RequestLogRefresh()
 	end)
 	self.ui.statusBar = CreateFrame("Frame", nil, f.right, "BackdropTemplate")
-	self.ui.statusBar:SetPoint("TOPLEFT", rightSearch, "BOTTOMLEFT", 0, -4)
+	self.ui.statusBar:SetPoint("TOPLEFT", rightSearch, "BOTTOMLEFT", -4, -4)
 	self.ui.statusBar:SetPoint("TOPRIGHT", rightSearch, "BOTTOMRIGHT", 0, -4)
 	self.ui.statusBar:SetHeight(18)
 	self.ui.statusBar.bg = self.ui.statusBar:CreateTexture(nil, "BACKGROUND")
@@ -2377,14 +2381,14 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	self.ui.statusBar.text:SetText("")
 
 	-- Left list scroll
-	local listTopOffset = -70
+	local listTopOffset = -63
 	local leftScroll = CreateFrame("ScrollFrame", nil, f.left, "UIPanelScrollFrameTemplate")
-	leftScroll:SetPoint("TOPLEFT", f.left, "TOPLEFT", 8, listTopOffset)
-	leftScroll:SetPoint("BOTTOMRIGHT", f.left, "BOTTOMRIGHT", -3, 15)
+	leftScroll:SetPoint("TOPLEFT", f.left, "TOPLEFT", 2, listTopOffset)
+	leftScroll:SetPoint("BOTTOMRIGHT", f.left, "BOTTOMRIGHT", -7, 15)
 	local sb = leftScroll.ScrollBar or leftScroll.scrollBar
 	if sb then
 		sb:ClearAllPoints()
-		sb:SetPoint("TOPRIGHT", leftScroll, "TOPRIGHT", -2, -12)
+		sb:SetPoint("TOPRIGHT", leftScroll, "TOPRIGHT", -2, -20)
 		sb:SetPoint("BOTTOMRIGHT", leftScroll, "BOTTOMRIGHT", -2, 12)
 		sb:SetWidth(16)
 	end
