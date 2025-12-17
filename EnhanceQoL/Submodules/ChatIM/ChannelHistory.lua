@@ -742,6 +742,16 @@ function ChannelHistory:Store(event, ...)
 	if event == "CHAT_MSG_ACHIEVEMENT" or event == "CHAT_MSG_GUILD_ACHIEVEMENT" then
 		local replacement
 		local linkTarget = sender
+		local nameColor
+		if guid and (UnitGUID and guid == UnitGUID("player")) then
+			nameColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[(select(2, UnitClass("player")))]
+		end
+		if not nameColor and guid then
+			local _, classTok = getSenderClass(guid)
+			if classTok then nameColor = getClassStyle(classTok) end
+		end
+		local nameColorCode = toColorCode(nameColor or chatColor or { r = 1, g = 1, b = 1 })
+		local linkTarget = sender
 		if sender and sender:find("|Hplayer:", 1, true) then
 			linkTarget = sender:match("^|Hplayer:([^:|]+)")
 		end
@@ -758,7 +768,7 @@ function ChannelHistory:Store(event, ...)
 		end
 
 		if linkTarget and linkTarget ~= "" then
-			replacement = string.format("|Hplayer:%s|h[%s]|h", linkTarget, displayText)
+			replacement = string.format("|Hplayer:%s|h%s[%s]|r|h", linkTarget, nameColorCode, displayText)
 			sender = linkTarget
 		else
 			replacement = ACHIEVEMENT_BROADCAST or "%s"
