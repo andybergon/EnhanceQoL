@@ -234,6 +234,10 @@ L["CH_OPTION_LOOT_MIN_RARITY"] = "Loot qualities to store"
 L["CH_OPTION_LOOT_MIN_RARITY_DESC"] = "Store loot messages only if they contain items with one of the selected qualities. Messages without item links are always stored. Leave empty to allow all."
 L["CH_CLEAR_HELP_TITLE"] = "Delete history"
 L["CH_CLEAR_HELP_DESC"] = "Right-click a character or channel to clear only that history. The current-scope clear action affects just what you are viewing."
+L["CH_FILTER_CAT_CHAT"] = "Chat"
+L["CH_FILTER_CAT_SYSTEM"] = "System"
+L["CH_FILTER_CAT_MISC"] = "Other"
+L["CH_FILTER_INVERT"] = "Invert"
 L["enableGemHelperDesc"] = "Displays a helper panel when you open the socketing UI.\nLeft-click a gem to pick it up."
 
 L["deleteItemFillDialog"] = 'Add "%s" to the "Delete confirmation Popup"'
