@@ -2647,7 +2647,7 @@ function ChannelHistory:CreateFilterUI()
 	}
 
 	local checkHeight = 20
-	local spacing = 2
+	local spacing = 6
 	local y = 0
 	self.ui.filterChecks = self.ui.filterChecks or {}
 	self.ui.filterChecksByKey = self.ui.filterChecksByKey or {}
@@ -2673,8 +2673,8 @@ function ChannelHistory:CreateFilterUI()
 		header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
 		header.text:SetText(group.title or "")
 		header.text:SetTextColor(1, 0.82, 0)
-		header.line:SetPoint("LEFT", header.text, "RIGHT", 6, -6)
-		header.line:SetPoint("RIGHT", header, "RIGHT", -2, -6)
+		header.line:SetPoint("LEFT", header.text, "LEFT", 0, -10)
+		header.line:SetPoint("RIGHT", header, "RIGHT", -2, -10)
 		header.line:SetHeight(1)
 		header.line:SetColorTexture(1, 1, 1, 0.12)
 		y = y + header:GetHeight() + spacing
@@ -2716,7 +2716,6 @@ function ChannelHistory:CreateFilterUI()
 				end
 				cb:SetPoint("LEFT", row, "LEFT", 2, 0)
 				self.ui.filterChecksByKey[key] = cb
-				-- cb:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 				cb:SetChecked(self:IsFilterEnabled(info.key))
 				cb:SetScript("OnClick", function(button)
 					self.ui.filters[info.key] = button:GetChecked() and true or false
