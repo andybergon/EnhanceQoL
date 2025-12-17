@@ -1185,6 +1185,8 @@ function getChatColor(key)
 	return CHAT_COLOR_FALLBACK[key]
 end
 
+local _formatParts = {}
+
 function formatLine(self, line)
 	if not line then return "" end
 	local cache = self.runtime and self.runtime.formattedCache
@@ -1278,17 +1280,28 @@ function formatLine(self, line)
 	local body = formatURLs(line.message or "")
 	if body:find("|r", 1, true) then body = body:gsub("|r", "|r" .. chatColorCode) end
 
-	local parts = { timeText, " ", chatColorCode }
+	table.wipe(_formatParts)
+	local parts = _formatParts
+	parts[1] = timeText
+	parts[2] = " "
+	parts[3] = chatColorCode
+	local n = 3
 	if nameText ~= "" then
-		table.insert(parts, nameText)
-		table.insert(parts, "|r")
-		table.insert(parts, chatColorCode)
-		table.insert(parts, ": ")
+		n = n + 1
+		parts[n] = nameText
+		n = n + 1
+		parts[n] = "|r"
+		n = n + 1
+		parts[n] = chatColorCode
+		n = n + 1
+		parts[n] = ": "
 	end
-	table.insert(parts, body)
-	table.insert(parts, "|r")
+	n = n + 1
+	parts[n] = body
+	n = n + 1
+	parts[n] = "|r"
 
-	local text = table.concat(parts)
+	local text = table.concat(parts, "", 1, n)
 	if cache then cache[line] = text end
 	return text
 end
@@ -2503,6 +2516,72 @@ function ChannelHistory:UpdateThinScrollFrameBar(sb, scrollFrame)
 	if sb.track then sb.track:SetAlpha(hasScroll and 0.22 or 0) end
 	if sb.channel then sb.channel:SetAlpha(hasScroll and 0.28 or 0) end
 end
+
+local function ensureFilterRowPool(self)
+	self.ui.filterRowPool = self.ui.filterRowPool or {}
+	return self.ui.filterRowPool
+end
+
+local function acquireFilterRow(self, index, parent, checkHeight, handleFilterClick)
+	local pool = ensureFilterRowPool(self)
+	local row = pool[index]
+	if row then
+		row:SetParent(parent)
+		row:Show()
+		return row
+	end
+
+	row = CreateFrame("Button", nil, parent)
+	row:SetHeight(checkHeight)
+	row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+	row.bg = row:CreateTexture(nil, "BACKGROUND")
+	row.bg:SetAllPoints()
+	row.bg:SetTexture("Interface\\AuctionFrame\\AuctionHouse-UI-Row-Select")
+	row.bg:SetTexCoord(0, 1, 0, 1)
+	row.bg:SetVertexColor(1, 1, 1, 0)
+
+	row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+	row.hl:SetAllPoints()
+	row.hl:SetColorTexture(1, 1, 1, 0.08)
+	row.hl:Hide()
+
+	row.cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+	row.cb:SetSize(checkHeight, checkHeight)
+	row.cb:SetPoint("LEFT", row, "LEFT", 2, 0)
+	row.cb:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+	row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	row.text:SetPoint("LEFT", row.cb, "RIGHT", 6, 0)
+	row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+	row.text:SetJustifyH("LEFT")
+
+	local function showHL()
+		if row.hl then row.hl:Show() end
+	end
+	local function hideHL()
+		if row.hl then row.hl:Hide() end
+	end
+
+	row:SetScript("OnEnter", showHL)
+	row:SetScript("OnLeave", hideHL)
+	row:SetScript("OnMouseUp", function(r, btn)
+		if not r.info then return end
+		handleFilterClick(r.info, btn)
+	end)
+
+	row.cb:SetScript("OnMouseUp", function(cb, btn)
+		local r = cb:GetParent()
+		if not r or not r.info then return end
+		handleFilterClick(r.info, btn, cb:GetChecked())
+	end)
+	row.cb:HookScript("OnEnter", showHL)
+	row.cb:HookScript("OnLeave", hideHL)
+
+	pool[index] = row
+	return row
+end
+
 local function createSearchBox(parent, placeholder)
 	local box = CreateFrame("EditBox", nil, parent, "SearchBoxTemplate")
 	box:SetHeight(22)
@@ -2662,18 +2741,13 @@ function ChannelHistory:CreateFilterUI()
 	local spacing = 4
 	local y = 0
 	-- reset collections
-	self.ui.filterChecks = {}
 	self.ui.filterChecksByKey = {}
-	self.ui.filterRows = {}
 	self:LoadFiltersFromDB()
-	-- hide and detach previous children to avoid overlap when rebuilding
-	if self.ui.filterList and self.ui.filterList.GetChildren then
-		local kids = { self.ui.filterList:GetChildren() }
-		for _, child in ipairs(kids) do
-			child:Hide()
-			child:ClearAllPoints()
-			child:SetParent(nil)
-		end
+	local pool = ensureFilterRowPool(self)
+	for _, row in ipairs(pool) do
+		row:Hide()
+		row:ClearAllPoints()
+		row:SetParent(self.ui.filterList)
 	end
 
 	local rowIndex = 0
@@ -2683,45 +2757,17 @@ function ChannelHistory:CreateFilterUI()
 			local isLogged = loggingEnabled and loggingEnabled[key] ~= false
 			if info and (not hideUnlogged or isLogged) then
 				rowIndex = rowIndex + 1
-				local row = CreateFrame("Button", nil, self.ui.filterList)
-				row.bg = row:CreateTexture(nil, "BACKGROUND")
-				row.bg:SetAllPoints()
-				row.bg:SetTexture("Interface\\AuctionFrame\\AuctionHouse-UI-Row-Select")
-				row.bg:SetTexCoord(0, 1, 0, 1)
-				row.bg:SetVertexColor(1, 1, 1, 0)
-				row.hl = row:CreateTexture(nil, "HIGHLIGHT")
-				row.hl:SetAllPoints()
-				row.hl:SetColorTexture(1, 1, 1, 0.08)
-				row.hl:Hide()
-				row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-				self.ui.filterRows[rowIndex] = row
-				local function showRowHighlight()
-					if row.hl then row.hl:Show() end
-				end
-				local function hideRowHighlight()
-					if row.hl then row.hl:Hide() end
-				end
-				row:SetHeight(checkHeight)
+				local row = acquireFilterRow(self, rowIndex, self.ui.filterList, checkHeight, handleFilterClick)
+				row.info = info
 				row:SetPoint("TOPLEFT", self.ui.filterList, "TOPLEFT", 0, -y)
 				row:SetPoint("TOPRIGHT", self.ui.filterList, "TOPRIGHT", 0, -y)
 				row:Show()
 
-				local cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
-				cb:SetSize(checkHeight, checkHeight)
-				cb:SetPoint("LEFT", row, "LEFT", 2, 0)
+				local cb = row.cb
 				self.ui.filterChecksByKey[key] = cb
-				cb:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 				cb:SetChecked(self:IsFilterEnabled(info.key))
-				cb:SetScript("OnMouseUp", function(frame, mouseButton) handleFilterClick(info, mouseButton, frame:GetChecked()) end)
-				cb:HookScript("OnEnter", showRowHighlight)
-				cb:HookScript("OnLeave", hideRowHighlight)
 				cb:Show()
 
-				if not row.text then row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal") end
-				row.text:ClearAllPoints()
-				row.text:SetPoint("LEFT", cb, "RIGHT", 6, 0)
-				row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-				row.text:SetJustifyH("LEFT")
 				row.text:SetText(info.label or info.key)
 				local c = getFilterColor(info.key)
 				if c then
@@ -2730,29 +2776,19 @@ function ChannelHistory:CreateFilterUI()
 					row.text:SetTextColor(1, 1, 1)
 				end
 
-				row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-				row:SetScript("OnMouseUp", function(_, btn) handleFilterClick(info, btn) end)
-				row:SetScript("OnEnter", showRowHighlight)
-				row:SetScript("OnLeave", hideRowHighlight)
 				y = y + checkHeight + spacing
 			end
 		end
 	end
 
-	for i = rowIndex + 1, #self.ui.filterRows do
-		local row = self.ui.filterRows[i]
-		if row then row:Hide() end
+	for i = rowIndex + 1, #pool do
+		if pool[i] then pool[i]:Hide() end
 	end
-	for i = rowIndex + 1, #self.ui.filterChecks do
-		local cb = self.ui.filterChecks[i]
-		if cb then cb:Hide() end
+		self.ui.filterList:SetHeight(y)
+		if self.ui.filterScroll and self.ui.filterScroll.UpdateScrollChildRect then self.ui.filterScroll:UpdateScrollChildRect() end
+		if self.ui.filterScrollThin then self:UpdateThinScrollFrameBar(self.ui.filterScrollThin, self.ui.filterScroll) end
+		container:Show()
 	end
-
-	self.ui.filterList:SetHeight(y)
-	if self.ui.filterScroll and self.ui.filterScroll.UpdateScrollChildRect then self.ui.filterScroll:UpdateScrollChildRect() end
-	if self.ui.filterScrollThin then self:UpdateThinScrollFrameBar(self.ui.filterScrollThin, self.ui.filterScroll) end
-	container:Show()
-end
 
 function ChannelHistory:EnsureLogFrame()
 	if self.ui.logFrame then return end
