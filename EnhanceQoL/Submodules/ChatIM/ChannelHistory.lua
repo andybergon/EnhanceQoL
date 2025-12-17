@@ -2570,13 +2570,11 @@ local function acquireFilterRow(self, index, parent, checkHeight, handleFilterCl
 		handleFilterClick(r.info, btn)
 	end)
 
-	row.cb:SetScript("OnMouseUp", function(cb, btn)
+	row.cb:SetScript("OnClick", function(cb, btn)
 		local r = cb:GetParent()
 		if not r or not r.info then return end
 		handleFilterClick(r.info, btn, cb:GetChecked())
 	end)
-	row.cb:HookScript("OnEnter", showHL)
-	row.cb:HookScript("OnLeave", hideHL)
 
 	pool[index] = row
 	return row
@@ -2784,11 +2782,11 @@ function ChannelHistory:CreateFilterUI()
 	for i = rowIndex + 1, #pool do
 		if pool[i] then pool[i]:Hide() end
 	end
-		self.ui.filterList:SetHeight(y)
-		if self.ui.filterScroll and self.ui.filterScroll.UpdateScrollChildRect then self.ui.filterScroll:UpdateScrollChildRect() end
-		if self.ui.filterScrollThin then self:UpdateThinScrollFrameBar(self.ui.filterScrollThin, self.ui.filterScroll) end
-		container:Show()
-	end
+	self.ui.filterList:SetHeight(y)
+	if self.ui.filterScroll and self.ui.filterScroll.UpdateScrollChildRect then self.ui.filterScroll:UpdateScrollChildRect() end
+	if self.ui.filterScrollThin then self:UpdateThinScrollFrameBar(self.ui.filterScrollThin, self.ui.filterScroll) end
+	container:Show()
+end
 
 function ChannelHistory:EnsureLogFrame()
 	if self.ui.logFrame then return end
@@ -2895,6 +2893,7 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 	local padding = 18
 	local spacing = 18
 	local headerOffset = 17
+	local leftCollapsed = self.ui and self.ui.leftCollapsed
 
 	local availableWidth = width - (padding * 2) - (spacing * 2)
 	local availableHeight = height - padding - headerOffset
@@ -2908,6 +2907,15 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 		leftWidth = math.max(180, leftWidth - math.floor(deficit * 0.55))
 		midWidth = math.max(160, midWidth - math.ceil(deficit * 0.55))
 	end
+	if leftCollapsed then
+		leftWidth = 0
+		availableWidth = width - (padding * 2) - spacing
+		midWidth = math.max(160, math.floor(availableWidth * 0.20))
+		rightWidth = math.max(380, availableWidth - midWidth)
+		f.left:Hide()
+	else
+		f.left:Show()
+	end
 
 	-- Left panel
 	f.left:SetPoint("TOPLEFT", f, "TOPLEFT", padding, -headerOffset)
@@ -2915,8 +2923,14 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 	f.left:SetWidth(leftWidth)
 
 	-- Middle panel
-	f.middle:SetPoint("TOPLEFT", f.left, "TOPRIGHT", spacing, 0)
-	f.middle:SetPoint("BOTTOMLEFT", f.left, "BOTTOMRIGHT", spacing, 0)
+	f.middle:ClearAllPoints()
+	if leftCollapsed then
+		f.middle:SetPoint("TOPLEFT", f, "TOPLEFT", padding, -headerOffset)
+		f.middle:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", padding, padding + 3)
+	else
+		f.middle:SetPoint("TOPLEFT", f.left, "TOPRIGHT", spacing, 0)
+		f.middle:SetPoint("BOTTOMLEFT", f.left, "BOTTOMRIGHT", spacing, 0)
+	end
 	f.middle:SetWidth(midWidth)
 	if self.ui and self.ui.filterContainer then
 		self.ui.filterContainer:SetPoint("TOPLEFT", f.middle, "TOPLEFT", 12, -36)
@@ -2924,9 +2938,19 @@ function ChannelHistory:LayoutDebugFrame(width, height)
 	end
 
 	-- Right panel
+	f.right:ClearAllPoints()
 	f.right:SetPoint("TOPLEFT", f.middle, "TOPRIGHT", spacing, 0)
 	f.right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -(padding / 2), padding + 3)
 	f.right:SetWidth(rightWidth)
+
+	if self.ui and self.ui.leftToggle then
+		self.ui.leftToggle:ClearAllPoints()
+		self.ui.leftToggle:SetPoint("TOPLEFT", f, "TOPLEFT", padding - 6, -headerOffset + 4)
+		local atlas = leftCollapsed and "NPE_ArrowRight" or "NPE_ArrowLeft"
+		self.ui.leftToggle:SetNormalAtlas(atlas)
+		self.ui.leftToggle:SetPushedAtlas(atlas)
+		self.ui.leftToggle:SetHighlightAtlas(atlas)
+	end
 end
 
 function ChannelHistory:CreateDebugFrame(showImmediately)
@@ -3272,6 +3296,20 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	f.right.bg:SetAlpha(0.35)
 	self.right = f.right
 	applyInsetBorder(f.right, -4)
+
+	-- Collapse toggle for left panel
+	self.ui.leftCollapsed = addon.db and addon.db.chatHistoryLeftCollapsed or false
+	local toggle = CreateFrame("Button", nil, f)
+	toggle:SetSize(18, 18)
+	toggle:SetNormalAtlas("NPE_ArrowLeft")
+	toggle:SetPushedAtlas("NPE_ArrowLeft")
+	toggle:SetHighlightAtlas("NPE_ArrowLeft")
+	toggle:SetScript("OnClick", function()
+		self.ui.leftCollapsed = not self.ui.leftCollapsed
+		if addon.db then addon.db.chatHistoryLeftCollapsed = self.ui.leftCollapsed end
+		self:LayoutDebugFrame()
+	end)
+	self.ui.leftToggle = toggle
 
 	local function createPanelHeader(parent, label)
 		local hdr = CreateFrame("Frame", nil, parent)

@@ -1281,6 +1281,7 @@ local function applyCooldownViewerMode(frameName, cfg)
 
 	if hoverEnabled and not state.hoverPollInitialized and frame.HookScript then
 		state.hoverPollInitialized = true
+		state.hoverHooked = false
 
 		local function setHovered(v)
 			if state.hovered == v then return end
@@ -1302,22 +1303,15 @@ local function applyCooldownViewerMode(frameName, cfg)
 
 			self._eqolHoverElapsed = 0
 
-			state.prevOnUpdate = self:GetScript("OnUpdate")
-
-			if not state.onUpdateWrapper then state.onUpdateWrapper = function(s, elapsed)
-				if state.prevOnUpdate then state.prevOnUpdate(s, elapsed) end
-				hoverUpdate(s, elapsed)
-			end end
-
-			self:SetScript("OnUpdate", state.onUpdateWrapper)
+			if not state.hoverHooked then
+				self:HookScript("OnUpdate", hoverUpdate)
+				state.hoverHooked = true
+			end
 		end
 
 		local function stopHoverPoll(self)
 			if not state.hoverPollRunning then return end
 			state.hoverPollRunning = false
-
-			self:SetScript("OnUpdate", state.prevOnUpdate)
-			state.prevOnUpdate = nil
 
 			setHovered(false)
 		end
