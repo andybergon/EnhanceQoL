@@ -743,6 +743,7 @@ function ChannelHistory:Store(event, ...)
 		local replacement
 		local linkTarget = sender
 		local nameColor
+		local chatColorLocal = (ChatTypeInfo and ChatTypeInfo["SYSTEM"]) or nil
 		if guid and (UnitGUID and guid == UnitGUID("player")) then
 			nameColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[(select(2, UnitClass("player")))]
 		end
@@ -750,8 +751,7 @@ function ChannelHistory:Store(event, ...)
 			local _, classTok = getSenderClass(guid)
 			if classTok then nameColor = getClassStyle(classTok) end
 		end
-		local nameColorCode = toColorCode(nameColor or chatColor or { r = 1, g = 1, b = 1 })
-		local linkTarget = sender
+		local nameColorCode = toColorCode(nameColor or chatColorLocal or { r = 1, g = 1, b = 1 })
 		if sender and sender:find("|Hplayer:", 1, true) then
 			linkTarget = sender:match("^|Hplayer:([^:|]+)")
 		end
