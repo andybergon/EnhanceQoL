@@ -19,6 +19,8 @@
 
 - Added missing visibility rule localization (and translations) to eliminate the AceLocale warning when Enhanced Unit Frames locks visibility.
 - Assisted Combat Button Rotation border hide had an error with updating the button
+- Cooldown Viewer visibility now only hooks mouseover/polling when a visibility rule is set, preventing unintended alpha changes.
+- Cooldown Viewer frames no longer lose click-through behavior when using EQOL.
 
 ---
 

@@ -1238,29 +1238,138 @@ local function applyCooldownViewerMode(frameName, cfg)
 	local frame = frameName and _G[frameName]
 	if not frame then return false end
 
-	addon.variables = addon.variables or {}
-	addon.variables.cooldownViewerStates = addon.variables.cooldownViewerStates or {}
-	local state = addon.variables.cooldownViewerStates[frame]
-	if not state then
-		state = { frame = frame, hovered = false }
-		addon.variables.cooldownViewerStates[frame] = state
-		if frame.HookScript then
-			frame:HookScript("OnEnter", function()
-				state.hovered = true
-				if addon.functions.ApplyCooldownViewerVisibility then addon.functions.ApplyCooldownViewerVisibility() end
-			end)
-			frame:HookScript("OnLeave", function()
-				state.hovered = false
-				if addon.functions.ApplyCooldownViewerVisibility then addon.functions.ApplyCooldownViewerVisibility() end
-			end)
+	local hasActiveConfig = false
+	if type(cfg) == "table" then
+		for _, v in pairs(cfg) do
+			if v then
+				hasActiveConfig = true
+				break
+			end
 		end
 	end
 
+	local hoverEnabled = hasActiveConfig and cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.MOUSEOVER] == true
+
+	addon.variables = addon.variables or {}
+	addon.variables.cooldownViewerStates = addon.variables.cooldownViewerStates or {}
+	local states = addon.variables.cooldownViewerStates
+
+	local state = states[frame]
+
+	if not hasActiveConfig and not state then return true end
+
+	if not state then
+		state = {
+			frame = frame,
+			frameName = frameName,
+
+			hovered = false,
+			applied = false,
+
+			hoverEnabled = false,
+			hoverPollInitialized = false,
+			hoverPollRunning = false,
+
+			prevOnUpdate = nil,
+			onUpdateWrapper = nil,
+			hoverHandlers = nil,
+		}
+		states[frame] = state
+	end
+
+	state.hoverEnabled = hoverEnabled
+
+	if hoverEnabled and not state.hoverPollInitialized and frame.HookScript then
+		state.hoverPollInitialized = true
+
+		local function setHovered(v)
+			if state.hovered == v then return end
+			state.hovered = v
+			if addon.functions.ApplyCooldownViewerVisibility then addon.functions.ApplyCooldownViewerVisibility() end
+		end
+
+		local function hoverUpdate(self, elapsed)
+			self._eqolHoverElapsed = (self._eqolHoverElapsed or 0) + (elapsed or 0)
+			if self._eqolHoverElapsed < 0.05 then return end -- ~20 Hz
+			self._eqolHoverElapsed = 0
+			setHovered(MouseIsOver(self))
+		end
+
+		local function startHoverPoll(self)
+			if not state.hoverEnabled then return end
+			if state.hoverPollRunning then return end
+			state.hoverPollRunning = true
+
+			self._eqolHoverElapsed = 0
+
+			state.prevOnUpdate = self:GetScript("OnUpdate")
+
+			if not state.onUpdateWrapper then state.onUpdateWrapper = function(s, elapsed)
+				if state.prevOnUpdate then state.prevOnUpdate(s, elapsed) end
+				hoverUpdate(s, elapsed)
+			end end
+
+			self:SetScript("OnUpdate", state.onUpdateWrapper)
+		end
+
+		local function stopHoverPoll(self)
+			if not state.hoverPollRunning then return end
+			state.hoverPollRunning = false
+
+			self:SetScript("OnUpdate", state.prevOnUpdate)
+			state.prevOnUpdate = nil
+
+			setHovered(false)
+		end
+
+		state.hoverHandlers = { start = startHoverPoll, stop = stopHoverPoll }
+
+		frame:HookScript("OnShow", startHoverPoll)
+		frame:HookScript("OnHide", stopHoverPoll)
+
+		-- Wenn er gerade sichtbar ist: direkt starten
+		if frame.IsShown and frame:IsShown() then startHoverPoll(frame) end
+	end
+
+	-- Sicherstellen: ohne hoverEnabled wird NIE ein OnUpdate gesetzt.
+	if state.hoverHandlers then
+		if hoverEnabled then
+			if frame.IsShown and frame:IsShown() then
+				state.hoverHandlers.start(frame)
+			else
+				state.hoverHandlers.stop(frame)
+			end
+		else
+			state.hoverHandlers.stop(frame)
+			state.hovered = false
+		end
+	end
+
+	-- Wenn nichts aktiv ist: Defaults herstellen, Polling stoppen und ggf. State komplett entfernen.
+	if not hasActiveConfig then
+		if state.hoverHandlers then state.hoverHandlers.stop(frame) end
+
+		if state.applied and frame.GetAlpha and frame.SetAlpha and frame:GetAlpha() ~= 1 then frame:SetAlpha(1) end
+
+		state.applied = false
+		state.hoverEnabled = false
+		state.hovered = false
+
+		-- Wenn wir nie Hooks installiert haben, können wir den State komplett vergessen.
+		-- (WICHTIG: wenn hoverPollInitialized true war, NICHT löschen, sonst hängen die Hook-Closures am alten state.)
+		if not state.hoverPollInitialized then states[frame] = nil end
+
+		return true
+	end
+
+	-- Ab hier: aktive Config -> normales Verhalten
 	local shouldHide = computeCooldownViewerHidden(cfg, state)
 	if IsCooldownViewerInEditMode() then shouldHide = false end
 
 	local targetAlpha = shouldHide and 0 or 1
-	if frame:GetAlpha() ~= targetAlpha then frame:SetAlpha(targetAlpha) end
+	if frame.GetAlpha and frame.SetAlpha and frame:GetAlpha() ~= targetAlpha then frame:SetAlpha(targetAlpha) end
+
+	state.applied = true
 	return true
 end
 
