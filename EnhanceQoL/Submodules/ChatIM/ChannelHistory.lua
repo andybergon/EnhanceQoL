@@ -92,9 +92,7 @@ local IGNORED_EVENTS = {
 	CHAT_MSG_BN_INLINE_TOAST_CONVERSATION = true,
 }
 
-local ADDITIONAL_EVENTS = {
-	"CHAT_MSG_COMMUNITIES_CHANNEL",
-}
+local ADDITIONAL_EVENTS = {}
 
 local function now() return (GetServerTime and GetServerTime()) or time() end
 
@@ -254,18 +252,6 @@ local function shouldFilterLootByQuality(msg, event)
 		return true
 	end
 
-	local foundQuality = false
-	if event == "CHAT_MSG_LOOT" then
-		for link in msg:gmatch("|Hitem:[^|]+|h%[.-%]|h") do
-			local itemID = link:match("|Hitem:(%d+)")
-			local quality = nil
-			if quality then
-				foundQuality = true
-				if matchQuality(quality) then return false end
-			end
-		end
-	end
-	if foundQuality then return true end -- had links but none matched selection
 	return false -- no item links; keep
 end
 
@@ -980,6 +966,8 @@ local function iterCharacters(scope, realmKey, charKey, factionKey)
 		if type(bucket) ~= "table" then
 			return function() end
 		end
+
+		if realmKey and bucket[realmKey] then return yieldFromRealm(bucket[realmKey]) end
 		return yieldFromFaction(bucket)
 	end
 
@@ -1373,7 +1361,8 @@ function ChannelHistory:ForEachSelectedCharacter(fn)
 			if selType ~= "faction" or not selFaction or fKey == selFaction then
 				for realmKey, realm in pairs(faction or {}) do
 					if type(realm) == "table" then
-						if selType ~= "realm" or not selRealm or realmKey == selRealm then
+						local restrictRealm = (selType == "realm" or selType == "faction")
+						if (not restrictRealm) or not selRealm or (realmKey == selRealm) then
 							for charKey, bucket in pairs(realm.characters or {}) do
 								if selType ~= "character" or not selChar or charKey == selChar then fn(bucket, fKey, realmKey, charKey, realm) end
 							end
