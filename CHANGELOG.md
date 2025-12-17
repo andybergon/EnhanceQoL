@@ -9,6 +9,7 @@
   - Select your alts to look into old chats with fulltext search and Hyperlinks/Item/Achivement etc. working
   - Copy selected text, filter different channels
 - Action Bars: optional toggle to hide the Extra Action/Zone Ability artwork and disable mouse input on the Extra Action bar.
+- Profiles: export/import the active profile (full overwrite) via copy/paste with reload after import.
 
 ### 🔄 Changed
 
