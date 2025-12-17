@@ -1841,6 +1841,13 @@ local function ensureLeftButtons(self, count)
 		btn.bg:SetTexCoord(0, 1, 0, 1)
 		btn.bg:SetVertexColor(1, 1, 1, 0)
 
+		btn.glow = btn:CreateTexture(nil, "OVERLAY")
+		btn.glow:SetPoint("TOPLEFT", btn, "TOPLEFT", 1, -1)
+		btn.glow:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 1, 1)
+		btn.glow:SetWidth(4)
+		btn.glow:SetColorTexture(1, 0.82, 0, 0.7)
+		btn.glow:Hide()
+
 		btn.hl = btn:CreateTexture(nil, "HIGHLIGHT")
 		btn.hl:SetAllPoints()
 		btn.hl:SetColorTexture(1, 1, 1, 0.08)
@@ -1906,6 +1913,7 @@ function ChannelHistory:RefreshLeftList()
 		local sel = self.ui.selection or { type = "character", key = self.keys.charKey and ("char:" .. self.keys.charKey) or nil }
 		local selected = sel and sel.key == entry.key and sel.type == entry.kind
 		btn.bg:SetVertexColor(1, 1, 1, selected and 0.35 or 0)
+		if btn.glow then btn.glow:SetShown(selected) end
 		btn.icon:Hide()
 		btn.toggle:Hide()
 		btn.toggleFrame:Hide()
@@ -2648,8 +2656,8 @@ function ChannelHistory:CreateFilterUI()
 		{ title = L["CH_FILTER_CAT_MISC"] or OTHER or "Other", keys = { "MONSTER" } },
 	}
 
-	local checkHeight = 20
-	local spacing = 6
+	local checkHeight = 19
+	local spacing = 4
 	local y = 0
 	self.ui.filterChecks = self.ui.filterChecks or {}
 	self.ui.filterChecksByKey = self.ui.filterChecksByKey or {}
@@ -2659,27 +2667,6 @@ function ChannelHistory:CreateFilterUI()
 	local rowIndex = 0
 	for _, group in ipairs(filterGroups) do
 		rowIndex = rowIndex + 1
-		local header = self.ui.filterRows[rowIndex]
-		if not header then
-			header = CreateFrame("Frame", nil, self.ui.filterList)
-			self.ui.filterRows[rowIndex] = header
-		end
-		header:Show()
-		header:SetHeight(checkHeight + 4)
-		header:SetPoint("TOPLEFT", self.ui.filterList, "TOPLEFT", 0, -y)
-		header:SetPoint("TOPRIGHT", self.ui.filterList, "TOPRIGHT", 0, -y)
-		if not header.text then
-			header.text = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-			header.line = header:CreateTexture(nil, "BACKGROUND")
-		end
-		header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
-		header.text:SetText(group.title or "")
-		header.text:SetTextColor(1, 0.82, 0)
-		header.line:SetPoint("LEFT", header.text, "LEFT", 0, -10)
-		header.line:SetPoint("RIGHT", header, "RIGHT", -2, -10)
-		header.line:SetHeight(1)
-		header.line:SetColorTexture(1, 1, 1, 0.12)
-		y = y + header:GetHeight() + spacing
 
 		for _, key in ipairs(group.keys) do
 			local info = filterByKey[key]
@@ -2714,6 +2701,7 @@ function ChannelHistory:CreateFilterUI()
 				local cb = self.ui.filterChecks[rowIndex]
 				if not cb then
 					cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+					cb:SetSize(checkHeight, checkHeight)
 					self.ui.filterChecks[rowIndex] = cb
 				end
 				cb:SetPoint("LEFT", row, "LEFT", 2, 0)
