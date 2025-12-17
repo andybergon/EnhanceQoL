@@ -2641,7 +2641,10 @@ function ChannelHistory:EnsureLogFrame()
 			showCopyDialog(payload)
 			return
 		end
-		if SetItemRef then SetItemRef(link, text, button, frame) end
+		if SetItemRef then
+			local chatFrame = SELECTED_CHAT_FRAME or DEFAULT_CHAT_FRAME or ChatFrame1 or frame
+			SetItemRef(link, text, button, chatFrame)
+		end
 	end)
 	frame._urlHooked = true
 
@@ -2864,8 +2867,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	end
 
 	local helpBtn = CreateFrame("Button", nil, f)
-	helpBtn:SetSize(18, 18)
-	helpBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -10)
+	helpBtn:SetSize(32, 32)
+	helpBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
 	helpBtn:SetNormalTexture("Interface\\common\\help-i")
 	helpBtn:SetHighlightTexture("Interface\\common\\help-i")
 	if helpBtn:GetHighlightTexture() then helpBtn:GetHighlightTexture():SetAlpha(0.7) end
