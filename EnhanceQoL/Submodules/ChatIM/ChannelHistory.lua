@@ -531,6 +531,10 @@ function ChannelHistory:ApplyFrameZOrder()
 	applyZOrder(self.ui.closeButton, 2)
 	applyZOrder(self.ui.optionsButton, 2)
 	applyZOrder(self.ui.copyButton, 2)
+	if self.ui.copyPopup then
+		self.ui.copyPopup:SetFrameStrata(strata)
+		self.ui.copyPopup:SetFrameLevel(baseLevel + 50)
+	end
 end
 
 function ChannelHistory:UpdateLogFontSize(size, frame)
@@ -544,7 +548,12 @@ function ChannelHistory:UpdateLogFontSize(size, frame)
 	end
 	local resolvedSize = size or (addon.db and addon.db.chatChannelHistoryFontSize) or fontHeight or 12
 	fontObj:SetFont(fontFile, resolvedSize, fontFlags or "")
-	if target then target:SetFontObject(fontObj) end
+	if target then
+		target:SetFontObject(fontObj)
+		target:SetJustifyH("LEFT")
+		target:SetJustifyV("TOP")
+		target:SetIndentedWordWrap(false)
+	end
 end
 
 function ChannelHistory:ApplyFontSize() self:UpdateLogFontSize(addon.db and addon.db.chatChannelHistoryFontSize or 12) end
@@ -3269,6 +3278,8 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		scroll:SetScript("OnSizeChanged", function() popup:RefreshScrollHeight() end)
 
 		copyPopup = popup
+		ChannelHistory.ui = ChannelHistory.ui or {}
+		ChannelHistory.ui.copyPopup = popup
 		return popup
 	end
 
