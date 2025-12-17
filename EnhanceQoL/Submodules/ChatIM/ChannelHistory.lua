@@ -2609,7 +2609,7 @@ function ChannelHistory:CreateFilterUI()
 	if not scroll then
 		scroll = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
 		scroll:SetPoint("TOPLEFT", container, "TOPLEFT", 2, -30)
-		scroll:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, 0)
+		scroll:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 5, 0)
 		local sb = scroll.ScrollBar or scroll.scrollBar
 		if sb then
 			sb:Hide()
