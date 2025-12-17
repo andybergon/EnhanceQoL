@@ -2637,7 +2637,7 @@ function ChannelHistory:CreateFilterUI()
 			self.ui.filterScroll:HookScript("OnSizeChanged", UpdateFilterListWidth)
 			self.ui.filterScroll:HookScript("OnShow", UpdateFilterListWidth)
 		end
-		self.ui.filterScrollThin = self:CreateThinScrollFrameBar(scroll, 4)
+		self.ui.filterScrollThin = self:CreateThinScrollFrameBar(scroll, -10)
 	end
 
 	local filterGroups = {
