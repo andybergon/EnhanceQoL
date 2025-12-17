@@ -45,7 +45,10 @@ addon.general.variables.autoOpen = {
 	[246937] = true, -- Perfected Epoch Memento
 	[246936] = true, -- Resonant Epoch Memento
 	[249784] = true, -- Legionfall Champions Insignia (2k Rep)
-	[253227] = true, -- Flawless Thread of Time
+	[253227] = {
+		minStack = 10,
+		chunk = 10,
+	}, -- Flawless Thread of Time (usable in bundles of 10)
 
 	[253224] = {
 		minStack = 10,

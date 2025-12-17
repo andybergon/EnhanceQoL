@@ -360,6 +360,58 @@ for _, strata in ipairs(strataOrder) do
 end
 
 local categoryOptions = {}
+local function colorizeChannelLabel(key, text)
+	local info = ChatTypeInfo and ChatTypeInfo[key]
+	if not info and key == "GENERAL" then info = ChatTypeInfo and ChatTypeInfo["CHANNEL1"] end
+	if info and info.r and info.g and info.b then
+		local hex = string.format("|cff%02x%02x%02x", (info.r or 1) * 255, (info.g or 1) * 255, (info.b or 1) * 255)
+		return string.format("%s%s|r", hex, text)
+	end
+	return text
+end
+
+local function makeFilterLabel(key, icon, text)
+	local lbl = colorizeChannelLabel(key, text or key)
+	if icon and icon ~= "" then return string.format("|T%s:14:14:0:0|t %s", icon, lbl) end
+	return lbl
+end
+
+local CHAT_FILTER_OPTIONS = {
+	{ key = "SAY", label = makeFilterLabel("SAY", "2056011", SAY) },
+	{ key = "YELL", label = makeFilterLabel("YELL", "892447", YELL) },
+	{ key = "WHISPER", label = makeFilterLabel("WHISPER", "133458", WHISPER) },
+	{ key = "BN_WHISPER", label = makeFilterLabel("BN_WHISPER", "Interface\\FriendsFrame\\UI-Toast-ChatInviteIcon", BN_WHISPER) },
+	{ key = "PARTY", label = makeFilterLabel("PARTY", "134149", PARTY) },
+	{ key = "INSTANCE", label = makeFilterLabel("INSTANCE", "Interface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga", INSTANCE) },
+	{ key = "RAID", label = makeFilterLabel("RAID", "Interface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga", RAID) },
+	{ key = "GUILD", label = makeFilterLabel("GUILD", "514261", GUILD) },
+	{ key = "OFFICER", label = makeFilterLabel("OFFICER", "133071", OFFICER) },
+	{ key = "GENERAL", label = makeFilterLabel("GENERAL", nil, GENERAL) },
+	{ key = "LOOT", label = makeFilterLabel("LOOT", "133639", LOOT) },
+	{ key = "MONEY", label = makeFilterLabel("MONEY", "133785", MONEY) },
+	{ key = "ACHIEVEMENT", label = makeFilterLabel("ACHIEVEMENT", "236507", ACHIEVEMENTS) },
+	{ key = "SYSTEM", label = makeFilterLabel("SYSTEM", nil, SYSTEM_MESSAGES or SYSTEM) },
+	{ key = "OPENING", label = makeFilterLabel("OPENING", nil, OPENING) },
+	{ key = "MONSTER", label = makeFilterLabel("MONSTER", nil, EXAMPLE_TARGET_MONSTER or "Monster") },
+}
+local CHAT_FILTER_OPTIONS = {
+	{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
+	{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
+	{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
+	{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
+	{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
+	{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
+	{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
+	{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
+	{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
+	{ key = "GENERAL", label = GENERAL },
+	{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
+	{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
+	{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
+	{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
+	{ key = "OPENING", label = OPENING },
+	{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
+}
 
 data = {
 	{
@@ -546,6 +598,50 @@ data = {
 				sType = "checkbox",
 			},
 			{
+				var = "chatChannelHistoryLootQualities",
+				text = L["CH_OPTION_LOOT_MIN_RARITY"],
+				desc = L["CH_OPTION_LOOT_MIN_RARITY_DESC"],
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				isSelectedFunc = function(key)
+					local map = addon.db and addon.db.chatChannelHistoryLootQualities
+					return map and map[key] or false
+				end,
+				setSelectedFunc = function(key, shouldSelect)
+					addon.db.chatChannelHistoryLootQualities = addon.db.chatChannelHistoryLootQualities or {}
+					addon.db.chatChannelHistoryLootQualities[key] = shouldSelect and true or false
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.InvalidateLootQualityCache then
+						addon.ChatIM.ChannelHistory:InvalidateLootQualityCache()
+					end
+				end,
+				options = (function()
+					local opts = {}
+					for q = Enum.ItemQuality.Poor, Enum.ItemQuality.WoWToken do
+						local color = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
+						local prefix = color and color.hex or ""
+						local suffix = color and "|r" or ""
+						opts[#opts + 1] = { value = q, text = string.format("%s%s%s", prefix, _G["ITEM_QUALITY" .. q .. "_DESC"], suffix) }
+					end
+					return opts
+				end)(),
+				parent = true,
+				default = {
+					[Enum.ItemQuality.Poor] = true,
+					[Enum.ItemQuality.Common] = true,
+					[Enum.ItemQuality.Uncommon] = true,
+					[Enum.ItemQuality.Rare] = true,
+					[Enum.ItemQuality.Epic] = true,
+					[Enum.ItemQuality.Legendary] = true,
+					[Enum.ItemQuality.Artifact] = true,
+					[Enum.ItemQuality.Heirloom] = true,
+					[Enum.ItemQuality.WoWToken] = true,
+				},
+				sType = "multidropdown",
+			},
+			{
 				var = "chatChannelFiltersEnable",
 				text = L["CH_OPTION_FILTER_SELECTION"],
 				desc = L["CH_OPTION_FILTER_SELECTION_DESC"],
@@ -574,13 +670,12 @@ addon.functions.SettingsCreateCheckboxes(cChatFrame, data)
 
 function addon.functions.initChatFrame()
 	addon.db.chatChannelFiltersEnable = addon.db.chatChannelFiltersEnable or {}
-	for i in pairs(addon.ChatIM.ChannelHistory.defaultFilters) do
-		local label = _G[i]
-		if not label and i == "MONSTER" then label = _G["EXAMPLE_TARGET_MONSTER"] end
-		if not label then label = i end
-		table.insert(categoryOptions, { value = i, text = label })
-
-		if addon.db.chatChannelFiltersEnable[i] == nil then addon.db.chatChannelFiltersEnable[i] = true end
+	for _, opt in ipairs(CHAT_FILTER_OPTIONS) do
+		table.insert(categoryOptions, { value = opt.key, text = opt.label })
+		if addon.db.chatChannelFiltersEnable[opt.key] == nil then addon.db.chatChannelFiltersEnable[opt.key] = true end
+	end
+	if addon.ChatIM and addon.ChatIM.ChannelHistory then
+		addon.ChatIM.ChannelHistory.filterOptions = addon.ChatIM.ChannelHistory.filterOptions or CHAT_FILTER_OPTIONS
 	end
 end
 

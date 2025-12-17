@@ -2556,6 +2556,17 @@ local function initChatFrame()
 	addon.functions.InitDBValue("chatChannelHistoryMaxLines", 500)
 	addon.functions.InitDBValue("chatChannelHistoryMaxViewLines", 1000)
 	addon.functions.InitDBValue("chatChannelHistoryFontSize", 12)
+	addon.functions.InitDBValue("chatChannelHistoryLootQualities", {
+		[0] = true,
+		[1] = true,
+		[2] = true,
+		[3] = true,
+		[4] = true,
+		[5] = true,
+		[6] = true,
+		[7] = true,
+		[8] = true,
+	})
 	addon.functions.InitDBValue("chatHistoryFrameStrata", "MEDIUM")
 	addon.functions.InitDBValue("chatHistoryFrameLevel", 600)
 	addon.functions.InitDBValue("chatHistoryButtonOffsetX", 0)

@@ -70,7 +70,7 @@ ChannelHistory.defaultFilters = {
 	MONSTER = true,
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
-ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, guidClassCacheSize = 0, refreshPending = false, formattedCache = nil }
+ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, guidClassCacheSize = 0, refreshPending = false, formattedCache = nil, bnetTagCache = {} }
 local GUID_CACHE_LIMIT = 2000
 local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID, normalizeChannelBucket, realmFromCharKey
 local MU = MenuUtil
@@ -101,6 +101,17 @@ local function sanitizeRealm(realm)
 	if not realm or realm == "" then realm = GetRealmName() or "Unknown" end
 	realm = realm:gsub("%s+", "")
 	return realm
+end
+
+local function resolveBNetTag(accountID)
+	if not accountID then return nil end
+	accountID = tonumber(accountID) or accountID
+	local cache = ChannelHistory.runtime and ChannelHistory.runtime.bnetTagCache
+	if cache and cache[accountID] then return cache[accountID] end
+	local info = C_BattleNet and C_BattleNet.GetAccountInfoByID and C_BattleNet.GetAccountInfoByID(accountID)
+	local tag = info and info.battleTag
+	if cache and tag then cache[accountID] = tag end
+	return tag
 end
 local function ensureCopyPopup()
 	if not StaticPopupDialogs then return end
@@ -395,6 +406,7 @@ function ChannelHistory:InitStorage()
 		end
 		self.runtime.guidClassCacheSize = count
 	end
+	self.runtime.bnetTagCache = self.runtime.bnetTagCache or {}
 	self.runtime.refreshPending = false
 	self.runtime.seq = self.runtime.seq or 0
 	self.runtime.formattedCache = self.runtime.formattedCache or {}
@@ -727,12 +739,50 @@ function ChannelHistory:Store(event, ...)
 	if event == "CHAT_MSG_CHANNEL_NOTICE" or event == "CHAT_MSG_CHANNEL_NOTICE_USER" then return end
 	if msg == "YOU_CHANGED" then return end
 	if filterKey == "LOOT" and shouldFilterLootByQuality(msg, event) then return end
+	if event == "CHAT_MSG_ACHIEVEMENT" or event == "CHAT_MSG_GUILD_ACHIEVEMENT" then
+		local replacement
+		local linkTarget = sender
+		if sender and sender:find("|Hplayer:", 1, true) then
+			linkTarget = sender:match("^|Hplayer:([^:|]+)")
+		end
+		if not linkTarget or linkTarget == "" then linkTarget = ACHIEVEMENT_BROADCAST end
+
+		local displayText = linkTarget
+		if linkTarget and linkTarget:find("-", 1, true) then
+			local namePart, realmPart = linkTarget:match("^([^%-]+)%-(.+)$")
+			if namePart then
+				displayText = namePart
+				local myRealm = self.keys and self.keys.realmKey
+				if myRealm and realmPart ~= myRealm then displayText = namePart .. "-" .. realmPart end
+			end
+		end
+
+		if linkTarget and linkTarget ~= "" then
+			replacement = string.format("|Hplayer:%s|h[%s]|h", linkTarget, displayText)
+			sender = linkTarget
+		else
+			replacement = ACHIEVEMENT_BROADCAST or "%s"
+		end
+
+		msg = msg:gsub("%%s", replacement, 1)
+	end
 	local channelKey, channelLabel = buildChannelKey(event, ...)
 	channelKey = channelKey or event
 	local classFile
 	if guid and isPlayerGUID(guid) then
 		local _, classTok = getSenderClass(guid)
 		classFile = classTok
+	end
+	if filterKey == "BN_WHISPER" then
+		local plain = (BNTokenFindName and BNTokenFindName(sender)) or sender
+		local accountID = bnetIDAccount
+		if not accountID and BNet_GetBNetIDAccount and plain then accountID = BNet_GetBNetIDAccount(plain) end
+		accountID = tonumber(accountID) or nil
+		if accountID then
+			bnetIDAccount = accountID
+			local tag = resolveBNetTag(accountID)
+			if tag and tag ~= "" then sender = string.format("|HBNplayer:%s:%s|h[%s]|h", tag, tostring(accountID), tag) end
+		end
 	end
 	local stamp = now()
 	self.runtime.seq = (self.runtime.seq or 0) + 1
@@ -764,6 +814,7 @@ function ChannelHistory:Store(event, ...)
 	slot.guid = guid
 	slot.seq = self.runtime.seq
 	slot.bnetIDAccount = bnetIDAccount
+	if filterKey == "BN_WHISPER" and bnetIDAccount then slot.senderBTag = resolveBNetTag(bnetIDAccount) end
 	channelBucket.lastUpdated = stamp
 	-- do not pre-format; format on demand
 	charBucket.channels[channelKey] = channelBucket
@@ -1155,6 +1206,22 @@ function formatLine(self, line)
 	senderRealmKey = senderRealmKey or playerRealmKey
 	local sameRealm = senderRealmKey and playerRealmKey and senderRealmKey == playerRealmKey
 	local displayName = senderName or ""
+	if line.filterKey == "BN_WHISPER" then
+		if line.senderBTag and line.senderBTag ~= "" then
+			displayName = line.senderBTag
+		elseif line.bnetIDAccount then
+			local tag = resolveBNetTag(line.bnetIDAccount)
+			if tag and tag ~= "" then
+				displayName = tag
+				line.senderBTag = tag
+			elseif line.sender and line.sender:find("#", 1, true) then
+				displayName = line.sender
+				line.senderBTag = line.sender
+			end
+		end
+		senderRealmKey = nil
+		sameRealm = true
+	end
 	if isSelf then
 		sameRealm = true
 	elseif displayName ~= "" and not sameRealm and senderRealmKey and senderRealmKey ~= "" then
@@ -1171,8 +1238,12 @@ function formatLine(self, line)
 	local nameColorCode = toColorCode(nameColor)
 	local nameText = ""
 	if displayName and displayName ~= "" then
-		if line.filterKey == "MONSTER" then
+		if line.filterKey == "ACHIEVEMENT" or line.filterKey == "GUILD_ACHIEVEMENT" then
+			nameText = ""
+		elseif line.filterKey == "MONSTER" then
 			nameText = string.format("%s%s|r", nameColorCode, displayName)
+		elseif line.filterKey == "BN_WHISPER" and line.bnetIDAccount then
+			nameText = string.format("|HBNplayer:%s:%s|h%s[%s]|r|h", displayName, tostring(line.bnetIDAccount or ""), nameColorCode, displayName)
 		else
 			local linkTarget = line.sender and line.sender ~= "" and line.sender or displayName
 			local prefix = ""
@@ -2425,24 +2496,26 @@ function ChannelHistory:CreateFilterUI()
 	container:SetPoint("TOPLEFT", self.middle, "TOPLEFT", 12, -36)
 	container:SetPoint("TOPRIGHT", self.middle, "TOPRIGHT", -12, -36)
 
-	local filters = {
-		{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
-		{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
-		{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
-		{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
-		{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
-		{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
-		{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
-		{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
-		{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
-		{ key = "GENERAL", label = GENERAL },
-		{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
-		{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
-		{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
-		{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
-		{ key = "OPENING", label = OPENING },
-		{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
-	}
+	local filters = ChannelHistory.filterOptions
+		or {
+			{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
+			{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
+			{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
+			{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
+			{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
+			{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
+			{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
+			{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
+			{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
+			{ key = "GENERAL", label = GENERAL },
+			{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
+			{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
+			{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
+			{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
+			{ key = "OPENING", label = OPENING },
+			{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
+		}
+	ChannelHistory.filterOptions = filters
 
 	local checkHeight = 20
 	local spacing = 2
