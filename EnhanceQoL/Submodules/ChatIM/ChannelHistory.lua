@@ -137,6 +137,8 @@ local function ensureCopyPopup()
 	}
 end
 
+local assetPath = "Interface\\AddOns\\EnhanceQoL\\Assets\\"
+
 local function showCopyDialog(text)
 	ensureCopyPopup()
 	if StaticPopup_Show then StaticPopup_Show("EQOL_URL_COPY", nil, nil, text or "") end
@@ -2575,9 +2577,9 @@ function ChannelHistory:CreateFilterUI()
 			btn:SetHeight(22)
 			btn:SetText(text)
 			btn:SetScript("OnClick", handler)
-			btn:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
-			btn:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
-			btn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight")
+			btn:SetNormalTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\buttonbackground.tga")
+			btn:SetPushedTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\buttonbackground.tga")
+			btn:SetHighlightTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\buttonbackground.tga")
 			local hl = btn:GetHighlightTexture()
 			if hl then hl:SetBlendMode("ADD") end
 			return btn
