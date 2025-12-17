@@ -1651,6 +1651,26 @@ local function setLabelText(label, text)
 	if label then label:SetText(text) end
 end
 
+function ChannelHistory:EnsureSelection()
+	self.ui = self.ui or {}
+	if self.ui.selection then return end
+	local stored = addon.db and addon.db.chatHistorySelection
+	if stored and type(stored) == "table" and stored.type then
+		self.ui.selection = stored
+		return
+	end
+	local playerCharKey = self.keys and self.keys.charKey
+	self.ui.selection = {
+		type = "character",
+		key = playerCharKey and ("char:" .. playerCharKey) or nil,
+		faction = self.keys and self.keys.faction,
+		factionKey = self.keys and self.keys.faction,
+		realmKey = self.keys and self.keys.realmKey,
+		charKey = self.keys and self.keys.charKey,
+	}
+	if addon.db then addon.db.chatHistorySelection = self.ui.selection end
+end
+
 -- UI helpers: left tree
 function ChannelHistory:BuildLeftEntries(filterText)
 	if not self.history or not self.keys then self:InitStorage() end
@@ -1660,7 +1680,7 @@ function ChannelHistory:BuildLeftEntries(filterText)
 	state.factions = state.factions or {}
 	self.ui = self.ui or {}
 	local playerCharKey = string.format("char:%s:%s:%s", self.keys.realmKey or "", self.keys.faction or "", self.keys.charKey or "")
-	if not self.ui.selection then self.ui.selection = { type = "character", key = playerCharKey, faction = self.keys.faction } end
+	self:EnsureSelection()
 	filterText = filterText and filterText:lower()
 
 	local function matchesFilter(name, realm)
@@ -1778,11 +1798,13 @@ local function handleLeftClick(btn, button)
 			realmKey = data.realmKey,
 			charKey = data.charKey,
 		}
+		if addon.db then addon.db.chatHistorySelection = selfRef.ui.selection end
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "realm" then
 		local realmKey = data.realmKey or data.key:match("^realm:(.+)$") or data.key
 		selfRef.ui.selection = { type = "realm", key = data.key, realm = realmKey, realmKey = realmKey }
+		if addon.db then addon.db.chatHistorySelection = selfRef.ui.selection end
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "faction" then
@@ -1793,10 +1815,12 @@ local function handleLeftClick(btn, button)
 			factionKey = data.factionKey,
 			realmKey = data.realmKey,
 		}
+		if addon.db then addon.db.chatHistorySelection = selfRef.ui.selection end
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	elseif data.kind == "header" then
 		selfRef.ui.selection = { type = "header", key = data.key }
+		if addon.db then addon.db.chatHistorySelection = selfRef.ui.selection end
 		selfRef:RefreshLeftList()
 		selfRef:RequestLogRefresh()
 	end
@@ -2964,6 +2988,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	self.ui.leftEntries = self.ui.leftEntries or {}
 	self.ui.leftState = self.ui.leftState or { realms = {}, factions = {}, accountExpanded = true }
 	self.ui.filters = self.ui.filters or {}
+	self:EnsureSelection()
 	self.runtime = self.runtime or { guidClassCache = {} }
 
 	f:SetSize(950, 550)
