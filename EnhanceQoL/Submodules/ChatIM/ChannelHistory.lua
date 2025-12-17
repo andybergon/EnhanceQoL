@@ -846,6 +846,8 @@ function ChannelHistory:Store(event, ...)
 	slot.message = msg or ""
 	slot.sender = sender or ""
 	slot.ownerCharKey = self.keys.charKey
+	slot.ownerRealmKey = self.keys.realmKey
+	slot.ownerFaction = self.keys.faction
 	slot.senderClassFile = classFile
 	slot.lineID = lineID
 	slot.guid = guid
@@ -1465,7 +1467,11 @@ function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
 	elseif scope == "faction" and factionKey then
 		local lineFaction = line.ownerFaction or (self.keys and self.keys.faction)
 		if lineFaction and factionKey ~= lineFaction then return false end
+
+		local lineRealm = line.ownerRealmKey or realmFromCharKey(line.ownerCharKey) or (self.keys and self.keys.realmKey)
+		if realmKey and lineRealm and realmKey ~= lineRealm then return false end
 	end
+
 	local needle = self.ui and self.ui.searchNeedleLower
 	if needle == nil and self.ui and self.ui.rightSearch then
 		needle = (self.ui.rightSearch:GetText() or ""):lower()
