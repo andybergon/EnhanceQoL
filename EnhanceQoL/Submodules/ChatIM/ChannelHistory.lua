@@ -70,9 +70,11 @@ ChannelHistory.defaultFilters = {
 	MONSTER = true,
 }
 ChannelHistory.ui = ChannelHistory.ui or {}
-ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, refreshPending = false, formattedCache = nil }
+ChannelHistory.runtime = ChannelHistory.runtime or { guidClassCache = {}, guidClassCacheSize = 0, refreshPending = false, formattedCache = nil }
+local GUID_CACHE_LIMIT = 2000
 local splitSender, getSenderClass, toColorCode, getChatColor, formatLine, deriveScope, resolveClassFromGUID, normalizeChannelBucket, realmFromCharKey
 local MU = MenuUtil
+local function isPlayerGUID(guid) return guid and guid:sub(1, 7) == "Player-" end
 local function isTableEmpty(t) return type(t) ~= "table" or next(t) == nil end
 
 local function getClassStyle(classFile)
@@ -299,6 +301,13 @@ function ChannelHistory:InitStorage()
 	self.keys = buildKeys()
 	self.runtime = self.runtime or {}
 	self.runtime.guidClassCache = self.runtime.guidClassCache or {}
+	if not self.runtime.guidClassCacheSize then
+		local count = 0
+		for _ in pairs(self.runtime.guidClassCache) do
+			count = count + 1
+		end
+		self.runtime.guidClassCacheSize = count
+	end
 	self.runtime.refreshPending = false
 	self.runtime.seq = self.runtime.seq or 0
 	self.runtime.formattedCache = self.runtime.formattedCache or {}
@@ -312,11 +321,15 @@ function ChannelHistory:SetMaxLines(value)
 	self.runtime = runtime
 	local oldMax = self.maxLines or 500
 	local newMax = value or oldMax or 500
-	local needsNormalize = (newMax ~= oldMax) or not runtime.didNormalize
+	local normalizedAt = self.history and self.history._normalizedMaxLines
+	local normalizedVersion = (self.history and self.history._normalizedVersion) or 0
+	if not runtime.didNormalize and normalizedAt and normalizedAt == newMax and normalizedVersion == self.version then
+		runtime.didNormalize = true
+	end
+	local needsNormalize = (newMax ~= oldMax) or not runtime.didNormalize or normalizedAt ~= newMax or normalizedVersion ~= self.version
 	self.maxLines = newMax
 	if addon.db then addon.db.chatChannelHistoryMaxLines = newMax end
-	if not needsNormalize then return end
-	if not self.history then return end
+	if not needsNormalize or not self.history then return end
 
 	for _, realms in pairs(self.history) do
 		if type(realms) == "table" then
@@ -335,6 +348,8 @@ function ChannelHistory:SetMaxLines(value)
 		end
 	end
 	runtime.didNormalize = true
+	self.history._normalizedMaxLines = newMax
+	self.history._normalizedVersion = self.version
 end
 
 function ChannelHistory:SetUILineLimit(value)
@@ -612,8 +627,8 @@ normalizeChannelBucket = normalizeChannelBucketInner
 function ChannelHistory:Store(event, ...)
 	-- respect filters
 	local filterKey = self.EVENT_FILTER_KEY and self.EVENT_FILTER_KEY[event]
-	if filterKey and self.IsFilterEnabled then
-		if not self:IsFilterEnabled(filterKey) then return end
+	if filterKey and not isLoggingEnabled(filterKey) then
+		return
 	end
 	-- Skip learn/unlearn spam unconditionally
 	if filterKey == "SYSTEM" and addon.functions and addon.functions.ChatLearnFilter then
@@ -632,7 +647,11 @@ function ChannelHistory:Store(event, ...)
 	if msg == "YOU_CHANGED" then return end
 	local channelKey, channelLabel = buildChannelKey(event, ...)
 	channelKey = channelKey or event
-	local _, classFile = getSenderClass(guid)
+	local classFile
+	if guid and isPlayerGUID(guid) then
+		local _, classTok = getSenderClass(guid)
+		classFile = classTok
+	end
 	local stamp = now()
 	self.runtime.seq = (self.runtime.seq or 0) + 1
 
@@ -935,21 +954,38 @@ local function resolveClassToken(val)
 	return CLASS_NAME_TO_FILE and CLASS_NAME_TO_FILE[val] or nil
 end
 
+local function cacheGuidClass(guid, token, loc)
+	if not guid or not token or not isPlayerGUID(guid) then return end
+	local runtime = ChannelHistory.runtime
+	if not runtime then return end
+	runtime.guidClassCache = runtime.guidClassCache or {}
+	runtime.guidClassCacheSize = runtime.guidClassCacheSize or 0
+	local cache = runtime.guidClassCache
+	local existing = cache[guid]
+	cache[guid] = { token = token, loc = loc or token }
+	if not existing then runtime.guidClassCacheSize = runtime.guidClassCacheSize + 1 end
+	local limit = GUID_CACHE_LIMIT or 0
+	if limit > 0 and runtime.guidClassCacheSize > limit then
+		wipe(cache)
+		runtime.guidClassCacheSize = 0
+		cache[guid] = { token = token, loc = loc or token }
+		runtime.guidClassCacheSize = 1
+	end
+end
+
 function resolveClassFromGUID(guid)
-	if not guid or not GetPlayerInfoByGUID then return nil end
+	if not guid or not isPlayerGUID(guid) or not GetPlayerInfoByGUID then return nil end
 	local cache = ChannelHistory.runtime and ChannelHistory.runtime.guidClassCache
 	if cache and cache[guid] then return cache[guid].token end
 	local locClass, classFile = GetPlayerInfoByGUID(guid)
 	local className = locClass
 	local token = classFile or resolveClassToken(className)
-	if token then
-		if cache then cache[guid] = { token = token, loc = className or token } end
-	end
+	if token then cacheGuidClass(guid, token, className) end
 	return token
 end
 
 function getSenderClass(guid)
-	if not guid or not GetPlayerInfoByGUID then return nil, nil end
+	if not guid or not isPlayerGUID(guid) or not GetPlayerInfoByGUID then return nil, nil end
 	local cache = ChannelHistory.runtime and ChannelHistory.runtime.guidClassCache
 	if cache and cache[guid] then return cache[guid].loc, cache[guid].token end
 	local locClass, classFile = GetPlayerInfoByGUID(guid)
@@ -957,7 +993,7 @@ function getSenderClass(guid)
 	local token = classFile or resolveClassToken(className)
 	local locName = className
 	if not locName and token then locName = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[token]) or (LOCALIZED_CLASS_NAMES_FEMALE and LOCALIZED_CLASS_NAMES_FEMALE[token]) or token end
-	if cache and token then cache[guid] = { token = token, loc = locName or token } end
+	if token then cacheGuidClass(guid, token, locName or token) end
 	return locName, token
 end
 
@@ -971,9 +1007,11 @@ end
 
 local function formatURLs(text)
 	if not text or text == "" then return text end
+	if not (text:find("://", 1, true) or text:find("www.", 1, true)) then return text end
 	local function repl(url) return "|Hurl:" .. url .. "|h[|cffffffff" .. url .. "|r]|h" end
 	text = text:gsub("https?://%S+", repl)
-	text = text:gsub("www%.%S+", repl)
+	if text:sub(1, 4) == "www." then text = text:gsub("^(www%.%S+)", repl) end
+	text = text:gsub("(%s)(www%.%S+)", function(space, url) return space .. repl(url) end)
 	return text
 end
 
@@ -1213,8 +1251,11 @@ function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
 		local lineFaction = line.ownerFaction or (self.keys and self.keys.faction)
 		if lineFaction and factionKey ~= lineFaction then return false end
 	end
-	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
-	local needle = search and search:lower()
+	local needle = self.ui and self.ui.searchNeedleLower
+	if needle == nil and self.ui and self.ui.rightSearch then
+		needle = (self.ui.rightSearch:GetText() or ""):lower()
+		self.ui.searchNeedleLower = needle
+	end
 	if not matchesSearchLower(needle, line.message, line.sender, line.filterKey) then return false end
 	return true
 end
@@ -1256,7 +1297,7 @@ function ChannelHistory:LoadFiltersFromDB()
 end
 
 function deriveScope(selection, keys)
-	if not selection then return "character", keys and keys.charKey, nil, keys and keys.faction end
+	if not selection then return "character", keys and keys.realmKey, keys and keys.charKey, keys and keys.faction end
 	if selection.type == "header" then return "faction", nil, nil, nil end
 	if selection.type == "realm" then
 		local realmKey = selection.realm or (selection.key and selection.key:match("^realm:(.+)$")) or selection.key
@@ -1275,7 +1316,7 @@ function deriveScope(selection, keys)
 		if not factionKey then factionKey = selection.faction or (keys and keys.faction) end
 		return "character", realmKey, charKey, factionKey
 	end
-	return "character", nil, keys and keys.charKey, keys and keys.faction
+	return "character", keys and keys.realmKey, keys and keys.charKey, keys and keys.faction
 end
 
 local function collectLines(self, scope, realmKey, charKey, factionKey, searchNeedle, limit)
@@ -2424,6 +2465,7 @@ function ChannelHistory:EnsureLogFrame()
 		end
 		if SetItemRef then SetItemRef(link, text, button, frame) end
 	end)
+	frame._urlHooked = true
 
 	-- Thin scrollbar
 	local slider = self:CreateThinScrollbar(self.right, frame, -4)
@@ -2435,8 +2477,11 @@ function ChannelHistory:RefreshLogView()
 	if not self.history or not self.keys then self:InitStorage() end
 	if not self.debugFrame or not self.ui or not self.ui.logFrame then return end
 	local scope, realmKey, charKey, factionKey = deriveScope(self.ui.selection, self.keys)
-	local search = self.ui.rightSearch and self.ui.rightSearch:GetText()
-	local needle = search and search:lower()
+	local needle = self.ui and self.ui.searchNeedleLower
+	if needle == nil and self.ui and self.ui.rightSearch then
+		needle = (self.ui.rightSearch:GetText() or ""):lower()
+		self.ui.searchNeedleLower = needle
+	end
 	local log = self.ui.logFrame
 	local maxUI = (log and log:GetMaxLines()) or self.uiMaxLines or 1000
 	local lines = collectLines(self, scope, realmKey, charKey, factionKey, needle, maxUI)
@@ -2888,8 +2933,10 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	rightSearch:SetPoint("TOPLEFT", f.right, "TOPLEFT", 14, -34)
 	rightSearch:SetPoint("TOPRIGHT", f.right, "TOPRIGHT", -6, -34)
 	self.ui.rightSearch = rightSearch
+	self.ui.searchNeedleLower = self.ui.searchNeedleLower or ""
 	rightSearch:SetScript("OnTextChanged", function(box)
 		SearchBoxTemplate_OnTextChanged(box)
+		self.ui.searchNeedleLower = (box:GetText() or ""):lower()
 		ChannelHistory:RequestLogRefresh()
 	end)
 	self.ui.statusBar = CreateFrame("Frame", nil, f.right, "BackdropTemplate")

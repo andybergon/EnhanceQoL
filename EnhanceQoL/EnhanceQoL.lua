@@ -1649,6 +1649,55 @@ local function UpdateAssistedCombatFrameHiding()
 end
 addon.functions.UpdateAssistedCombatFrameHiding = UpdateAssistedCombatFrameHiding
 
+local function ApplyExtraActionArtworkSetting()
+	if not addon.db then return end
+
+	local shouldHide = addon.db.hideExtraActionArtwork == true
+	addon.variables = addon.variables or {}
+	local applied = addon.variables.extraActionArtworkApplied == true
+
+	-- Only act when we need to apply or explicitly undo our own change.
+	if InCombatLockdown and InCombatLockdown() and (shouldHide or applied) then
+		addon.variables.pendingExtraActionArtwork = true
+		return
+	end
+	if not shouldHide and not applied then
+		addon.variables.pendingExtraActionArtwork = nil
+		return
+	end
+
+	local extraActionButton = _G.ExtraActionButton1
+	local extraStyle = extraActionButton and extraActionButton.style
+	if extraStyle then
+		if shouldHide then
+			extraStyle:SetAlpha(0)
+			extraStyle:Hide()
+		else
+			extraStyle:SetAlpha(1)
+			extraStyle:Show()
+		end
+	end
+
+	local zoneAbilityFrame = _G.ZoneAbilityFrame
+	local zoneStyle = zoneAbilityFrame and zoneAbilityFrame.Style
+	if zoneStyle then
+		if shouldHide then
+			zoneStyle:SetAlpha(0)
+			zoneStyle:Hide()
+		else
+			zoneStyle:SetAlpha(1)
+			zoneStyle:Show()
+		end
+	end
+
+	local extraActionBarFrame = _G.ExtraActionBarFrame
+	if extraActionBarFrame and extraActionBarFrame.EnableMouse then extraActionBarFrame:EnableMouse(not shouldHide) end
+
+	addon.variables.extraActionArtworkApplied = shouldHide
+	addon.variables.pendingExtraActionArtwork = nil
+end
+addon.functions.ApplyExtraActionArtworkSetting = ApplyExtraActionArtworkSetting
+
 local function RefreshAllActionBarVisibilityAlpha(_, event)
 	local combatOverride
 	if event == "PLAYER_REGEN_DISABLED" then
@@ -1842,6 +1891,7 @@ local function initActionBars()
 	addon.functions.InitDBValue("actionBarFullRangeAlpha", 0.35)
 	addon.functions.InitDBValue("actionBarHideBorders", false)
 	addon.functions.InitDBValue("actionBarHideAssistedRotation", false)
+	addon.functions.InitDBValue("hideExtraActionArtwork", false)
 	addon.functions.InitDBValue("hideMacroNames", false)
 	addon.functions.InitDBValue("actionBarMacroFontOverride", false)
 	addon.functions.InitDBValue("actionBarHotkeyFontOverride", false)
@@ -1892,6 +1942,7 @@ local function initActionBars()
 	if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
 	UpdateAssistedCombatFrameHiding()
 	if ActionBarLabels and ActionBarLabels.RefreshActionButtonBorders then ActionBarLabels.RefreshActionButtonBorders() end
+	ApplyExtraActionArtworkSetting()
 end
 
 local function initParty()
@@ -4318,6 +4369,10 @@ local eventHandlers = {
 				local pending = addon.variables.pendingPartyFrameTitle
 				addon.variables.pendingPartyFrameTitle = nil
 				addon.functions.togglePartyFrameTitle(pending)
+			end
+			if addon.variables.pendingExtraActionArtwork then
+				addon.variables.pendingExtraActionArtwork = nil
+				if addon.functions.ApplyExtraActionArtworkSetting then addon.functions.ApplyExtraActionArtworkSetting() end
 			end
 		end
 	end,

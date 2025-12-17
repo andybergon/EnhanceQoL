@@ -8,6 +8,7 @@
   - Safe your history of chat messages per character with a limit of up to 1000 lines per char per channel
   - Select your alts to look into old chats with fulltext search and Hyperlinks/Item/Achivement etc. working
   - Copy selected text, filter different channels
+- Action Bars: optional toggle to hide the Extra Action/Zone Ability artwork and disable mouse input on the Extra Action bar.
 
 ### 🔄 Changed
 
