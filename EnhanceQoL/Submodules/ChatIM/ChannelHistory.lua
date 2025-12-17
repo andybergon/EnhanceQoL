@@ -104,6 +104,8 @@ local function sanitizeRealm(realm)
 	return realm
 end
 
+local cacheBNetTag
+
 local function resolveBNetTag(accountID)
 	if not accountID then return nil end
 	accountID = tonumber(accountID) or accountID
@@ -111,7 +113,7 @@ local function resolveBNetTag(accountID)
 	if cache and cache[accountID] then return cache[accountID] end
 	local info = C_BattleNet and C_BattleNet.GetAccountInfoByID and C_BattleNet.GetAccountInfoByID(accountID)
 	local tag = info and info.battleTag
-	if cache and tag then cache[accountID] = tag end
+	if tag then cacheBNetTag(accountID, tag) end
 	return tag
 end
 local function ensureCopyPopup()
@@ -149,6 +151,24 @@ local function sanitizeCopyText(text)
 	text = text:gsub("\r", "")
 	text = text:gsub("[\001-\008\011\012\014-\031]", "")
 	return text
+end
+
+local BN_CACHE_LIMIT = 2000
+
+cacheBNetTag = function(accountID, tag)
+	ChannelHistory.runtime = ChannelHistory.runtime or {}
+	local rt = ChannelHistory.runtime
+	rt.bnetTagCache = rt.bnetTagCache or {}
+	rt.bnetTagCacheSize = rt.bnetTagCacheSize or 0
+
+	if rt.bnetTagCache[accountID] == nil then rt.bnetTagCacheSize = rt.bnetTagCacheSize + 1 end
+
+	rt.bnetTagCache[accountID] = tag
+
+	if rt.bnetTagCacheSize > BN_CACHE_LIMIT then
+		table.wipe(rt.bnetTagCache)
+		rt.bnetTagCacheSize = 0
+	end
 end
 
 local function buildFilterOptions()
@@ -748,7 +768,8 @@ function ChannelHistory:Store(event, ...)
 	if not charBucket then return end
 	local currentCharKey = self.keys and self.keys.charKey
 
-	local msg, sender, _, _, _, _, _, _, _, _, lineID, guid, _, _, _, bnetIDAccount = ...
+	local msg, sender, _, _, _, _, _, _, _, _, lineID, guid, bnetIDAccount, _, _ = ...
+	if issecretvalue and issecretvalue(msg) then return end
 	-- Skip channel notices and trivial change messages
 	if event == "CHAT_MSG_CHANNEL_NOTICE" or event == "CHAT_MSG_CHANNEL_NOTICE_USER" then return end
 	if msg == "YOU_CHANGED" then return end
@@ -818,6 +839,7 @@ function ChannelHistory:Store(event, ...)
 	-- clear legacy/derived fields on reused slots to avoid stale state bleed-through
 	slot.color = nil
 	slot.event = nil
+	slot.senderBTag = nil
 	slot.senderName = nil
 	slot.senderRealmKey = nil
 	slot.ownerRealmKey = nil
@@ -1260,7 +1282,8 @@ function formatLine(self, line)
 	local nameColorCode = toColorCode(nameColor)
 	local nameText = ""
 	if displayName and displayName ~= "" then
-		if line.filterKey == "ACHIEVEMENT" or line.filterKey == "GUILD_ACHIEVEMENT" then
+		local isAchievementEvent = line.event == "CHAT_MSG_ACHIEVEMENT" or line.event == "CHAT_MSG_GUILD_ACHIEVEMENT"
+		if isAchievementEvent then
 			nameText = ""
 		elseif line.filterKey == "MONSTER" then
 			nameText = string.format("%s%s|r", nameColorCode, displayName)
@@ -1486,6 +1509,16 @@ function ChannelHistory:RequestLogRefresh()
 	end)
 end
 
+function ChannelHistory:RequestLeftRefresh()
+	self.runtime = self.runtime or {}
+	if self.runtime.leftRefreshPending then return end
+	self.runtime.leftRefreshPending = true
+	C_Timer.After(0.05, function()
+		self.runtime.leftRefreshPending = false
+		if self.debugFrame and self.debugFrame:IsShown() then self:RefreshLeftList() end
+	end)
+end
+
 function ChannelHistory:IsFilterEnabled(filterKey)
 	if not filterKey then return true end
 	self.ui = self.ui or {}
@@ -1654,16 +1687,22 @@ end
 function ChannelHistory:EnsureSelection()
 	self.ui = self.ui or {}
 	if self.ui.selection then return end
+	local function buildCharSelectionKey(keys) return string.format("char:%s:%s:%s", keys.realmKey or "", keys.faction or "", keys.charKey or "") end
 	local stored = addon.db and addon.db.chatHistorySelection
 	if stored and type(stored) == "table" and stored.type then
+		if stored.type == "character" and type(stored.key) == "string" and not stored.key:match("^char:[^:]+:[^:]+:") then
+			stored.key = buildCharSelectionKey(self.keys or {})
+			stored.realmKey = (self.keys and self.keys.realmKey) or stored.realmKey
+			stored.factionKey = (self.keys and self.keys.faction) or stored.factionKey
+			stored.charKey = (self.keys and self.keys.charKey) or stored.charKey
+			if addon.db then addon.db.chatHistorySelection = stored end
+		end
 		self.ui.selection = stored
 		return
 	end
-	local playerCharKey = self.keys and self.keys.charKey
 	self.ui.selection = {
 		type = "character",
-		key = playerCharKey and ("char:" .. playerCharKey) or nil,
-		faction = self.keys and self.keys.faction,
+		key = buildCharSelectionKey(self.keys or {}),
 		factionKey = self.keys and self.keys.faction,
 		realmKey = self.keys and self.keys.realmKey,
 		charKey = self.keys and self.keys.charKey,
@@ -1675,10 +1714,11 @@ end
 function ChannelHistory:BuildLeftEntries(filterText)
 	if not self.history or not self.keys then self:InitStorage() end
 	local entries = {}
-	local state = self.ui and self.ui.leftState or { realms = {}, factions = {}, accountExpanded = true }
+	self.ui = self.ui or {}
+	self.ui.leftState = self.ui.leftState or { realms = {}, factions = {}, accountExpanded = true }
+	local state = self.ui.leftState
 	state.realms = state.realms or {}
 	state.factions = state.factions or {}
-	self.ui = self.ui or {}
 	local playerCharKey = string.format("char:%s:%s:%s", self.keys.realmKey or "", self.keys.faction or "", self.keys.charKey or "")
 	self:EnsureSelection()
 	filterText = filterText and filterText:lower()
@@ -2284,6 +2324,7 @@ function ChannelHistory:UpdateToggleButtonStrata()
 end
 
 function ChannelHistory:ShowCharacterContextMenu(entry)
+	if not MU or not MU.CreateContextMenu then return end
 	if not entry or entry.kind ~= "character" then return end
 	local name = entry.label or entry.charKey or "Character"
 	local charKey = entry.charKey
@@ -2297,6 +2338,7 @@ function ChannelHistory:ShowCharacterContextMenu(entry)
 end
 
 function ChannelHistory:ShowChannelContextMenu(filterInfo)
+	if not MU or not MU.CreateContextMenu then return end
 	if not filterInfo or not filterInfo.key then return end
 	local label = filterInfo.label or filterInfo.key
 	local clearLabel = (L and L["CH_CLEAR_SCOPE"]) or "Clear history in current scope"
@@ -3364,7 +3406,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 	self.ui.leftSearch = leftSearch
 	leftSearch:SetScript("OnTextChanged", function(box)
 		SearchBoxTemplate_OnTextChanged(box)
-		ChannelHistory:RefreshLeftList()
+		ChannelHistory:RequestLeftRefresh()
 	end)
 
 	local rightSearch = createSearchBox(f.right, L["CH_SEARCH_LOGS"])
