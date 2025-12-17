@@ -40,7 +40,7 @@ ChannelHistory.EVENT_FILTER_KEY = ChannelHistory.EVENT_FILTER_KEY
 		CHAT_MSG_COMMUNITIES_CHANNEL = "GENERAL",
 		CHAT_MSG_LOOT = "LOOT",
 		CHAT_MSG_MONEY = "MONEY",
-		CHAT_MSG_CURRENCY = "LOOT",
+		CHAT_MSG_CURRENCY = "CURRENCY",
 		CHAT_MSG_ACHIEVEMENT = "ACHIEVEMENT",
 		CHAT_MSG_GUILD_ACHIEVEMENT = "GUILD",
 		CHAT_MSG_SYSTEM = "SYSTEM",
@@ -64,6 +64,7 @@ ChannelHistory.defaultFilters = {
 	BN_WHISPER = true,
 	GENERAL = true,
 	MONEY = true,
+	CURRENCY = true,
 	ACHIEVEMENT = true,
 	SYSTEM = true,
 	OPENING = true,
@@ -191,7 +192,7 @@ end
 
 local function shouldFilterLootByQuality(msg, event)
 	if not msg or msg == "" then return false end
-	if event ~= "CHAT_MSG_LOOT" and event ~= "CHAT_MSG_CURRENCY" then return false end
+	if event ~= "CHAT_MSG_LOOT" then return false end
 
 	local selected, hasSelection = ensureLootQualitySelection()
 	if not hasSelection then return false end -- no selection means allow all
@@ -220,17 +221,6 @@ local function shouldFilterLootByQuality(msg, event)
 			end
 		end
 	end
-	if event == "CHAT_MSG_CURRENCY" then
-		for currencyID in msg:gmatch("|Hcurrency:(%d+)|h") do
-			local info = C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo and C_CurrencyInfo.GetCurrencyInfo(tonumber(currencyID))
-			local quality = info and info.quality
-			if quality then
-				foundQuality = true
-				if matchQuality(quality) then return false end
-			end
-		end
-	end
-
 	if foundQuality then return true end -- had links but none matched selection
 	return false -- no item links; keep
 end
@@ -744,17 +734,13 @@ function ChannelHistory:Store(event, ...)
 		local linkTarget = sender
 		local nameColor
 		local chatColorLocal = (ChatTypeInfo and ChatTypeInfo["SYSTEM"]) or nil
-		if guid and (UnitGUID and guid == UnitGUID("player")) then
-			nameColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[(select(2, UnitClass("player")))]
-		end
+		if guid and (UnitGUID and guid == UnitGUID("player")) then nameColor = RAID_CLASS_COLORS and RAID_CLASS_COLORS[(select(2, UnitClass("player")))] end
 		if not nameColor and guid then
 			local _, classTok = getSenderClass(guid)
 			if classTok then nameColor = getClassStyle(classTok) end
 		end
 		local nameColorCode = toColorCode(nameColor or chatColorLocal or { r = 1, g = 1, b = 1 })
-		if sender and sender:find("|Hplayer:", 1, true) then
-			linkTarget = sender:match("^|Hplayer:([^:|]+)")
-		end
+		if sender and sender:find("|Hplayer:", 1, true) then linkTarget = sender:match("^|Hplayer:([^:|]+)") end
 		if not linkTarget or linkTarget == "" then linkTarget = ACHIEVEMENT_BROADCAST end
 
 		local displayText = linkTarget
@@ -2506,25 +2492,25 @@ function ChannelHistory:CreateFilterUI()
 	container:SetPoint("TOPLEFT", self.middle, "TOPLEFT", 12, -36)
 	container:SetPoint("TOPRIGHT", self.middle, "TOPRIGHT", -12, -36)
 
-	local filters = ChannelHistory.filterOptions
-		or {
-			{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
-			{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
-			{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
-			{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
-			{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
-			{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
-			{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
-			{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
-			{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
-			{ key = "GENERAL", label = GENERAL },
-			{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
-			{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
-			{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
-			{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
-			{ key = "OPENING", label = OPENING },
-			{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
-		}
+	local filters = {
+		{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
+		{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
+		{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
+		{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
+		{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
+		{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
+		{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
+		{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
+		{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
+		{ key = "GENERAL", label = GENERAL },
+		{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
+		{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
+		{ key = "CURRENCY", label = string.format("|TInterface\\Icons\\inv_misc_coin_01:14:14:0:0|t %s", CURRENCY) },
+		{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
+		{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
+		{ key = "OPENING", label = OPENING },
+		{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
+	}
 	ChannelHistory.filterOptions = filters
 
 	local checkHeight = 20

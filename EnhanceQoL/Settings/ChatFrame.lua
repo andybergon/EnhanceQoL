@@ -389,6 +389,7 @@ local CHAT_FILTER_OPTIONS = {
 	{ key = "GENERAL", label = makeFilterLabel("GENERAL", nil, GENERAL) },
 	{ key = "LOOT", label = makeFilterLabel("LOOT", "133639", LOOT) },
 	{ key = "MONEY", label = makeFilterLabel("MONEY", "133785", MONEY) },
+	{ key = "CURRENCY", label = makeFilterLabel("CURRENCY", "Interface\\Icons\\inv_misc_coin_01", CURRENCY) },
 	{ key = "ACHIEVEMENT", label = makeFilterLabel("ACHIEVEMENT", "236507", ACHIEVEMENTS) },
 	{ key = "SYSTEM", label = makeFilterLabel("SYSTEM", nil, SYSTEM_MESSAGES or SYSTEM) },
 	{ key = "OPENING", label = makeFilterLabel("OPENING", nil, OPENING) },
@@ -543,9 +544,7 @@ data = {
 				get = function() return addon.db and addon.db.chatHistoryButtonOffsetX or 0 end,
 				set = function(value)
 					addon.db.chatHistoryButtonOffsetX = value or 0
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateToggleButtonPosition then
-						addon.ChatIM.ChannelHistory:UpdateToggleButtonPosition()
-					end
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateToggleButtonPosition then addon.ChatIM.ChannelHistory:UpdateToggleButtonPosition() end
 				end,
 				min = -200,
 				max = 200,
@@ -566,9 +565,7 @@ data = {
 				get = function() return addon.db and addon.db.chatHistoryButtonOffsetY or -10 end,
 				set = function(value)
 					addon.db.chatHistoryButtonOffsetY = value or 0
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateToggleButtonPosition then
-						addon.ChatIM.ChannelHistory:UpdateToggleButtonPosition()
-					end
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateToggleButtonPosition then addon.ChatIM.ChannelHistory:UpdateToggleButtonPosition() end
 				end,
 				min = -200,
 				max = 200,
@@ -588,9 +585,7 @@ data = {
 				end,
 				func = function(val)
 					addon.db.chatHistoryShowButton = val and true or false
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.EnsureToggleButton then
-						addon.ChatIM.ChannelHistory:EnsureToggleButton()
-					end
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.EnsureToggleButton then addon.ChatIM.ChannelHistory:EnsureToggleButton() end
 				end,
 				parent = true,
 				default = true,
@@ -613,9 +608,7 @@ data = {
 				setSelectedFunc = function(key, shouldSelect)
 					addon.db.chatChannelHistoryLootQualities = addon.db.chatChannelHistoryLootQualities or {}
 					addon.db.chatChannelHistoryLootQualities[key] = shouldSelect and true or false
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.InvalidateLootQualityCache then
-						addon.ChatIM.ChannelHistory:InvalidateLootQualityCache()
-					end
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.InvalidateLootQualityCache then addon.ChatIM.ChannelHistory:InvalidateLootQualityCache() end
 				end,
 				options = (function()
 					local opts = {}
@@ -656,9 +649,7 @@ data = {
 				isSelectedFunc = function(key) return addon.db.chatChannelFiltersEnable[key] end,
 				setSelectedFunc = function(key, shouldSelect)
 					addon.db.chatChannelFiltersEnable[key] = shouldSelect and true or false
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateLoggingFilter then
-						addon.ChatIM.ChannelHistory:UpdateLoggingFilter(key)
-					end
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateLoggingFilter then addon.ChatIM.ChannelHistory:UpdateLoggingFilter(key) end
 				end,
 			},
 		},
@@ -674,9 +665,7 @@ function addon.functions.initChatFrame()
 		table.insert(categoryOptions, { value = opt.key, text = opt.label })
 		if addon.db.chatChannelFiltersEnable[opt.key] == nil then addon.db.chatChannelFiltersEnable[opt.key] = true end
 	end
-	if addon.ChatIM and addon.ChatIM.ChannelHistory then
-		addon.ChatIM.ChannelHistory.filterOptions = addon.ChatIM.ChannelHistory.filterOptions or CHAT_FILTER_OPTIONS
-	end
+	if addon.ChatIM and addon.ChatIM.ChannelHistory then addon.ChatIM.ChannelHistory.filterOptions = addon.ChatIM.ChannelHistory.filterOptions or CHAT_FILTER_OPTIONS end
 end
 
 local eventHandlers = {}
