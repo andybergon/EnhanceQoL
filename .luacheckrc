@@ -106,6 +106,8 @@ globals = {
 	"ITEM_BIND_TO_ACCOUNT_UNTIL_EQUIP",
 	"INTERFACE_LABEL",
 	"MuteSoundFile",
+	"SELECTED_CHAT_FRAME",
+	"CHAT_FILTER_OPTIONS",
 	"UnmuteSoundFile",
 	"PLAYER_DIFFICULTY1",
 	"EnhanceQoL_ChannelHistory",
