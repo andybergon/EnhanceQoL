@@ -395,24 +395,6 @@ local CHAT_FILTER_OPTIONS = {
 	{ key = "OPENING", label = makeFilterLabel("OPENING", nil, OPENING) },
 	{ key = "MONSTER", label = makeFilterLabel("MONSTER", nil, EXAMPLE_TARGET_MONSTER or "Monster") },
 }
-local CHAT_FILTER_OPTIONS = {
-	{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
-	{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
-	{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
-	{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
-	{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
-	{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
-	{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
-	{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
-	{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
-	{ key = "GENERAL", label = GENERAL },
-	{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
-	{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
-	{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
-	{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
-	{ key = "OPENING", label = OPENING },
-	{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
-}
 
 data = {
 	{

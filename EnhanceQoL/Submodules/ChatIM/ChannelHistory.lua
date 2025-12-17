@@ -149,6 +149,28 @@ local function sanitizeCopyText(text)
 	return text
 end
 
+local function buildFilterOptions()
+	return {
+		{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
+		{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
+		{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
+		{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
+		{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
+		{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
+		{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
+		{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
+		{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
+		{ key = "GENERAL", label = GENERAL },
+		{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
+		{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
+		{ key = "CURRENCY", label = string.format("|TInterface\\Icons\\inv_misc_coin_01:14:14:0:0|t %s", CURRENCY) },
+		{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
+		{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
+		{ key = "OPENING", label = OPENING },
+		{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
+	}
+end
+
 function ChannelHistory:InvalidateLootQualityCache()
 	self.runtime = self.runtime or {}
 	self.runtime.lootQualitySelection = nil
@@ -2230,10 +2252,11 @@ end
 function ChannelHistory:ShowChannelContextMenu(filterInfo)
 	if not filterInfo or not filterInfo.key then return end
 	local label = filterInfo.label or filterInfo.key
+	local clearLabel = (L and L["CH_CLEAR_SCOPE"]) or "Clear history in current scope"
 	ensureClearPopups()
 	MU.CreateContextMenu(UIParent, function(_, root)
 		root:CreateTitle(label)
-		root:CreateButton("Clear history in current scope", function() StaticPopup_Show("EQOL_CLEAR_HISTORY_CHANNEL", label, nil, { filterKey = filterInfo.key }) end)
+		root:CreateButton(clearLabel, function() StaticPopup_Show("EQOL_CLEAR_HISTORY_CHANNEL", label, nil, { filterKey = filterInfo.key }) end)
 	end)
 end
 
@@ -2493,26 +2516,7 @@ function ChannelHistory:CreateFilterUI()
 	container:SetPoint("TOPRIGHT", self.middle, "TOPRIGHT", -12, -36)
 	container:SetPoint("BOTTOM", self.middle, "BOTTOM", 0, 8)
 
-	ChannelHistory.filterOptions = ChannelHistory.filterOptions
-		or {
-			{ key = "SAY", label = string.format("|T2056011:14:14:0:0|t %s", SAY) },
-			{ key = "YELL", label = string.format("|T892447:14:14:0:0|t %s", YELL) },
-			{ key = "WHISPER", label = string.format("|T133458:14:14:0:0|t %s", WHISPER) },
-			{ key = "BN_WHISPER", label = string.format("|TInterface\\FriendsFrame\\UI-Toast-ChatInviteIcon:14:14:0:0|t %s", BN_WHISPER) },
-			{ key = "PARTY", label = string.format("|T134149:14:14:0:0|t %s", PARTY) },
-			{ key = "INSTANCE", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Dungeon.tga:14:14:0:0|t %s", INSTANCE) },
-			{ key = "RAID", label = string.format("|TInterface\\AddOns\\EnhanceQoL\\Icons\\Raid.tga:14:14:0:0|t %s", RAID) },
-			{ key = "GUILD", label = string.format("|T514261:14:14:0:0|t %s", GUILD) },
-			{ key = "OFFICER", label = string.format("|T133071:14:14:0:0|t %s", OFFICER) },
-			{ key = "GENERAL", label = GENERAL },
-			{ key = "LOOT", label = string.format("|T133639:14:14:0:0|t %s", LOOT) },
-			{ key = "MONEY", label = string.format("|T133785:14:14:0:0|t %s", MONEY) },
-			{ key = "CURRENCY", label = string.format("|TInterface\\Icons\\inv_misc_coin_01:14:14:0:0|t %s", CURRENCY) },
-			{ key = "ACHIEVEMENT", label = string.format("|T236507:14:14:0:0|t %s", ACHIEVEMENTS) },
-			{ key = "SYSTEM", label = SYSTEM_MESSAGES or SYSTEM },
-			{ key = "OPENING", label = OPENING },
-			{ key = "MONSTER", label = EXAMPLE_TARGET_MONSTER or "Monster" },
-		}
+	ChannelHistory.filterOptions = buildFilterOptions()
 
 	local filters = ChannelHistory.filterOptions
 	local filterByKey = {}
@@ -2526,6 +2530,40 @@ function ChannelHistory:CreateFilterUI()
 		return nil
 	end
 
+	local function setFilterState(key, state)
+		self.ui.filters = self.ui.filters or {}
+		self.ui.filters[key] = state and true or false
+		if addon.db then
+			addon.db.chatChannelFilters = addon.db.chatChannelFilters or {}
+			addon.db.chatChannelFilters[key] = self.ui.filters[key]
+		end
+		if self.ui.filterChecksByKey and self.ui.filterChecksByKey[key] then self.ui.filterChecksByKey[key]:SetChecked(self.ui.filters[key]) end
+	end
+
+	local function setExclusive(key)
+		for k in pairs(filterByKey) do
+			setFilterState(k, k == key)
+		end
+	end
+
+	local function handleFilterClick(info, buttonName, targetState)
+		if not info or not info.key then return end
+		if buttonName == "RightButton" then
+			if self.ShowChannelContextMenu then self:ShowChannelContextMenu(info) end
+			setFilterState(info.key, self:IsFilterEnabled(info.key))
+			return
+		end
+
+		if IsShiftKeyDown() then
+			setExclusive(info.key)
+		else
+			local newState = targetState
+			if newState == nil then newState = not self:IsFilterEnabled(info.key) end
+			setFilterState(info.key, newState and true or false)
+		end
+		self:RequestLogRefresh()
+	end
+
 	local topBar = self.ui.filterTopBar
 	if not topBar then
 		topBar = CreateFrame("Frame", nil, container)
@@ -2537,25 +2575,23 @@ function ChannelHistory:CreateFilterUI()
 			btn:SetHeight(22)
 			btn:SetText(text)
 			btn:SetScript("OnClick", handler)
+			btn:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+			btn:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
+			btn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight")
+			local hl = btn:GetHighlightTexture()
+			if hl then hl:SetBlendMode("ADD") end
 			return btn
 		end
 		local function setAll(state)
-			self.ui.filters = self.ui.filters or {}
 			for _, info in ipairs(filters) do
-				self.ui.filters[info.key] = state
-				if addon.db and addon.db.chatChannelFilters then addon.db.chatChannelFilters[info.key] = state end
-				if self.ui.filterChecksByKey and self.ui.filterChecksByKey[info.key] then self.ui.filterChecksByKey[info.key]:SetChecked(state) end
+				setFilterState(info.key, state)
 			end
 			self:RequestLogRefresh()
 		end
 		local function invert()
-			self.ui.filters = self.ui.filters or {}
 			for _, info in ipairs(filters) do
-				local cur = self:IsFilterEnabled(info.key)
-				local newVal = not cur
-				self.ui.filters[info.key] = newVal
-				if addon.db and addon.db.chatChannelFilters then addon.db.chatChannelFilters[info.key] = newVal end
-				if self.ui.filterChecksByKey and self.ui.filterChecksByKey[info.key] then self.ui.filterChecksByKey[info.key]:SetChecked(newVal) end
+				local newVal = not self:IsFilterEnabled(info.key)
+				setFilterState(info.key, newVal)
 			end
 			self:RequestLogRefresh()
 		end
@@ -2584,6 +2620,23 @@ function ChannelHistory:CreateFilterUI()
 		content:SetSize(1, 1)
 		scroll:SetScrollChild(content)
 		self.ui.filterList = content
+		local function UpdateFilterListWidth()
+			if not self.ui.filterScroll or not self.ui.filterList then return end
+
+			-- etwas Platz rechts lassen (thin scrollbar / padding)
+			local w = math.max(1, (self.ui.filterScroll:GetWidth() or 0) - 16)
+			self.ui.filterList:SetWidth(w)
+		end
+
+		-- einmal sofort
+		UpdateFilterListWidth()
+
+		-- und bei Größenänderungen automatisch nachziehen
+		if not self.ui.filterScroll._eqolWidthHooked then
+			self.ui.filterScroll._eqolWidthHooked = true
+			self.ui.filterScroll:HookScript("OnSizeChanged", UpdateFilterListWidth)
+			self.ui.filterScroll:HookScript("OnShow", UpdateFilterListWidth)
+		end
 		self.ui.filterScrollThin = self:CreateThinScrollFrameBar(scroll, 4)
 	end
 
@@ -2609,6 +2662,7 @@ function ChannelHistory:CreateFilterUI()
 			header = CreateFrame("Frame", nil, self.ui.filterList)
 			self.ui.filterRows[rowIndex] = header
 		end
+		header:Show()
 		header:SetHeight(checkHeight + 4)
 		header:SetPoint("TOPLEFT", self.ui.filterList, "TOPLEFT", 0, -y)
 		header:SetPoint("TOPRIGHT", self.ui.filterList, "TOPRIGHT", 0, -y)
@@ -2634,16 +2688,26 @@ function ChannelHistory:CreateFilterUI()
 					row = CreateFrame("Button", nil, self.ui.filterList)
 					row.bg = row:CreateTexture(nil, "BACKGROUND")
 					row.bg:SetAllPoints()
-					row.bg:SetColorTexture(1, 1, 1, 0)
+					row.bg:SetTexture("Interface\\AuctionFrame\\AuctionHouse-UI-Row-Select")
+					row.bg:SetTexCoord(0, 1, 0, 1)
+					row.bg:SetVertexColor(1, 1, 1, 0)
 					row.hl = row:CreateTexture(nil, "HIGHLIGHT")
 					row.hl:SetAllPoints()
 					row.hl:SetColorTexture(1, 1, 1, 0.08)
 					row.hl:Hide()
+					row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
 					self.ui.filterRows[rowIndex] = row
+				end
+				local function showRowHighlight()
+					if row.hl then row.hl:Show() end
+				end
+				local function hideRowHighlight()
+					if row.hl then row.hl:Hide() end
 				end
 				row:SetHeight(checkHeight)
 				row:SetPoint("TOPLEFT", self.ui.filterList, "TOPLEFT", 0, -y)
 				row:SetPoint("TOPRIGHT", self.ui.filterList, "TOPRIGHT", 0, -y)
+				row:Show()
 
 				local cb = self.ui.filterChecks[rowIndex]
 				if not cb then
@@ -2652,6 +2716,7 @@ function ChannelHistory:CreateFilterUI()
 				end
 				cb:SetPoint("LEFT", row, "LEFT", 2, 0)
 				self.ui.filterChecksByKey[key] = cb
+				-- cb:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 				cb:SetChecked(self:IsFilterEnabled(info.key))
 				cb:SetScript("OnClick", function(button)
 					self.ui.filters[info.key] = button:GetChecked() and true or false
@@ -2668,13 +2733,32 @@ function ChannelHistory:CreateFilterUI()
 				else
 					row.text:SetTextColor(1, 1, 1)
 				end
-				row:SetWidth(row.text:GetStringWidth() + 40)
+				-- row:SetWidth(row.text:GetStringWidth() + 40)
+				row.text:ClearAllPoints()
+				row.text:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+				row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+				row.text:SetJustifyH("LEFT")
+
+				row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+				row:SetScript("OnMouseUp", function(_, btn) handleFilterClick(info, btn) end)
+				row:SetScript("OnEnter", showRowHighlight)
+				row:SetScript("OnLeave", hideRowHighlight)
 				y = y + checkHeight + spacing
 			end
 		end
 	end
 
+	for i = rowIndex + 1, #self.ui.filterRows do
+		local row = self.ui.filterRows[i]
+		if row then row:Hide() end
+	end
+	for i = rowIndex + 1, #self.ui.filterChecks do
+		local cb = self.ui.filterChecks[i]
+		if cb then cb:Hide() end
+	end
+
 	self.ui.filterList:SetHeight(y)
+	if self.ui.filterScroll and self.ui.filterScroll.UpdateScrollChildRect then self.ui.filterScroll:UpdateScrollChildRect() end
 	if self.ui.filterScrollThin then self:UpdateThinScrollFrameBar(self.ui.filterScrollThin, self.ui.filterScroll) end
 	container:Show()
 end
@@ -2954,8 +3038,10 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		if not GameTooltip then return end
 		GameTooltip:SetOwner(btn, "ANCHOR_RIGHT", 6, 0)
 		GameTooltip:ClearLines()
-		GameTooltip:AddLine(L["CH_CLEAR_HELP_TITLE"] or (HELP_LABEL or "Help"), 1, 0.82, 0)
-		GameTooltip:AddLine(L["CH_CLEAR_HELP_DESC"] or "", 1, 1, 1, true)
+		GameTooltip:AddLine(L["CH_HELP_TITLE"] or (HELP_LABEL or "Help"), 1, 0.82, 0)
+		GameTooltip:AddLine(L["CH_HELP_ACTIONS"] or "", 1, 1, 1, true)
+		GameTooltip:AddLine(" ", 1, 1, 1, true)
+		GameTooltip:AddLine(L["CH_HELP_DELETE"] or "", 1, 1, 1, true)
 		GameTooltip:Show()
 	end)
 	helpBtn:SetScript("OnLeave", function()
