@@ -575,6 +575,24 @@ data = {
 				sType = "checkbox",
 			},
 			{
+				var = "chatHistoryHideUnlogged",
+				text = L["CH_OPTION_HIDE_UNLOGGED"],
+				desc = L["CH_OPTION_HIDE_UNLOGGED_DESC"],
+				parentCheck = function()
+					return addon.SettingsLayout.elements["enableChatHistory"]
+						and addon.SettingsLayout.elements["enableChatHistory"].setting
+						and addon.SettingsLayout.elements["enableChatHistory"].setting:GetValue() == true
+				end,
+				func = function(val)
+					addon.db.chatHistoryHideUnlogged = val and true or false
+					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.CreateFilterUI then addon.ChatIM.ChannelHistory:CreateFilterUI() end
+				end,
+				parent = true,
+				default = false,
+				type = Settings.VarType.Boolean,
+				sType = "checkbox",
+			},
+			{
 				var = "chatChannelHistoryLootQualities",
 				text = L["CH_OPTION_LOOT_MIN_RARITY"],
 				desc = L["CH_OPTION_LOOT_MIN_RARITY_DESC"],
@@ -631,7 +649,10 @@ data = {
 				isSelectedFunc = function(key) return addon.db.chatChannelFiltersEnable[key] end,
 				setSelectedFunc = function(key, shouldSelect)
 					addon.db.chatChannelFiltersEnable[key] = shouldSelect and true or false
-					if addon.ChatIM and addon.ChatIM.ChannelHistory and addon.ChatIM.ChannelHistory.UpdateLoggingFilter then addon.ChatIM.ChannelHistory:UpdateLoggingFilter(key) end
+					if addon.ChatIM and addon.ChatIM.ChannelHistory then
+						if addon.ChatIM.ChannelHistory.UpdateLoggingFilter then addon.ChatIM.ChannelHistory:UpdateLoggingFilter(key) end
+						if addon.ChatIM.ChannelHistory.CreateFilterUI then addon.ChatIM.ChannelHistory:CreateFilterUI() end
+					end
 				end,
 			},
 		},

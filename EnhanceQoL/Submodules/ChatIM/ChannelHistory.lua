@@ -2655,38 +2655,46 @@ function ChannelHistory:CreateFilterUI()
 		{ title = L["CH_FILTER_CAT_SYSTEM"] or SYSTEM_MESSAGES or "System", keys = { "LOOT", "MONEY", "CURRENCY", "ACHIEVEMENT", "SYSTEM", "OPENING" } },
 		{ title = L["CH_FILTER_CAT_MISC"] or OTHER or "Other", keys = { "MONSTER" } },
 	}
+	local hideUnlogged = addon.db and addon.db.chatHistoryHideUnlogged
+	local loggingEnabled = addon.db and addon.db.chatChannelFiltersEnable or {}
 
 	local checkHeight = 19
 	local spacing = 4
 	local y = 0
-	self.ui.filterChecks = self.ui.filterChecks or {}
-	self.ui.filterChecksByKey = self.ui.filterChecksByKey or {}
-	self.ui.filterRows = self.ui.filterRows or {}
+	-- reset collections
+	self.ui.filterChecks = {}
+	self.ui.filterChecksByKey = {}
+	self.ui.filterRows = {}
 	self:LoadFiltersFromDB()
+	-- hide and detach previous children to avoid overlap when rebuilding
+	if self.ui.filterList and self.ui.filterList.GetChildren then
+		local kids = { self.ui.filterList:GetChildren() }
+		for _, child in ipairs(kids) do
+			child:Hide()
+			child:ClearAllPoints()
+			child:SetParent(nil)
+		end
+	end
 
 	local rowIndex = 0
 	for _, group in ipairs(filterGroups) do
-		rowIndex = rowIndex + 1
-
 		for _, key in ipairs(group.keys) do
 			local info = filterByKey[key]
-			if info then
+			local isLogged = loggingEnabled and loggingEnabled[key] ~= false
+			if info and (not hideUnlogged or isLogged) then
 				rowIndex = rowIndex + 1
-				local row = self.ui.filterRows[rowIndex]
-				if not row then
-					row = CreateFrame("Button", nil, self.ui.filterList)
-					row.bg = row:CreateTexture(nil, "BACKGROUND")
-					row.bg:SetAllPoints()
-					row.bg:SetTexture("Interface\\AuctionFrame\\AuctionHouse-UI-Row-Select")
-					row.bg:SetTexCoord(0, 1, 0, 1)
-					row.bg:SetVertexColor(1, 1, 1, 0)
-					row.hl = row:CreateTexture(nil, "HIGHLIGHT")
-					row.hl:SetAllPoints()
-					row.hl:SetColorTexture(1, 1, 1, 0.08)
-					row.hl:Hide()
-					row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-					self.ui.filterRows[rowIndex] = row
-				end
+				local row = CreateFrame("Button", nil, self.ui.filterList)
+				row.bg = row:CreateTexture(nil, "BACKGROUND")
+				row.bg:SetAllPoints()
+				row.bg:SetTexture("Interface\\AuctionFrame\\AuctionHouse-UI-Row-Select")
+				row.bg:SetTexCoord(0, 1, 0, 1)
+				row.bg:SetVertexColor(1, 1, 1, 0)
+				row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+				row.hl:SetAllPoints()
+				row.hl:SetColorTexture(1, 1, 1, 0.08)
+				row.hl:Hide()
+				row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+				self.ui.filterRows[rowIndex] = row
 				local function showRowHighlight()
 					if row.hl then row.hl:Show() end
 				end
@@ -2698,23 +2706,22 @@ function ChannelHistory:CreateFilterUI()
 				row:SetPoint("TOPRIGHT", self.ui.filterList, "TOPRIGHT", 0, -y)
 				row:Show()
 
-				local cb = self.ui.filterChecks[rowIndex]
-				if not cb then
-					cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
-					cb:SetSize(checkHeight, checkHeight)
-					self.ui.filterChecks[rowIndex] = cb
-				end
+				local cb = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+				cb:SetSize(checkHeight, checkHeight)
 				cb:SetPoint("LEFT", row, "LEFT", 2, 0)
 				self.ui.filterChecksByKey[key] = cb
+				cb:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 				cb:SetChecked(self:IsFilterEnabled(info.key))
-				cb:SetScript("OnClick", function(button)
-					self.ui.filters[info.key] = button:GetChecked() and true or false
-					if addon.db and addon.db.chatChannelFilters then addon.db.chatChannelFilters[info.key] = self.ui.filters[info.key] end
-					self:RequestLogRefresh()
-				end)
+				cb:SetScript("OnMouseUp", function(frame, mouseButton) handleFilterClick(info, mouseButton, frame:GetChecked()) end)
+				cb:HookScript("OnEnter", showRowHighlight)
+				cb:HookScript("OnLeave", hideRowHighlight)
+				cb:Show()
 
 				if not row.text then row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal") end
+				row.text:ClearAllPoints()
 				row.text:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+				row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+				row.text:SetJustifyH("LEFT")
 				row.text:SetText(info.label or info.key)
 				local c = getFilterColor(info.key)
 				if c then
@@ -2722,11 +2729,6 @@ function ChannelHistory:CreateFilterUI()
 				else
 					row.text:SetTextColor(1, 1, 1)
 				end
-				-- row:SetWidth(row.text:GetStringWidth() + 40)
-				row.text:ClearAllPoints()
-				row.text:SetPoint("LEFT", cb, "RIGHT", 6, 0)
-				row.text:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-				row.text:SetJustifyH("LEFT")
 
 				row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 				row:SetScript("OnMouseUp", function(_, btn) handleFilterClick(info, btn) end)
