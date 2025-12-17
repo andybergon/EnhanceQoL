@@ -137,6 +137,93 @@ local function sanitizeCopyText(text)
 	return text
 end
 
+function ChannelHistory:InvalidateLootQualityCache()
+	self.runtime = self.runtime or {}
+	self.runtime.lootQualitySelection = nil
+	self.runtime.lootQualityHasSelection = nil
+end
+
+local function ensureLootQualitySelection()
+	ChannelHistory.runtime = ChannelHistory.runtime or {}
+	if ChannelHistory.runtime.lootQualitySelection then return ChannelHistory.runtime.lootQualitySelection, ChannelHistory.runtime.lootQualityHasSelection end
+
+	local db = addon.db or {}
+	local selected = db.chatChannelHistoryLootQualities
+	local function defaultSelection()
+		local map = {}
+		local maxQ = (Enum and Enum.ItemQuality and Enum.ItemQuality.WoWToken) or 8
+		for i = 0, maxQ do
+			map[i] = true
+		end
+		return map
+	end
+
+	local hasSelection = false
+	if selected and type(selected) == "table" then
+		for _, v in pairs(selected) do
+			if v then
+				hasSelection = true
+				break
+			end
+		end
+	end
+	if not hasSelection then
+		selected = defaultSelection()
+		db.chatChannelHistoryLootQualities = selected
+		hasSelection = true
+	end
+
+	ChannelHistory.runtime.lootQualitySelection = selected
+	ChannelHistory.runtime.lootQualityHasSelection = hasSelection
+	return selected, hasSelection
+end
+
+local function shouldFilterLootByQuality(msg, event)
+	if not msg or msg == "" then return false end
+	if event ~= "CHAT_MSG_LOOT" and event ~= "CHAT_MSG_CURRENCY" then return false end
+
+	local selected, hasSelection = ensureLootQualitySelection()
+	if not hasSelection then return false end -- no selection means allow all
+
+	local function matchQuality(quality)
+		if not quality then return false end
+		return selected[quality] or selected[tostring(quality)] or false
+	end
+
+	-- Colorblind format embeds quality as |cnIQ<quality>:...
+	local embeddedQuality = msg:match("|cnIQ(%d+):")
+	if embeddedQuality then
+		local qNum = tonumber(embeddedQuality)
+		if matchQuality(qNum) then return false end
+		return true
+	end
+
+	local foundQuality = false
+	if event == "CHAT_MSG_LOOT" then
+		for link in msg:gmatch("|Hitem:[^|]+|h%[.-%]|h") do
+			local itemID = link:match("|Hitem:(%d+)")
+			local quality = nil
+			if quality then
+				foundQuality = true
+				if matchQuality(quality) then return false end
+			end
+		end
+	end
+	if event == "CHAT_MSG_CURRENCY" then
+		for currencyID in msg:gmatch("|Hcurrency:(%d+)|h") do
+			local info = C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo and C_CurrencyInfo.GetCurrencyInfo(tonumber(currencyID))
+			local quality = info and info.quality
+			if quality then
+				foundQuality = true
+				if matchQuality(quality) then return false end
+			end
+		end
+	end
+
+	if foundQuality then return true end -- had links but none matched selection
+	return false -- no item links; keep
+end
+
 local function ensureClearPopups()
 	if not StaticPopupDialogs then return end
 	if not StaticPopupDialogs["EQOL_CLEAR_HISTORY_CHAR"] then
@@ -301,7 +388,7 @@ function ChannelHistory:InitStorage()
 	self.keys = buildKeys()
 	self.runtime = self.runtime or {}
 	self.runtime.guidClassCache = self.runtime.guidClassCache or {}
-	if not self.runtime.guidClassCacheSize then
+	if type(self.runtime.guidClassCacheSize) ~= "number" then
 		local count = 0
 		for _ in pairs(self.runtime.guidClassCache) do
 			count = count + 1
@@ -323,9 +410,7 @@ function ChannelHistory:SetMaxLines(value)
 	local newMax = value or oldMax or 500
 	local normalizedAt = self.history and self.history._normalizedMaxLines
 	local normalizedVersion = (self.history and self.history._normalizedVersion) or 0
-	if not runtime.didNormalize and normalizedAt and normalizedAt == newMax and normalizedVersion == self.version then
-		runtime.didNormalize = true
-	end
+	if not runtime.didNormalize and normalizedAt and normalizedAt == newMax and normalizedVersion == self.version then runtime.didNormalize = true end
 	local needsNormalize = (newMax ~= oldMax) or not runtime.didNormalize or normalizedAt ~= newMax or normalizedVersion ~= self.version
 	self.maxLines = newMax
 	if addon.db then addon.db.chatChannelHistoryMaxLines = newMax end
@@ -625,11 +710,7 @@ end
 normalizeChannelBucket = normalizeChannelBucketInner
 
 function ChannelHistory:Store(event, ...)
-	-- respect filters
 	local filterKey = self.EVENT_FILTER_KEY and self.EVENT_FILTER_KEY[event]
-	if filterKey and not isLoggingEnabled(filterKey) then
-		return
-	end
 	-- Skip learn/unlearn spam unconditionally
 	if filterKey == "SYSTEM" and addon.functions and addon.functions.ChatLearnFilter then
 		local firstArg = ...
@@ -645,6 +726,7 @@ function ChannelHistory:Store(event, ...)
 	-- Skip channel notices and trivial change messages
 	if event == "CHAT_MSG_CHANNEL_NOTICE" or event == "CHAT_MSG_CHANNEL_NOTICE_USER" then return end
 	if msg == "YOU_CHANGED" then return end
+	if filterKey == "LOOT" and shouldFilterLootByQuality(msg, event) then return end
 	local channelKey, channelLabel = buildChannelKey(event, ...)
 	channelKey = channelKey or event
 	local classFile
@@ -663,9 +745,17 @@ function ChannelHistory:Store(event, ...)
 	if not slot then return end
 	local cache = self.runtime and self.runtime.formattedCache
 	if cache then cache[slot] = nil end
+	-- clear legacy/derived fields on reused slots to avoid stale state bleed-through
+	slot.color = nil
+	slot.event = nil
+	slot.senderName = nil
+	slot.senderRealmKey = nil
+	slot.ownerRealmKey = nil
+	slot.ownerFaction = nil
 	slot.time = stamp
 	slot.filterKey = filterKey
 	slot.outbound = event == "CHAT_MSG_WHISPER_INFORM" or event == "CHAT_MSG_BN_WHISPER_INFORM"
+	slot.event = event
 	slot.message = msg or ""
 	slot.sender = sender or ""
 	slot.ownerCharKey = self.keys.charKey
@@ -1260,11 +1350,26 @@ function ChannelHistory:ShouldDisplayLive(line, currentCharKey)
 	return true
 end
 
+function ChannelHistory:UpdateStatusBar(count, maxUI, scopeLabel)
+	if not self.ui or not self.ui.statusBar or not self.ui.statusBar.text then return end
+	if scopeLabel then self.ui.statusScopeLabel = scopeLabel end
+	if maxUI then self.ui.statusMax = maxUI end
+	if count ~= nil then self.ui.statusCount = count end
+	local label = self.ui.statusScopeLabel or ALL or "All"
+	local maxVal = self.ui.statusMax or (self.ui.logFrame and self.ui.logFrame:GetMaxLines()) or self.uiMaxLines or 0
+	local cnt = self.ui.statusCount or 0
+	self.ui.statusBar.text:SetText(string.format("%s   •   %d / %d", label, cnt, maxVal))
+end
+
 function ChannelHistory:AppendLineToLog(line)
 	if not self.ui or not self.ui.logFrame then return end
 	local text = formatLine(self, line)
 	self.ui.logFrame:AddMessage(text, 1, 1, 1)
 	if self.ui.logFrame.ScrollToBottom then self.ui.logFrame:ScrollToBottom() end
+	local maxUI = (self.ui.logFrame and self.ui.logFrame:GetMaxLines()) or self.uiMaxLines or 0
+	local nextCount = (self.ui and self.ui.statusCount or 0) + 1
+	if maxUI and maxUI > 0 then nextCount = math.min(nextCount, maxUI) end
+	self:UpdateStatusBar(nextCount, maxUI)
 end
 
 function ChannelHistory:RequestLogRefresh()
@@ -2499,11 +2604,7 @@ function ChannelHistory:RefreshLogView()
 		scopeLabel = CHARACTER .. ": " .. charKey
 	end
 
-	if self.ui.statusBar and self.ui.statusBar.text then
-		local count = #lines
-		local max = maxUI or self.uiMaxLines or 0
-		self.ui.statusBar.text:SetText(string.format("%s   •   %d / %d", scopeLabel, count, max))
-	end
+	if self.ui.statusBar and self.ui.statusBar.text then self:UpdateStatusBar(#lines, maxUI, scopeLabel) end
 	log:Clear()
 	local lastDate
 	for i = 1, #lines do
@@ -2518,18 +2619,6 @@ function ChannelHistory:RefreshLogView()
 	end
 	log:ScrollToBottom()
 	if self.ui.logScroll then self:UpdateThinScrollbar(self.ui.logScroll, log) end
-	-- Enable hyperlink handling for URLs inserted by formatURLs
-	if log and not log._urlHooked then
-		log:SetScript("OnHyperlinkClick", function(_, link, text, button)
-			if link and link:match("^url:") then
-				local payload = link:match("^url:(.+)$")
-				showCopyDialog(payload)
-				return
-			end
-			if SetItemRef then SetItemRef(link, text, button, log) end
-		end)
-		log._urlHooked = true
-	end
 end
 
 function ChannelHistory:LayoutDebugFrame(width, height)
@@ -2700,6 +2789,25 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 
 		Settings.OpenToCategory(addon.SettingsLayout.chatframeCategory:GetID(), L["CH_TITLE_HISTORY"])
 	end
+
+	local helpBtn = CreateFrame("Button", nil, f)
+	helpBtn:SetSize(18, 18)
+	helpBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -10)
+	helpBtn:SetNormalTexture("Interface\\common\\help-i")
+	helpBtn:SetHighlightTexture("Interface\\common\\help-i")
+	if helpBtn:GetHighlightTexture() then helpBtn:GetHighlightTexture():SetAlpha(0.7) end
+	helpBtn:SetScript("OnEnter", function(btn)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(btn, "ANCHOR_RIGHT", 6, 0)
+		GameTooltip:ClearLines()
+		GameTooltip:AddLine(L["CH_CLEAR_HELP_TITLE"] or (HELP_LABEL or "Help"), 1, 0.82, 0)
+		GameTooltip:AddLine(L["CH_CLEAR_HELP_DESC"] or "", 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	helpBtn:SetScript("OnLeave", function()
+		if GameTooltip then GameTooltip:Hide() end
+	end)
+	self.ui.clearHelpButton = helpBtn
 
 	local optionsBtn = CreateFrame("Button", nil, f)
 	optionsBtn:SetSize(16, 16)
