@@ -25,6 +25,7 @@ CooldownPanels.ENTRY_TYPE = {
 	SPELL = "SPELL",
 	ITEM = "ITEM",
 	SLOT = "SLOT",
+	MACRO = "MACRO",
 }
 
 _G["BINDING_NAME_EQOL_TOGGLE_COOLDOWN_PANELS"] = L["CooldownPanelBindingToggle"] or "Toggle Cooldown Panel Editor"
@@ -1005,8 +1006,133 @@ local function getEditorPreviewCount(panel, previewFrame, baseLayout, entries)
 	return math.min(count, capacity)
 end
 
+function CooldownPanels.NormalizeMacroName(name)
+	if type(name) ~= "string" then return nil end
+	if strtrim then name = strtrim(name) end
+	if name == "" then return nil end
+	return name
+end
+
+function CooldownPanels.ResolveMacroEntry(entry)
+	if not entry or entry.type ~= "MACRO" then return nil end
+	local function resolveMacroSpellId(token)
+		if token == nil then return nil end
+		if type(token) == "number" then
+			if token > 0 then return token end
+			return nil
+		end
+		if type(token) ~= "string" or token == "" then return nil end
+		local numeric = tonumber(token)
+		if numeric and numeric > 0 then return numeric end
+		if C_Spell and C_Spell.GetSpellIDForSpellIdentifier then
+			local spellId = C_Spell.GetSpellIDForSpellIdentifier(token)
+			if type(spellId) == "number" and spellId > 0 then return spellId end
+		end
+		if Api.GetSpellInfoFn then
+			local _, _, _, _, _, _, spellId = Api.GetSpellInfoFn(token)
+			if type(spellId) == "number" and spellId > 0 then return spellId end
+		end
+		return nil
+	end
+	local function resolveMacroItemId(token)
+		if token == nil then return nil end
+		if type(token) == "number" then
+			if token > 0 then return token end
+			return nil
+		end
+		if type(token) ~= "string" or token == "" then return nil end
+		local numeric = tonumber(token)
+		if numeric and numeric > 0 then return numeric end
+		local fromLink = token:match("item:(%d+)")
+		if fromLink then
+			local itemId = tonumber(fromLink)
+			if itemId and itemId > 0 then return itemId end
+		end
+		if Api.GetItemInfoInstantFn then
+			local itemId = Api.GetItemInfoInstantFn(token)
+			if type(itemId) == "number" and itemId > 0 then return itemId end
+		end
+		return nil
+	end
+	local macroID = tonumber(entry.macroID)
+	local macroName = CooldownPanels.NormalizeMacroName(entry.macroName)
+	local lookup = nil
+
+	-- Prefer stored macroID. Name lookups can collide when multiple macros share a name.
+	if macroID and macroID > 0 then
+		if Api.GetMacroInfo then
+			local infoName = Api.GetMacroInfo(macroID)
+			if infoName then
+				lookup = macroID
+				macroName = CooldownPanels.NormalizeMacroName(infoName) or macroName
+			end
+		else
+			lookup = macroID
+		end
+	end
+
+	if not lookup and macroName and Api.GetMacroIndexByName then
+		local byName = Api.GetMacroIndexByName(macroName)
+		if type(byName) == "number" and byName > 0 then
+			macroID = byName
+			lookup = byName
+		end
+	end
+	if not lookup and macroName then lookup = macroName end
+	if not lookup then return nil end
+
+	local resolved = {
+		macroID = macroID,
+		macroName = macroName,
+	}
+	if Api.GetMacroInfo then
+		local infoName, icon = Api.GetMacroInfo(lookup)
+		resolved.macroName = CooldownPanels.NormalizeMacroName(infoName) or resolved.macroName
+		resolved.icon = icon
+		if (not resolved.macroID) and resolved.macroName and Api.GetMacroIndexByName then
+			local byName = Api.GetMacroIndexByName(resolved.macroName)
+			if type(byName) == "number" and byName > 0 then resolved.macroID = byName end
+		end
+	end
+
+	local macroSpellToken = nil
+	if Api.GetMacroSpell then
+		macroSpellToken = Api.GetMacroSpell(lookup)
+		local spellId = resolveMacroSpellId(macroSpellToken)
+		if spellId then
+			local baseSpellId = getBaseSpellId(spellId) or spellId
+			resolved.kind = "SPELL"
+			resolved.spellID = baseSpellId
+			return resolved
+		end
+	end
+
+	local macroItemName = nil
+	local macroItemLink = nil
+	if Api.GetMacroItem then
+		macroItemName, macroItemLink = Api.GetMacroItem(lookup)
+		local itemId = resolveMacroItemId(macroItemLink) or resolveMacroItemId(macroItemName)
+		if itemId then
+			resolved.kind = "ITEM"
+			resolved.itemID = itemId
+			return resolved
+		end
+	end
+
+	return resolved
+end
+
 local function getEntryIcon(entry)
 	if not entry or type(entry) ~= "table" then return Helper.PREVIEW_ICON end
+	if entry.type == "MACRO" then
+		local macro = CooldownPanels.ResolveMacroEntry(entry)
+		if macro then
+			if macro.kind == "SPELL" and macro.spellID then return getEntryIcon({ type = "SPELL", spellID = macro.spellID }) end
+			if macro.kind == "ITEM" and macro.itemID then return getEntryIcon({ type = "ITEM", itemID = macro.itemID }) end
+			if macro.icon then return macro.icon end
+		end
+		return Helper.PREVIEW_ICON
+	end
 	if entry.type == "SPELL" and entry.spellID then
 		local spellId = getEffectiveSpellId(entry.spellID) or entry.spellID
 		local runtime = CooldownPanels.runtime
@@ -1014,10 +1140,11 @@ local function getEntryIcon(entry)
 		CooldownPanels.runtime = runtime
 		runtime.iconCache = runtime.iconCache or {}
 		local cache = runtime.iconCache
-		local cached = cache[spellId]
+		local cacheKey = "S:" .. tostring(spellId)
+		local cached = cache[cacheKey]
 		if cached then return cached end
 		local icon = (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellId)) or Helper.PREVIEW_ICON
-		cache[spellId] = icon
+		cache[cacheKey] = icon
 		return icon
 	end
 	if entry.type == "ITEM" and entry.itemID then
@@ -1026,7 +1153,8 @@ local function getEntryIcon(entry)
 		CooldownPanels.runtime = runtime
 		runtime.iconCache = runtime.iconCache or {}
 		local cache = runtime.iconCache
-		local cached = cache[entry.itemID]
+		local cacheKey = "I:" .. tostring(entry.itemID)
+		local cached = cache[cacheKey]
 		if cached then return cached end
 		local icon
 		if Api.GetItemIconByID then icon = Api.GetItemIconByID(entry.itemID) end
@@ -1035,7 +1163,7 @@ local function getEntryIcon(entry)
 			icon = instantIcon
 		end
 		icon = icon or Helper.PREVIEW_ICON
-		cache[entry.itemID] = icon
+		cache[cacheKey] = icon
 		return icon
 	end
 	if entry.type == "SLOT" and entry.slotID and Api.GetInventoryItemID then
@@ -1046,7 +1174,8 @@ local function getEntryIcon(entry)
 			CooldownPanels.runtime = runtime
 			runtime.iconCache = runtime.iconCache or {}
 			local cache = runtime.iconCache
-			local cached = cache[itemID]
+			local cacheKey = "I:" .. tostring(itemID)
+			local cached = cache[cacheKey]
 			if cached then return cached end
 			local icon
 			if Api.GetItemIconByID then icon = Api.GetItemIconByID(itemID) end
@@ -1055,7 +1184,7 @@ local function getEntryIcon(entry)
 				icon = instantIcon
 			end
 			icon = icon or Helper.PREVIEW_ICON
-			cache[itemID] = icon
+			cache[cacheKey] = icon
 			return icon
 		end
 	end
@@ -1144,6 +1273,11 @@ local function getEntryName(entry)
 		return name or ("Item " .. tostring(entry.itemID or ""))
 	end
 	if entry.type == "SLOT" then return getSlotLabel(entry.slotID) end
+	if entry.type == "MACRO" then
+		local macro = CooldownPanels.ResolveMacroEntry(entry)
+		if macro and macro.macroName then return macro.macroName end
+		return (_G.MACRO or "Macro") .. " " .. tostring(entry.macroID or "")
+	end
 	return "Entry"
 end
 
@@ -1152,6 +1286,7 @@ local function getEntryTypeLabel(entryType)
 	if key == "SPELL" then return _G.STAT_CATEGORY_SPELL or _G.SPELLS or "Spell" end
 	if key == "ITEM" then return _G.AUCTION_HOUSE_HEADER_ITEM or _G.ITEMS or "Item" end
 	if key == "SLOT" then return L["CooldownPanelSlotType"] or "Slot" end
+	if key == "MACRO" then return _G.MACRO or "Macro" end
 	return entryType or ""
 end
 
@@ -1227,11 +1362,11 @@ end
 
 local function isSpellKnownSafe(spellId)
 	if not spellId then return false end
-	if C_SpellBook and C_SpellBook.IsSpellInSpellBook then
-		local known = C_SpellBook.IsSpellInSpellBook(spellId)
+	if Api and Api.IsSpellKnown then
+		local known = Api.IsSpellKnown(spellId, true)
 		if known then return true end
 		local overrideId = getEffectiveSpellId(spellId)
-		if overrideId and overrideId ~= spellId then return C_SpellBook.IsSpellInSpellBook(overrideId) and true or false end
+		if overrideId and overrideId ~= spellId then return Api.IsSpellKnown(overrideId, true) and true or false end
 		return false
 	end
 	return true
@@ -1366,21 +1501,40 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 	local panel = self:GetPanel(panelId)
 	if not panel then return nil end
 	local typeKey = entryType and tostring(entryType):upper() or nil
-	if typeKey ~= "SPELL" and typeKey ~= "ITEM" and typeKey ~= "SLOT" then return nil end
+	if typeKey ~= "SPELL" and typeKey ~= "ITEM" and typeKey ~= "SLOT" and typeKey ~= "MACRO" then return nil end
+	local entryValue = idValue
 	local numericValue = tonumber(idValue)
-	if not numericValue then return nil end
-	if typeKey == "SPELL" then numericValue = getBaseSpellId(numericValue) or numericValue end
+	if typeKey == "SPELL" or typeKey == "ITEM" or typeKey == "SLOT" then
+		if not numericValue then return nil end
+		if typeKey == "SPELL" then numericValue = getBaseSpellId(numericValue) or numericValue end
+		entryValue = numericValue
+	elseif typeKey == "MACRO" then
+		if numericValue then
+			entryValue = numericValue
+		elseif type(entryValue) ~= "string" then
+			return nil
+		end
+	end
 	local entryId = Helper.GetNextNumericId(panel.entries)
-	local entry = Helper.CreateEntry(typeKey, numericValue, root.defaults)
+	local entry = Helper.CreateEntry(typeKey, entryValue, root.defaults)
 	entry.id = entryId
 	if type(overrides) == "table" then
 		for key, value in pairs(overrides) do
 			entry[key] = value
 		end
 	end
+	if entry.type == "MACRO" then
+		entry.macroID = tonumber(entry.macroID)
+		entry.macroName = CooldownPanels.NormalizeMacroName(entry.macroName)
+	end
 	panel.entries[entryId] = entry
 	panel.order[#panel.order + 1] = entryId
-	if entry.type == "ITEM" and entry.itemID then updateItemCountCacheForItem(entry.itemID) end
+	if entry.type == "ITEM" and entry.itemID then
+		updateItemCountCacheForItem(entry.itemID)
+	elseif entry.type == "MACRO" then
+		local macro = CooldownPanels.ResolveMacroEntry(entry)
+		if macro and macro.kind == "ITEM" and macro.itemID then updateItemCountCacheForItem(macro.itemID) end
+	end
 	self:RebuildSpellIndex()
 	self:RefreshPanel(panelId)
 	return entryId, entry
@@ -1392,12 +1546,19 @@ function CooldownPanels:FindEntryByValue(panelId, entryType, idValue)
 	if not panel then return nil end
 	local typeKey = entryType and tostring(entryType):upper() or nil
 	local numericValue = tonumber(idValue)
-	if typeKey ~= "SPELL" and typeKey ~= "ITEM" and typeKey ~= "SLOT" then return nil end
+	local macroName = CooldownPanels.NormalizeMacroName(type(idValue) == "string" and idValue or nil)
+	if typeKey ~= "SPELL" and typeKey ~= "ITEM" and typeKey ~= "SLOT" and typeKey ~= "MACRO" then return nil end
 	for entryId, entry in pairs(panel.entries or {}) do
 		if entry and entry.type == typeKey then
 			if typeKey == "SPELL" and entry.spellID == numericValue then return entryId, entry end
 			if typeKey == "ITEM" and entry.itemID == numericValue then return entryId, entry end
 			if typeKey == "SLOT" and entry.slotID == numericValue then return entryId, entry end
+			if typeKey == "MACRO" then
+				local entryMacroID = tonumber(entry.macroID)
+				local entryMacroName = CooldownPanels.NormalizeMacroName(entry.macroName)
+				if numericValue and entryMacroID == numericValue then return entryId, entry end
+				if macroName and entryMacroName and macroName == entryMacroName then return entryId, entry end
+			end
 		end
 	end
 	return nil
@@ -1429,18 +1590,26 @@ function CooldownPanels:RebuildSpellIndex()
 				local layout = panel.layout
 				local wantsRangeCheck = layout and layout.rangeOverlayEnabled == true
 				for _, entry in pairs(panel.entries or {}) do
+					local spellId
 					if entry and entry.type == "SPELL" and entry.spellID then
-						local spellId = tonumber(entry.spellID)
-						if spellId then
-							local effectiveId = getEffectiveSpellId(spellId) or spellId
-							if not isSpellPassiveSafe(spellId, effectiveId) then
-								index[spellId] = index[spellId] or {}
-								index[spellId][panelId] = true
-								if wantsRangeCheck then rangeCheckSpells[spellId] = true end
-								if effectiveId and effectiveId ~= spellId then
-									index[effectiveId] = index[effectiveId] or {}
-									index[effectiveId][panelId] = true
-								end
+						spellId = tonumber(entry.spellID)
+					elseif entry and entry.type == "MACRO" then
+						local macro = CooldownPanels.ResolveMacroEntry(entry)
+						if macro and macro.kind == "SPELL" and macro.spellID then
+							spellId = tonumber(macro.spellID)
+						elseif macro and macro.kind == "ITEM" and entry.showCooldown ~= false then
+							itemPanels[panelId] = true
+						end
+					end
+					if spellId then
+						local effectiveId = getEffectiveSpellId(spellId) or spellId
+						if not isSpellPassiveSafe(spellId, effectiveId) then
+							index[spellId] = index[spellId] or {}
+							index[spellId][panelId] = true
+							if wantsRangeCheck then rangeCheckSpells[spellId] = true end
+							if effectiveId and effectiveId ~= spellId then
+								index[effectiveId] = index[effectiveId] or {}
+								index[effectiveId][panelId] = true
 							end
 						end
 					end
@@ -1472,23 +1641,27 @@ function CooldownPanels:RebuildPowerIndex()
 			if layout.checkPower == true and panel.enabled ~= false and panelAllowsSpec(panel) then
 				powerCheckActive = true
 				for _, entry in pairs(panel.entries or {}) do
+					local baseId
 					if entry and entry.type == "SPELL" and entry.spellID then
-						local baseId = tonumber(entry.spellID)
-						if baseId then
-							local effectiveId = getEffectiveSpellId(baseId) or baseId
-							if not isSpellPassiveSafe(baseId, effectiveId) then
-								local costs = Api.GetSpellPowerCost and Api.GetSpellPowerCost(effectiveId)
-								if type(costs) == "table" then
-									powerCheckSpells[effectiveId] = true
-									local names = getSpellPowerCostNamesFromCosts(costs)
-									if names then
-										powerCostNames[baseId] = names
-										for _, name in ipairs(names) do
-											local key = string.upper(name)
-											if key ~= "" then
-												powerIndex[key] = powerIndex[key] or {}
-												powerIndex[key][effectiveId] = true
-											end
+						baseId = tonumber(entry.spellID)
+					elseif entry and entry.type == "MACRO" then
+						local macro = CooldownPanels.ResolveMacroEntry(entry)
+						if macro and macro.kind == "SPELL" and macro.spellID then baseId = tonumber(macro.spellID) end
+					end
+					if baseId then
+						local effectiveId = getEffectiveSpellId(baseId) or baseId
+						if not isSpellPassiveSafe(baseId, effectiveId) then
+							local costs = Api.GetSpellPowerCost and Api.GetSpellPowerCost(effectiveId)
+							if type(costs) == "table" then
+								powerCheckSpells[effectiveId] = true
+								local names = getSpellPowerCostNamesFromCosts(costs)
+								if names then
+									powerCostNames[baseId] = names
+									for _, name in ipairs(names) do
+										local key = string.upper(name)
+										if key ~= "" then
+											powerIndex[key] = powerIndex[key] or {}
+											powerIndex[key][effectiveId] = true
 										end
 									end
 								end
@@ -1528,21 +1701,27 @@ function CooldownPanels:RebuildChargesIndex()
 		for panelId, panel in pairs(root.panels) do
 			if panel and panel.enabled ~= false and panelAllowsSpec(panel) then
 				for _, entry in pairs(panel.entries or {}) do
-					if entry and entry.type == "SPELL" and entry.spellID and entry.showCharges == true then
-						local baseId = tonumber(entry.spellID)
-						if baseId then
-							local effectiveId = getEffectiveSpellId(baseId) or baseId
-							if not isSpellPassiveSafe(baseId, effectiveId) then
-								chargesPanels[panelId] = true
-								if Api.GetSpellChargesInfo then
-									local info = Api.GetSpellChargesInfo(effectiveId)
-									if type(info) == "table" then
-										chargesIndex[effectiveId] = chargesIndex[effectiveId] or {}
-										chargesIndex[effectiveId][panelId] = true
-										if effectiveId ~= baseId then
-											chargesIndex[baseId] = chargesIndex[baseId] or {}
-											chargesIndex[baseId][panelId] = true
-										end
+					local baseId
+					if entry and entry.showCharges == true then
+						if entry.type == "SPELL" and entry.spellID then
+							baseId = tonumber(entry.spellID)
+						elseif entry.type == "MACRO" then
+							local macro = CooldownPanels.ResolveMacroEntry(entry)
+							if macro and macro.kind == "SPELL" and macro.spellID then baseId = tonumber(macro.spellID) end
+						end
+					end
+					if baseId then
+						local effectiveId = getEffectiveSpellId(baseId) or baseId
+						if not isSpellPassiveSafe(baseId, effectiveId) then
+							chargesPanels[panelId] = true
+							if Api.GetSpellChargesInfo then
+								local info = Api.GetSpellChargesInfo(effectiveId)
+								if type(info) == "table" then
+									chargesIndex[effectiveId] = chargesIndex[effectiveId] or {}
+									chargesIndex[effectiveId][panelId] = true
+									if effectiveId ~= baseId then
+										chargesIndex[baseId] = chargesIndex[baseId] or {}
+										chargesIndex[baseId][panelId] = true
 									end
 								end
 							end
@@ -1593,6 +1772,42 @@ function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
 			return nil
 		end
 	end
+	if typeKey == "MACRO" then
+		local macroName = nil
+		if type(overrides) == "table" then macroName = CooldownPanels.NormalizeMacroName(overrides.macroName) end
+		if not macroName then macroName = CooldownPanels.NormalizeMacroName(type(idValue) == "string" and idValue or nil) end
+		if not macroName and numericValue and Api.GetMacroInfo then
+			local infoName = Api.GetMacroInfo(numericValue)
+			macroName = CooldownPanels.NormalizeMacroName(infoName)
+		end
+		if numericValue and not macroName then
+			showErrorMessage((_G.MACRO or "Macro") .. " does not exist.")
+			return nil
+		end
+		if not numericValue and macroName and Api.GetMacroIndexByName then
+			local macroId = Api.GetMacroIndexByName(macroName)
+			if type(macroId) == "number" and macroId > 0 then
+				numericValue = macroId
+				baseValue = macroId
+			end
+		end
+		if not numericValue and not macroName then
+			showErrorMessage((_G.MACRO or "Macro") .. " does not exist.")
+			return nil
+		end
+		if self:FindEntryByValue(panelId, typeKey, numericValue or macroName) then
+			showErrorMessage(L["CooldownPanelEntry"] and (L["CooldownPanelEntry"] .. " already exists.") or "Entry already exists.")
+			return nil
+		end
+		local finalOverrides = {}
+		if type(overrides) == "table" then
+			for key, value in pairs(overrides) do
+				finalOverrides[key] = value
+			end
+		end
+		finalOverrides.macroName = macroName
+		return self:AddEntry(panelId, typeKey, numericValue or idValue, finalOverrides)
+	end
 	if self:FindEntryByValue(panelId, typeKey, baseValue) then
 		showErrorMessage(L["CooldownPanelEntry"] and (L["CooldownPanelEntry"] .. " already exists.") or "Entry already exists.")
 		return nil
@@ -1612,12 +1827,26 @@ function CooldownPanels:HandleCursorDrop(panelId)
 		if spellId then added = self:AddEntrySafe(panelId, "SPELL", spellId) ~= nil end
 	elseif cursorType == "item" then
 		if cursorId then added = self:AddEntrySafe(panelId, "ITEM", cursorId) ~= nil end
+	elseif cursorType == "macro" then
+		if cursorId then
+			local macroName = Api.GetMacroInfo and Api.GetMacroInfo(cursorId) or nil
+			added = self:AddEntrySafe(panelId, "MACRO", cursorId, { macroName = macroName }) ~= nil
+		end
 	elseif cursorType == "action" and Api.GetActionInfo then
 		local actionType, actionId = Api.GetActionInfo(cursorId)
 		if actionType == "spell" then
 			added = self:AddEntrySafe(panelId, "SPELL", actionId) ~= nil
 		elseif actionType == "item" then
 			added = self:AddEntrySafe(panelId, "ITEM", actionId) ~= nil
+		elseif actionType == "macro" then
+			local macroID = tonumber(actionId)
+			local macroName = Api.GetActionText and CooldownPanels.NormalizeMacroName(Api.GetActionText(cursorId)) or nil
+			if macroName and Api.GetMacroIndexByName then
+				local byName = Api.GetMacroIndexByName(macroName)
+				if type(byName) == "number" and byName > 0 then macroID = byName end
+			end
+			if not macroName and macroID and Api.GetMacroInfo then macroName = CooldownPanels.NormalizeMacroName(Api.GetMacroInfo(macroID)) end
+			added = self:AddEntrySafe(panelId, "MACRO", macroID or macroName, { macroName = macroName }) ~= nil
 		end
 	end
 
@@ -1653,16 +1882,32 @@ function CooldownPanels:SelectEntry(entryId)
 	self:RefreshEditor()
 end
 
-local function showIconTooltip(self)
+function CooldownPanels.ShowIconTooltip(self)
 	if not self or not self._eqolTooltipEnabled then return end
 	local entry = self._eqolTooltipEntry
 	if not entry or not GameTooltip then return end
 
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-	if entry.type == "SPELL" and entry.spellID and GameTooltip.SetSpellByID then
-		GameTooltip:SetSpellByID(getEffectiveSpellId(entry.spellID) or entry.spellID)
-	elseif entry.type == "ITEM" and entry.itemID and GameTooltip.SetItemByID then
-		GameTooltip:SetItemByID(entry.itemID)
+	local resolvedEntry = entry
+	if entry.type == "MACRO" then
+		local macro = CooldownPanels.ResolveMacroEntry(entry)
+		if macro and macro.kind == "SPELL" and macro.spellID then
+			resolvedEntry = { type = "SPELL", spellID = macro.spellID }
+		elseif macro and macro.kind == "ITEM" and macro.itemID then
+			resolvedEntry = { type = "ITEM", itemID = macro.itemID }
+		end
+	end
+	if resolvedEntry.type == "SPELL" and resolvedEntry.spellID and GameTooltip.SetSpellByID then
+		GameTooltip:SetSpellByID(getEffectiveSpellId(resolvedEntry.spellID) or resolvedEntry.spellID)
+	elseif resolvedEntry.type == "ITEM" and resolvedEntry.itemID and GameTooltip.SetItemByID then
+		GameTooltip:SetItemByID(resolvedEntry.itemID)
+	elseif resolvedEntry.type == "MACRO" then
+		local macro = CooldownPanels.ResolveMacroEntry(entry)
+		if macro and macro.macroName then
+			GameTooltip:SetText(macro.macroName)
+		else
+			GameTooltip:SetText(_G.MACRO or "Macro")
+		end
 	elseif entry.type == "SLOT" and entry.slotID then
 		local shown = false
 		if GameTooltip.SetInventoryItem then shown = GameTooltip:SetInventoryItem("player", entry.slotID) end
@@ -1673,11 +1918,11 @@ local function showIconTooltip(self)
 	GameTooltip:Show()
 end
 
-local function hideIconTooltip()
+function CooldownPanels.HideIconTooltip()
 	if GameTooltip then GameTooltip:Hide() end
 end
 
-local function applyIconTooltip(icon, entry, enabled)
+function CooldownPanels.ApplyIconTooltip(icon, entry, enabled)
 	if not icon then return end
 	icon._eqolTooltipEntry = entry
 	local allow = enabled and entry ~= nil
@@ -1717,8 +1962,8 @@ local function createIconFrame(parent)
 	local icon = CreateFrame("Frame", nil, parent)
 	icon:Hide()
 	icon:EnableMouse(false)
-	icon:SetScript("OnEnter", showIconTooltip)
-	icon:SetScript("OnLeave", hideIconTooltip)
+	icon:SetScript("OnEnter", CooldownPanels.ShowIconTooltip)
+	icon:SetScript("OnLeave", CooldownPanels.HideIconTooltip)
 
 	icon.texture = icon:CreateTexture(nil, "ARTWORK")
 	icon.texture:SetAllPoints(icon)
@@ -3060,7 +3305,7 @@ local function ensureEditor()
 	entryEmptyHint:SetJustifyH("LEFT")
 	entryEmptyHint:SetJustifyV("TOP")
 	if entryEmptyHint.SetWordWrap then entryEmptyHint:SetWordWrap(true) end
-	entryEmptyHint:SetText(L["CooldownPanelSelectEntryHint"] or "Click a spell/item/slot to modify")
+	entryEmptyHint:SetText(L["CooldownPanelSelectEntryHint"] or "Click a spell/item/macro/slot to modify")
 	entryEmptyHint:SetTextColor(0.75, 0.75, 0.75, 1)
 	entryEmptyHint:Hide()
 
@@ -3085,6 +3330,9 @@ local function ensureEditor()
 
 	local cbCooldownText = Helper.CreateCheck(rightContent, L["CooldownPanelShowCooldownText"] or "Show cooldown text")
 	cbCooldownText:SetPoint("TOPLEFT", entryIdBox, "BOTTOMLEFT", -2, -6)
+
+	local cbAlwaysShow = Helper.CreateCheck(rightContent, L["CooldownPanelAlwaysShow"] or "Always show")
+	cbAlwaysShow:SetPoint("TOPLEFT", cbCooldownText, "BOTTOMLEFT", 0, -4)
 
 	local cbCharges = Helper.CreateCheck(rightContent, L["CooldownPanelShowCharges"] or "Show charges")
 	cbCharges:SetPoint("TOPLEFT", cbCooldownText, "BOTTOMLEFT", 0, -4)
@@ -3159,7 +3407,7 @@ local function ensureEditor()
 
 	local previewHint = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	previewHint:SetPoint("CENTER", previewFrame, "CENTER")
-	previewHint:SetText(L["CooldownPanelDropHint"] or "Drop spells or items here")
+	previewHint:SetText(L["CooldownPanelDropHint"] or "Drop spells, items, or macros here")
 	previewHint:SetTextColor(0.7, 0.7, 0.7, 1)
 	previewFrame.dropHint = previewHint
 
@@ -3181,7 +3429,7 @@ local function ensureEditor()
 	local previewHintLabel = middle:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	previewHintLabel:SetPoint("BOTTOMRIGHT", previewFrame, "TOPRIGHT", -2, 6)
 	previewHintLabel:SetJustifyH("RIGHT")
-	previewHintLabel:SetText(L["CooldownPanelPreviewHint"] or "Drag spells/items here to add")
+	previewHintLabel:SetText(L["CooldownPanelPreviewHint"] or "Drag spells/items/macros here to add")
 
 	local entryTitle = Helper.CreateLabel(middle, L["CooldownPanelEntries"] or "Entries", 12, "OUTLINE")
 	entryTitle:SetPoint("TOPLEFT", previewFrame, "BOTTOMLEFT", 0, -12)
@@ -3292,6 +3540,7 @@ local function ensureEditor()
 			entryType = entryType,
 			entryId = entryIdBox,
 			cbCooldownText = cbCooldownText,
+			cbAlwaysShow = cbAlwaysShow,
 			cbCharges = cbCharges,
 			cbStacks = cbStacks,
 			cbItemCount = cbItemCount,
@@ -3400,7 +3649,12 @@ local function ensureEditor()
 		local panel = panelId and CooldownPanels:GetPanel(panelId)
 		local entry = panel and panel.entries and panel.entries[entryId]
 		local value = tonumber(self:GetText())
-		if not panel or not entry or not value then
+		if not panel or not entry then
+			self:ClearFocus()
+			CooldownPanels:RefreshEditor()
+			return
+		end
+		if not value then
 			self:ClearFocus()
 			CooldownPanels:RefreshEditor()
 			return
@@ -3429,6 +3683,10 @@ local function ensureEditor()
 			entry.itemID = newValue
 		elseif entry.type == "SLOT" then
 			entry.slotID = newValue
+		elseif entry.type == "MACRO" then
+			entry.macroID = newValue
+			local macroName = Api.GetMacroInfo and Api.GetMacroInfo(newValue) or nil
+			entry.macroName = CooldownPanels.NormalizeMacroName(macroName) or entry.macroName
 		end
 		self:ClearFocus()
 		CooldownPanels:RebuildSpellIndex()
@@ -3472,6 +3730,7 @@ local function ensureEditor()
 	bindEntryToggle(cbCharges, "showCharges")
 	bindEntryToggle(cbStacks, "showStacks")
 	bindEntryToggle(cbCooldownText, "showCooldownText")
+	bindEntryToggle(cbAlwaysShow, "alwaysShow")
 	bindEntryToggle(cbItemCount, "showItemCount")
 	bindEntryToggle(cbItemUses, "showItemUses")
 	bindEntryToggle(cbShowWhenEmpty, "showWhenEmpty")
@@ -3838,6 +4097,15 @@ local function entryIsAvailableForPreview(entry)
 			return entry.showWhenNoCooldown == true
 		end
 		return false
+	elseif entry.type == "MACRO" then
+		local macro = CooldownPanels.ResolveMacroEntry(entry)
+		if not macro then return false end
+		if macro.kind == "SPELL" and macro.spellID then return true end
+		if macro.kind == "ITEM" and macro.itemID then
+			if itemHasUseSpell and not itemHasUseSpell(macro.itemID) then return false end
+			return true
+		end
+		return false
 	end
 	return true
 end
@@ -3945,6 +4213,11 @@ local function refreshPreview(editor, panel)
 	for i = 1, count do
 		local entryId = panel.order and panel.order[i]
 		local entry = entryId and panel.entries and panel.entries[entryId] or nil
+		local effectiveType = entry and entry.type or nil
+		if effectiveType == "MACRO" then
+			local macro = CooldownPanels.ResolveMacroEntry(entry)
+			effectiveType = (macro and macro.kind) or "MACRO"
+		end
 		local icon = canvas.icons[i]
 		local showCooldown = entry and entry.showCooldown ~= false
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
@@ -3958,7 +4231,7 @@ local function refreshPreview(editor, panel)
 		if icon.previewSoundBorder then icon.previewSoundBorder:Hide() end
 		applyStaticText(icon, entry, staticFontPath, staticFontSize, staticFontStyle, staticCooldown)
 		if entry then
-			if entry.type == "SPELL" then
+			if effectiveType == "SPELL" then
 				if entry.showCharges then
 					icon.charges:SetText("2")
 					icon.charges:Show()
@@ -3967,7 +4240,7 @@ local function refreshPreview(editor, panel)
 					icon.count:SetText("3")
 					icon.count:Show()
 				end
-			elseif entry.type == "ITEM" then
+			elseif effectiveType == "ITEM" then
 				if entry.showItemCount ~= false then
 					icon.count:SetText("20")
 					icon.count:Show()
@@ -3985,8 +4258,8 @@ local function refreshPreview(editor, panel)
 			elseif icon.keybind then
 				icon.keybind:Hide()
 			end
-			if entry.glowReady and icon.previewGlow then icon.previewGlow:Show() end
-			if entry.soundReady and icon.previewSoundBorder then icon.previewSoundBorder:Show() end
+			if entry.type ~= "MACRO" and entry.glowReady and icon.previewGlow then icon.previewGlow:Show() end
+			if entry.type ~= "MACRO" and entry.soundReady and icon.previewSoundBorder then icon.previewSoundBorder:Show() end
 		end
 	end
 
@@ -4008,6 +4281,7 @@ local function layoutInspectorToggles(inspector, entry)
 	end
 	if not entry then
 		hideToggle(inspector.cbCooldownText)
+		hideToggle(inspector.cbAlwaysShow)
 		hideToggle(inspector.cbCharges)
 		hideToggle(inspector.cbStacks)
 		hideToggle(inspector.cbItemCount)
@@ -4029,6 +4303,11 @@ local function layoutInspectorToggles(inspector, entry)
 	end
 
 	local prev = inspector.entryId
+	local effectiveType = entry and entry.type or nil
+	if effectiveType == "MACRO" then
+		local macro = CooldownPanels.ResolveMacroEntry(entry)
+		effectiveType = (macro and macro.kind) or "MACRO"
+	end
 	local function place(control, show, offsetX, offsetY)
 		if not control then return end
 		control:ClearAllPoints()
@@ -4044,21 +4323,24 @@ local function layoutInspectorToggles(inspector, entry)
 	end
 
 	place(inspector.cbCooldownText, true, -2)
-	if entry.type == "SPELL" then
+	if effectiveType == "SPELL" then
+		place(inspector.cbAlwaysShow, false)
 		place(inspector.cbCharges, true)
 		place(inspector.cbStacks, true)
 		place(inspector.cbItemCount, false)
 		place(inspector.cbItemUses, false)
 		place(inspector.cbShowWhenEmpty, false)
 		place(inspector.cbShowWhenNoCooldown, false)
-	elseif entry.type == "ITEM" then
+	elseif effectiveType == "ITEM" then
+		place(inspector.cbAlwaysShow, true)
 		place(inspector.cbCharges, false)
 		place(inspector.cbStacks, false)
 		place(inspector.cbItemCount, true)
 		place(inspector.cbItemUses, true)
 		place(inspector.cbShowWhenEmpty, true)
 		place(inspector.cbShowWhenNoCooldown, false)
-	elseif entry.type == "SLOT" then
+	elseif effectiveType == "SLOT" then
+		place(inspector.cbAlwaysShow, false)
 		place(inspector.cbCharges, false)
 		place(inspector.cbStacks, false)
 		place(inspector.cbItemCount, false)
@@ -4066,6 +4348,7 @@ local function layoutInspectorToggles(inspector, entry)
 		place(inspector.cbShowWhenEmpty, false)
 		place(inspector.cbShowWhenNoCooldown, true)
 	else
+		place(inspector.cbAlwaysShow, false)
 		place(inspector.cbCharges, false)
 		place(inspector.cbStacks, false)
 		place(inspector.cbItemCount, false)
@@ -4076,8 +4359,9 @@ local function layoutInspectorToggles(inspector, entry)
 	place(inspector.staticTextLabel, true, 2, -8)
 	place(inspector.staticTextBox, true, -2, -4)
 	place(inspector.cbStaticTextDuringCD, true, -2, -6)
-	place(inspector.cbGlow, true)
-	if inspector.glowDuration then
+	local showReadyEffects = entry.type ~= "MACRO"
+	place(inspector.cbGlow, showReadyEffects)
+	if showReadyEffects and inspector.glowDuration then
 		inspector.glowDuration:ClearAllPoints()
 		inspector.glowDuration:SetPoint("TOPLEFT", inspector.cbGlow, "BOTTOMLEFT", 18, -8)
 		if entry.glowReady then
@@ -4088,11 +4372,14 @@ local function layoutInspectorToggles(inspector, entry)
 			inspector.glowDuration:Hide()
 			inspector.glowDuration:Disable()
 		end
+	elseif inspector.glowDuration then
+		inspector.glowDuration:Hide()
+		inspector.glowDuration:Disable()
 	end
 	local soundOffsetX = 0
-	if inspector.glowDuration and entry.glowReady then soundOffsetX = -20 end
-	place(inspector.cbSound, true, soundOffsetX, -6)
-	if inspector.soundButton then
+	if showReadyEffects and inspector.glowDuration and entry.glowReady then soundOffsetX = -20 end
+	place(inspector.cbSound, showReadyEffects, soundOffsetX, -6)
+	if showReadyEffects and inspector.soundButton then
 		inspector.soundButton:ClearAllPoints()
 		inspector.soundButton:SetPoint("TOPLEFT", inspector.cbSound, "BOTTOMLEFT", 18, -6)
 		if entry.soundReady then
@@ -4103,6 +4390,9 @@ local function layoutInspectorToggles(inspector, entry)
 			inspector.soundButton:Hide()
 			inspector.soundButton:Disable()
 		end
+	elseif inspector.soundButton then
+		inspector.soundButton:Hide()
+		inspector.soundButton:Disable()
 	end
 
 	if inspector.soundButton and inspector.soundButton:IsShown() then prev = inspector.soundButton end
@@ -4173,17 +4463,23 @@ local function refreshInspector(editor, panel, entry)
 		inspector.entryIcon:SetTexture(getEntryIcon(entry))
 		inspector.entryName:SetText(getEntryName(entry))
 		inspector.entryType:SetText(getEntryTypeLabel(entry.type))
-		inspector.entryId:SetText(tostring(entry.spellID or entry.itemID or entry.slotID or ""))
+		inspector.entryId:SetText(tostring(entry.spellID or entry.itemID or entry.slotID or entry.macroID or ""))
+		local effectiveType = entry and entry.type or nil
+		if effectiveType == "MACRO" then
+			local macro = CooldownPanels.ResolveMacroEntry(entry)
+			effectiveType = (macro and macro.kind) or "MACRO"
+		end
 
 		inspector.cbCooldownText:SetChecked(entry.showCooldownText ~= false)
+		inspector.cbAlwaysShow:SetChecked(effectiveType == "ITEM" and entry.alwaysShow ~= false)
 		inspector.cbCharges:SetChecked(entry.showCharges and true or false)
 		inspector.cbStacks:SetChecked(entry.showStacks and true or false)
-		inspector.cbItemCount:SetChecked(entry.type == "ITEM" and entry.showItemCount ~= false)
-		inspector.cbItemUses:SetChecked(entry.type == "ITEM" and entry.showItemUses == true)
-		inspector.cbShowWhenEmpty:SetChecked(entry.type == "ITEM" and entry.showWhenEmpty == true)
-		inspector.cbShowWhenNoCooldown:SetChecked(entry.type == "SLOT" and entry.showWhenNoCooldown == true)
-		inspector.cbGlow:SetChecked(entry.glowReady and true or false)
-		inspector.cbSound:SetChecked(entry.soundReady and true or false)
+		inspector.cbItemCount:SetChecked(effectiveType == "ITEM" and entry.showItemCount ~= false)
+		inspector.cbItemUses:SetChecked(effectiveType == "ITEM" and entry.showItemUses == true)
+		inspector.cbShowWhenEmpty:SetChecked(effectiveType == "ITEM" and entry.showWhenEmpty == true)
+		inspector.cbShowWhenNoCooldown:SetChecked(effectiveType == "SLOT" and entry.showWhenNoCooldown == true)
+		inspector.cbGlow:SetChecked(entry.type ~= "MACRO" and entry.glowReady and true or false)
+		inspector.cbSound:SetChecked(entry.type ~= "MACRO" and entry.soundReady and true or false)
 		if inspector.soundButton then inspector.soundButton:SetText(getSoundButtonText(entry.soundReadyFile)) end
 		if inspector.staticTextBox then inspector.staticTextBox:SetText(entry.staticText or "") end
 		if inspector.cbStaticTextDuringCD then inspector.cbStaticTextDuringCD:SetChecked(entry.staticTextShowOnCooldown == true) end
@@ -4203,7 +4499,7 @@ local function refreshInspector(editor, panel, entry)
 	else
 		if inspector.entryHeader then inspector.entryHeader:Hide() end
 		if inspector.entryEmptyHint then
-			inspector.entryEmptyHint:SetText(L["CooldownPanelSelectEntryHint"] or "Click a spell/item/slot to modify")
+			inspector.entryEmptyHint:SetText(L["CooldownPanelSelectEntryHint"] or "Click a spell/item/macro/slot to modify")
 			inspector.entryEmptyHint:Show()
 		end
 		if inspector.entryIcon then inspector.entryIcon:Hide() end
@@ -4385,14 +4681,17 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 	for i = 1, count do
 		local entryId = (previewEntryIds and previewEntryIds[i]) or (panel.order and panel.order[i])
 		local entry = entryId and panel.entries and panel.entries[entryId] or nil
+		local macro = entry and entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
+		local resolvedType = entry and ((macro and macro.kind) or entry.type) or nil
+		local previewItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
 		local icon = frame.icons[i]
 		local showCooldown = entry and entry.showCooldown ~= false
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
 		local showCooldownText = entry and entry.showCooldownText ~= false
-		local showCharges = entry and entry.type == "SPELL" and entry.showCharges == true
-		local showStacks = entry and entry.type == "SPELL" and entry.showStacks == true
-		local showItemCount = entry and entry.type == "ITEM" and entry.showItemCount ~= false
-		local showItemUses = entry and entry.type == "ITEM" and entry.showItemUses == true
+		local showCharges = entry and resolvedType == "SPELL" and entry.showCharges == true
+		local showStacks = entry and resolvedType == "SPELL" and entry.showStacks == true
+		local showItemCount = entry and resolvedType == "ITEM" and entry.showItemCount ~= false
+		local showItemUses = entry and resolvedType == "ITEM" and entry.showItemUses == true
 		icon.texture:SetTexture(getEntryIcon(entry))
 		icon.texture:SetVertexColor(1, 1, 1)
 		icon.texture:SetShown(showIconTexture)
@@ -4421,7 +4720,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 			icon.charges:Show()
 		elseif showItemUses then
 			local usesValue
-			if entry and entry.itemID then usesValue = Api.GetItemCount(entry.itemID, true, true) end
+			if previewItemId then usesValue = Api.GetItemCount(previewItemId, true, true) end
 			if isSafeGreaterThan(usesValue, 0) then
 				icon.charges:SetText(usesValue)
 			else
@@ -4434,7 +4733,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 			icon.count:Show()
 		elseif showItemCount then
 			local countValue
-			if entry and entry.itemID then countValue = Api.GetItemCount(entry.itemID, true, false) end
+			if previewItemId then countValue = Api.GetItemCount(previewItemId, true, false) end
 			if isSafeGreaterThan(countValue, 0) then
 				icon.count:SetText(countValue)
 			else
@@ -4452,7 +4751,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 				icon.keybind:Hide()
 			end
 		end
-		applyIconTooltip(icon, entry, showTooltips)
+		CooldownPanels.ApplyIconTooltip(icon, entry, showTooltips)
 	end
 end
 
@@ -4472,8 +4771,15 @@ local function updateItemCountCache()
 	local seen = {}
 	for _, panel in pairs(root.panels) do
 		for _, entry in pairs(panel and panel.entries or {}) do
+			local itemId
 			if entry and entry.type == "ITEM" and entry.itemID then
-				local id = entry.itemID
+				itemId = entry.itemID
+			elseif entry and entry.type == "MACRO" then
+				local macro = CooldownPanels.ResolveMacroEntry(entry)
+				if macro and macro.kind == "ITEM" and macro.itemID then itemId = macro.itemID end
+			end
+			if itemId then
+				local id = itemId
 				seen[id] = true
 				local count = Api.GetItemCount(id, true, false) or 0
 				local uses = Api.GetItemCount(id, true, true) or 0
@@ -4580,23 +4886,27 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	for _, entryId in ipairs(order) do
 		local entry = panel.entries and panel.entries[entryId]
 		if entry then
+			local macro = entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
+			local resolvedType = (macro and macro.kind) or entry.type
+			local resolvedItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
+			local resolvedSlotId = resolvedType == "SLOT" and entry.slotID or nil
 			local showCooldown = entry.showCooldown ~= false
 			local showCooldownText = entry.showCooldownText ~= false
 			local staticTextShowOnCooldown = entry.staticTextShowOnCooldown == true
 			local trackCooldown = showCooldown or staticTextShowOnCooldown
-			local showCharges = entry.showCharges == true
+			local showCharges = entry.showCharges == true and resolvedType == "SPELL"
 			local showChargesCooldown = showCharges and layout.showChargesCooldown == true
-			local showStacks = entry.showStacks == true
-			local showItemCount = entry.type == "ITEM" and entry.showItemCount ~= false
-			local showItemUses = entry.type == "ITEM" and entry.showItemUses == true
-			local showWhenEmpty = entry.type == "ITEM" and entry.showWhenEmpty == true
-			local showWhenNoCooldown = entry.type == "SLOT" and entry.showWhenNoCooldown == true
+			local showStacks = entry.showStacks == true and resolvedType == "SPELL"
+			local showItemCount = resolvedType == "ITEM" and entry.showItemCount ~= false
+			local showItemUses = resolvedType == "ITEM" and entry.showItemUses == true
+			local showWhenEmpty = resolvedType == "ITEM" and entry.showWhenEmpty == true
+			local showWhenNoCooldown = resolvedType == "SLOT" and entry.showWhenNoCooldown == true
 			local alwaysShow = entry.alwaysShow ~= false
-			local glowReady = entry.glowReady ~= false
+			local glowReady = entry.type ~= "MACRO" and entry.glowReady ~= false
 			local glowDuration = Helper.ClampInt(entry.glowDuration, 0, 30, 0)
-			local soundReady = entry.soundReady == true
+			local soundReady = entry.type ~= "MACRO" and entry.soundReady == true
 			local soundName = normalizeSoundName(entry.soundReadyFile)
-			local baseSpellId = entry.type == "SPELL" and entry.spellID or nil
+			local baseSpellId = resolvedType == "SPELL" and ((macro and macro.spellID) or entry.spellID) or nil
 			local effectiveSpellId = baseSpellId and getEffectiveSpellId(baseSpellId) or nil
 			local spellPassive = baseSpellId and isSpellPassiveSafe(baseSpellId, effectiveSpellId) or false
 			-- local function isSpellFlagged(map)
@@ -4606,10 +4916,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			-- 	return false
 			-- end
 
-			local overlayGlow = entry.type == "SPELL" and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
-			local powerInsufficient = checkPower and entry.type == "SPELL" and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
-			local spellUnusable = checkPower and entry.type == "SPELL" and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
-			local rangeOverlay = rangeOverlayEnabled and entry.type == "SPELL" and isSpellFlagged(rangeOverlaySpells, baseSpellId, effectiveSpellId)
+			local overlayGlow = resolvedType == "SPELL" and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
+			local powerInsufficient = checkPower and resolvedType == "SPELL" and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
+			local spellUnusable = checkPower and resolvedType == "SPELL" and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
+			local rangeOverlay = rangeOverlayEnabled and resolvedType == "SPELL" and isSpellFlagged(rangeOverlaySpells, baseSpellId, effectiveSpellId)
 			if rangeOverlay and Api.IsSpellUsableFn then
 				local checkId = effectiveSpellId or baseSpellId
 				if checkId then
@@ -4630,7 +4940,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local cooldownEnabledOk = true
 			local emptyItem = false
 
-			if entry.type == "SPELL" and baseSpellId then
+			if resolvedType == "SPELL" and baseSpellId then
 				local spellId = effectiveSpellId or baseSpellId
 				if spellPassive then
 					show = false
@@ -4662,31 +4972,31 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					if not show and showCharges and chargesInfo and isSafeLessThan(chargesInfo.currentCharges, chargesInfo.maxCharges) then show = true end
 					if not show and showStacks and Helper.HasDisplayCount(stackCount) then show = true end
 				end
-			elseif entry.type == "ITEM" and entry.itemID then
+			elseif resolvedType == "ITEM" and resolvedItemId then
 				local itemCache = shared and shared.itemCountCache
-				local cached = itemCache and itemCache[entry.itemID]
+				local cached = itemCache and itemCache[resolvedItemId]
 				local cachedCount = cached and cached.count
 				local cachedUses = cached and cached.uses
 				local ownsItem
 				if cachedCount ~= nil then
-					ownsItem = cachedCount > 0 or (Api.IsEquippedItem and Api.IsEquippedItem(entry.itemID))
+					ownsItem = cachedCount > 0 or (Api.IsEquippedItem and Api.IsEquippedItem(resolvedItemId))
 				else
-					ownsItem = hasItem(entry.itemID)
+					ownsItem = hasItem(resolvedItemId)
 				end
 				emptyItem = showWhenEmpty and not ownsItem
-				if (ownsItem or showWhenEmpty) and itemHasUseSpell(entry.itemID) then
+				if (ownsItem or showWhenEmpty) and itemHasUseSpell(resolvedItemId) then
 					if trackCooldown and ownsItem then
-						cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(entry.itemID)
+						cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(resolvedItemId)
 					end
 					if showItemCount then
 						local count = cachedCount
 						if count == nil then
-							count = Api.GetItemCount(entry.itemID, true, false) or 0
+							count = Api.GetItemCount(resolvedItemId, true, false) or 0
 							if itemCache then
-								local slot = itemCache[entry.itemID] or {}
+								local slot = itemCache[resolvedItemId] or {}
 								slot.count = count
 								if slot.uses == nil then slot.uses = cachedUses end
-								itemCache[entry.itemID] = slot
+								itemCache[resolvedItemId] = slot
 							end
 						end
 						if isSafeGreaterThan(count, 0) then
@@ -4698,12 +5008,12 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					if showItemUses then
 						local uses = cachedUses
 						if uses == nil then
-							uses = Api.GetItemCount(entry.itemID, true, true) or 0
+							uses = Api.GetItemCount(resolvedItemId, true, true) or 0
 							if itemCache then
-								local slot = itemCache[entry.itemID] or {}
+								local slot = itemCache[resolvedItemId] or {}
 								slot.uses = uses
 								if slot.count == nil then slot.count = cachedCount end
-								itemCache[entry.itemID] = slot
+								itemCache[resolvedItemId] = slot
 							end
 						end
 						if isSafeGreaterThan(uses, 0) then
@@ -4720,13 +5030,13 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					show = alwaysShow or showWhenEmpty
 					if not show and showCooldown and cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration) then show = true end
 				end
-			elseif entry.type == "SLOT" and entry.slotID then
-				local itemId = Api.GetInventoryItemID and Api.GetInventoryItemID("player", entry.slotID) or nil
+			elseif resolvedType == "SLOT" and resolvedSlotId then
+				local itemId = Api.GetInventoryItemID and Api.GetInventoryItemID("player", resolvedSlotId) or nil
 				if itemId then
 					iconTexture = Api.GetItemIconByID and Api.GetItemIconByID(itemId) or iconTexture
 					if itemHasUseSpell(itemId) then
 						if trackCooldown then
-							cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(itemId, entry.slotID)
+							cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(itemId, resolvedSlotId)
 						end
 						cooldownEnabledOk = isSafeNotFalse(cooldownEnabled)
 						if showCooldown and isCooldownActive(cooldownStart, cooldownDuration) then
@@ -4781,7 +5091,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.cooldownEnabled = cooldownEnabled
 				data.cooldownRate = cooldownRate or 1
 				data.cooldownGCD = cooldownGCD == true
-				if powerCheckSpells and entry.type == "SPELL" then
+				if powerCheckSpells and resolvedType == "SPELL" then
 					local spellId = effectiveSpellId or baseSpellId
 					if spellId and powerCheckSpells[spellId] and not visiblePowerSpellSeen[spellId] then
 						visiblePowerSpellSeen[spellId] = true
@@ -4824,7 +5134,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		entryToIcon[data.entryId] = icon
 		icon.texture:SetTexture(data.icon or Helper.PREVIEW_ICON)
 		icon.texture:SetShown(showIconTexture)
-		applyIconTooltip(icon, data.entry, showTooltips)
+		CooldownPanels.ApplyIconTooltip(icon, data.entry, showTooltips)
 		icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
 
 		-- Context for OnCooldownDone (sound/glow) - keep this in sync every update.
@@ -7554,12 +7864,16 @@ updateRangeCheckSpells = function(rangeCheckSpells)
 					local layout = panel.layout
 					if layout and layout.rangeOverlayEnabled == true then
 						for _, entry in pairs(panel.entries or {}) do
+							local spellId
 							if entry and entry.type == "SPELL" and entry.spellID then
-								local spellId = tonumber(entry.spellID)
-								if spellId then
-									local effectiveId = getEffectiveSpellId(spellId) or spellId
-									if not isSpellPassiveSafe(spellId, effectiveId) then wanted[spellId] = true end
-								end
+								spellId = tonumber(entry.spellID)
+							elseif entry and entry.type == "MACRO" then
+								local macro = CooldownPanels.ResolveMacroEntry(entry)
+								if macro and macro.kind == "SPELL" and macro.spellID then spellId = tonumber(macro.spellID) end
+							end
+							if spellId then
+								local effectiveId = getEffectiveSpellId(spellId) or spellId
+								if not isSpellPassiveSafe(spellId, effectiveId) then wanted[spellId] = true end
 							end
 						end
 					end
@@ -7600,9 +7914,16 @@ local function clearReadyGlowForSpell(spellId)
 			runtime.readyAt = runtime.readyAt or {}
 			runtime.glowTimers = runtime.glowTimers or {}
 			for entryId, entry in pairs(panel.entries) do
-				if entry and entry.type == "SPELL" then
-					local effectiveId = entry.spellID and getEffectiveSpellId(entry.spellID) or nil
-					if entry.spellID == id or effectiveId == id then
+				if entry then
+					local entrySpellId
+					if entry.type == "SPELL" and entry.spellID then
+						entrySpellId = tonumber(entry.spellID)
+					elseif entry.type == "MACRO" then
+						local macro = CooldownPanels.ResolveMacroEntry(entry)
+						if macro and macro.kind == "SPELL" and macro.spellID then entrySpellId = tonumber(macro.spellID) end
+					end
+					local effectiveId = entrySpellId and getEffectiveSpellId(entrySpellId) or nil
+					if entrySpellId == id or effectiveId == id then
 						runtime.readyAt[entryId] = nil
 						local t = runtime.glowTimers[entryId]
 						if t and t.Cancel then t:Cancel() end
@@ -7648,12 +7969,18 @@ local function triggerProcSoundForSpell(spellId)
 
 		for _, entryId in ipairs(panel.order) do
 			local entry = panel.entries[entryId]
-			if entry and entry.type == "SPELL" and entry.spellID then
-				local entryBaseId = tonumber(entry.spellID)
+			if entry then
+				local entryBaseId
+				if entry.type == "SPELL" and entry.spellID then
+					entryBaseId = tonumber(entry.spellID)
+				elseif entry.type == "MACRO" then
+					local macro = CooldownPanels.ResolveMacroEntry(entry)
+					if macro and macro.kind == "SPELL" and macro.spellID then entryBaseId = tonumber(macro.spellID) end
+				end
 				if entryBaseId then
 					local entryEffId = getEffectiveSpellId(entryBaseId) or entryBaseId
 					if entryBaseId == id or entryEffId == id then
-						if entry.soundReady == true then
+						if entry.type ~= "MACRO" and entry.soundReady == true then
 							local soundName = normalizeSoundName(entry.soundReadyFile)
 							if soundName and soundName ~= "None" then
 								playReadySound(soundName)
@@ -7778,6 +8105,7 @@ local UPDATE_FRAME_EVENTS = {
 	"BAG_UPDATE_COOLDOWN",
 	"UPDATE_BINDINGS",
 	"UPDATE_MACROS",
+	"ACTIONBAR_SLOT_CHANGED",
 	"ACTIONBAR_PAGE_CHANGED",
 	"ACTIONBAR_HIDEGRID",
 	"SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",
@@ -7903,12 +8231,121 @@ local function ensureUpdateFrame()
 			end
 			return
 		end
+		if event == "ACTIONBAR_SLOT_CHANGED" then
+			local slot = tonumber((...))
+			Keybinds.RequestRefresh("Event:" .. event)
+
+			local root = ensureRoot()
+			if not (root and root.panels) then return end
+
+			local trackedMacroIDs = {}
+			local trackedMacroNames = {}
+			for _, panel in pairs(root.panels) do
+				if panel and panel.enabled ~= false and panelAllowsSpec(panel) and panel.entries then
+					for _, entry in pairs(panel.entries) do
+						if entry and entry.type == "MACRO" then
+							local macroID = tonumber(entry.macroID)
+							if macroID and macroID > 0 then trackedMacroIDs[macroID] = true end
+
+							local macroName = CooldownPanels.NormalizeMacroName(entry.macroName)
+							if not macroName and macroID and Api.GetMacroInfo then
+								local infoName = Api.GetMacroInfo(macroID)
+								macroName = CooldownPanels.NormalizeMacroName(infoName)
+							end
+							if macroName then trackedMacroNames[macroName] = true end
+						end
+					end
+				end
+			end
+
+			if not next(trackedMacroIDs) and not next(trackedMacroNames) then return end
+
+			CooldownPanels.runtime = CooldownPanels.runtime or {}
+			local runtime = CooldownPanels.runtime
+			runtime.actionSlotMacroCache = runtime.actionSlotMacroCache or {}
+			local slotCache = runtime.actionSlotMacroCache
+			local firstSlot, lastSlot = slot, slot
+			if not firstSlot or firstSlot <= 0 then
+				firstSlot = 1
+				lastSlot = _G.NUM_ACTIONBAR_SLOTS or 180
+			end
+
+			local shouldRefresh = false
+			for actionSlot = firstSlot, lastSlot do
+				local previous = slotCache[actionSlot]
+				local previousID = previous and previous.id or nil
+				local previousName = previous and previous.name or nil
+				local previousSig = previous and previous.sig or nil
+				local wasTracked = previous and ((previousID and trackedMacroIDs[previousID]) or (previousName and trackedMacroNames[previousName]))
+
+				local currentID, currentName, currentSig
+				if Api.GetActionInfo then
+					local actionType, actionID = Api.GetActionInfo(actionSlot)
+					if actionType == "macro" then
+						currentID = tonumber(actionID)
+						if Api.GetActionText then currentName = CooldownPanels.NormalizeMacroName(Api.GetActionText(actionSlot)) end
+						if not currentName and currentID and Api.GetMacroInfo then currentName = CooldownPanels.NormalizeMacroName(Api.GetMacroInfo(currentID)) end
+						if currentName and Api.GetMacroIndexByName then
+							local byName = Api.GetMacroIndexByName(currentName)
+							if type(byName) == "number" and byName > 0 then currentID = byName end
+						end
+
+						local resolved = CooldownPanels.ResolveMacroEntry({
+							type = "MACRO",
+							macroID = currentID,
+							macroName = currentName,
+						})
+						if resolved then
+							if resolved.kind == "SPELL" and resolved.spellID then
+								currentSig = "S:" .. tostring(resolved.spellID)
+							elseif resolved.kind == "ITEM" and resolved.itemID then
+								currentSig = "I:" .. tostring(resolved.itemID)
+							else
+								currentSig = "M"
+							end
+						end
+					end
+				end
+
+				if currentID or currentName then
+					slotCache[actionSlot] = { id = currentID, name = currentName, sig = currentSig }
+				else
+					slotCache[actionSlot] = nil
+				end
+
+				local isTracked = (currentID and trackedMacroIDs[currentID]) or (currentName and trackedMacroNames[currentName]) or false
+				if wasTracked or isTracked then
+					local slotChanged = (previousID ~= currentID) or (previousName ~= currentName) or (wasTracked ~= isTracked)
+					local signatureChanged = previousSig ~= currentSig
+					if slotChanged or signatureChanged then
+						shouldRefresh = true
+						if firstSlot == lastSlot then break end
+					end
+				end
+			end
+
+			if shouldRefresh then
+				runtime.iconCache = nil
+				updateItemCountCache()
+				CooldownPanels:RebuildSpellIndex()
+				CooldownPanels:RequestUpdate("Event:" .. event)
+			end
+			return
+		end
 		if event == "ACTIONBAR_HIDEGRID" then
 			Keybinds.RequestRefresh("Event:ACTIONBAR_HIDEGRID")
 			return
 		end
-		if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_PAGE_CHANGED" or event == "UPDATE_MACROS" then
+		if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_PAGE_CHANGED" then
 			Keybinds.RequestRefresh("Event:" .. event)
+			return
+		end
+		if event == "UPDATE_MACROS" then
+			Keybinds.RequestRefresh("Event:" .. event)
+			if CooldownPanels.runtime then CooldownPanels.runtime.iconCache = nil end
+			updateItemCountCache()
+			CooldownPanels:RebuildSpellIndex()
+			CooldownPanels:RequestUpdate("Event:" .. event)
 			return
 		end
 		if event == "SPELLS_CHANGED" then

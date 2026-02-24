@@ -26,6 +26,7 @@ Api.GetInventoryItemID = GetInventoryItemID
 Api.GetInventoryItemCooldown = GetInventoryItemCooldown
 Api.GetInventorySlotInfo = GetInventorySlotInfo
 Api.GetActionInfo = GetActionInfo
+Api.GetActionText = GetActionText
 Api.GetCursorInfo = GetCursorInfo
 Api.GetCursorPosition = GetCursorPosition
 Api.ClearCursor = ClearCursor
@@ -40,7 +41,20 @@ Api.GetSpellPowerCost = C_Spell and C_Spell.GetSpellPowerCost
 Api.EnableSpellRangeCheck = C_Spell and C_Spell.EnableSpellRangeCheck
 Api.IsSpellUsableFn = C_Spell and C_Spell.IsSpellUsable or IsUsableSpell
 Api.IsSpellPassiveFn = C_Spell and C_Spell.IsSpellPassive or IsPassiveSpell
-Api.IsSpellKnown = C_SpellBook.IsSpellInSpellBook
+Api.IsSpellKnown = function(spellId, includeOverrides)
+	if not spellId then return false end
+	if not (C_SpellBook and C_SpellBook.IsSpellInSpellBook) then return true end
+	local spellBank = Enum and Enum.SpellBookSpellBank
+	local playerBank = (spellBank and spellBank.Player) or 0
+	local petBank = (spellBank and spellBank.Pet) or 1
+	if C_SpellBook.IsSpellInSpellBook(spellId, playerBank, includeOverrides) then return true end
+	if C_SpellBook.IsSpellInSpellBook(spellId, petBank, includeOverrides) then return true end
+	return false
+end
+Api.GetMacroInfo = GetMacroInfo
+Api.GetMacroSpell = GetMacroSpell
+Api.GetMacroItem = GetMacroItem
+Api.GetMacroIndexByName = GetMacroIndexByName
 Api.IsEquippedItem = C_Item.IsEquippedItem
 Api.GetTime = GetTime
 Api.MenuUtil = MenuUtil
@@ -748,6 +762,10 @@ function Helper.NormalizeEntry(entry, defaults)
 	if entry.type == "SPELL" then
 		if not hadShowCharges then entry.showCharges = spellHasCharges(entry.spellID) end
 		if not hadShowStacks then entry.showStacks = false end
+	elseif entry.type == "MACRO" then
+		entry.macroID = tonumber(entry.macroID)
+		if type(entry.macroName) == "string" and strtrim then entry.macroName = strtrim(entry.macroName) end
+		if type(entry.macroName) ~= "string" or entry.macroName == "" then entry.macroName = nil end
 	end
 	local duration = tonumber(entry.glowDuration)
 	if duration == nil then duration = defaults.entry and defaults.entry.glowDuration or Helper.ENTRY_DEFAULTS.glowDuration or 0 end
@@ -826,6 +844,8 @@ function Helper.CreateEntry(entryType, idValue, defaults)
 		if entry.showItemCount == nil then entry.showItemCount = true end
 	elseif entryType == "SLOT" then
 		entry.slotID = tonumber(idValue)
+	elseif entryType == "MACRO" then
+		entry.macroID = tonumber(idValue)
 	end
 	return entry
 end
@@ -878,6 +898,8 @@ local GetItemInfoInstantFn = (C_Item and C_Item.GetItemInfoInstant) or GetItemIn
 local GetOverrideSpell = C_Spell and C_Spell.GetOverrideSpell
 local GetInventoryItemID = GetInventoryItemID
 local GetActionDisplayCount = C_ActionBar and C_ActionBar.GetActionDisplayCount
+local GetMacroIndexByName = GetMacroIndexByName
+local GetMacroInfo = GetMacroInfo
 local FindSpellActionButtons = C_ActionBar and C_ActionBar.FindSpellActionButtons
 local issecretvalue = _G.issecretvalue
 local RangeIndicatorText = RANGE_INDICATOR
@@ -1139,6 +1161,8 @@ local function buildKeybindLookup()
 	if runtime._eqolKeybindLookup then return runtime._eqolKeybindLookup end
 	local lookup = {
 		item = {},
+		macro = {},
+		macroName = {},
 	}
 	local getMacroItem = GetMacroItem
 
@@ -1158,6 +1182,11 @@ local function buildKeybindLookup()
 		if actionType == "item" and actionId then
 			if not lookup.item[actionId] then lookup.item[actionId] = keyText end
 		elseif actionType == "macro" and actionId then
+			if not lookup.macro[actionId] then lookup.macro[actionId] = keyText end
+			if GetMacroInfo then
+				local macroName = GetMacroInfo(actionId)
+				if type(macroName) == "string" and macroName ~= "" and not lookup.macroName[macroName] then lookup.macroName[macroName] = keyText end
+			end
 			if getMacroItem then
 				local macroItem = getMacroItem(actionId)
 				if macroItem then
@@ -1251,7 +1280,8 @@ function Keybinds.GetEntryKeybindText(entry, layout)
 	local slotItemId
 	if entry.type == "SLOT" and entry.slotID then slotItemId = GetInventoryItemID and GetInventoryItemID("player", entry.slotID) end
 	local effectiveSpellId = entry.type == "SPELL" and getEffectiveSpellId(entry.spellID) or nil
-	local cacheKey = tostring(entry.type) .. ":" .. tostring(effectiveSpellId or entry.spellID or entry.itemID or entry.slotID or "") .. ":" .. tostring(slotItemId or "")
+	local cacheValue = effectiveSpellId or entry.spellID or entry.itemID or entry.slotID or entry.macroID or entry.macroName or ""
+	local cacheKey = tostring(entry.type) .. ":" .. tostring(cacheValue) .. ":" .. tostring(slotItemId or "")
 	local cached = runtime._eqolKeybindCache[cacheKey]
 	if cached ~= nil then return cached or nil end
 
@@ -1266,6 +1296,16 @@ function Keybinds.GetEntryKeybindText(entry, layout)
 	elseif entry.type == "SLOT" and slotItemId then
 		local lookup = buildKeybindLookup()
 		text = lookup.item and lookup.item[slotItemId]
+	elseif entry.type == "MACRO" then
+		local lookup = buildKeybindLookup()
+		local macroId = tonumber(entry.macroID)
+		local macroName = type(entry.macroName) == "string" and entry.macroName or nil
+		if macroId and lookup.macro then text = lookup.macro[macroId] end
+		if not text and macroName and lookup.macroName then text = lookup.macroName[macroName] end
+		if not text and macroName and GetMacroIndexByName and lookup.macro then
+			local resolvedId = GetMacroIndexByName(macroName)
+			if type(resolvedId) == "number" and resolvedId > 0 then text = lookup.macro[resolvedId] end
+		end
 	end
 
 	text = formatKeybindText(text)
