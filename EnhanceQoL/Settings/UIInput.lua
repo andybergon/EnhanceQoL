@@ -506,8 +506,14 @@ data = {
 		var = "hideRaidTools",
 		text = L["hideRaidTools"],
 		func = function(v)
-			addon.db["hideRaidTools"] = v
+			local wasEnabled = addon.db["hideRaidTools"] == true
+			addon.db["hideRaidTools"] = v and true or false
 			addon.functions.updateRaidToolsHook()
+			if wasEnabled and not addon.db["hideRaidTools"] then
+				addon.variables = addon.variables or {}
+				addon.variables.requireReload = true
+				if addon.functions.checkReloadFrame then addon.functions.checkReloadFrame() end
+			end
 		end,
 		parentSection = interfaceExpandable,
 	},

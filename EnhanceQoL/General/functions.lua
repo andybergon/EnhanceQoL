@@ -10,8 +10,6 @@ local GetItemInfoInstant = C_Item.GetItemInfoInstant
 local GetItemInfo = C_Item.GetItemInfo
 local GetBagItem = C_TooltipInfo.GetBagItem
 local IsEquippableItem = C_Item.IsEquippableItem
-local UnitInParty = UnitInParty
-local UnitInRaid = UnitInRaid
 addon.functions = addon.functions or {}
 
 local UnitHealth, UnitHealthMax = UnitHealth, UnitHealthMax
@@ -81,66 +79,54 @@ function addon.functions.IsTimerunner()
 	return false
 end
 
-local function canChangeProtectedVisibility(frame)
-	if not frame then return false end
-	if InCombatLockdown and InCombatLockdown() then
-		if frame.IsProtected and frame:IsProtected() then return false end
+local hiddenParent
+
+local function getHiddenParent()
+	if hiddenParent then return hiddenParent end
+	hiddenParent = CreateFrame("Frame")
+	hiddenParent:Hide()
+	return hiddenParent
+end
+
+local function hideFrameLocked(frame)
+	if not frame or frame._eqolHidden then return end
+
+	local function enforceHidden(target)
+		if not target then return end
+		local canHide = true
+		if InCombatLockdown and InCombatLockdown() then
+			if target.IsProtected and target:IsProtected() then canHide = false end
+		end
+		if canHide then
+			if target.Hide then pcall(target.Hide, target) end
+		elseif target.SetAlpha then
+			target:SetAlpha(0)
+			target._eqolAlphaHidden = true
+		end
 	end
-	return true
+
+	if frame.UnregisterAllEvents then frame:UnregisterAllEvents() end
+	enforceHidden(frame)
+	frame._eqolHidden = true
+	if frame.SetParent then pcall(frame.SetParent, frame, getHiddenParent()) end
+	if not frame._eqolHiddenHooks then
+		frame._eqolHiddenHooks = true
+		if frame.Show then hooksecurefunc(frame, "Show", function(f) enforceHidden(f) end) end
+		if frame.SetShown then hooksecurefunc(frame, "SetShown", function(f, shown)
+			if shown then enforceHidden(f) end
+		end) end
+	end
 end
 
 function addon.functions.toggleRaidTools(value, self)
-	if not self then return end
-	local inParty = UnitInParty("player")
-	local inRaid = UnitInRaid("player")
-	local inGroup = inParty or inRaid
-	local hideInParty = value == true and inParty and not inRaid
-
-	if not inGroup then
-		if self._eqolRaidToolsAlphaHidden and self.SetAlpha then
-			self._eqolRaidToolsAlphaHidden = nil
-			self:SetAlpha(1)
-		end
-		return
-	end
-
-	if hideInParty then
-		if canChangeProtectedVisibility(self) then
-			if self.Hide then self:Hide() end
-		elseif self.SetAlpha then
-			self._eqolRaidToolsAlphaHidden = true
-			self:SetAlpha(0)
-		end
-	else
-		if self._eqolRaidToolsAlphaHidden and self.SetAlpha then
-			self._eqolRaidToolsAlphaHidden = nil
-			self:SetAlpha(1)
-		end
-		if canChangeProtectedVisibility(self) then
-			if self.Show then self:Show() end
-		elseif self.SetAlpha then
-			self:SetAlpha(1)
-		end
-	end
+	if value ~= true then return end
+	local manager = self or _G.CompactRaidFrameManager
+	hideFrameLocked(manager)
+	if CompactRaidFrameManager_SetSetting then pcall(CompactRaidFrameManager_SetSetting, "IsShown", "0") end
 end
 
 function addon.functions.updateRaidToolsHook()
-	local manager = _G.CompactRaidFrameManager
-	if not manager or not manager.SetScript then return end
-	if addon.db and addon.db["hideRaidTools"] then
-		if not manager._eqolRaidToolsOnShowHooked then
-			manager:SetScript("OnShow", function(self) addon.functions.toggleRaidTools(addon.db["hideRaidTools"], self) end)
-			manager._eqolRaidToolsOnShowHooked = true
-		end
-		addon.functions.toggleRaidTools(addon.db["hideRaidTools"], manager)
-	elseif manager._eqolRaidToolsOnShowHooked then
-		manager:SetScript("OnShow", nil)
-		manager._eqolRaidToolsOnShowHooked = nil
-		if manager._eqolRaidToolsAlphaHidden and manager.SetAlpha then
-			manager._eqolRaidToolsAlphaHidden = nil
-			manager:SetAlpha(1)
-		end
-	end
+	if addon.db and addon.db["hideRaidTools"] then addon.functions.toggleRaidTools(true, _G.CompactRaidFrameManager) end
 end
 
 function addon.functions.GetHealthPercent(unit, cur, max, usePredicted, curve)
