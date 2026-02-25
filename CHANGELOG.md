@@ -1,6 +1,6 @@
 # Changelog
 
-## [8.0.0] - 2026-02-24
+## [8.0.0] - 2026-02-25
 
 ### ✨ Added
 
@@ -13,7 +13,10 @@
 - Unit Frames (Player/Class Resources): Added per-resource settings via a new `Resource` dropdown, so anchor/strata/frame level offset/offset/scale can be configured per supported resource type.
 - Unit Frames (Player/Class Resources): Added `Visible resources` multi-select listing all supported resources, so you can preconfigure visibility on one character for every resource type.
 - Cooldown Panels (Edit Mode): Added support for Macro entries (`MACRO`) via drag & drop (macro list and action bar slots).
+- Cooldown Panels: Added support for assisted highlighting.
 - Data Panels (Gold stream): Added configurable `Left-click action` (`Toggle gold display` / `Open bags`) and a direct `Gold display` selector (`Character` / `Warband gold`) in stream options.
+- Textures: Added a cropped version of Blizzards default texture.
+- Font: Added Expressway as a font option.
 
 ### 🐛 Fixed
 

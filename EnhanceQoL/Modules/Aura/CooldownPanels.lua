@@ -422,6 +422,7 @@ local ensureRoot
 local ensurePanelAnchor
 local panelAllowsSpec
 local getPlayerSpecId
+local ensureAssistedHighlightHook
 
 local STRATA_INDEX = {}
 for index, strata in ipairs(Helper.STRATA_ORDER or {}) do
@@ -2071,6 +2072,110 @@ local function ensureIconCount(frame, count)
 	end
 end
 
+local ASSISTED_HIGHLIGHT_CONFIG = {
+	atlas = "RotationHelper_Ants_Flipbook_2x",
+	rows = 6,
+	columns = 5,
+	frames = 30,
+	duration = 1.0,
+	scale = 1.45,
+	fallbackTexture = "Interface\\Buttons\\UI-ActionButton-Border",
+}
+
+local function resizeAssistedHighlight(frame)
+	if not frame then return end
+	local highlight = frame._eqolAssistedHighlight
+	if not (highlight and highlight.Texture) then return end
+	local width, height = frame:GetSize()
+	if not width or width <= 0 or not height or height <= 0 then return end
+	highlight.Texture:SetSize(width * ASSISTED_HIGHLIGHT_CONFIG.scale, height * ASSISTED_HIGHLIGHT_CONFIG.scale)
+end
+
+local function ensureAssistedHighlight(frame)
+	if not frame then return nil end
+	local highlight = frame._eqolAssistedHighlight
+	if highlight then
+		resizeAssistedHighlight(frame)
+		return highlight
+	end
+
+	highlight = CreateFrame("Frame", nil, frame.overlay or frame)
+	highlight:SetAllPoints(frame)
+	highlight:EnableMouse(false)
+	highlight:SetFrameStrata((frame.overlay and frame.overlay:GetFrameStrata()) or frame:GetFrameStrata())
+	highlight:SetFrameLevel(((frame.overlay and frame.overlay:GetFrameLevel()) or frame:GetFrameLevel()) + 8)
+
+	local tex = highlight:CreateTexture(nil, "OVERLAY")
+	tex:SetPoint("CENTER", frame, "CENTER", 0, 0)
+	if tex.SetBlendMode then tex:SetBlendMode("ADD") end
+	local atlasApplied = tex.SetAtlas and tex:SetAtlas(ASSISTED_HIGHLIGHT_CONFIG.atlas, true)
+	if not atlasApplied then
+		tex:SetTexture(ASSISTED_HIGHLIGHT_CONFIG.fallbackTexture)
+		tex:SetVertexColor(0.35, 0.75, 1, 0.95)
+	end
+	highlight.Texture = tex
+	resizeAssistedHighlight(frame)
+
+	local anim = highlight:CreateAnimationGroup()
+	anim:SetLooping("REPEAT")
+	anim:SetToFinalAlpha(true)
+	highlight.Anim = anim
+
+	local alphaAnim = anim:CreateAnimation("Alpha")
+	alphaAnim:SetChildKey("Texture")
+	alphaAnim:SetFromAlpha(1)
+	alphaAnim:SetToAlpha(1)
+	alphaAnim:SetDuration(0.001)
+	alphaAnim:SetOrder(0)
+
+	local flipAnim
+	if anim.CreateAnimation then
+		local ok, created = pcall(anim.CreateAnimation, anim, "FlipBook")
+		if ok then flipAnim = created end
+	end
+	if flipAnim and flipAnim.SetFlipBookRows then
+		flipAnim:SetChildKey("Texture")
+		flipAnim:SetDuration(ASSISTED_HIGHLIGHT_CONFIG.duration)
+		flipAnim:SetOrder(0)
+		flipAnim:SetFlipBookRows(ASSISTED_HIGHLIGHT_CONFIG.rows)
+		flipAnim:SetFlipBookColumns(ASSISTED_HIGHLIGHT_CONFIG.columns)
+		flipAnim:SetFlipBookFrames(ASSISTED_HIGHLIGHT_CONFIG.frames)
+		flipAnim:SetFlipBookFrameWidth(0)
+		flipAnim:SetFlipBookFrameHeight(0)
+		highlight.FlipAnim = flipAnim
+	end
+
+	highlight:SetAlpha(0)
+	highlight:Show()
+	frame._eqolAssistedHighlight = highlight
+	return highlight
+end
+
+local function setAssistedHighlight(frame, enabled)
+	if not frame then return end
+	if enabled ~= true then
+		frame._eqolAssistedHighlightShown = nil
+		local existing = frame._eqolAssistedHighlight
+		if existing then
+			existing:SetAlpha(0)
+			if existing.Anim and existing.Anim.IsPlaying and existing.Anim:IsPlaying() then existing.Anim:Stop() end
+		end
+		return
+	end
+
+	local highlight = ensureAssistedHighlight(frame)
+	if not highlight then return end
+	resizeAssistedHighlight(frame)
+	if frame._eqolAssistedHighlightShown == true then
+		highlight:SetAlpha(1)
+		if highlight.Anim and highlight.Anim.IsPlaying and not highlight.Anim:IsPlaying() then highlight.Anim:Play() end
+		return
+	end
+	frame._eqolAssistedHighlightShown = true
+	highlight:SetAlpha(1)
+	if highlight.Anim and highlight.Anim.IsPlaying and not highlight.Anim:IsPlaying() then highlight.Anim:Play() end
+end
+
 local function setGlow(frame, enabled)
 	if frame._glow == enabled then return end
 	frame._glow = enabled
@@ -2544,6 +2649,7 @@ local function applyIconLayout(frame, count, layout)
 			icon.previewBling:SetPoint("CENTER", icon, "CENTER", 0, 0)
 			icon.previewBling:SetSize(rowSize * 1.5, rowSize * 1.5)
 		end
+		resizeAssistedHighlight(icon)
 	end
 
 	if layoutMode == "RADIAL" then
@@ -4705,6 +4811,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		if icon.previewGlow then icon.previewGlow:Hide() end
 		if icon.previewBling then icon.previewBling:Hide() end
 		setGlow(icon, false)
+		setAssistedHighlight(icon, false)
 		applyStaticText(icon, entry, staticFontPath, staticFontSize, staticFontStyle, staticCooldown)
 		if showCooldown then
 			setExampleCooldown(icon.cooldown)
@@ -4752,6 +4859,10 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 			end
 		end
 		CooldownPanels.ApplyIconTooltip(icon, entry, showTooltips)
+	end
+	for i = count + 1, #(frame.icons or {}) do
+		local icon = frame.icons[i]
+		if icon then setAssistedHighlight(icon, false) end
 	end
 end
 
@@ -4828,6 +4939,11 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				runtime.visiblePowerSpells[i] = nil
 			end
 		end
+		if frame.icons then
+			for i = 1, #frame.icons do
+				setAssistedHighlight(frame.icons[i], false)
+			end
+		end
 		ensureIconCount(frame, 0)
 		return
 	end
@@ -4852,6 +4968,20 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local gcdDrawEdge = layout.cooldownGcdDrawEdge == true
 	local gcdDrawBling = layout.cooldownGcdDrawBling == true
 	local gcdDrawSwipe = layout.cooldownGcdDrawSwipe == true
+	local assistedHighlightEnabled = shared and shared.assistedHighlightEnabled
+	if assistedHighlightEnabled == nil then
+		if CooldownPanels.refreshAssistedHighlightCVarState then CooldownPanels.refreshAssistedHighlightCVarState(nil, true) end
+		assistedHighlightEnabled = shared and shared.assistedHighlightEnabled == true
+	end
+	local assistedSuggestedSpellId = assistedHighlightEnabled and Api.GetAssistedCombatNextSpell and tonumber(Api.GetAssistedCombatNextSpell()) or nil
+	local assistedSuggestedBaseId = assistedSuggestedSpellId and getBaseSpellId(assistedSuggestedSpellId) or nil
+	local assistedSuggestedEffectiveId = assistedSuggestedSpellId and getEffectiveSpellId(assistedSuggestedSpellId) or nil
+	local function isAssistedSuggested(baseSpellId, effectiveSpellId)
+		if not (assistedSuggestedSpellId and baseSpellId) then return false end
+		if baseSpellId == assistedSuggestedSpellId or baseSpellId == assistedSuggestedBaseId or baseSpellId == assistedSuggestedEffectiveId then return true end
+		if effectiveSpellId and (effectiveSpellId == assistedSuggestedSpellId or effectiveSpellId == assistedSuggestedBaseId or effectiveSpellId == assistedSuggestedEffectiveId) then return true end
+		return false
+	end
 
 	local visible = runtime.visibleEntries
 	if not visible then
@@ -4920,6 +5050,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local powerInsufficient = checkPower and resolvedType == "SPELL" and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
 			local spellUnusable = checkPower and resolvedType == "SPELL" and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
 			local rangeOverlay = rangeOverlayEnabled and resolvedType == "SPELL" and isSpellFlagged(rangeOverlaySpells, baseSpellId, effectiveSpellId)
+			local assistedSuggested = resolvedType == "SPELL" and isAssistedSuggested(baseSpellId, effectiveSpellId)
 			if rangeOverlay and Api.IsSpellUsableFn then
 				local checkId = effectiveSpellId or baseSpellId
 				if checkId then
@@ -5074,6 +5205,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.powerInsufficient = powerInsufficient
 				data.spellUnusable = spellUnusable
 				data.rangeOverlay = rangeOverlay
+				data.assistedSuggested = assistedSuggested == true
 				data.glowReady = glowReady
 				data.glowDuration = glowDuration
 				data.soundReady = soundReady
@@ -5359,6 +5491,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				icon.rangeOverlay:Hide()
 			end
 		end
+		setAssistedHighlight(icon, data.assistedSuggested == true)
 
 		local overlayGlow = data.overlayGlow == true
 		if data.glowReady then
@@ -5396,6 +5529,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			if icon.previewBling then icon.previewBling:Hide() end
 			icon.texture:SetDesaturated(false)
 			icon.texture:SetAlpha(1)
+			setAssistedHighlight(icon, false)
 			setGlow(icon, false)
 		end
 	end
@@ -5558,6 +5692,7 @@ function CooldownPanels:RefreshPanel(panelId)
 		self:ApplyLayout(panelId)
 		self:UpdatePreviewIcons(panelId)
 	else
+		if ensureAssistedHighlightHook then ensureAssistedHighlightHook() end
 		self:UpdateRuntimeIcons(panelId)
 	end
 	self:UpdateVisibility(panelId)
@@ -8086,6 +8221,7 @@ local UPDATE_FRAME_EVENTS = {
 	"PLAYER_ENTERING_WORLD",
 	"PLAYER_LOGIN",
 	"ADDON_LOADED",
+	"CVAR_UPDATE",
 	"SPELL_UPDATE_COOLDOWN",
 	"SPELL_UPDATE_ICON",
 	"SPELL_UPDATE_CHARGES",
@@ -8139,6 +8275,64 @@ local function shouldEnableUpdateFrame()
 	return hasEnabledPanels() or hasConfiguredEnabledPanels()
 end
 
+local assistedHighlightHooked = false
+
+CooldownPanels.refreshAssistedHighlightCVarState = function(cause, suppressRefresh)
+	local enabled = false
+	if GetCVarBool then
+		enabled = GetCVarBool("assistedCombatHighlight") == true
+	elseif C_CVar and C_CVar.GetCVar then
+		enabled = C_CVar.GetCVar("assistedCombatHighlight") == "1"
+	end
+	CooldownPanels.runtime = CooldownPanels.runtime or {}
+	local runtime = CooldownPanels.runtime
+	if runtime.assistedHighlightEnabled == enabled then return false end
+	runtime.assistedHighlightEnabled = enabled
+	if not suppressRefresh and CooldownPanels and CooldownPanels.RequestUpdate then
+		CooldownPanels:RequestUpdate(cause or "CVar:assistedCombatHighlight")
+	end
+	return true
+end
+
+CooldownPanels.ensureAssistedHighlightCVarListener = function()
+	CooldownPanels.runtime = CooldownPanels.runtime or {}
+	local runtime = CooldownPanels.runtime
+	if runtime.assistedHighlightCVarListenerRegistered then return true end
+	CooldownPanels.refreshAssistedHighlightCVarState(nil, true)
+	if CVarCallbackRegistry and CVarCallbackRegistry.RegisterCallback then
+		CVarCallbackRegistry:RegisterCallback("assistedCombatHighlight", function()
+			CooldownPanels.refreshAssistedHighlightCVarState("CVar:assistedCombatHighlight")
+		end, CooldownPanels)
+		runtime.assistedHighlightCVarListenerRegistered = true
+		return true
+	end
+	return false
+end
+
+ensureAssistedHighlightHook = function()
+	if assistedHighlightHooked then return true end
+	if not (hooksecurefunc and Api.GetAssistedCombatNextSpell) then return false end
+	local manager = _G.AssistedCombatManager
+	if not manager then return false end
+	if type(manager.UpdateAllAssistedHighlightFramesForSpell) ~= "function" then return false end
+
+	hooksecurefunc(manager, "UpdateAllAssistedHighlightFramesForSpell", function(_, spellId)
+		local refreshed = false
+		if spellId and refreshPanelsForSpell then
+			refreshed = refreshPanelsForSpell(spellId) == true
+			local baseId = getBaseSpellId(spellId)
+			if baseId and baseId ~= spellId then refreshed = refreshPanelsForSpell(baseId) == true or refreshed end
+			local effectiveId = getEffectiveSpellId(spellId)
+			if effectiveId and effectiveId ~= spellId and effectiveId ~= baseId then refreshed = refreshPanelsForSpell(effectiveId) == true or refreshed end
+		end
+		if not refreshed and CooldownPanels and CooldownPanels.RequestUpdate then
+			CooldownPanels:RequestUpdate("AssistedCombatHighlight")
+		end
+	end)
+	assistedHighlightHooked = true
+	return true
+end
+
 local function setUpdateFrameEnabled(frame, enabled)
 	if not frame then return end
 	if enabled then
@@ -8173,8 +8367,12 @@ end
 
 local function ensureUpdateFrame()
 	if CooldownPanels.runtime and CooldownPanels.runtime.updateFrame then return end
+	if ensureAssistedHighlightHook then ensureAssistedHighlightHook() end
+	if CooldownPanels.ensureAssistedHighlightCVarListener then CooldownPanels.ensureAssistedHighlightCVarListener() end
 	local frame = CreateFrame("Frame")
 	frame:SetScript("OnEvent", function(_, event, ...)
+		if not assistedHighlightHooked and ensureAssistedHighlightHook then ensureAssistedHighlightHook() end
+		if CooldownPanels.ensureAssistedHighlightCVarListener then CooldownPanels.ensureAssistedHighlightCVarListener() end
 		if event == "ADDON_LOADED" then
 			local name = ...
 			local anchorHelper = CooldownPanels.AnchorHelper
@@ -8191,7 +8389,15 @@ local function ensureUpdateFrame()
 		if event == "PLAYER_LOGIN" then
 			local anchorHelper = CooldownPanels.AnchorHelper
 			if anchorHelper and anchorHelper.HandlePlayerLogin then anchorHelper:HandlePlayerLogin() end
+			if CooldownPanels.refreshAssistedHighlightCVarState then CooldownPanels.refreshAssistedHighlightCVarState("Event:PLAYER_LOGIN", true) end
 			refreshPanelsForCharges()
+			return
+		end
+		if event == "CVAR_UPDATE" then
+			local cvarName = ...
+			if type(cvarName) == "string" and string.lower(cvarName) == "assistedcombathighlight" then
+				if CooldownPanels.refreshAssistedHighlightCVarState then CooldownPanels.refreshAssistedHighlightCVarState("Event:CVAR_UPDATE") end
+			end
 			return
 		end
 		if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" then
@@ -8446,6 +8652,7 @@ function CooldownPanels:Init()
 	self:NormalizeAll()
 	self:EnsureEditMode()
 	updateItemCountCache()
+	if CooldownPanels.refreshAssistedHighlightCVarState then CooldownPanels.refreshAssistedHighlightCVarState(nil, true) end
 	Keybinds.RebuildPanels()
 	self:RefreshAllPanels()
 	self:UpdateCursorAnchorState()

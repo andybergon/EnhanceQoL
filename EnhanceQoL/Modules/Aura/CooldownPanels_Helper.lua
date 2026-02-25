@@ -41,6 +41,8 @@ Api.GetSpellPowerCost = C_Spell and C_Spell.GetSpellPowerCost
 Api.EnableSpellRangeCheck = C_Spell and C_Spell.EnableSpellRangeCheck
 Api.IsSpellUsableFn = C_Spell and C_Spell.IsSpellUsable or IsUsableSpell
 Api.IsSpellPassiveFn = C_Spell and C_Spell.IsSpellPassive or IsPassiveSpell
+Api.GetAssistedCombatNextSpell = C_AssistedCombat and C_AssistedCombat.GetNextCastSpell
+Api.GetAssistedCombatRotationSpells = C_AssistedCombat and C_AssistedCombat.GetRotationSpells
 Api.IsSpellKnown = function(spellId, includeOverrides)
 	if not spellId then return false end
 	if not (C_SpellBook and C_SpellBook.IsSpellInSpellBook) then return true end
