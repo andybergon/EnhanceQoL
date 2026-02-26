@@ -2070,11 +2070,230 @@ function GF._hbpCollectOrderedIds(order, map)
 			end
 		end
 	end
+	local missing = {}
 	for id in pairs(map or EMPTY) do
 		id = tostring(id)
-		if not seen[id] then out[#out + 1] = id end
+		if not seen[id] then missing[#missing + 1] = id end
+	end
+	table.sort(missing, function(a, b)
+		local na = tonumber(a)
+		local nb = tonumber(b)
+		if na and nb then return na < nb end
+		if na then return true end
+		if nb then return false end
+		return tostring(a) < tostring(b)
+	end)
+	for i = 1, #missing do
+		out[#out + 1] = missing[i]
 	end
 	return out
+end
+
+function GF._hbpPlacementDigest(placement)
+	if type(placement) ~= "table" then return "" end
+	local parts = {}
+	local groups = type(placement.groupsById) == "table" and placement.groupsById or EMPTY
+	local rules = type(placement.rulesById) == "table" and placement.rulesById or EMPTY
+	local groupOrder = GF._hbpCollectOrderedIds(placement.groupOrder, groups)
+	local ruleOrder = GF._hbpCollectOrderedIds(placement.ruleOrder, rules)
+
+	parts[#parts + 1] = placement.enabled == true and "e:1" or "e:0"
+	parts[#parts + 1] = "v:" .. tostring(placement.version or "")
+	parts[#parts + 1] = "go:" .. table.concat(groupOrder, ",")
+	for i = 1, #groupOrder do
+		local groupId = groupOrder[i]
+		local group = groups[groupId]
+		if type(group) == "table" then
+			local color = group.color
+			local cr = tonumber(color and (color[1] or color.r) or 0) or 0
+			local cg = tonumber(color and (color[2] or color.g) or 0) or 0
+			local cb = tonumber(color and (color[3] or color.b) or 0) or 0
+			local ca = tonumber(color and (color[4] or color.a) or 0) or 0
+			parts[#parts + 1] = table.concat({
+				"g", tostring(groupId), tostring(group.id or ""),
+				tostring(group.name or ""), tostring(group.style or ""),
+				tostring(group.anchorPoint or ""), tostring(group.x or ""),
+				tostring(group.y or ""), tostring(group.growth or ""),
+				tostring(group.perRow or ""), tostring(group.max or ""),
+				tostring(group.spacing or ""), tostring(group.size or ""),
+				tostring(group.barOrientation or ""), tostring(group.barThickness or ""),
+				tostring(group.inset or ""), tostring(group.borderSize or ""),
+				tostring(group.ruleMatch or ""), tostring(group.iconMode or ""),
+				tostring(cr), tostring(cg), tostring(cb), tostring(ca),
+			}, "|")
+		else
+			parts[#parts + 1] = "g|" .. tostring(groupId) .. "|nil"
+		end
+	end
+
+	parts[#parts + 1] = "ro:" .. table.concat(ruleOrder, ",")
+	for i = 1, #ruleOrder do
+		local ruleId = ruleOrder[i]
+		local rule = rules[ruleId]
+		if type(rule) == "table" then
+			parts[#parts + 1] = table.concat({
+				"r", tostring(ruleId), tostring(rule.id or ""),
+				tostring(rule.spellFamilyId or ""), tostring(rule.groupId or ""),
+				rule.enabled == false and "0" or "1",
+				rule["not"] == true and "1" or "0",
+				rule.appliesParty == false and "0" or "1",
+				rule.appliesRaid == false and "0" or "1",
+			}, "|")
+		else
+			parts[#parts + 1] = "r|" .. tostring(ruleId) .. "|nil"
+		end
+	end
+
+	return table.concat(parts, ";")
+end
+
+function GF._hbpPlacementScore(placement)
+	if type(placement) ~= "table" then return 0 end
+	local groups = type(placement.groupsById) == "table" and placement.groupsById or EMPTY
+	local rules = type(placement.rulesById) == "table" and placement.rulesById or EMPTY
+	local groupCount = 0
+	local ruleCount = 0
+	for _ in pairs(groups) do
+		groupCount = groupCount + 1
+	end
+	for _ in pairs(rules) do
+		ruleCount = ruleCount + 1
+	end
+	local score = (groupCount * 1000) + ruleCount
+	if placement.enabled == true then score = score + 1 end
+	return score
+end
+
+function GF._hbpRuleSignature(rule, includeGroupId, groupIdOverride)
+	if type(rule) ~= "table" then return "" end
+	local groupPart = ""
+	if includeGroupId ~= false then groupPart = tostring(groupIdOverride or rule.groupId or "") end
+	return table.concat({
+		groupPart,
+		tostring(rule.spellFamilyId or ""),
+		rule.enabled == false and "0" or "1",
+		rule["not"] == true and "1" or "0",
+		rule.appliesParty == false and "0" or "1",
+		rule.appliesRaid == false and "0" or "1",
+	}, "|")
+end
+
+function GF._hbpGroupSignature(group, ruleBlob)
+	if type(group) ~= "table" then return "" end
+	local color = group.color
+	local cr = tonumber(color and (color[1] or color.r) or 0) or 0
+	local cg = tonumber(color and (color[2] or color.g) or 0) or 0
+	local cb = tonumber(color and (color[3] or color.b) or 0) or 0
+	local ca = tonumber(color and (color[4] or color.a) or 0) or 0
+	return table.concat({
+		tostring(group.name or ""), tostring(group.style or ""),
+		tostring(group.anchorPoint or ""), tostring(group.x or ""),
+		tostring(group.y or ""), tostring(group.growth or ""),
+		tostring(group.perRow or ""), tostring(group.max or ""),
+		tostring(group.spacing or ""), tostring(group.size or ""),
+		tostring(group.barOrientation or ""), tostring(group.barThickness or ""),
+		tostring(group.inset or ""), tostring(group.borderSize or ""),
+		tostring(group.ruleMatch or ""), tostring(group.iconMode or ""),
+		tostring(cr), tostring(cg), tostring(cb), tostring(ca),
+		tostring(ruleBlob or ""),
+	}, "|")
+end
+
+function GF._hbpDeduplicatePlacement(placement)
+	if type(placement) ~= "table" then return 0, 0 end
+	placement.groupsById = type(placement.groupsById) == "table" and placement.groupsById or {}
+	placement.groupOrder = type(placement.groupOrder) == "table" and placement.groupOrder or {}
+	placement.rulesById = type(placement.rulesById) == "table" and placement.rulesById or {}
+	placement.ruleOrder = type(placement.ruleOrder) == "table" and placement.ruleOrder or {}
+
+	local groups = placement.groupsById
+	local rules = placement.rulesById
+	local groupOrder = GF._hbpCollectOrderedIds(placement.groupOrder, groups)
+	local ruleOrder = GF._hbpCollectOrderedIds(placement.ruleOrder, rules)
+	local rulesByGroup = {}
+	for i = 1, #ruleOrder do
+		local ruleId = ruleOrder[i]
+		local rule = rules[ruleId]
+		if type(rule) == "table" then
+			local groupId = tostring(rule.groupId or "")
+			if groups[groupId] then
+				local list = rulesByGroup[groupId]
+				if not list then
+					list = {}
+					rulesByGroup[groupId] = list
+				end
+				list[#list + 1] = ruleId
+			end
+		end
+	end
+
+	local groupSigToKeepId = {}
+	local groupRemap = {}
+	local keptGroups = {}
+	local keptGroupOrder = {}
+	local removedGroups = 0
+	for i = 1, #groupOrder do
+		local groupId = groupOrder[i]
+		local group = groups[groupId]
+		if type(group) == "table" then
+			local ruleSigParts = {}
+			local list = rulesByGroup[groupId]
+			if list then
+				for j = 1, #list do
+					local rule = rules[list[j]]
+					ruleSigParts[#ruleSigParts + 1] = GF._hbpRuleSignature(rule, false)
+				end
+			end
+			table.sort(ruleSigParts)
+			local groupSig = GF._hbpGroupSignature(group, table.concat(ruleSigParts, ","))
+			local keepId = groupSigToKeepId[groupSig]
+			if keepId then
+				groupRemap[groupId] = keepId
+				removedGroups = removedGroups + 1
+			else
+				groupSigToKeepId[groupSig] = groupId
+				groupRemap[groupId] = groupId
+				keptGroups[groupId] = group
+				keptGroupOrder[#keptGroupOrder + 1] = groupId
+			end
+		else
+			removedGroups = removedGroups + 1
+		end
+	end
+
+	local keptRules = {}
+	local keptRuleOrder = {}
+	local seenRuleSigs = {}
+	local removedRules = 0
+	for i = 1, #ruleOrder do
+		local ruleId = ruleOrder[i]
+		local rule = rules[ruleId]
+		if type(rule) == "table" then
+			local oldGroupId = tostring(rule.groupId or "")
+			local newGroupId = groupRemap[oldGroupId]
+			if newGroupId and keptGroups[newGroupId] then
+				rule.groupId = newGroupId
+				local sig = GF._hbpRuleSignature(rule, true, newGroupId)
+				if not seenRuleSigs[sig] then
+					seenRuleSigs[sig] = true
+					keptRules[ruleId] = rule
+					keptRuleOrder[#keptRuleOrder + 1] = ruleId
+				else
+					removedRules = removedRules + 1
+				end
+			else
+				removedRules = removedRules + 1
+			end
+		else
+			removedRules = removedRules + 1
+		end
+	end
+
+	placement.groupsById = keptGroups
+	placement.groupOrder = keptGroupOrder
+	placement.rulesById = keptRules
+	placement.ruleOrder = keptRuleOrder
+	return removedGroups, removedRules
 end
 
 function GF._hbpMergePlacement(basePlacement, incomingPlacement)
@@ -2134,7 +2353,10 @@ function GF._ensureSharedHealerBuffPlacement(db)
 	if not (partyCfg and raidCfg) then return nil end
 	local partyPlacement = partyCfg.healerBuffPlacement
 	local raidPlacement = raidCfg.healerBuffPlacement
-	if type(partyPlacement) == "table" and partyPlacement == raidPlacement then return partyPlacement end
+	if type(partyPlacement) == "table" and partyPlacement == raidPlacement then
+		partyPlacement._eqolUnified = true
+		return partyPlacement
+	end
 
 	local hbm = UF.GroupFramesHealerBuffs
 	if hbm and hbm.EnsureConfig then
@@ -2156,6 +2378,9 @@ function GF._ensureSharedHealerBuffPlacement(db)
 		raidCfg.healerBuffPlacement = raidPlacement
 	end
 
+	GF._hbpDeduplicatePlacement(partyPlacement)
+	GF._hbpDeduplicatePlacement(raidPlacement)
+
 	if partyPlacement ~= raidPlacement then
 		local partyHasData = GF._hbpHasPlacementData(partyPlacement)
 		local raidHasData = GF._hbpHasPlacementData(raidPlacement)
@@ -2164,11 +2389,28 @@ function GF._ensureSharedHealerBuffPlacement(db)
 			shared = raidPlacement
 			GF._hbpMergePlacement(shared, partyPlacement)
 		elseif partyHasData and raidHasData then
-			GF._hbpMergePlacement(shared, raidPlacement)
+			local partyDigest = GF._hbpPlacementDigest(partyPlacement)
+			local raidDigest = GF._hbpPlacementDigest(raidPlacement)
+			if partyDigest ~= raidDigest then
+				local alreadyMerged = partyPlacement._eqolMergedFromDual == true or raidPlacement._eqolMergedFromDual == true
+				if alreadyMerged then
+					if GF._hbpPlacementScore(raidPlacement) > GF._hbpPlacementScore(partyPlacement) then shared = raidPlacement end
+				else
+					GF._hbpMergePlacement(shared, raidPlacement)
+					shared._eqolMergedFromDual = true
+					GF._hbpDeduplicatePlacement(shared)
+				end
+			end
 		end
+		if type(shared) == "table" and (partyPlacement._eqolMergedFromDual == true or raidPlacement._eqolMergedFromDual == true) then
+			shared._eqolMergedFromDual = true
+		end
+		GF._hbpDeduplicatePlacement(shared)
 		partyCfg.healerBuffPlacement = shared
 		raidCfg.healerBuffPlacement = shared
 	end
+	if type(partyCfg.healerBuffPlacement) == "table" then partyCfg.healerBuffPlacement._eqolUnified = true end
+	if type(raidCfg.healerBuffPlacement) == "table" then raidCfg.healerBuffPlacement._eqolUnified = true end
 
 	if hbm and hbm.EnsureConfig then
 		hbm.EnsureConfig(partyCfg)

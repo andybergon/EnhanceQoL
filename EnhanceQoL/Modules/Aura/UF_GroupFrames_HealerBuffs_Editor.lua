@@ -38,9 +38,12 @@ local OpacitySliderFrame = _G.OpacitySliderFrame
 local LOCALIZED_CLASS_NAMES_MALE = _G.LOCALIZED_CLASS_NAMES_MALE or {}
 local LOCALIZED_CLASS_NAMES_FEMALE = _G.LOCALIZED_CLASS_NAMES_FEMALE or {}
 
-local ROW_HEIGHT = 24
-local GROUP_VISIBLE_ROWS = 8
-local RULE_VISIBLE_ROWS = 10
+local GROUP_ROW_HEIGHT = 22
+local GROUP_ROW_GAP = 1
+local RULE_ROW_HEIGHT = 24
+local RULE_ROW_GAP = 2
+local GROUP_VISIBLE_ROWS = 9
+local RULE_VISIBLE_ROWS = 9
 local EMPTY = {}
 
 local ASSET_BG_DARK = "Interface\\AddOns\\EnhanceQoL\\Assets\\background_dark.tga"
@@ -81,9 +84,7 @@ end
 
 local function roundInt(value)
 	local n = tonumber(value) or 0
-	if n >= 0 then
-		return floor(n + 0.5)
-	end
+	if n >= 0 then return floor(n + 0.5) end
 	return -floor(math.abs(n) + 0.5)
 end
 
@@ -279,9 +280,7 @@ local function toggleDropdown(dropdown)
 		return
 	end
 	local button = dropdown.Button
-	if not button and dropdown.GetName and dropdown:GetName() then
-		button = _G[dropdown:GetName() .. "Button"]
-	end
+	if not button and dropdown.GetName and dropdown:GetName() then button = _G[dropdown:GetName() .. "Button"] end
 	if not button then return end
 	if button.IsEnabled and not button:IsEnabled() then return end
 	if button.Click then button:Click() end
@@ -405,9 +404,7 @@ local function setDropdown(dropdown, options, selectedValue, onSelect)
 end
 
 local function unpackRgba(color)
-	if type(color) == "table" then
-		return tonumber(color[1]) or 1, tonumber(color[2]) or 1, tonumber(color[3]) or 1, tonumber(color[4]) or 1
-	end
+	if type(color) == "table" then return tonumber(color[1]) or 1, tonumber(color[2]) or 1, tonumber(color[3]) or 1, tonumber(color[4]) or 1 end
 	return 1, 1, 1, 1
 end
 
@@ -415,9 +412,7 @@ local function setColorPreview(button, color)
 	local r, g, b, a = unpackRgba(color)
 	if not button then return end
 	local swatch = button.ColorSwatch or button._eqolColorSwatch or button.Swatch
-	if swatch and swatch.SetColorTexture then
-		swatch:SetColorTexture(r, g, b, a)
-	end
+	if swatch and swatch.SetColorTexture then swatch:SetColorTexture(r, g, b, a) end
 end
 
 local function showColorPicker(initialColor, onApply)
@@ -456,7 +451,7 @@ local function showColorPicker(initialColor, onApply)
 			r = r,
 			g = g,
 			b = b,
-			opacity = a,
+			opacity = 1 - a,
 			hasOpacity = true,
 			swatchFunc = function() applyFromPicker() end,
 			opacityFunc = function() applyFromPicker() end,
@@ -578,6 +573,91 @@ local function createThinScrollFrameBar(scrollFrame, xOffset)
 	return sb
 end
 
+local function createThinListBar(parent, anchorFrame, xOffset, getMaxValue, getCurrentValue, setCurrentValue)
+	if not anchorFrame then return nil end
+	local sb = CreateFrame("Slider", nil, parent or anchorFrame:GetParent() or anchorFrame)
+	sb:SetOrientation("VERTICAL")
+	sb:SetWidth(10)
+	sb:SetPoint("TOPLEFT", anchorFrame, "TOPRIGHT", xOffset or 4, 2)
+	sb:SetPoint("BOTTOMLEFT", anchorFrame, "BOTTOMRIGHT", xOffset or 4, -2)
+	sb:SetValueStep(1)
+	sb:SetObeyStepOnDrag(true)
+	sb:SetMinMaxValues(0, 0)
+	sb:SetValue(0)
+	sb._suppress = false
+
+	sb.track = sb:CreateTexture(nil, "BACKGROUND")
+	sb.track:SetPoint("TOP", sb, "TOP", 0, -2)
+	sb.track:SetPoint("BOTTOM", sb, "BOTTOM", 0, 2)
+	sb.track:SetWidth(1)
+	sb.track:SetColorTexture(1, 1, 1, 0.2)
+
+	sb.channel = sb:CreateTexture(nil, "BACKGROUND", nil, -1)
+	sb.channel:SetPoint("TOP", sb, "TOP", 0, 0)
+	sb.channel:SetPoint("BOTTOM", sb, "BOTTOM", 0, 0)
+	sb.channel:SetWidth(6)
+	sb.channel:SetColorTexture(0, 0, 0, 0.3)
+
+	local thumb = sb:CreateTexture(nil, "ARTWORK")
+	thumb:SetSize(6, 24)
+	thumb:SetColorTexture(0.85, 0.9, 1, 0.5)
+	sb:SetThumbTexture(thumb)
+	sb.thumb = thumb
+
+	local function applyVisibility(range)
+		local hasScroll = range and range > 0
+		if sb.thumb then sb.thumb:SetAlpha(hasScroll and 0.5 or 0) end
+		if sb.track then sb.track:SetAlpha(hasScroll and 0.22 or 0) end
+		if sb.channel then sb.channel:SetAlpha(hasScroll and 0.32 or 0) end
+	end
+
+	local function clampToRange(value)
+		local minVal, maxVal = sb:GetMinMaxValues()
+		value = roundInt(value or 0)
+		if minVal and value < minVal then value = minVal end
+		if maxVal and value > maxVal then value = maxVal end
+		return value
+	end
+
+	sb:SetScript("OnValueChanged", function(self, value)
+		if self._suppress then return end
+		value = clampToRange(value)
+		self._suppress = true
+		self:SetValue(value)
+		self._suppress = false
+		if setCurrentValue then setCurrentValue(value) end
+	end)
+
+	sb:SetScript("OnEnter", function()
+		if sb.track then sb.track:SetColorTexture(1, 1, 1, 0.32) end
+		if sb.thumb then sb.thumb:SetColorTexture(0.92, 0.95, 1, 0.72) end
+	end)
+	sb:SetScript("OnLeave", function()
+		if sb.track then sb.track:SetColorTexture(1, 1, 1, 0.2) end
+		if sb.thumb then sb.thumb:SetColorTexture(0.85, 0.9, 1, 0.5) end
+	end)
+
+	function sb:Sync()
+		local maxValue = max(0, roundInt(getMaxValue and getMaxValue() or 0))
+		local currentValue = roundInt(getCurrentValue and getCurrentValue() or 0)
+		if currentValue < 0 then currentValue = 0 end
+		if currentValue > maxValue then currentValue = maxValue end
+		self._suppress = true
+		self:SetMinMaxValues(0, maxValue)
+		self:SetValue(currentValue)
+		self._suppress = false
+		applyVisibility(maxValue)
+	end
+
+	function sb:Step(delta)
+		local currentValue = roundInt(getCurrentValue and getCurrentValue() or self:GetValue() or 0)
+		self:SetValue(currentValue - roundInt(delta or 0))
+	end
+
+	sb:Sync()
+	return sb
+end
+
 local function getKindConfig(kind)
 	local cfg
 	if GF and GF.GetHealerBuffPlacementConfig then
@@ -598,6 +678,38 @@ local function eachGroupRule(placement, groupId, callback)
 	end
 end
 
+local function buildUsedFamilyMapForGroup(placement, groupId, out)
+	out = out or {}
+	wipeTable(out)
+	if not (placement and groupId) then return out end
+	for i = 1, #(placement.ruleOrder or EMPTY) do
+		local ruleId = placement.ruleOrder[i]
+		local rule = placement.rulesById and placement.rulesById[ruleId]
+		local familyId = rule and rule.spellFamilyId
+		if rule and rule.groupId == groupId and familyId ~= nil then out[tostring(familyId)] = ruleId end
+	end
+	return out
+end
+
+local function findExistingRuleForGroupFamily(placement, groupId, familyId)
+	if not (placement and groupId and familyId ~= nil) then return nil end
+	familyId = tostring(familyId)
+	for i = 1, #(placement.ruleOrder or EMPTY) do
+		local ruleId = placement.ruleOrder[i]
+		local rule = placement.rulesById and placement.rulesById[ruleId]
+		if rule and rule.groupId == groupId and tostring(rule.spellFamilyId or "") == familyId then return ruleId end
+	end
+	return nil
+end
+
+local function copyArray(src)
+	local out = {}
+	for i = 1, #(src or EMPTY) do
+		out[#out + 1] = src[i]
+	end
+	return out
+end
+
 local function getFamilyPresentation(familyId)
 	local family = HB.GetFamilyById and HB.GetFamilyById(familyId)
 	if not family then return tostring(familyId or ""), nil, nil, nil end
@@ -608,9 +720,7 @@ end
 
 local function getFamilyLabel(familyId, withIcon)
 	local name, icon = getFamilyPresentation(familyId)
-	if withIcon and icon then
-		return iconMarkup(icon, 14) .. name
-	end
+	if withIcon and icon then return iconMarkup(icon, 14) .. name end
 	return name
 end
 
@@ -691,9 +801,7 @@ local function buildStyleOptionsForMenu()
 	sort(list, function(a, b)
 		local left = tostring((a and (a.label or a.text or a.value)) or "")
 		local right = tostring((b and (b.label or b.text or b.value)) or "")
-		if left == right then
-			return tostring(a and a.value or "") < tostring(b and b.value or "")
-		end
+		if left == right then return tostring(a and a.value or "") < tostring(b and b.value or "") end
 		return left < right
 	end)
 	return list
@@ -791,13 +899,9 @@ function Editor:EnsureSelection()
 		self.selectedRuleId = nil
 		return
 	end
-	if self.selectedGroupId == nil or not (placement.groupsById and placement.groupsById[self.selectedGroupId]) then
-		self.selectedGroupId = placement.groupOrder and placement.groupOrder[1] or nil
-	end
+	if self.selectedGroupId == nil or not (placement.groupsById and placement.groupsById[self.selectedGroupId]) then self.selectedGroupId = placement.groupOrder and placement.groupOrder[1] or nil end
 	local selectedRule = self.selectedRuleId and placement.rulesById and placement.rulesById[self.selectedRuleId]
-	if selectedRule and self.selectedGroupId and selectedRule.groupId ~= self.selectedGroupId then
-		selectedRule = nil
-	end
+	if selectedRule and self.selectedGroupId and selectedRule.groupId ~= self.selectedGroupId then selectedRule = nil end
 	if selectedRule == nil then
 		self.selectedRuleId = getFirstRuleIdForGroup(placement, self.selectedGroupId)
 		if self.selectedRuleId == nil then self.selectedRuleId = placement.ruleOrder and placement.ruleOrder[1] or nil end
@@ -853,8 +957,32 @@ function Editor:EnsureFrame()
 	subtitle:SetTextColor(0.75, 0.75, 0.75, 1)
 	frame.Subtitle = subtitle
 
-	local closeButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-	closeButton:SetPoint("TOPRIGHT", -6, -6)
+	local closeButton = CreateFrame("Button", nil, frame, "BackdropTemplate")
+	closeButton:SetSize(22, 22)
+	closeButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 20, 12)
+	closeButton:SetFrameStrata(frame:GetFrameStrata())
+	closeButton:SetFrameLevel((frame:GetFrameLevel() or 1) + 20)
+	closeButton:SetBackdrop({
+		bgFile = "Interface\\Buttons\\WHITE8x8",
+		edgeFile = "Interface\\Buttons\\WHITE8x8",
+		tile = false,
+		edgeSize = 1,
+		insets = { left = 0, right = 0, top = 0, bottom = 0 },
+	})
+	closeButton:SetBackdropColor(0.35, 0.08, 0.08, 0.95)
+	closeButton:SetBackdropBorderColor(0.82, 0.24, 0.24, 1)
+	closeButton.Text = closeButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	closeButton.Text:SetPoint("CENTER", 0, 0)
+	closeButton.Text:SetText("X")
+	closeButton.Text:SetTextColor(1, 0.9, 0.9, 1)
+	closeButton:SetScript("OnEnter", function(self)
+		self:SetBackdropColor(0.46, 0.1, 0.1, 0.98)
+		self:SetBackdropBorderColor(1, 0.35, 0.35, 1)
+	end)
+	closeButton:SetScript("OnLeave", function(self)
+		self:SetBackdropColor(0.35, 0.08, 0.08, 0.95)
+		self:SetBackdropBorderColor(0.82, 0.24, 0.24, 1)
+	end)
 	closeButton:SetScript("OnClick", function() frame:Hide() end)
 	frame.CloseButton = closeButton
 
@@ -904,40 +1032,57 @@ function Editor:EnsureFrame()
 
 	groupPanel.RowHolder = CreateFrame("Frame", nil, groupPanel)
 	groupPanel.RowHolder:SetPoint("TOPLEFT", groupTitle, "BOTTOMLEFT", 0, -10)
-	groupPanel.RowHolder:SetPoint("BOTTOMRIGHT", groupPanel, "BOTTOMRIGHT", -32, 10)
-
-	groupPanel.ScrollUp = createButton(groupPanel, "^", 20, 20)
-	groupPanel.ScrollUp:SetPoint("TOPRIGHT", groupPanel, "TOPRIGHT", -8, -36)
-	groupPanel.ScrollDown = createButton(groupPanel, "v", 20, 20)
-	groupPanel.ScrollDown:SetPoint("BOTTOMRIGHT", groupPanel, "BOTTOMRIGHT", -8, 12)
+	groupPanel.RowHolder:SetPoint("BOTTOMRIGHT", groupPanel, "BOTTOMRIGHT", -26, 10)
 
 	groupPanel.Rows = {}
 	for i = 1, GROUP_VISIBLE_ROWS do
 		local row = CreateFrame("Button", nil, groupPanel.RowHolder, "BackdropTemplate")
-		row:SetHeight(ROW_HEIGHT)
-		row:SetPoint("TOPLEFT", groupPanel.RowHolder, "TOPLEFT", 0, -((i - 1) * (ROW_HEIGHT + 2)))
-		row:SetPoint("TOPRIGHT", groupPanel.RowHolder, "TOPRIGHT", 0, -((i - 1) * (ROW_HEIGHT + 2)))
-			row:SetBackdrop({
-				bgFile = "Interface\\Buttons\\WHITE8x8",
-				edgeFile = "Interface\\Buttons\\WHITE8x8",
+		row:SetHeight(GROUP_ROW_HEIGHT)
+		row:SetPoint("TOPLEFT", groupPanel.RowHolder, "TOPLEFT", 0, -((i - 1) * (GROUP_ROW_HEIGHT + GROUP_ROW_GAP)))
+		row:SetPoint("TOPRIGHT", groupPanel.RowHolder, "TOPRIGHT", 0, -((i - 1) * (GROUP_ROW_HEIGHT + GROUP_ROW_GAP)))
+		row:SetBackdrop({
+			bgFile = "Interface\\Buttons\\WHITE8x8",
+			edgeFile = "Interface\\Buttons\\WHITE8x8",
 			tile = false,
 			edgeSize = 1,
 			insets = { left = 0, right = 0, top = 0, bottom = 0 },
 		})
-			row:SetBackdropColor(0.07, 0.09, 0.12, 0.82)
-			row:SetBackdropBorderColor(0.2, 0.26, 0.32, 0.9)
+		row:SetBackdropColor(0.07, 0.09, 0.12, 0.82)
+		row:SetBackdropBorderColor(0.2, 0.26, 0.32, 0.9)
 		row.Text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		row.Text:SetPoint("LEFT", 6, 0)
 		row.Text:SetPoint("RIGHT", -28, 0)
 		row.Text:SetJustifyH("LEFT")
 		row.Text:SetText("")
 		row:RegisterForDrag("LeftButton")
+		row:EnableMouseWheel(true)
 		row.DeleteButton = createButton(row, "x", 18, 18)
 		row.DeleteButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 		setDangerButtonStyle(row.DeleteButton)
+		row:SetScript("OnMouseWheel", function(_, delta)
+			if groupPanel.ScrollBar then groupPanel.ScrollBar:Step(delta) end
+		end)
 		row:Hide()
 		groupPanel.Rows[i] = row
 	end
+	groupPanel.ScrollBar = createThinListBar(groupPanel, groupPanel.RowHolder, 2,
+		function()
+			local _, placement = Editor:GetContext()
+			local count = placement and placement.groupOrder and #placement.groupOrder or 0
+			return max(0, count - GROUP_VISIBLE_ROWS)
+		end,
+		function()
+			return Editor.groupOffset or 0
+		end,
+		function(value)
+			Editor.groupOffset = roundInt(value or 0)
+			Editor:RefreshGroupList()
+		end
+	)
+	groupPanel.RowHolder:EnableMouseWheel(true)
+	groupPanel.RowHolder:SetScript("OnMouseWheel", function(_, delta)
+		if groupPanel.ScrollBar then groupPanel.ScrollBar:Step(delta) end
+	end)
 
 	local rulePanel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 	rulePanel:SetSize(420, 286)
@@ -973,40 +1118,59 @@ function Editor:EnsureFrame()
 
 	rulePanel.RowHolder = CreateFrame("Frame", nil, rulePanel)
 	rulePanel.RowHolder:SetPoint("TOPLEFT", ruleTitle, "BOTTOMLEFT", 0, -8)
-	rulePanel.RowHolder:SetPoint("BOTTOMRIGHT", rulePanel, "BOTTOMRIGHT", -32, 10)
-
-	rulePanel.ScrollUp = createButton(rulePanel, "^", 20, 20)
-	rulePanel.ScrollUp:SetPoint("TOPRIGHT", rulePanel, "TOPRIGHT", -8, -36)
-	rulePanel.ScrollDown = createButton(rulePanel, "v", 20, 20)
-	rulePanel.ScrollDown:SetPoint("BOTTOMRIGHT", rulePanel, "BOTTOMRIGHT", -8, 12)
+	rulePanel.RowHolder:SetPoint("BOTTOMRIGHT", rulePanel, "BOTTOMRIGHT", -18, 10)
 
 	rulePanel.Rows = {}
 	for i = 1, RULE_VISIBLE_ROWS do
 		local row = CreateFrame("Button", nil, rulePanel.RowHolder, "BackdropTemplate")
-		row:SetHeight(ROW_HEIGHT)
-		row:SetPoint("TOPLEFT", rulePanel.RowHolder, "TOPLEFT", 0, -((i - 1) * (ROW_HEIGHT + 2)))
-		row:SetPoint("TOPRIGHT", rulePanel.RowHolder, "TOPRIGHT", 0, -((i - 1) * (ROW_HEIGHT + 2)))
-			row:SetBackdrop({
-				bgFile = "Interface\\Buttons\\WHITE8x8",
-				edgeFile = "Interface\\Buttons\\WHITE8x8",
+		row:SetHeight(RULE_ROW_HEIGHT)
+		row:SetPoint("TOPLEFT", rulePanel.RowHolder, "TOPLEFT", 0, -((i - 1) * (RULE_ROW_HEIGHT + RULE_ROW_GAP)))
+		row:SetPoint("TOPRIGHT", rulePanel.RowHolder, "TOPRIGHT", 0, -((i - 1) * (RULE_ROW_HEIGHT + RULE_ROW_GAP)))
+		row:SetBackdrop({
+			bgFile = "Interface\\Buttons\\WHITE8x8",
+			edgeFile = "Interface\\Buttons\\WHITE8x8",
 			tile = false,
 			edgeSize = 1,
 			insets = { left = 0, right = 0, top = 0, bottom = 0 },
 		})
-			row:SetBackdropColor(0.07, 0.09, 0.12, 0.82)
-			row:SetBackdropBorderColor(0.2, 0.26, 0.32, 0.9)
+		row:SetBackdropColor(0.07, 0.09, 0.12, 0.82)
+		row:SetBackdropBorderColor(0.2, 0.26, 0.32, 0.9)
 		row.Text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		row.Text:SetPoint("LEFT", 6, 0)
 		row.Text:SetPoint("RIGHT", -28, 0)
 		row.Text:SetJustifyH("LEFT")
 		row.Text:SetText("")
 		row:RegisterForDrag("LeftButton")
+		row:EnableMouseWheel(true)
 		row.DeleteButton = createButton(row, "x", 18, 18)
 		row.DeleteButton:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 		setDangerButtonStyle(row.DeleteButton)
+		row:SetScript("OnMouseWheel", function(_, delta)
+			if rulePanel.ScrollBar then rulePanel.ScrollBar:Step(delta) end
+		end)
 		row:Hide()
 		rulePanel.Rows[i] = row
 	end
+	rulePanel.ScrollBar = createThinListBar(rulePanel, rulePanel.RowHolder, 4,
+		function()
+			local _, placement = Editor:GetContext()
+			if not placement then return 0 end
+			local visible = getVisibleRuleIds(placement, Editor.selectedGroupId, Editor._ruleScrollScratch)
+			Editor._ruleScrollScratch = visible
+			return max(0, #visible - RULE_VISIBLE_ROWS)
+		end,
+		function()
+			return Editor.ruleOffset or 0
+		end,
+		function(value)
+			Editor.ruleOffset = roundInt(value or 0)
+			Editor:RefreshRuleList()
+		end
+	)
+	rulePanel.RowHolder:EnableMouseWheel(true)
+	rulePanel.RowHolder:SetScript("OnMouseWheel", function(_, delta)
+		if rulePanel.ScrollBar then rulePanel.ScrollBar:Step(delta) end
+	end)
 
 	local previewPanel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 	previewPanel:SetSize(334, 286)
@@ -1043,6 +1207,7 @@ function Editor:EnsureFrame()
 	local health = unitFrame:CreateTexture(nil, "BACKGROUND")
 	health:SetPoint("TOPLEFT", unitFrame, "TOPLEFT", 0, 0)
 	health:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT", 0, 14)
+	health:SetDrawLayer("ARTWORK", 1)
 	health:SetColorTexture(0.08, 0.42, 0.19, 1)
 	unitFrame.HealthTexture = health
 
@@ -1050,6 +1215,7 @@ function Editor:EnsureFrame()
 	power:SetPoint("BOTTOMLEFT", unitFrame, "BOTTOMLEFT", 0, 0)
 	power:SetPoint("BOTTOMRIGHT", unitFrame, "BOTTOMRIGHT", 0, 0)
 	power:SetHeight(14)
+	power:SetDrawLayer("ARTWORK", 2)
 	power:SetColorTexture(0.1, 0.18, 0.45, 1)
 	unitFrame.PowerTexture = power
 
@@ -1357,9 +1523,9 @@ function Editor:EnsureFrame()
 	self.ruleOffset = 0
 	self._controlUpdateLock = nil
 
-		local function createGroupFromStyle(style)
-			local _, placement = Editor:GetContext()
-			if not placement then return end
+	local function createGroupFromStyle(style)
+		local _, placement = Editor:GetContext()
+		if not placement then return end
 		style = tostring(style or "ICON")
 		local newId = HB.GetNextGroupId and HB.GetNextGroupId(placement) or tostring((#placement.groupOrder or 0) + 1)
 		local group = HB.CreateDefaultGroup and HB.CreateDefaultGroup(newId) or { id = newId, name = "Indicator " .. newId, style = style }
@@ -1371,11 +1537,11 @@ function Editor:EnsureFrame()
 		end
 		placement.groupsById[newId] = group
 		tinsert(placement.groupOrder, newId)
-			Editor.selectedGroupId = newId
-			Editor:SyncSelectedRuleToGroup(true)
-			Editor:RefreshAll()
-			Editor:RefreshRuntimeNow()
-		end
+		Editor.selectedGroupId = newId
+		Editor:SyncSelectedRuleToGroup(true)
+		Editor:RefreshAll()
+		Editor:RefreshRuntimeNow()
+	end
 
 	local function deleteGroupById(groupId)
 		local _, placement = Editor:GetContext()
@@ -1401,19 +1567,62 @@ function Editor:EnsureFrame()
 	local function createRuleForSelectedGroup(familyId)
 		local _, placement = Editor:GetContext()
 		if not placement then return end
-		if not Editor.selectedGroupId then return end
+		local groupId = Editor.selectedGroupId
+		if not groupId then return end
+
+		local function addRuleToGroupFamily(targetFamilyId)
+			if targetFamilyId == nil then return nil, false end
+			targetFamilyId = tostring(targetFamilyId)
+			local existingRuleId = findExistingRuleForGroupFamily(placement, groupId, targetFamilyId)
+			if existingRuleId then return existingRuleId, false end
+			local newId = HB.GetNextRuleId and HB.GetNextRuleId(placement) or tostring((#placement.ruleOrder or 0) + 1)
+			placement.rulesById[newId] = HB.CreateDefaultRule and HB.CreateDefaultRule(newId, targetFamilyId, groupId)
+				or { id = newId, spellFamilyId = targetFamilyId, groupId = groupId, ["not"] = false, enabled = true, appliesParty = true, appliesRaid = true }
+			tinsert(placement.ruleOrder, newId)
+			return newId, true
+		end
+
+		local function addManyRulesForSelectedGroup(familyIds)
+			if type(familyIds) ~= "table" or #familyIds == 0 then return end
+			local firstNew, firstExisting, createdAny = nil, nil, false
+			for i = 1, #familyIds do
+				local ruleId, created = addRuleToGroupFamily(familyIds[i])
+				if ruleId then
+					if created then
+						createdAny = true
+						if not firstNew then firstNew = ruleId end
+					elseif not firstExisting then
+						firstExisting = ruleId
+					end
+				end
+			end
+			Editor.selectedRuleId = firstNew or firstExisting or Editor.selectedRuleId
+			Editor:RefreshAll()
+			if createdAny then Editor:RefreshRuntimeNow() end
+		end
+
 		if familyId == nil then
 			local familyOptions = buildFamilyOptionsForEditor()
 			if #familyOptions == 0 then return end
-			familyId = familyOptions[1].value
+			for i = 1, #familyOptions do
+				local candidateFamilyId = familyOptions[i].value
+				if findExistingRuleForGroupFamily(placement, groupId, candidateFamilyId) == nil then
+					familyId = candidateFamilyId
+					break
+				end
+			end
+			if familyId == nil then return end
 		end
-		local newId = HB.GetNextRuleId and HB.GetNextRuleId(placement) or tostring((#placement.ruleOrder or 0) + 1)
-		placement.rulesById[newId] = HB.CreateDefaultRule and HB.CreateDefaultRule(newId, familyId, Editor.selectedGroupId)
-			or { id = newId, spellFamilyId = familyId, groupId = Editor.selectedGroupId, ["not"] = false, enabled = true, appliesParty = true, appliesRaid = true }
-		tinsert(placement.ruleOrder, newId)
-		Editor.selectedRuleId = newId
-		Editor:RefreshAll()
-		Editor:RefreshRuntimeNow()
+		if type(familyId) == "table" then
+			addManyRulesForSelectedGroup(familyId)
+			return
+		end
+		local newId, created = addRuleToGroupFamily(familyId)
+		if newId then
+			Editor.selectedRuleId = newId
+			Editor:RefreshAll()
+			if created then Editor:RefreshRuntimeNow() end
+		end
 	end
 
 	local function deleteRuleById(ruleId)
@@ -1423,9 +1632,7 @@ function Editor:EnsureFrame()
 		for i = #placement.ruleOrder, 1, -1 do
 			if placement.ruleOrder[i] == ruleId then table.remove(placement.ruleOrder, i) end
 		end
-		if Editor.selectedRuleId == ruleId then
-			Editor.selectedRuleId = getFirstRuleIdForGroup(placement, Editor.selectedGroupId) or placement.ruleOrder[1]
-		end
+		if Editor.selectedRuleId == ruleId then Editor.selectedRuleId = getFirstRuleIdForGroup(placement, Editor.selectedGroupId) or placement.ruleOrder[1] end
 		Editor:RefreshAll()
 		Editor:RefreshRuntimeNow()
 	end
@@ -1440,46 +1647,94 @@ function Editor:EnsureFrame()
 	ruleFamilyMenu.displayMode = "MENU"
 	UIDropDownMenu_Initialize(ruleFamilyMenu, function(_, level, menuList)
 		local buckets, classOrder = buildFamilyOptionsByClass()
+		local allFamilies = buildFamilyOptionsForEditor()
+		local _, placement = Editor:GetContext()
+		local selectedGroupId = Editor.selectedGroupId
+		local usedFamilyMap = buildUsedFamilyMapForGroup(placement, selectedGroupId, Editor._ruleMenuUsedFamilyMap)
+		Editor._ruleMenuUsedFamilyMap = usedFamilyMap
 		if level == 1 then
+			local allAvailableFamilyIds = {}
+			for i = 1, #allFamilies do
+				local familyId = allFamilies[i] and allFamilies[i].value
+				if familyId ~= nil and usedFamilyMap[tostring(familyId)] == nil then allAvailableFamilyIds[#allAvailableFamilyIds + 1] = familyId end
+			end
+			do
+				local info = UIDropDownMenu_CreateInfo()
+				info.text = "Add all spells"
+				info.notCheckable = true
+				info.disabled = #allAvailableFamilyIds == 0
+				if #allAvailableFamilyIds > 0 then
+					local batch = copyArray(allAvailableFamilyIds)
+					info.func = function() createRuleForSelectedGroup(batch) end
+				end
+				UIDropDownMenu_AddButton(info, level)
+			end
 			for i = 1, #classOrder do
 				local classToken = classOrder[i]
 				local bucket = buckets[classToken]
 				if bucket and bucket.spells and #bucket.spells > 0 then
+					local hasAvailable = false
+					for si = 1, #bucket.spells do
+						local option = bucket.spells[si]
+						if option and usedFamilyMap[tostring(option.value)] == nil then
+							hasAvailable = true
+							break
+						end
+					end
 					local info = UIDropDownMenu_CreateInfo()
 					info.text = bucket.label
 					info.notCheckable = true
-					info.hasArrow = true
-					info.menuList = classToken
+					info.hasArrow = hasAvailable
+					info.disabled = not hasAvailable
+					if hasAvailable then info.menuList = classToken end
 					UIDropDownMenu_AddButton(info, level)
 				end
 			end
 		elseif level == 2 and menuList then
 			local bucket = buckets[menuList]
 			if not (bucket and bucket.spells) then return end
+			local classAvailableFamilyIds = {}
+			for i = 1, #bucket.spells do
+				local option = bucket.spells[i]
+				if option and usedFamilyMap[tostring(option.value)] == nil then classAvailableFamilyIds[#classAvailableFamilyIds + 1] = option.value end
+			end
+			do
+				local info = UIDropDownMenu_CreateInfo()
+				info.text = "Add all"
+				info.notCheckable = true
+				info.disabled = #classAvailableFamilyIds == 0
+				if #classAvailableFamilyIds > 0 then
+					local batch = copyArray(classAvailableFamilyIds)
+					info.func = function() createRuleForSelectedGroup(batch) end
+				end
+				UIDropDownMenu_AddButton(info, level)
+			end
 			for i = 1, #bucket.spells do
 				local option = bucket.spells[i]
 				local info = UIDropDownMenu_CreateInfo()
 				info.text = getDropdownOptionText(option, true)
 				info.notCheckable = true
-				info.func = function() createRuleForSelectedGroup(option.value) end
+				local isUsed = usedFamilyMap[tostring(option.value)] ~= nil
+				info.disabled = isUsed
+				if not isUsed then info.func = function() createRuleForSelectedGroup(option.value) end end
 				UIDropDownMenu_AddButton(info, level)
 			end
 		end
 	end, "MENU")
 
-		local groupStyleMenu = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
-		groupStyleMenu.displayMode = "MENU"
-		UIDropDownMenu_Initialize(groupStyleMenu, function(_, level)
-			local styleOptions = buildStyleOptionsForMenu()
-			for i = 1, #styleOptions do
-				local option = styleOptions[i]
-				local info = UIDropDownMenu_CreateInfo()
-				info.text = getDropdownOptionText(option, true)
-				info.notCheckable = true
-				info.func = function() createGroupFromStyle(option.value) end
-				UIDropDownMenu_AddButton(info, level)
-			end
-		end, "MENU")
+	local groupStyleMenu = CreateFrame("Frame", nil, frame, "UIDropDownMenuTemplate")
+	groupStyleMenu.displayMode = "MENU"
+	UIDropDownMenu_Initialize(groupStyleMenu, function(_, level)
+		local styleOptions = buildStyleOptionsForMenu()
+		for i = 1, #styleOptions do
+			local option = styleOptions[i]
+			local info = UIDropDownMenu_CreateInfo()
+			info.text = getDropdownOptionText(option, true)
+			info.notCheckable = true
+			info.func = function() createGroupFromStyle(option.value) end
+			UIDropDownMenu_AddButton(info, level)
+		end
+	end, "MENU")
 
 	enabledCheck:SetScript("OnClick", function()
 		local _, placement = Editor:GetContext()
@@ -1489,28 +1744,26 @@ function Editor:EnsureFrame()
 		Editor:RefreshLists()
 	end)
 
-		addGroup:SetScript("OnClick", function(self)
-			if _G.UIDROPDOWNMENU_OPEN_MENU == groupStyleMenu then
-				if CloseDropDownMenus then CloseDropDownMenus(1) end
+	addGroup:SetScript("OnClick", function(self)
+		if _G.UIDROPDOWNMENU_OPEN_MENU == groupStyleMenu then
+			if CloseDropDownMenus then CloseDropDownMenus(1) end
+			return
+		end
+		if ToggleDropDownMenu then
+			ToggleDropDownMenu(1, nil, groupStyleMenu, self, 0, 0)
+			return
+		end
+		local styleOptions = buildStyleOptionsForMenu()
+		for i = 1, #styleOptions do
+			local option = styleOptions[i]
+			if option and option.value then
+				createGroupFromStyle(option.value)
 				return
 			end
-			if ToggleDropDownMenu then
-				ToggleDropDownMenu(1, nil, groupStyleMenu, self, 0, 0)
-				return
-			end
-			local styleOptions = buildStyleOptionsForMenu()
-			for i = 1, #styleOptions do
-				local option = styleOptions[i]
-				if option and option.value then
-					createGroupFromStyle(option.value)
-					return
-				end
-			end
-		end)
-
-	deleteGroup:SetScript("OnClick", function()
-		deleteGroupById(Editor.selectedGroupId)
+		end
 	end)
+
+	deleteGroup:SetScript("OnClick", function() deleteGroupById(Editor.selectedGroupId) end)
 
 	groupUp:SetScript("OnClick", function()
 		local _, placement = Editor:GetContext()
@@ -1546,9 +1799,7 @@ function Editor:EnsureFrame()
 		createRuleForSelectedGroup()
 	end)
 
-	deleteRule:SetScript("OnClick", function()
-		deleteSelectedRule()
-	end)
+	deleteRule:SetScript("OnClick", function() deleteSelectedRule() end)
 
 	ruleUp:SetScript("OnClick", function()
 		local _, placement = Editor:GetContext()
@@ -1596,31 +1847,6 @@ function Editor:EnsureFrame()
 		Editor:RefreshLists()
 		Editor:RefreshPreview()
 		Editor:RefreshRuntimeNow()
-	end)
-
-	groupPanel.ScrollUp:SetScript("OnClick", function()
-		Editor.groupOffset = max(0, (Editor.groupOffset or 0) - 1)
-		Editor:RefreshGroupList()
-	end)
-	groupPanel.ScrollDown:SetScript("OnClick", function()
-		local _, placement = Editor:GetContext()
-		if not placement then return end
-		local maxOffset = max(0, #placement.groupOrder - GROUP_VISIBLE_ROWS)
-		Editor.groupOffset = min(maxOffset, (Editor.groupOffset or 0) + 1)
-		Editor:RefreshGroupList()
-	end)
-
-	rulePanel.ScrollUp:SetScript("OnClick", function()
-		Editor.ruleOffset = max(0, (Editor.ruleOffset or 0) - 1)
-		Editor:RefreshRuleList()
-	end)
-	rulePanel.ScrollDown:SetScript("OnClick", function()
-		local _, placement = Editor:GetContext()
-		if not placement then return end
-		local visible = getVisibleRuleIds(placement, Editor.selectedGroupId)
-		local maxOffset = max(0, #visible - RULE_VISIBLE_ROWS)
-		Editor.ruleOffset = min(maxOffset, (Editor.ruleOffset or 0) + 1)
-		Editor:RefreshRuleList()
 	end)
 
 	for i = 1, GROUP_VISIBLE_ROWS do
@@ -1765,7 +1991,11 @@ function Editor:EnsureFrame()
 				local preview = Editor.frame and Editor.frame.PreviewPanel and Editor.frame.PreviewPanel.Frame and Editor.frame.PreviewPanel.Frame.UnitFrame
 				if preview then
 					group.x, group.y = HB.ClampOffsets(group.anchorPoint, group.x, group.y, preview:GetWidth(), preview:GetHeight(), 0)
-					if field == "x" then value = group.x else value = group.y end
+					if field == "x" then
+						value = group.x
+					else
+						value = group.y
+					end
 				end
 			end
 			if valueText then
@@ -1819,7 +2049,9 @@ function Editor:EnsureFrame()
 		if not group then return end
 		group.anchorPoint = value
 		local preview = frame.PreviewPanel and frame.PreviewPanel.Frame and frame.PreviewPanel.Frame.UnitFrame
-		if preview then group.x, group.y = HB.ClampOffsets(group.anchorPoint, group.x, group.y, preview:GetWidth(), preview:GetHeight(), 0) end
+		if preview then
+			group.x, group.y = HB.ClampOffsets(group.anchorPoint, group.x, group.y, preview:GetWidth(), preview:GetHeight(), 0)
+		end
 		Editor:RefreshGroupControls()
 		Editor:RefreshPreview()
 		Editor:RefreshRuntimeNow()
@@ -1944,7 +2176,10 @@ function Editor:RefreshGroupList()
 	local _, placement = self:GetContext()
 	local rows = frame.GroupPanel.Rows
 	if not placement then
-		for i = 1, #rows do rows[i]:Hide() end
+		for i = 1, #rows do
+			rows[i]:Hide()
+		end
+		if frame.GroupPanel and frame.GroupPanel.ScrollBar and frame.GroupPanel.ScrollBar.Sync then frame.GroupPanel.ScrollBar:Sync() end
 		return
 	end
 	local order = placement.groupOrder or {}
@@ -1961,21 +2196,22 @@ function Editor:RefreshGroupList()
 			row.groupId = groupId
 			row:Show()
 			if row.DeleteButton then row.DeleteButton:Show() end
-				local label = string.format("%d. %s  [%s]", index, tostring(group.name or ("Indicator " .. tostring(groupId))), tostring(group.style or "ICON"))
-					row.Text:SetText(label)
-					if groupId == self.selectedGroupId then
-						row:SetBackdropColor(0.12, 0.19, 0.3, 0.95)
-						row:SetBackdropBorderColor(0.52, 0.76, 1, 1)
-					else
-						row:SetBackdropColor(0.07, 0.09, 0.12, 0.82)
-						row:SetBackdropBorderColor(0.2, 0.26, 0.32, 0.9)
-					end
+			local label = string.format("%d. %s  [%s]", index, tostring(group.name or ("Indicator " .. tostring(groupId))), tostring(group.style or "ICON"))
+			row.Text:SetText(label)
+			if groupId == self.selectedGroupId then
+				row:SetBackdropColor(0.12, 0.19, 0.3, 0.95)
+				row:SetBackdropBorderColor(0.52, 0.76, 1, 1)
+			else
+				row:SetBackdropColor(0.07, 0.09, 0.12, 0.82)
+				row:SetBackdropBorderColor(0.2, 0.26, 0.32, 0.9)
+			end
 		else
 			row.groupId = nil
 			if row.DeleteButton then row.DeleteButton:Hide() end
 			row:Hide()
 		end
 	end
+	if frame.GroupPanel and frame.GroupPanel.ScrollBar and frame.GroupPanel.ScrollBar.Sync then frame.GroupPanel.ScrollBar:Sync() end
 end
 
 function Editor:RefreshRuleList()
@@ -1987,7 +2223,10 @@ function Editor:RefreshRuleList()
 		frame.RulePanel.Title:SetText(groupLabel and ("Spell Rules - " .. groupLabel) or "Spell Rules")
 	end
 	if not placement then
-		for i = 1, #rows do rows[i]:Hide() end
+		for i = 1, #rows do
+			rows[i]:Hide()
+		end
+		if frame.RulePanel and frame.RulePanel.ScrollBar and frame.RulePanel.ScrollBar.Sync then frame.RulePanel.ScrollBar:Sync() end
 		return
 	end
 	local order = getVisibleRuleIds(placement, self.selectedGroupId, self._ruleScratch)
@@ -2024,21 +2263,22 @@ function Editor:RefreshRuleList()
 			elseif appliesRaid then
 				scope = " [R]"
 			end
-				local label = string.format("%d. %s%s%s%s", index, familyLabel, scope, marker, state)
-					row.Text:SetText(label)
-					if ruleId == self.selectedRuleId then
-						row:SetBackdropColor(0.12, 0.19, 0.3, 0.95)
-						row:SetBackdropBorderColor(0.52, 0.76, 1, 1)
-					else
-						row:SetBackdropColor(0.07, 0.09, 0.12, 0.82)
-						row:SetBackdropBorderColor(0.2, 0.26, 0.32, 0.9)
-					end
+			local label = string.format("%d. %s%s%s%s", index, familyLabel, scope, marker, state)
+			row.Text:SetText(label)
+			if ruleId == self.selectedRuleId then
+				row:SetBackdropColor(0.12, 0.19, 0.3, 0.95)
+				row:SetBackdropBorderColor(0.52, 0.76, 1, 1)
+			else
+				row:SetBackdropColor(0.07, 0.09, 0.12, 0.82)
+				row:SetBackdropBorderColor(0.2, 0.26, 0.32, 0.9)
+			end
 		else
 			row.ruleId = nil
 			if row.DeleteButton then row.DeleteButton:Hide() end
 			row:Hide()
 		end
 	end
+	if frame.RulePanel and frame.RulePanel.ScrollBar and frame.RulePanel.ScrollBar.Sync then frame.RulePanel.ScrollBar:Sync() end
 end
 
 function Editor:RefreshLists()
@@ -2068,16 +2308,12 @@ function Editor:RefreshRuleControls()
 	setControlVisible(controls.RuleIconModeLabel, showIconRuleMode)
 	setControlVisible(controls.RuleIconMode, showIconRuleMode)
 	setControlEnabled(controls.RuleIconMode, showIconRuleMode)
-	if showIconRuleMode then
-		setDropdown(controls.RuleIconMode, iconModeOptions, tostring(selectedGroup.iconMode or "ALL"):upper(), controls.RuleIconMode._eqolOnSelect)
-	end
+	if showIconRuleMode then setDropdown(controls.RuleIconMode, iconModeOptions, tostring(selectedGroup.iconMode or "ALL"):upper(), controls.RuleIconMode._eqolOnSelect) end
 
 	setControlVisible(controls.RuleMatchLabel, showTintRuleMatch)
 	setControlVisible(controls.RuleMatch, showTintRuleMatch)
 	setControlEnabled(controls.RuleMatch, showTintRuleMatch)
-	if showTintRuleMatch then
-		setDropdown(controls.RuleMatch, ruleMatchOptions, tostring(selectedGroup.ruleMatch or "ANY"):upper(), controls.RuleMatch._eqolOnSelect)
-	end
+	if showTintRuleMatch then setDropdown(controls.RuleMatch, ruleMatchOptions, tostring(selectedGroup.ruleMatch or "ANY"):upper(), controls.RuleMatch._eqolOnSelect) end
 
 	controls.RuleInfo:ClearAllPoints()
 	if showTintRuleMatch then
@@ -2129,11 +2365,11 @@ function Editor:RefreshGroupControls()
 		setControlEnabled(slider, enabled and visible)
 	end
 
-		local function setColorState(visible, enabled)
-			setControlVisible(controls.ColorLabel, visible)
-			setControlVisible(controls.ColorButton, visible)
-			setControlEnabled(controls.ColorButton, enabled and visible)
-		end
+	local function setColorState(visible, enabled)
+		setControlVisible(controls.ColorLabel, visible)
+		setControlVisible(controls.ColorButton, visible)
+		setControlEnabled(controls.ColorButton, enabled and visible)
+	end
 
 	self._controlUpdateLock = true
 	setControlVisible(controls.GroupStyleLabel, false)
@@ -2158,7 +2394,9 @@ function Editor:RefreshGroupControls()
 		setDropdown(controls.GroupBarOrientation, HB.ORIENTATION_OPTIONS, group.barOrientation or "HORIZONTAL", controls.GroupBarOrientation._eqolOnSelect)
 
 		local preview = frame.PreviewPanel and frame.PreviewPanel.Frame and frame.PreviewPanel.Frame.UnitFrame
-		if preview then group.x, group.y = HB.ClampOffsets(group.anchorPoint, group.x, group.y, preview:GetWidth(), preview:GetHeight(), 0) end
+		if preview then
+			group.x, group.y = HB.ClampOffsets(group.anchorPoint, group.x, group.y, preview:GetWidth(), preview:GetHeight(), 0)
+		end
 
 		controls.PerRow:SetValue(group.perRow or 3)
 		controls.PerRowValue:SetText(tostring(group.perRow or 3))
@@ -2179,8 +2417,8 @@ function Editor:RefreshGroupControls()
 		controls.BorderSize:SetValue(group.borderSize or 2)
 		controls.BorderSizeValue:SetText(tostring(group.borderSize or 2))
 
-			group.color = group.color or { 1, 0.82, 0.1, 0.22 }
-			setColorPreview(controls.ColorButton, group.color)
+		group.color = group.color or { 1, 0.82, 0.1, 0.22 }
+		setColorPreview(controls.ColorButton, group.color)
 
 		setControlEnabled(controls.GroupName, true)
 		setFieldState(controls.GroupAnchorLabel, controls.GroupAnchor, showAnchor, true)
@@ -2212,7 +2450,7 @@ function Editor:RefreshGroupControls()
 		setSliderState(controls.InsetLabel, controls.Inset, controls.InsetValue, false, false)
 		setSliderState(controls.BorderSizeLabel, controls.BorderSize, controls.BorderSizeValue, false, false)
 		setColorState(false, false)
-			setColorPreview(controls.ColorButton, { 1, 1, 1, 1 })
+		setColorPreview(controls.ColorButton, { 1, 1, 1, 1 })
 	end
 	self._controlUpdateLock = nil
 
@@ -2238,9 +2476,7 @@ local function clearPreview(unitFrame)
 end
 
 local function resolveColor(color)
-	if type(color) == "table" then
-		return color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
-	end
+	if type(color) == "table" then return color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 end
 	return 1, 1, 1, 1
 end
 
@@ -2257,12 +2493,7 @@ local function applyPreviewHealthTint(unitFrame, tintR, tintG, tintB, tintA)
 		return
 	end
 	local inv = 1 - strength
-	unitFrame.HealthTexture:SetColorTexture(
-		(baseR * inv) + ((tintR or baseR) * strength),
-		(baseG * inv) + ((tintG or baseG) * strength),
-		(baseB * inv) + ((tintB or baseB) * strength),
-		baseA
-	)
+	unitFrame.HealthTexture:SetColorTexture((baseR * inv) + ((tintR or baseR) * strength), (baseG * inv) + ((tintG or baseG) * strength), (baseB * inv) + ((tintB or baseB) * strength), baseA)
 end
 
 local function ruleAppliesToPreviewKind(rule, kind)
@@ -2281,6 +2512,32 @@ local function getRuleIdsForGroup(placement, groupId, kind)
 	return list
 end
 
+local function isPreviewRuleActive(rule)
+	if not rule or rule.enabled == false then return false end
+	local active = true
+	if rule["not"] then active = not active end
+	return active
+end
+
+local function isPreviewGroupTintActive(placement, group, kind)
+	if not (placement and group and group.id) then return false end
+	local ruleIds = getRuleIdsForGroup(placement, group.id, kind)
+	local ruleMatch = tostring(group.ruleMatch or "ANY"):upper()
+	if ruleMatch == "ALL" then
+		if #ruleIds == 0 then return false end
+		for i = 1, #ruleIds do
+			local rule = placement.rulesById and placement.rulesById[ruleIds[i]]
+			if not isPreviewRuleActive(rule) then return false end
+		end
+		return true
+	end
+	for i = 1, #ruleIds do
+		local rule = placement.rulesById and placement.rulesById[ruleIds[i]]
+		if isPreviewRuleActive(rule) then return true end
+	end
+	return false
+end
+
 function Editor:RefreshPreview()
 	local frame = self:EnsureFrame()
 	local _, placement = self:GetContext()
@@ -2294,43 +2551,43 @@ function Editor:RefreshPreview()
 	local tintR, tintG, tintB, tintA
 	local hasTint = false
 	local w, h = preview:GetWidth(), preview:GetHeight()
-		for index = 1, #order do
-			local groupId = order[index]
-			local group = placement.groupsById and placement.groupsById[groupId]
-				if group then
-					local style = tostring(group.style or "ICON")
-					local iconMode = tostring(group.iconMode or "ALL"):upper()
-					local anchorPoint = group.anchorPoint or "CENTER"
-				local selected = groupId == self.selectedGroupId
-				local anchor = ANCHOR_COORDS[anchorPoint] or ANCHOR_COORDS.CENTER
-				local anchorX = (anchor[1] or 0) * w
-				local anchorY = (anchor[2] or 0) * h
-				local x = group.x or 0
-				local y = group.y or 0
-				x, y = HB.ClampOffsets(anchorPoint, x, y, w, h, 0)
-				group.x, group.y = x, y
-				local baseX = anchorX + x
-				local baseY = anchorY + y
+	for index = 1, #order do
+		local groupId = order[index]
+		local group = placement.groupsById and placement.groupsById[groupId]
+		if group then
+			local style = tostring(group.style or "ICON"):upper()
+			local iconMode = tostring(group.iconMode or "ALL"):upper()
+			local anchorPoint = group.anchorPoint or "CENTER"
+			local selected = groupId == self.selectedGroupId
+			local anchor = ANCHOR_COORDS[anchorPoint] or ANCHOR_COORDS.CENTER
+			local anchorX = (anchor[1] or 0) * w
+			local anchorY = (anchor[2] or 0) * h
+			local x = group.x or 0
+			local y = group.y or 0
+			x, y = HB.ClampOffsets(anchorPoint, x, y, w, h, 0)
+			group.x, group.y = x, y
+			local baseX = anchorX + x
+			local baseY = anchorY + y
 
-					if style == "ICON" or style == "SQUARE" then
-					local ruleIds = getRuleIdsForGroup(placement, group.id, self.kind)
-					local isPriorityMode = iconMode == "PRIORITY"
-					if isPriorityMode and #ruleIds > 1 then
-						for trim = #ruleIds, 2, -1 do
-							ruleIds[trim] = nil
-						end
+			if style == "ICON" or style == "SQUARE" then
+				local ruleIds = getRuleIdsForGroup(placement, group.id, self.kind)
+				local isPriorityMode = iconMode == "PRIORITY"
+				if isPriorityMode and #ruleIds > 1 then
+					for trim = #ruleIds, 2, -1 do
+						ruleIds[trim] = nil
 					end
-					local size = max(4, tonumber(group.size) or 16)
-					local spacing = max(0, tonumber(group.spacing) or 0)
-					local perRow = max(1, tonumber(group.perRow) or 1)
-					local maxIcons = max(0, tonumber(group.max) or 3)
-					local previewCount = isPriorityMode and min(maxIcons, 1) or min(maxIcons, 3)
-					local shown
-					if isPriorityMode then
-						shown = maxIcons > 0 and 1 or 0
-					else
-						shown = min(maxIcons, max(#ruleIds, previewCount))
-					end
+				end
+				local size = max(4, tonumber(group.size) or 16)
+				local spacing = max(0, tonumber(group.spacing) or 0)
+				local perRow = max(1, tonumber(group.perRow) or 1)
+				local maxIcons = max(0, tonumber(group.max) or 3)
+				local previewCount = isPriorityMode and min(maxIcons, 1) or min(maxIcons, 3)
+				local shown
+				if isPriorityMode then
+					shown = maxIcons > 0 and 1 or 0
+				else
+					shown = min(maxIcons, max(#ruleIds, previewCount))
+				end
 				local primary, secondary = HB.GetGrowthAxes(group.growth)
 				local primaryHorizontal = primary == "LEFT" or primary == "RIGHT"
 				for i = 1, shown do
@@ -2342,25 +2599,25 @@ function Editor:RefreshPreview()
 						row = (i - 1) % perRow
 						col = floor((i - 1) / perRow)
 					end
-						local horizontalDir = primaryHorizontal and primary or secondary
-						local verticalDir = primaryHorizontal and secondary or primary
-						local xSign = horizontalDir == "RIGHT" and 1 or -1
-						local ySign = verticalDir == "UP" and 1 or -1
-						local px = x + (col * (size + spacing) * xSign)
-						local py = y + (row * (size + spacing) * ySign)
-							local icon = preview.SampleIcons[iconIndex]
-							iconIndex = iconIndex + 1
-							if icon then
-								icon:SetSize(size, size)
-								icon:ClearAllPoints()
-								icon:SetPoint(anchorPoint, preview, anchorPoint, px, py)
-								local ruleId = ruleIds[i]
-								if ruleId == nil and #ruleIds > 0 then
-									local cycleIndex = ((i - 1) % #ruleIds) + 1
-									ruleId = ruleIds[cycleIndex]
-							end
-							local rule = ruleId and placement.rulesById and placement.rulesById[ruleId]
-							local family = rule and HB.GetFamilyById and HB.GetFamilyById(rule.spellFamilyId)
+					local horizontalDir = primaryHorizontal and primary or secondary
+					local verticalDir = primaryHorizontal and secondary or primary
+					local xSign = horizontalDir == "RIGHT" and 1 or -1
+					local ySign = verticalDir == "UP" and 1 or -1
+					local px = x + (col * (size + spacing) * xSign)
+					local py = y + (row * (size + spacing) * ySign)
+					local icon = preview.SampleIcons[iconIndex]
+					iconIndex = iconIndex + 1
+					if icon then
+						icon:SetSize(size, size)
+						icon:ClearAllPoints()
+						icon:SetPoint(anchorPoint, preview, anchorPoint, px, py)
+						local ruleId = ruleIds[i]
+						if ruleId == nil and #ruleIds > 0 then
+							local cycleIndex = ((i - 1) % #ruleIds) + 1
+							ruleId = ruleIds[cycleIndex]
+						end
+						local rule = ruleId and placement.rulesById and placement.rulesById[ruleId]
+						local family = rule and HB.GetFamilyById and HB.GetFamilyById(rule.spellFamilyId)
 						local iconTex = family and family._resolvedIcon or nil
 						if not iconTex and family and family.spellIds and family.spellIds[1] then
 							if C_Spell and C_Spell.GetSpellTexture then
@@ -2424,8 +2681,11 @@ function Editor:RefreshPreview()
 					border:SetBackdropBorderColor(r, g, b, a)
 					border:Show()
 				end
-				elseif style == "TINT" then
+			elseif style == "TINT" then
+				local active = isPreviewGroupTintActive(placement, group, self.kind)
+				if active or selected then
 					local r, g, b, a = resolveColor(group.color)
+					if not active and selected then a = min(a, 0.35) end
 					if selected then
 						tintR, tintG, tintB, tintA = r, g, b, a
 						hasTint = true
@@ -2434,9 +2694,9 @@ function Editor:RefreshPreview()
 						hasTint = true
 					end
 				end
-
 			end
 		end
+	end
 
 	applyPreviewHealthTint(preview, tintR, tintG, tintB, hasTint and tintA or nil)
 end
@@ -2483,6 +2743,4 @@ function Editor:Toggle(kind)
 	self:Show(kind)
 end
 
-function Editor:IsShown()
-	return self.frame and self.frame:IsShown() == true
-end
+function Editor:IsShown() return self.frame and self.frame:IsShown() == true end
