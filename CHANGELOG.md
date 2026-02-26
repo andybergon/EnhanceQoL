@@ -17,6 +17,10 @@
 - Unit Frames (Profiles): Added create/copy/delete actions on the Profiles page.
 - Unit Frames (Profiles): Added quick UF profile switching in the minimap right-click menu.
 - Group Frames (Party/Raid): Added optional integration with `HarreksAdvancedRaidFrames`.
+- Group Frames (Party/Raid): Added a new `Healer Buff Placement` editor to place healer spell indicators exactly where you want them on frames.
+- Group Frames (Party/Raid): You can now create custom indicators with different visual styles (Icon, Square, Bar, Border, Tint) and assign healer spells to them.
+- Group Frames (Party/Raid): Indicators can now also be used as reminders when important buffs are missing.
+- Group Frames (Party/Raid): Added `/eqol hbp` as a quick shortcut to open the Healer Buff Placement editor, even outside Edit Mode.
 - Unit Frames (Player/Class Resources): Added per-resource settings via a new `Resource` dropdown, so anchor/strata/frame level offset/offset/scale can be configured per supported resource type.
 - Unit Frames (Player/Class Resources): Added `Visible resources` multi-select listing all supported resources, so you can preconfigure visibility on one character for every resource type.
 - Cooldown Panels (Edit Mode): Added support for Macro entries (`MACRO`) via drag & drop (macro list and action bar slots).
