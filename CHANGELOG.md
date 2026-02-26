@@ -1,6 +1,13 @@
 # Changelog
 
-## [8.0.0] - 2026-02-25
+## [8.0.0] - 2026-02-27
+
+### ⚠️ Important Profile Notice
+
+- We changed how profile data is handled to make behavior more consistent and avoid unexpected overwrites when switching Edit Mode layouts.
+- In rare cases after updating, some users may notice that parts of their layout-based setup look different than before.
+- If that happens, please verify your active EQoL profile and re-import or restore your preferred profile setup once.
+- Going forward, profile changes should be easier to understand and more predictable for users.
 
 ### ✨ Added
 

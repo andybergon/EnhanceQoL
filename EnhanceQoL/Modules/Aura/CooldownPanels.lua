@@ -3136,6 +3136,94 @@ end
 local ensureDeletePopup
 local ensureCopyPopup
 
+function CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId)
+	local panel = self:GetPanel(panelId)
+	if not panel then return end
+	local runtime = self.runtime and self.runtime[panelId]
+	local id = editModeId or (runtime and runtime.editModeId)
+	if not (id and EditMode and EditMode.EnsureLayoutData and EditMode.GetActiveLayoutName) then return end
+
+	local anchor = ensurePanelAnchor(panel)
+	panel.layout = panel.layout or Helper.CopyTableShallow(Helper.PANEL_LAYOUT_DEFAULTS)
+	local layout = panel.layout
+	local layoutName = EditMode:GetActiveLayoutName()
+	local data = EditMode:EnsureLayoutData(id, layoutName)
+	if not data then return end
+
+	if anchor then
+		data.point = anchor.point or panel.point or "CENTER"
+		data.relativePoint = anchor.relativePoint or data.point
+		data.x = anchor.x or 0
+		data.y = anchor.y or 0
+	end
+
+	local baseIconSize = Helper.ClampInt(layout.iconSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
+	data.iconSize = layout.iconSize
+	data.spacing = layout.spacing
+	data.layoutMode = Helper.NormalizeLayoutMode(layout.layoutMode, Helper.PANEL_LAYOUT_DEFAULTS.layoutMode)
+	data.direction = Helper.NormalizeDirection(layout.direction, Helper.PANEL_LAYOUT_DEFAULTS.direction)
+	data.wrapCount = layout.wrapCount or 0
+	data.wrapDirection = Helper.NormalizeDirection(layout.wrapDirection, Helper.PANEL_LAYOUT_DEFAULTS.wrapDirection or "DOWN")
+	data.rowSize1 = (layout.rowSizes and layout.rowSizes[1]) or baseIconSize
+	data.rowSize2 = (layout.rowSizes and layout.rowSizes[2]) or baseIconSize
+	data.rowSize3 = (layout.rowSizes and layout.rowSizes[3]) or baseIconSize
+	data.rowSize4 = (layout.rowSizes and layout.rowSizes[4]) or baseIconSize
+	data.rowSize5 = (layout.rowSizes and layout.rowSizes[5]) or baseIconSize
+	data.rowSize6 = (layout.rowSizes and layout.rowSizes[6]) or baseIconSize
+	data.growthPoint = Helper.NormalizeGrowthPoint(layout.growthPoint, Helper.PANEL_LAYOUT_DEFAULTS.growthPoint)
+	data.radialRadius = Helper.ClampInt(layout.radialRadius, 0, Helper.RADIAL_RADIUS_RANGE or 600, Helper.PANEL_LAYOUT_DEFAULTS.radialRadius)
+	data.radialRotation = Helper.ClampNumber(layout.radialRotation, -(Helper.RADIAL_ROTATION_RANGE or 360), Helper.RADIAL_ROTATION_RANGE or 360, Helper.PANEL_LAYOUT_DEFAULTS.radialRotation)
+	data.rangeOverlayEnabled = layout.rangeOverlayEnabled == true
+	data.rangeOverlayColor = layout.rangeOverlayColor or Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor
+	data.checkPower = layout.checkPower == true
+	data.powerTintColor = layout.powerTintColor or Helper.PANEL_LAYOUT_DEFAULTS.powerTintColor
+	data.strata = Helper.NormalizeStrata(layout.strata, Helper.PANEL_LAYOUT_DEFAULTS.strata)
+	data.stackAnchor = Helper.NormalizeAnchor(layout.stackAnchor, Helper.PANEL_LAYOUT_DEFAULTS.stackAnchor)
+	data.stackX = layout.stackX or Helper.PANEL_LAYOUT_DEFAULTS.stackX
+	data.stackY = layout.stackY or Helper.PANEL_LAYOUT_DEFAULTS.stackY
+	data.stackFont = layout.stackFont or data.stackFont
+	data.stackFontSize = layout.stackFontSize or data.stackFontSize
+	data.stackFontStyle = Helper.NormalizeFontStyleChoice(layout.stackFontStyle, data.stackFontStyle)
+	data.chargesAnchor = Helper.NormalizeAnchor(layout.chargesAnchor, Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor)
+	data.chargesX = layout.chargesX or Helper.PANEL_LAYOUT_DEFAULTS.chargesX
+	data.chargesY = layout.chargesY or Helper.PANEL_LAYOUT_DEFAULTS.chargesY
+	data.chargesFont = layout.chargesFont or data.chargesFont
+	data.chargesFontSize = layout.chargesFontSize or data.chargesFontSize
+	data.chargesFontStyle = Helper.NormalizeFontStyleChoice(layout.chargesFontStyle, data.chargesFontStyle)
+	data.keybindsEnabled = layout.keybindsEnabled == true
+	data.keybindsIgnoreItems = layout.keybindsIgnoreItems == true
+	data.keybindAnchor = Helper.NormalizeAnchor(layout.keybindAnchor, Helper.PANEL_LAYOUT_DEFAULTS.keybindAnchor)
+	data.keybindX = layout.keybindX or Helper.PANEL_LAYOUT_DEFAULTS.keybindX
+	data.keybindY = layout.keybindY or Helper.PANEL_LAYOUT_DEFAULTS.keybindY
+	data.keybindFont = layout.keybindFont or data.keybindFont
+	data.keybindFontSize = layout.keybindFontSize or data.keybindFontSize
+	data.keybindFontStyle = Helper.NormalizeFontStyleChoice(layout.keybindFontStyle, data.keybindFontStyle)
+	data.cooldownDrawEdge = layout.cooldownDrawEdge ~= false
+	data.cooldownDrawBling = layout.cooldownDrawBling ~= false
+	data.cooldownDrawSwipe = layout.cooldownDrawSwipe ~= false
+	data.showChargesCooldown = layout.showChargesCooldown == true
+	data.cooldownGcdDrawEdge = layout.cooldownGcdDrawEdge == true
+	data.cooldownGcdDrawBling = layout.cooldownGcdDrawBling == true
+	data.cooldownGcdDrawSwipe = layout.cooldownGcdDrawSwipe == true
+	data.opacityOutOfCombat = Helper.NormalizeOpacity(layout.opacityOutOfCombat, Helper.PANEL_LAYOUT_DEFAULTS.opacityOutOfCombat)
+	data.opacityInCombat = Helper.NormalizeOpacity(layout.opacityInCombat, Helper.PANEL_LAYOUT_DEFAULTS.opacityInCombat)
+	data.showTooltips = layout.showTooltips == true
+	data.showIconTexture = layout.showIconTexture ~= false
+	data.iconBorderEnabled = layout.iconBorderEnabled == true
+	data.iconBorderTexture = normalizeIconBorderTexture(layout.iconBorderTexture, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderTexture)
+	data.iconBorderSize = Helper.ClampInt(layout.iconBorderSize, 1, 64, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderSize)
+	data.iconBorderOffset = Helper.ClampInt(layout.iconBorderOffset, -64, 64, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderOffset)
+	data.iconBorderColor = layout.iconBorderColor or Helper.PANEL_LAYOUT_DEFAULTS.iconBorderColor
+	data.hideOnCooldown = layout.hideOnCooldown == true
+	data.showOnCooldown = layout.showOnCooldown == true
+	data.visibility = PanelVisibility.CopySelectionMap(PanelVisibility.NormalizeConfig(layout.visibility))
+	data.cooldownTextFont = layout.cooldownTextFont or data.cooldownTextFont
+	data.cooldownTextSize = layout.cooldownTextSize or data.cooldownTextSize
+	data.cooldownTextStyle = Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, data.cooldownTextStyle)
+	data.cooldownTextX = layout.cooldownTextX or 0
+	data.cooldownTextY = layout.cooldownTextY or 0
+end
+
 local function copyPanelSettings(targetPanelId, sourcePanelId)
 	local root = ensureRoot()
 	if not root or not root.panels then return false end
@@ -3171,85 +3259,7 @@ local function copyPanelSettings(targetPanelId, sourcePanelId)
 	CooldownPanels:RebuildSpellIndex()
 	CooldownPanels:ApplyPanelPosition(targetPanelId)
 	local runtime = CooldownPanels.runtime and CooldownPanels.runtime[targetPanelId]
-	if runtime and runtime.editModeId and EditMode and EditMode.EnsureLayoutData and EditMode.GetActiveLayoutName then
-		local anchor = ensurePanelAnchor(target)
-		local layout = target.layout or {}
-		local layoutName = EditMode:GetActiveLayoutName()
-		local data = EditMode:EnsureLayoutData(runtime.editModeId, layoutName)
-		if data then
-			if anchor then
-				data.point = anchor.point or target.point or "CENTER"
-				data.relativePoint = anchor.relativePoint or data.point
-				data.x = anchor.x or 0
-				data.y = anchor.y or 0
-			end
-			local baseIconSize = Helper.ClampInt(layout.iconSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
-			data.iconSize = layout.iconSize
-			data.spacing = layout.spacing
-			data.layoutMode = Helper.NormalizeLayoutMode(layout.layoutMode, Helper.PANEL_LAYOUT_DEFAULTS.layoutMode)
-			data.direction = Helper.NormalizeDirection(layout.direction, Helper.PANEL_LAYOUT_DEFAULTS.direction)
-			data.wrapCount = layout.wrapCount or 0
-			data.wrapDirection = Helper.NormalizeDirection(layout.wrapDirection, Helper.PANEL_LAYOUT_DEFAULTS.wrapDirection or "DOWN")
-			data.rowSize1 = (layout.rowSizes and layout.rowSizes[1]) or baseIconSize
-			data.rowSize2 = (layout.rowSizes and layout.rowSizes[2]) or baseIconSize
-			data.rowSize3 = (layout.rowSizes and layout.rowSizes[3]) or baseIconSize
-			data.rowSize4 = (layout.rowSizes and layout.rowSizes[4]) or baseIconSize
-			data.rowSize5 = (layout.rowSizes and layout.rowSizes[5]) or baseIconSize
-			data.rowSize6 = (layout.rowSizes and layout.rowSizes[6]) or baseIconSize
-			data.growthPoint = Helper.NormalizeGrowthPoint(layout.growthPoint, Helper.PANEL_LAYOUT_DEFAULTS.growthPoint)
-			data.radialRadius = Helper.ClampInt(layout.radialRadius, 0, Helper.RADIAL_RADIUS_RANGE or 600, Helper.PANEL_LAYOUT_DEFAULTS.radialRadius)
-			data.radialRotation = Helper.ClampNumber(layout.radialRotation, -(Helper.RADIAL_ROTATION_RANGE or 360), Helper.RADIAL_ROTATION_RANGE or 360, Helper.PANEL_LAYOUT_DEFAULTS.radialRotation)
-			data.rangeOverlayEnabled = layout.rangeOverlayEnabled == true
-			data.rangeOverlayColor = layout.rangeOverlayColor or Helper.PANEL_LAYOUT_DEFAULTS.rangeOverlayColor
-			data.checkPower = layout.checkPower == true
-			data.powerTintColor = layout.powerTintColor or Helper.PANEL_LAYOUT_DEFAULTS.powerTintColor
-			data.strata = Helper.NormalizeStrata(layout.strata, Helper.PANEL_LAYOUT_DEFAULTS.strata)
-			data.stackAnchor = Helper.NormalizeAnchor(layout.stackAnchor, Helper.PANEL_LAYOUT_DEFAULTS.stackAnchor)
-			data.stackX = layout.stackX or Helper.PANEL_LAYOUT_DEFAULTS.stackX
-			data.stackY = layout.stackY or Helper.PANEL_LAYOUT_DEFAULTS.stackY
-			data.stackFont = layout.stackFont or data.stackFont
-			data.stackFontSize = layout.stackFontSize or data.stackFontSize
-			data.stackFontStyle = Helper.NormalizeFontStyleChoice(layout.stackFontStyle, data.stackFontStyle)
-			data.chargesAnchor = Helper.NormalizeAnchor(layout.chargesAnchor, Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor)
-			data.chargesX = layout.chargesX or Helper.PANEL_LAYOUT_DEFAULTS.chargesX
-			data.chargesY = layout.chargesY or Helper.PANEL_LAYOUT_DEFAULTS.chargesY
-			data.chargesFont = layout.chargesFont or data.chargesFont
-			data.chargesFontSize = layout.chargesFontSize or data.chargesFontSize
-			data.chargesFontStyle = Helper.NormalizeFontStyleChoice(layout.chargesFontStyle, data.chargesFontStyle)
-			data.keybindsEnabled = layout.keybindsEnabled == true
-			data.keybindsIgnoreItems = layout.keybindsIgnoreItems == true
-			data.keybindAnchor = Helper.NormalizeAnchor(layout.keybindAnchor, Helper.PANEL_LAYOUT_DEFAULTS.keybindAnchor)
-			data.keybindX = layout.keybindX or Helper.PANEL_LAYOUT_DEFAULTS.keybindX
-			data.keybindY = layout.keybindY or Helper.PANEL_LAYOUT_DEFAULTS.keybindY
-			data.keybindFont = layout.keybindFont or data.keybindFont
-			data.keybindFontSize = layout.keybindFontSize or data.keybindFontSize
-			data.keybindFontStyle = Helper.NormalizeFontStyleChoice(layout.keybindFontStyle, data.keybindFontStyle)
-			data.cooldownDrawEdge = layout.cooldownDrawEdge ~= false
-			data.cooldownDrawBling = layout.cooldownDrawBling ~= false
-			data.cooldownDrawSwipe = layout.cooldownDrawSwipe ~= false
-			data.showChargesCooldown = layout.showChargesCooldown == true
-			data.cooldownGcdDrawEdge = layout.cooldownGcdDrawEdge == true
-			data.cooldownGcdDrawBling = layout.cooldownGcdDrawBling == true
-			data.cooldownGcdDrawSwipe = layout.cooldownGcdDrawSwipe == true
-			data.opacityOutOfCombat = Helper.NormalizeOpacity(layout.opacityOutOfCombat, Helper.PANEL_LAYOUT_DEFAULTS.opacityOutOfCombat)
-			data.opacityInCombat = Helper.NormalizeOpacity(layout.opacityInCombat, Helper.PANEL_LAYOUT_DEFAULTS.opacityInCombat)
-			data.showTooltips = layout.showTooltips == true
-			data.showIconTexture = layout.showIconTexture ~= false
-			data.iconBorderEnabled = layout.iconBorderEnabled == true
-			data.iconBorderTexture = normalizeIconBorderTexture(layout.iconBorderTexture, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderTexture)
-			data.iconBorderSize = Helper.ClampInt(layout.iconBorderSize, 1, 64, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderSize)
-			data.iconBorderOffset = Helper.ClampInt(layout.iconBorderOffset, -64, 64, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderOffset)
-			data.iconBorderColor = layout.iconBorderColor or Helper.PANEL_LAYOUT_DEFAULTS.iconBorderColor
-			data.hideOnCooldown = layout.hideOnCooldown == true
-			data.showOnCooldown = layout.showOnCooldown == true
-			data.visibility = PanelVisibility.CopySelectionMap(PanelVisibility.NormalizeConfig(layout.visibility))
-			data.cooldownTextFont = layout.cooldownTextFont or data.cooldownTextFont
-			data.cooldownTextSize = layout.cooldownTextSize or data.cooldownTextSize
-			data.cooldownTextStyle = Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, data.cooldownTextStyle)
-			data.cooldownTextX = layout.cooldownTextX or 0
-			data.cooldownTextY = layout.cooldownTextY or 0
-		end
-	end
+	CooldownPanels:SyncEditModeDataFromPanel(targetPanelId, runtime and runtime.editModeId)
 	refreshEditModePanelFrame(targetPanelId, runtime and runtime.editModeId)
 	refreshEditModeSettings()
 	refreshEditModeSettingValues()
@@ -6150,18 +6160,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 		panel.x = a.x or panel.x or 0
 		panel.y = a.y or panel.y or 0
 	end
-	local function syncEditModeLayoutFromAnchor()
-		if not (EditMode and EditMode.EnsureLayoutData and EditMode.GetActiveLayoutName) then return end
-		local a = ensureAnchorTable()
-		if not a then return end
-		local layoutName = EditMode:GetActiveLayoutName()
-		local data = EditMode:EnsureLayoutData(editModeId, layoutName)
-		if not data then return end
-		data.point = a.point or "CENTER"
-		data.relativePoint = a.relativePoint or data.point
-		data.x = a.x or 0
-		data.y = a.y or 0
-	end
+	local function syncEditModeLayoutFromAnchor() CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId) end
 	local function applyAnchorPosition()
 		syncPanelPositionFromAnchor()
 		syncEditModeLayoutFromAnchor()
@@ -7665,18 +7664,11 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			cooldownTextX = layout.cooldownTextX or 0,
 			cooldownTextY = layout.cooldownTextY or 0,
 		},
-		onApply = function(_, _, data)
-			local a = ensureAnchorTable()
-			if a and anchorUsesUIParent(a) and data and data.point then
-				a.point = data.point or a.point or "CENTER"
-				a.relativePoint = data.relativePoint or a.relativePoint or a.point
-				a.x = data.x or a.x or 0
-				a.y = data.y or a.y or 0
-				syncPanelPositionFromAnchor()
-			elseif a and data and data.point then
-				syncEditModeLayoutFromAnchor()
-			end
-			self:ApplyEditMode(panelId, data)
+		onApply = function()
+			-- Addon profile is authoritative. Keep EditMode data mirrored from it.
+			syncEditModeLayoutFromAnchor()
+			self:ApplyPanelPosition(panelId)
+			self:UpdateVisibility(panelId)
 			refreshEditModeSettingValues()
 		end,
 		onPositionChanged = function(_, _, data) self:HandlePositionChanged(panelId, data) end,
@@ -8288,9 +8280,7 @@ CooldownPanels.refreshAssistedHighlightCVarState = function(cause, suppressRefre
 	local runtime = CooldownPanels.runtime
 	if runtime.assistedHighlightEnabled == enabled then return false end
 	runtime.assistedHighlightEnabled = enabled
-	if not suppressRefresh and CooldownPanels and CooldownPanels.RequestUpdate then
-		CooldownPanels:RequestUpdate(cause or "CVar:assistedCombatHighlight")
-	end
+	if not suppressRefresh and CooldownPanels and CooldownPanels.RequestUpdate then CooldownPanels:RequestUpdate(cause or "CVar:assistedCombatHighlight") end
 	return true
 end
 
@@ -8300,9 +8290,7 @@ CooldownPanels.ensureAssistedHighlightCVarListener = function()
 	if runtime.assistedHighlightCVarListenerRegistered then return true end
 	CooldownPanels.refreshAssistedHighlightCVarState(nil, true)
 	if CVarCallbackRegistry and CVarCallbackRegistry.RegisterCallback then
-		CVarCallbackRegistry:RegisterCallback("assistedCombatHighlight", function()
-			CooldownPanels.refreshAssistedHighlightCVarState("CVar:assistedCombatHighlight")
-		end, CooldownPanels)
+		CVarCallbackRegistry:RegisterCallback("assistedCombatHighlight", function() CooldownPanels.refreshAssistedHighlightCVarState("CVar:assistedCombatHighlight") end, CooldownPanels)
 		runtime.assistedHighlightCVarListenerRegistered = true
 		return true
 	end
@@ -8325,9 +8313,7 @@ ensureAssistedHighlightHook = function()
 			local effectiveId = getEffectiveSpellId(spellId)
 			if effectiveId and effectiveId ~= spellId and effectiveId ~= baseId then refreshed = refreshPanelsForSpell(effectiveId) == true or refreshed end
 		end
-		if not refreshed and CooldownPanels and CooldownPanels.RequestUpdate then
-			CooldownPanels:RequestUpdate("AssistedCombatHighlight")
-		end
+		if not refreshed and CooldownPanels and CooldownPanels.RequestUpdate then CooldownPanels:RequestUpdate("AssistedCombatHighlight") end
 	end)
 	assistedHighlightHooked = true
 	return true

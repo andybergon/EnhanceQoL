@@ -2212,16 +2212,7 @@ local UF_EDITMODE_FRAME_IDS = {
 function UF.SyncEditModeLayoutAnchors(units)
 	if type(units) ~= "table" or #units == 0 then return end
 	local editMode = addon and addon.EditMode
-	if not (editMode and editMode.GetActiveLayoutName) then return end
-	local layoutName = editMode:GetActiveLayoutName() or "_Global"
-	addon.db = addon.db or {}
-	addon.db.editModeLayouts = addon.db.editModeLayouts or {}
-	local layouts = addon.db.editModeLayouts
-	local layout = layouts[layoutName]
-	if type(layout) ~= "table" then
-		layout = {}
-		layouts[layoutName] = layout
-	end
+	if not (editMode and editMode.EnsureLayoutData) then return end
 
 	for _, unit in ipairs(units) do
 		local frameId = UF_EDITMODE_FRAME_IDS[unit]
@@ -2229,12 +2220,13 @@ function UF.SyncEditModeLayoutAnchors(units)
 			local cfg = ensureDB(unit)
 			local anchor = cfg and cfg.anchor
 			if anchor then
-				local data = layout[frameId] or {}
-				data.point = anchor.point or data.point or "CENTER"
-				data.relativePoint = anchor.relativePoint or anchor.point or data.relativePoint or data.point
-				data.x = anchor.x or 0
-				data.y = anchor.y or 0
-				layout[frameId] = data
+				local data = editMode:EnsureLayoutData(frameId)
+				if type(data) == "table" then
+					data.point = anchor.point or data.point or "CENTER"
+					data.relativePoint = anchor.relativePoint or anchor.point or data.relativePoint or data.point
+					data.x = anchor.x or 0
+					data.y = anchor.y or 0
+				end
 			end
 		end
 	end

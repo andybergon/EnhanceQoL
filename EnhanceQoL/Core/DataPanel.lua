@@ -2419,7 +2419,7 @@ function DataPanel.Delete(id)
 
 	if panel then
 		if EditMode and panel.editModeId then
-			local ok, err = pcall(function() EditMode:UnregisterFrame(panel.editModeId) end)
+			local ok, err = pcall(function() EditMode:UnregisterFrame(panel.editModeId, true) end)
 			if not ok then geterrorhandler()(err) end
 			panel.editModeRegistered = nil
 			panel.editModeId = nil

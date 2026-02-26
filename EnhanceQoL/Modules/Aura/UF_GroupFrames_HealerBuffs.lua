@@ -54,6 +54,8 @@ local RULE_MATCH_ANY = "ANY"
 local RULE_MATCH_ALL = "ALL"
 local ICON_MODE_ALL = "ALL"
 local ICON_MODE_PRIORITY = "PRIORITY"
+local KIND_PARTY = "party"
+local KIND_RAID = "raid"
 
 local ORIENTATION_SET = {
 	[ORIENT_HORIZONTAL] = true,
@@ -68,6 +70,11 @@ local RULE_MATCH_SET = {
 local ICON_MODE_SET = {
 	[ICON_MODE_ALL] = true,
 	[ICON_MODE_PRIORITY] = true,
+}
+
+local KIND_SET = {
+	[KIND_PARTY] = true,
+	[KIND_RAID] = true,
 }
 
 local ANCHOR_SET = {
@@ -326,6 +333,13 @@ local function normalizeColor(value, fallback)
 	return { r, g, b, a }
 end
 
+local function normalizeKind(kind)
+	kind = tostring(kind or KIND_PARTY):lower()
+	if kind == "mt" or kind == "ma" then return KIND_RAID end
+	if KIND_SET[kind] then return kind end
+	return kind
+end
+
 local function normalizeOrder(order, map)
 	local result = {}
 	local seen = {}
@@ -491,6 +505,8 @@ function HB.CreateDefaultRule(id, familyId, groupId)
 		groupId = tostring(groupId or "1"),
 		["not"] = false,
 		enabled = true,
+		appliesParty = true,
+		appliesRaid = true,
 	}
 end
 
@@ -532,6 +548,20 @@ local function normalizeRule(rule, id)
 	rule["not"] = rule["not"] == true
 	if rule.enabled == nil then rule.enabled = true end
 	rule.enabled = rule.enabled ~= false
+	local appliesParty = rule.appliesParty
+	if appliesParty == nil then appliesParty = rule.appliesToParty end
+	if appliesParty == nil then appliesParty = rule.party end
+	if appliesParty == nil then appliesParty = true end
+	local appliesRaid = rule.appliesRaid
+	if appliesRaid == nil then appliesRaid = rule.appliesToRaid end
+	if appliesRaid == nil then appliesRaid = rule.raid end
+	if appliesRaid == nil then appliesRaid = true end
+	rule.appliesParty = appliesParty ~= false
+	rule.appliesRaid = appliesRaid ~= false
+	rule.appliesToParty = nil
+	rule.appliesToRaid = nil
+	rule.party = nil
+	rule.raid = nil
 	return rule
 end
 
@@ -594,16 +624,17 @@ HB._kindGeneration = HB._kindGeneration or {}
 HB._compiledByConfig = HB._compiledByConfig or setmetatable({}, { __mode = "k" })
 
 function HB.InvalidateKind(kind)
-	kind = tostring(kind or "")
-	if kind == "" then return end
+	kind = normalizeKind(kind)
+	if not KIND_SET[kind] then return end
 	HB._kindGeneration[kind] = (HB._kindGeneration[kind] or 0) + 1
 end
 
 function HB.IsEnabled(kind, cfg)
 	cfg = cfg or {}
+	kind = normalizeKind(kind)
 	local placement = HB.EnsureConfig(cfg)
 	if not placement or placement.enabled ~= true then return false end
-	if kind ~= "party" and kind ~= "raid" then return false end
+	if not KIND_SET[kind] then return false end
 	if not next(placement.groupsById or EMPTY) then return false end
 	if not next(placement.rulesById or EMPTY) then return false end
 	return true
@@ -620,12 +651,21 @@ local function buildRulePseudoAuraId(ruleId)
 	return -800000 - hash
 end
 
+local function ruleAppliesToKind(rule, kind)
+	if not rule then return false end
+	if kind == KIND_PARTY then return rule.appliesParty ~= false end
+	if kind == KIND_RAID then return rule.appliesRaid ~= false end
+	return false
+end
+
 local function compile(kind, cfg)
+	kind = normalizeKind(kind)
 	local placement = HB.EnsureConfig(cfg)
 	if not placement then return nil end
 	local generation = HB._kindGeneration[kind] or 0
-	local cached = HB._compiledByConfig[cfg]
-	if cached and cached.kind == kind and cached.generation == generation then return cached end
+	local cachedByKind = HB._compiledByConfig[cfg]
+	local cached = cachedByKind and cachedByKind[kind]
+	if cached and cached.generation == generation then return cached end
 
 	local compiled = {
 		kind = kind,
@@ -664,7 +704,7 @@ local function compile(kind, cfg)
 	for i = 1, #compiled.ruleOrder do
 		local ruleId = compiled.ruleOrder[i]
 		local rule = compiled.rulesById[ruleId]
-		if rule then
+		if rule and ruleAppliesToKind(rule, kind) then
 			local familyId = rule.spellFamilyId
 			local groupId = rule.groupId
 			if familyId and FAMILY_BY_ID[familyId] and groupId and compiled.groupsById[groupId] then
@@ -695,8 +735,10 @@ local function compile(kind, cfg)
 			end
 		end
 
-	if placement.enabled == true and next(compiled.ruleById) and next(compiled.groupsById) and (kind == "party" or kind == "raid") then compiled.enabled = true end
-	HB._compiledByConfig[cfg] = compiled
+	if placement.enabled == true and next(compiled.ruleById) and next(compiled.groupsById) and KIND_SET[kind] then compiled.enabled = true end
+	cachedByKind = cachedByKind or {}
+	cachedByKind[kind] = compiled
+	HB._compiledByConfig[cfg] = cachedByKind
 	return compiled
 end
 
@@ -1301,7 +1343,12 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 	local maxRules = (group.iconMode == ICON_MODE_PRIORITY) and 1 or nil
 	local force = collectActiveRulesForGroup(state, compiled, group.id, activeRules, changedFamilies, maxRules)
 	local style = getAuraStyleForGroup(state, cfg, group)
-	local hash = buildRuleHash(compiled, activeRules, state.familyAuraInstance, style._eqolStyleHash)
+	local styleHash = tostring(style._eqolStyleHash or "") .. "|" .. tostring(group.style or STYLE_ICON)
+	if group.style == STYLE_SQUARE then
+		local cr, cg, cb, ca = resolveColor(group.color)
+		styleHash = table.concat({ styleHash, cr, cg, cb, ca }, ":")
+	end
+	local hash = buildRuleHash(compiled, activeRules, state.familyAuraInstance, styleHash)
 	if not force and renderHashes[group.id] == hash then return end
 	renderHashes[group.id] = hash
 
@@ -1324,10 +1371,11 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 		local button = buttons[index]
 		if not button then button = AuraUtil.ensureAuraButton(container, buttons, index, style) end
 		if not button then break end
-		if button._hbAuraInstance ~= auraInstanceId or button._hbStyleKey ~= style._eqolStyleHash then
+		local familyChanged = changedFamilies and familyId and changedFamilies[familyId] == true
+		if familyChanged or button._hbAuraInstance ~= auraInstanceId or button._hbStyleKey ~= styleHash then
 			AuraUtil.applyAuraToButton(button, aura, style, false, unitToken)
 			button._hbAuraInstance = auraInstanceId
-			button._hbStyleKey = style._eqolStyleHash
+			button._hbStyleKey = styleHash
 		end
 		if group.style == STYLE_SQUARE then
 			styleSquareButton(button, group.color)
@@ -1556,7 +1604,7 @@ end
 function HB.UpdateFromAuras(btn, updateInfo, cache, changed, isFullUpdate)
 	local state, st = getState(btn)
 	if not (state and st and btn) then return end
-	local kind = btn._eqolGroupKind or "party"
+	local kind = normalizeKind(btn._eqolGroupKind or KIND_PARTY)
 	local cfg = btn._eqolCfg
 	if not cfg then return end
 	local compiled = compile(kind, cfg)
@@ -1630,7 +1678,7 @@ end
 function HB.UpdateSample(btn)
 	local state, st = getState(btn)
 	if not (state and st and btn) then return end
-	local kind = btn._eqolGroupKind or "party"
+	local kind = normalizeKind(btn._eqolGroupKind or KIND_PARTY)
 	local cfg = btn._eqolCfg
 	if not cfg then return end
 	local compiled = compile(kind, cfg)

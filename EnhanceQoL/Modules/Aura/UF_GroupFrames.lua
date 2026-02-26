@@ -2028,6 +2028,156 @@ local function sanitizeHealthColorMode(cfg)
 	end
 end
 
+function GF._hbpAppendUniqueOrderId(order, id)
+	if type(order) ~= "table" or id == nil then return end
+	id = tostring(id)
+	for i = 1, #order do
+		if tostring(order[i]) == id then return end
+	end
+	order[#order + 1] = id
+end
+
+function GF._hbpNextNumericMapId(map)
+	local maxId = 0
+	for id in pairs(map or EMPTY) do
+		local n = tonumber(id)
+		if n and n > maxId then maxId = n end
+	end
+	return tostring(maxId + 1)
+end
+
+function GF._hbpHasPlacementData(placement)
+	if type(placement) ~= "table" then return false end
+	if placement.enabled == true then return true end
+	local groups = placement.groupsById
+	if type(groups) == "table" and next(groups) then return true end
+	local rules = placement.rulesById
+	if type(rules) == "table" and next(rules) then return true end
+	return false
+end
+
+function GF._hbpCollectOrderedIds(order, map)
+	local out, seen = {}, {}
+	if type(order) == "table" then
+		for i = 1, #order do
+			local id = order[i]
+			if id ~= nil then
+				id = tostring(id)
+				if map and map[id] and not seen[id] then
+					seen[id] = true
+					out[#out + 1] = id
+				end
+			end
+		end
+	end
+	for id in pairs(map or EMPTY) do
+		id = tostring(id)
+		if not seen[id] then out[#out + 1] = id end
+	end
+	return out
+end
+
+function GF._hbpMergePlacement(basePlacement, incomingPlacement)
+	if type(basePlacement) ~= "table" or type(incomingPlacement) ~= "table" then return end
+	if basePlacement == incomingPlacement then return end
+
+	basePlacement.groupsById = type(basePlacement.groupsById) == "table" and basePlacement.groupsById or {}
+	basePlacement.groupOrder = type(basePlacement.groupOrder) == "table" and basePlacement.groupOrder or {}
+	basePlacement.rulesById = type(basePlacement.rulesById) == "table" and basePlacement.rulesById or {}
+	basePlacement.ruleOrder = type(basePlacement.ruleOrder) == "table" and basePlacement.ruleOrder or {}
+
+	local inGroups = type(incomingPlacement.groupsById) == "table" and incomingPlacement.groupsById or EMPTY
+	local inRules = type(incomingPlacement.rulesById) == "table" and incomingPlacement.rulesById or EMPTY
+	local groupRemap = {}
+
+	local incomingGroupIds = GF._hbpCollectOrderedIds(incomingPlacement.groupOrder, inGroups)
+	for i = 1, #incomingGroupIds do
+		local sourceId = incomingGroupIds[i]
+		local sourceGroup = inGroups[sourceId]
+		if sourceGroup then
+			local targetId = sourceId
+				if basePlacement.groupsById[targetId] then targetId = GF._hbpNextNumericMapId(basePlacement.groupsById) end
+				local groupCopy = copyDefaultsTable(sourceGroup)
+			groupCopy.id = targetId
+			basePlacement.groupsById[targetId] = groupCopy
+			GF._hbpAppendUniqueOrderId(basePlacement.groupOrder, targetId)
+			groupRemap[sourceId] = targetId
+		end
+	end
+
+	local incomingRuleIds = GF._hbpCollectOrderedIds(incomingPlacement.ruleOrder, inRules)
+	for i = 1, #incomingRuleIds do
+		local sourceId = incomingRuleIds[i]
+		local sourceRule = inRules[sourceId]
+		if sourceRule then
+			local sourceGroupId = tostring(sourceRule.groupId or "")
+			local targetGroupId = groupRemap[sourceGroupId] or (basePlacement.groupsById[sourceGroupId] and sourceGroupId) or nil
+			if targetGroupId then
+				local targetId = sourceId
+					if basePlacement.rulesById[targetId] then targetId = GF._hbpNextNumericMapId(basePlacement.rulesById) end
+					local ruleCopy = copyDefaultsTable(sourceRule)
+				ruleCopy.id = targetId
+				ruleCopy.groupId = targetGroupId
+				basePlacement.rulesById[targetId] = ruleCopy
+				GF._hbpAppendUniqueOrderId(basePlacement.ruleOrder, targetId)
+			end
+		end
+	end
+
+	if incomingPlacement.enabled == true then basePlacement.enabled = true end
+end
+
+function GF._ensureSharedHealerBuffPlacement(db)
+	if type(db) ~= "table" then return nil end
+	local partyCfg = type(db.party) == "table" and db.party or nil
+	local raidCfg = type(db.raid) == "table" and db.raid or nil
+	if not (partyCfg and raidCfg) then return nil end
+	local partyPlacement = partyCfg.healerBuffPlacement
+	local raidPlacement = raidCfg.healerBuffPlacement
+	if type(partyPlacement) == "table" and partyPlacement == raidPlacement then return partyPlacement end
+
+	local hbm = UF.GroupFramesHealerBuffs
+	if hbm and hbm.EnsureConfig then
+		hbm.EnsureConfig(partyCfg)
+		hbm.EnsureConfig(raidCfg)
+	else
+		if type(partyCfg.healerBuffPlacement) ~= "table" then partyCfg.healerBuffPlacement = GF._createHealerBuffPlacementDefaults() end
+		if type(raidCfg.healerBuffPlacement) ~= "table" then raidCfg.healerBuffPlacement = GF._createHealerBuffPlacementDefaults() end
+	end
+
+	partyPlacement = partyCfg.healerBuffPlacement
+	raidPlacement = raidCfg.healerBuffPlacement
+	if type(partyPlacement) ~= "table" then
+		partyPlacement = GF._createHealerBuffPlacementDefaults()
+		partyCfg.healerBuffPlacement = partyPlacement
+	end
+	if type(raidPlacement) ~= "table" then
+		raidPlacement = GF._createHealerBuffPlacementDefaults()
+		raidCfg.healerBuffPlacement = raidPlacement
+	end
+
+	if partyPlacement ~= raidPlacement then
+		local partyHasData = GF._hbpHasPlacementData(partyPlacement)
+		local raidHasData = GF._hbpHasPlacementData(raidPlacement)
+		local shared = partyPlacement
+		if not partyHasData and raidHasData then
+			shared = raidPlacement
+			GF._hbpMergePlacement(shared, partyPlacement)
+		elseif partyHasData and raidHasData then
+			GF._hbpMergePlacement(shared, raidPlacement)
+		end
+		partyCfg.healerBuffPlacement = shared
+		raidCfg.healerBuffPlacement = shared
+	end
+
+	if hbm and hbm.EnsureConfig then
+		hbm.EnsureConfig(partyCfg)
+		hbm.EnsureConfig(raidCfg)
+	end
+
+	return partyCfg.healerBuffPlacement
+end
+
 local function ensureDB()
 	if UF and UF.Profiles and UF.Profiles.MaybeInitialize then
 		UF.Profiles.MaybeInitialize()
@@ -2063,6 +2213,7 @@ local function ensureDB()
 			t.groupingOrder = nil
 		end
 	end
+	GF._ensureSharedHealerBuffPlacement(db)
 	db._eqolInited = true
 	if DB ~= db and UF and UF.Profiles and UF.Profiles.Debug then
 		local partyEnabled = db.party and db.party.enabled == true
@@ -2088,6 +2239,7 @@ getCfg = function(kind)
 			return def
 		end
 	end
+	GF._ensureSharedHealerBuffPlacement(db)
 	return db[kind]
 end
 
@@ -2158,6 +2310,15 @@ function GF:DisableBlizzardFrames()
 end
 
 function GF:GetConfig(kind) return getCfg(kind) end
+
+function GF:GetHealerBuffPlacementConfig(kind)
+	kind = tostring(kind or "party"):lower()
+	if kind == "mt" or kind == "ma" then kind = "raid" end
+	if kind ~= "party" and kind ~= "raid" then kind = "party" end
+	local db = DB or ensureDB()
+	GF._ensureSharedHealerBuffPlacement(db)
+	return getCfg(kind)
+end
 
 function GF:IsFeatureEnabled() return isFeatureEnabled() end
 
@@ -6650,6 +6811,10 @@ function GF:RefreshHealerBuffPlacement(kind)
 	if kind ~= nil then
 		kind = tostring(kind):lower()
 		if kind ~= "party" and kind ~= "raid" then kind = nil end
+	end
+	local db = DB or ensureDB()
+	if db and db.party and db.raid then
+		kind = nil
 	end
 	if UF.GroupFramesHealerBuffs.InvalidateKind then
 		if kind then

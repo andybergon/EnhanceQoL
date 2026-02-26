@@ -579,7 +579,12 @@ local function createThinScrollFrameBar(scrollFrame, xOffset)
 end
 
 local function getKindConfig(kind)
-	local cfg = GF and GF.GetConfig and GF:GetConfig(kind)
+	local cfg
+	if GF and GF.GetHealerBuffPlacementConfig then
+		cfg = GF:GetHealerBuffPlacementConfig(kind)
+	elseif GF and GF.GetConfig then
+		cfg = GF:GetConfig(kind)
+	end
 	if cfg and HB and HB.EnsureConfig then HB.EnsureConfig(cfg) end
 	return cfg
 end
@@ -758,16 +763,16 @@ function Editor:QueueRuntimeRefresh()
 		C_Timer.After(0.03, function()
 			Editor._refreshQueued = nil
 			if not (Editor.frame and Editor.frame:IsShown()) then return end
-			if GF and GF.RefreshHealerBuffPlacement then GF:RefreshHealerBuffPlacement(Editor.kind) end
+			if GF and GF.RefreshHealerBuffPlacement then GF:RefreshHealerBuffPlacement() end
 		end)
 	else
 		self._refreshQueued = nil
-		if GF and GF.RefreshHealerBuffPlacement then GF:RefreshHealerBuffPlacement(self.kind) end
+		if GF and GF.RefreshHealerBuffPlacement then GF:RefreshHealerBuffPlacement() end
 	end
 end
 
 function Editor:RefreshRuntimeNow()
-	if GF and GF.RefreshHealerBuffPlacement then GF:RefreshHealerBuffPlacement(self.kind) end
+	if GF and GF.RefreshHealerBuffPlacement then GF:RefreshHealerBuffPlacement() end
 end
 
 function Editor:GetContext()
@@ -844,7 +849,7 @@ function Editor:EnsureFrame()
 
 	local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-	subtitle:SetText("Configure spell-family placements for Party/Raid frames.")
+	subtitle:SetText("Configure shared spell-family placements for Party and Raid frames.")
 	subtitle:SetTextColor(0.75, 0.75, 0.75, 1)
 	frame.Subtitle = subtitle
 
@@ -855,12 +860,12 @@ function Editor:EnsureFrame()
 
 	local kindLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	kindLabel:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -14)
-	kindLabel:SetText("Frame Kind:")
+	kindLabel:SetText("Scope:")
 	frame.KindLabel = kindLabel
 
 	local kindValue = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	kindValue:SetPoint("LEFT", kindLabel, "RIGHT", 8, 0)
-	kindValue:SetText("Party")
+	kindValue:SetText("Shared (Party + Raid)")
 	frame.KindValue = kindValue
 
 	local enabledCheck = createCheck(frame, "Enable Healer Buff Placement")
@@ -1122,8 +1127,8 @@ function Editor:EnsureFrame()
 	applyCardBackground(groupControlCard, true)
 
 	local groupControlViewport = CreateFrame("ScrollFrame", nil, groupControlCard)
-	groupControlViewport:SetPoint("TOPLEFT", groupControlCard, "TOPLEFT", 8, -8)
-	groupControlViewport:SetPoint("BOTTOMRIGHT", groupControlCard, "BOTTOMRIGHT", -18, 8)
+	groupControlViewport:SetPoint("TOPLEFT", groupControlCard, "TOPLEFT", 12, -10)
+	groupControlViewport:SetPoint("BOTTOMRIGHT", groupControlCard, "BOTTOMRIGHT", -20, 10)
 	settingsPanel.GroupControlViewport = groupControlViewport
 
 	local groupControlContent = CreateFrame("Frame", nil, groupControlViewport)
@@ -1232,6 +1237,12 @@ function Editor:EnsureFrame()
 	groupControlContent:SetHeight(340)
 
 	local function layoutGroupControlRows()
+		local LABEL_X = 8
+		local CONTROL_X = 84
+		local FIRST_ROW_Y = -8
+		local GAP_DROPDOWN = 20
+		local GAP_SLIDER = 20
+		local GAP_COLOR = 20
 		local prevLabel
 		local lastBottom
 
@@ -1242,33 +1253,33 @@ function Editor:EnsureFrame()
 		local function beginRow(label, gap)
 			label:ClearAllPoints()
 			if prevLabel then
-				label:SetPoint("TOPLEFT", prevLabel, "BOTTOMLEFT", 0, -(gap or 18))
+				label:SetPoint("TOPLEFT", prevLabel, "BOTTOMLEFT", 0, -(gap or GAP_DROPDOWN))
 			else
-				label:SetPoint("TOPLEFT", groupControlParent, "TOPLEFT", 0, 0)
+				label:SetPoint("TOPLEFT", groupControlParent, "TOPLEFT", LABEL_X, FIRST_ROW_Y)
 			end
 			prevLabel = label
 		end
 
 		controls.GroupNameLabel:ClearAllPoints()
-		controls.GroupNameLabel:SetPoint("TOPLEFT", groupControlParent, "TOPLEFT", 0, 0)
+		controls.GroupNameLabel:SetPoint("TOPLEFT", groupControlParent, "TOPLEFT", LABEL_X, FIRST_ROW_Y)
 		controls.GroupName:ClearAllPoints()
-		controls.GroupName:SetPoint("TOPLEFT", controls.GroupNameLabel, "TOPRIGHT", 12, 0)
+		controls.GroupName:SetPoint("TOPLEFT", controls.GroupNameLabel, "TOPLEFT", CONTROL_X - LABEL_X, 2)
 		prevLabel = controls.GroupNameLabel
 		includeBottom(controls.GroupName)
 
 		local function placeDropdown(label, control)
 			if not (label:IsShown() and control:IsShown()) then return end
-			beginRow(label, 18)
+			beginRow(label, GAP_DROPDOWN)
 			control:ClearAllPoints()
-			control:SetPoint("TOPLEFT", label, "TOPRIGHT", 0, 12)
+			control:SetPoint("TOPLEFT", label, "TOPLEFT", CONTROL_X - LABEL_X, 12)
 			includeBottom(control)
 		end
 
 		local function placeSlider(label, slider, valueText)
 			if not (label:IsShown() and slider:IsShown() and valueText:IsShown()) then return end
-			beginRow(label, 22)
+			beginRow(label, GAP_SLIDER)
 			slider:ClearAllPoints()
-			slider:SetPoint("TOPLEFT", label, "TOPRIGHT", 8, 8)
+			slider:SetPoint("TOPLEFT", label, "TOPLEFT", CONTROL_X - LABEL_X, 8)
 			valueText:ClearAllPoints()
 			valueText:SetPoint("LEFT", slider, "RIGHT", 10, 0)
 			includeBottom(slider)
@@ -1276,9 +1287,9 @@ function Editor:EnsureFrame()
 
 		local function placeColor(label, button)
 			if not (label:IsShown() and button:IsShown()) then return end
-			beginRow(label, 22)
+			beginRow(label, GAP_COLOR)
 			button:ClearAllPoints()
-			button:SetPoint("TOPLEFT", label, "TOPRIGHT", 8, 0)
+			button:SetPoint("TOPLEFT", label, "TOPLEFT", CONTROL_X - LABEL_X, 0)
 			includeBottom(button)
 		end
 
@@ -1312,8 +1323,14 @@ function Editor:EnsureFrame()
 	controls.RuleNot = createCheck(settingsPanel, "NOT (active when missing)")
 	controls.RuleNot:SetPoint("TOPLEFT", controls.RuleEnabled, "BOTTOMLEFT", 0, -6)
 
+	controls.RuleAppliesParty = createCheck(settingsPanel, "Party")
+	controls.RuleAppliesParty:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 0, -6)
+
+	controls.RuleAppliesRaid = createCheck(settingsPanel, "Raid")
+	controls.RuleAppliesRaid:SetPoint("TOPLEFT", controls.RuleAppliesParty, "BOTTOMLEFT", 0, -6)
+
 	controls.RuleIconModeLabel = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	controls.RuleIconModeLabel:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 0, -14)
+	controls.RuleIconModeLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -14)
 	controls.RuleIconModeLabel:SetText("Icon Rule Mode")
 	controls.RuleIconMode = createDropdown(settingsPanel, 260)
 	controls.RuleIconMode:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "TOPRIGHT", 0, 12)
@@ -1321,7 +1338,7 @@ function Editor:EnsureFrame()
 	controls.RuleIconMode:Hide()
 
 	controls.RuleMatchLabel = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	controls.RuleMatchLabel:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 0, -14)
+	controls.RuleMatchLabel:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -14)
 	controls.RuleMatchLabel:SetText("Tint Trigger")
 	controls.RuleMatch = createDropdown(settingsPanel, 260)
 	controls.RuleMatch:SetPoint("TOPLEFT", controls.RuleMatchLabel, "TOPRIGHT", 0, 12)
@@ -1329,7 +1346,7 @@ function Editor:EnsureFrame()
 	controls.RuleMatch:Hide()
 
 	controls.RuleInfo = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 0, -10)
+	controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -10)
 	controls.RuleInfo:SetPoint("RIGHT", settingsPanel, "RIGHT", -14, 0)
 	controls.RuleInfo:SetJustifyH("LEFT")
 	controls.RuleInfo:SetTextColor(0.75, 0.75, 0.75, 1)
@@ -1392,7 +1409,7 @@ function Editor:EnsureFrame()
 		end
 		local newId = HB.GetNextRuleId and HB.GetNextRuleId(placement) or tostring((#placement.ruleOrder or 0) + 1)
 		placement.rulesById[newId] = HB.CreateDefaultRule and HB.CreateDefaultRule(newId, familyId, Editor.selectedGroupId)
-			or { id = newId, spellFamilyId = familyId, groupId = Editor.selectedGroupId, ["not"] = false, enabled = true }
+			or { id = newId, spellFamilyId = familyId, groupId = Editor.selectedGroupId, ["not"] = false, enabled = true, appliesParty = true, appliesRaid = true }
 		tinsert(placement.ruleOrder, newId)
 		Editor.selectedRuleId = newId
 		Editor:RefreshAll()
@@ -1854,6 +1871,32 @@ function Editor:EnsureFrame()
 		Editor:RefreshRuntimeNow()
 	end)
 
+	controls.RuleAppliesParty:SetScript("OnClick", function(self)
+		local rule = ruleFromSelection()
+		if not rule then return end
+		rule.appliesParty = self:GetChecked() == true
+		if rule.appliesParty == false and rule.appliesRaid == false then
+			rule.appliesRaid = true
+			controls.RuleAppliesRaid:SetChecked(true)
+		end
+		Editor:RefreshRuleList()
+		Editor:RefreshPreview()
+		Editor:RefreshRuntimeNow()
+	end)
+
+	controls.RuleAppliesRaid:SetScript("OnClick", function(self)
+		local rule = ruleFromSelection()
+		if not rule then return end
+		rule.appliesRaid = self:GetChecked() == true
+		if rule.appliesRaid == false and rule.appliesParty == false then
+			rule.appliesParty = true
+			controls.RuleAppliesParty:SetChecked(true)
+		end
+		Editor:RefreshRuleList()
+		Editor:RefreshPreview()
+		Editor:RefreshRuntimeNow()
+	end)
+
 	setDropdown(controls.RuleIconMode, HB.ICON_MODE_OPTIONS or {
 		{ value = "ALL", label = "Show All Active Spells" },
 		{ value = "PRIORITY", label = "Show Highest Priority Only" },
@@ -1971,7 +2014,17 @@ function Editor:RefreshRuleList()
 			local familyLabel = getFamilyLabel(rule.spellFamilyId, true)
 			local marker = rule["not"] and " [NOT]" or ""
 			local state = (rule.enabled ~= false) and "" or " [OFF]"
-				local label = string.format("%d. %s%s%s", index, familyLabel, marker, state)
+			local appliesParty = rule.appliesParty ~= false
+			local appliesRaid = rule.appliesRaid ~= false
+			local scope = " [NONE]"
+			if appliesParty and appliesRaid then
+				scope = " [P/R]"
+			elseif appliesParty then
+				scope = " [P]"
+			elseif appliesRaid then
+				scope = " [R]"
+			end
+				local label = string.format("%d. %s%s%s%s", index, familyLabel, scope, marker, state)
 					row.Text:SetText(label)
 					if ruleId == self.selectedRuleId then
 						row:SetBackdropColor(0.12, 0.19, 0.3, 0.95)
@@ -2032,23 +2085,27 @@ function Editor:RefreshRuleControls()
 	elseif showIconRuleMode then
 		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleIconModeLabel, "BOTTOMLEFT", 0, -10)
 	else
-		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleNot, "BOTTOMLEFT", 0, -10)
+		controls.RuleInfo:SetPoint("TOPLEFT", controls.RuleAppliesRaid, "BOTTOMLEFT", 0, -10)
 	end
 	controls.RuleInfo:SetPoint("RIGHT", frame.SettingsPanel, "RIGHT", -14, 0)
 
 	controls.RuleEnabled:SetChecked(rule and rule.enabled ~= false)
 	controls.RuleNot:SetChecked(rule and rule["not"] == true)
+	controls.RuleAppliesParty:SetChecked(rule and rule.appliesParty ~= false)
+	controls.RuleAppliesRaid:SetChecked(rule and rule.appliesRaid ~= false)
 	setControlEnabled(controls.RuleEnabled, rule ~= nil)
 	setControlEnabled(controls.RuleNot, rule ~= nil)
+	setControlEnabled(controls.RuleAppliesParty, rule ~= nil)
+	setControlEnabled(controls.RuleAppliesRaid, rule ~= nil)
 	setControlEnabled(frame.RulePanel and frame.RulePanel.AddButton, self.selectedGroupId ~= nil)
 	if controls.RuleInfo then
 		local groupLabel = placement and self.selectedGroupId and getGroupLabel(placement, self.selectedGroupId) or "selected indicator"
 		if showTintRuleMatch then
-			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Tint can require any or all active spells.")
+			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Scope is set per rule (Party/Raid). Tint can require any or all active spells.")
 		elseif showIconRuleMode then
-			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Priority follows the rule order in this list.")
+			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Scope is set per rule (Party/Raid). Priority follows the rule order in this list.")
 		else
-			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Add via +, remove via x.")
+			controls.RuleInfo:SetText("Showing rules for " .. groupLabel .. ". Scope is set per rule (Party/Raid). Add via +, remove via x.")
 		end
 	end
 end
@@ -2208,10 +2265,18 @@ local function applyPreviewHealthTint(unitFrame, tintR, tintG, tintB, tintA)
 	)
 end
 
-local function getRuleIdsForGroup(placement, groupId)
+local function ruleAppliesToPreviewKind(rule, kind)
+	if not rule then return false end
+	kind = tostring(kind or "party"):lower()
+	if kind == "mt" or kind == "ma" then kind = "raid" end
+	if kind == "raid" then return rule.appliesRaid ~= false end
+	return rule.appliesParty ~= false
+end
+
+local function getRuleIdsForGroup(placement, groupId, kind)
 	local list = {}
 	eachGroupRule(placement, groupId, function(ruleId, rule)
-		if rule and rule.enabled ~= false then list[#list + 1] = ruleId end
+		if rule and rule.enabled ~= false and ruleAppliesToPreviewKind(rule, kind) then list[#list + 1] = ruleId end
 	end)
 	return list
 end
@@ -2248,7 +2313,7 @@ function Editor:RefreshPreview()
 				local baseY = anchorY + y
 
 					if style == "ICON" or style == "SQUARE" then
-					local ruleIds = getRuleIdsForGroup(placement, group.id)
+					local ruleIds = getRuleIdsForGroup(placement, group.id, self.kind)
 					local isPriorityMode = iconMode == "PRIORITY"
 					if isPriorityMode and #ruleIds > 1 then
 						for trim = #ruleIds, 2, -1 do
@@ -2379,10 +2444,7 @@ end
 function Editor:RefreshControls()
 	local frame = self:EnsureFrame()
 	local _, placement = self:GetContext()
-	if frame.KindValue then
-		local label = (self.kind == "raid" and (RAID or "Raid")) or (PARTY or "Party")
-		frame.KindValue:SetText(label)
-	end
+	if frame.KindValue then frame.KindValue:SetText("Shared (Party + Raid)") end
 	if frame.EnabledCheck and placement then frame.EnabledCheck:SetChecked(placement.enabled == true) end
 	self:RefreshGroupControls()
 	self:RefreshRuleControls()
@@ -2414,13 +2476,11 @@ end
 
 function Editor:Toggle(kind)
 	self:EnsureFrame()
-	kind = tostring(kind or self.kind or "party"):lower()
-	if kind ~= "party" and kind ~= "raid" then kind = "party" end
-	if self.frame:IsShown() and self.kind == kind then
+	if self.frame:IsShown() then
 		self:Hide()
-	else
-		self:Show(kind)
+		return
 	end
+	self:Show(kind)
 end
 
 function Editor:IsShown()

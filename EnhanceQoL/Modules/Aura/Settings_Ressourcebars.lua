@@ -304,7 +304,7 @@ local function registerEditModeBars()
 			or ("resourceBar_" .. tostring(addon.variables.unitClass or "UNKNOWN") .. "_" .. tostring(curSpec) .. "_" .. tostring(idSuffix))
 		local prevId = registeredByBar[idSuffix]
 		if prevId and prevId ~= frameId and EditMode and EditMode.UnregisterFrame then
-			EditMode:UnregisterFrame(prevId)
+			EditMode:UnregisterFrame(prevId, false)
 			registeredFrames[prevId] = nil
 		end
 		if registeredFrames[frameId] then return end
