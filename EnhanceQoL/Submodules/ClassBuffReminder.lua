@@ -16,7 +16,9 @@ local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local LBG = LibStub("LibButtonGlow-1.0", true)
 local LSM = LibStub("LibSharedMedia-3.0", true)
 local issecretvalue = _G.issecretvalue
-local unpackFn = _G.unpack or table.unpack
+local unpackFn = _G.unpack
+local UnitInPartyIsAI = _G.UnitInPartyIsAI
+local GetTimePreciseSec = _G.GetTimePreciseSec
 
 local EDITMODE_ID = "classBuffReminder"
 local ICON_MISSING = "Interface\\Icons\\INV_Misc_QuestionMark"
