@@ -25,6 +25,7 @@
 - Unit Frames (Player/Class Resources): Added `Visible resources` multi-select listing all supported resources, so you can preconfigure visibility on one character for every resource type.
 - Cooldown Panels (Edit Mode): Added support for Macro entries (`MACRO`) via drag & drop (macro list and action bar slots).
 - Cooldown Panels: Added support for assisted highlighting.
+- Combat Text: Added `Always show combat text` with mode selection (`Only while in combat (+Combat)` or `Always show status (+/-Combat)`).
 - Data Panels (Gold stream): Added configurable `Left-click action` (`Toggle gold display` / `Open bags`) and a direct `Gold display` selector (`Character` / `Warband gold`) in stream options.
 - Textures: Added a cropped version of Blizzards default texture.
 - Font: Added Expressway as a font option.
@@ -39,6 +40,7 @@
 - Data Panels (Item Level stream): Equipped-slot tooltip values now use current equipped item-level detection first, preventing incorrect per-slot values for some items.
 - Data Panels (Time stream): Font and text-scale style changes now redraw immediately instead of waiting for the next time tick or `/reload`.
 - Tooltips (Raider.IO compatibility): Raider.IO unit-tooltip sections now update reliably while hovering when pressing/releasing modifier keys (`showScoreModifier`), including with EQoL tooltip anchoring enabled.
+- Chat History: Missed CHAT_MSG_PARTY_LEADER.
 
 ---
 

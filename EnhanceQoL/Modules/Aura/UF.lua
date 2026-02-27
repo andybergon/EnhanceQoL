@@ -3631,7 +3631,8 @@ local function applyVisibilityDriver(unit, enabled)
 	elseif unit == UNIT.FOCUS then
 		baseCond = "[@focus,exists] show; hide"
 	elseif unit == UNIT.PET then
-		baseCond = "[@pet,exists] show; hide"
+		-- Keep pet frame configurable in Edit Mode even when no pet exists.
+		baseCond = inEdit and "show" or "[@pet,exists] show; hide"
 	elseif isBossUnit(unit) then
 		baseCond = ("[@%s,exists] show; hide"):format(unit)
 	end
