@@ -24,6 +24,16 @@ local defaultFontSize = 16
 local EditMode = addon.EditMode
 local BR_EDITMODE_ID = "mythicPlusBRTracker"
 local brEditModeRegistered = false
+local BR_MIN_SIZE = 20
+local BR_MAX_SIZE = 100
+
+local function normalizeBRSize(value)
+	local size = tonumber(value) or defaultButtonSize
+	size = math.floor(size + 0.5)
+	if size < BR_MIN_SIZE then size = BR_MIN_SIZE end
+	if size > BR_MAX_SIZE then size = BR_MAX_SIZE end
+	return size
+end
 
 local function removeBRFrame()
 	if brButton then
@@ -50,7 +60,7 @@ local function buildBRLayoutSnapshot()
 		relativePoint = addon.db["mythicPlusBRTrackerPoint"] or "CENTER",
 		x = addon.db["mythicPlusBRTrackerX"] or 0,
 		y = addon.db["mythicPlusBRTrackerY"] or 0,
-		size = addon.db["mythicPlusBRButtonSize"] or defaultButtonSize,
+		size = normalizeBRSize(addon.db["mythicPlusBRButtonSize"] or defaultButtonSize),
 	}
 end
 
@@ -67,11 +77,14 @@ end
 local function applyBRLayoutData(data)
 	local config = data or buildBRLayoutSnapshot()
 
-	local point = config.point or "CENTER"
+	local point = config.point or addon.db["mythicPlusBRTrackerPoint"] or "CENTER"
 	local relativePoint = config.relativePoint or point
-	local x = config.x or 0
-	local y = config.y or 0
-	local size = config.size or defaultButtonSize
+	local x = config.x
+	if x == nil then x = addon.db["mythicPlusBRTrackerX"] or 0 end
+	local y = config.y
+	if y == nil then y = addon.db["mythicPlusBRTrackerY"] or 0 end
+	-- Size is addon-profile-owned and must not be overwritten by EditMode apply payload.
+	local size = normalizeBRSize(addon.db["mythicPlusBRButtonSize"] or config.size or defaultButtonSize)
 
 	if addon.db then
 		addon.db["mythicPlusBRTrackerPoint"] = point
@@ -132,10 +145,17 @@ local function ensureBRAnchor()
 					field = "size",
 					name = L["mythicPlusBRButtonSizeHeadline"],
 					kind = settingType.Slider,
-					minValue = 20,
-					maxValue = 100,
+					minValue = BR_MIN_SIZE,
+					maxValue = BR_MAX_SIZE,
 					valueStep = 1,
-					default = addon.db["mythicPlusBRButtonSize"] or defaultButtonSize,
+					default = normalizeBRSize(addon.db["mythicPlusBRButtonSize"] or defaultButtonSize),
+					get = function() return normalizeBRSize(addon.db["mythicPlusBRButtonSize"] or defaultButtonSize) end,
+					set = function(_, value)
+						local size = normalizeBRSize(value)
+						addon.db["mythicPlusBRButtonSize"] = size
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "size", size, nil, true) end
+						applyBRLayoutData()
+					end,
 				},
 			}
 		end

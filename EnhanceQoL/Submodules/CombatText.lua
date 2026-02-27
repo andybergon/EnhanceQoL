@@ -92,6 +92,19 @@ local function normalizeAlwaysVisibleMode(value)
 	return ALWAYS_VISIBLE_MODE_STATUS
 end
 
+function CombatText:_debugTrace(...) end
+
+function CombatText:_debugCheckExternal(...) end
+
+function CombatText:_debugCheckVisual(...) end
+
+function CombatText:_debugEnsureWatcher(enabled)
+	if self._debugWatchFrame then
+		self._debugWatchFrame:Hide()
+		self._debugWatchFrame = nil
+	end
+end
+
 local function fontFaceOptions()
 	local list = {}
 	local defaultPath = defaultFontFace()
@@ -152,11 +165,25 @@ function CombatText:ApplyStyle(r, g, b, a)
 	local font = self:GetFontFace()
 	local size = self:GetFontSize()
 	local ok = self.frame.text:SetFont(font, size, "OUTLINE")
-	if not ok then self.frame.text:SetFont(defaultFontFace(), size, "OUTLINE") end
+	local appliedFont = font
+	local fallbackUsed = false
+	if not ok then
+		appliedFont = defaultFontFace()
+		self.frame.text:SetFont(appliedFont, size, "OUTLINE")
+		fallbackUsed = true
+	end
 	if r == nil or g == nil or b == nil then
 		r, g, b, a = self:GetEnterColor()
 	end
 	self.frame.text:SetTextColor(r, g, b, a or 1)
+	self:_debugTrace("ApplyStyle", {
+		requestedFont = tostring(font),
+		appliedFont = tostring(appliedFont),
+		fontSize = size,
+		setFontOk = ok == true,
+		fallbackUsed = fallbackUsed == true,
+	})
+	self:_debugCheckVisual("ApplyStyle")
 end
 
 function CombatText:UpdateFrameSize()
@@ -333,6 +360,7 @@ end
 
 function CombatText:ApplyLayoutData(data)
 	if not data or not addon.db then return end
+	self:_debugTrace("ApplyLayoutData:begin")
 
 	local duration = clamp(data.duration or defaults.duration, 0.5, 10)
 	local alwaysVisible = data.alwaysVisible == true
@@ -354,10 +382,12 @@ function CombatText:ApplyLayoutData(data)
 	self:ApplyStyle()
 	self:UpdateFrameSize()
 	self:RefreshDisplayMode()
+	self:_debugTrace("ApplyLayoutData:end")
 end
 
 local function applySetting(field, value)
 	if not addon.db then return end
+	CombatText:_debugTrace("applySetting:begin", { field = tostring(field) })
 
 	if field == "duration" then
 		local duration = clamp(value, 0.5, 10)
@@ -396,7 +426,6 @@ local function applySetting(field, value)
 		value = addon.db[DB_ENTER_COLOR]
 	end
 
-	if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, field, value, nil, true) end
 	CombatText:ApplyStyle()
 	CombatText:UpdateFrameSize()
 	if field == "alwaysVisible" or field == "alwaysVisibleMode" then
@@ -404,6 +433,7 @@ local function applySetting(field, value)
 	else
 		CombatText:RefreshHideTimer()
 	end
+	CombatText:_debugTrace("applySetting:end", { field = tostring(field) })
 end
 
 local editModeRegistered = false
@@ -507,23 +537,6 @@ function CombatText:RegisterEditMode()
 		}
 	end
 
-	local function seedEditModeRecordFromProfile(record)
-		if type(record) ~= "table" then return end
-		record.duration = self:GetDuration()
-		record.alwaysVisible = self:IsAlwaysVisible()
-		record.alwaysVisibleMode = self:GetAlwaysVisibleMode()
-		record.fontSize = self:GetFontSize()
-		record.fontFace = self:GetFontFace()
-		do
-			local r, g, b, a = self:GetEnterColor()
-			record.enterColor = { r = r, g = g, b = b, a = a }
-		end
-		do
-			local r, g, b, a = self:GetLeaveColor()
-			record.leaveColor = { r = r, g = g, b = b, a = a }
-		end
-	end
-
 	EditMode:RegisterFrame(EDITMODE_ID, {
 		frame = self:EnsureFrame(),
 		title = L["CombatText"] or "Combat text",
@@ -532,29 +545,13 @@ function CombatText:RegisterEditMode()
 			relativePoint = "CENTER",
 			x = 0,
 			y = 120,
-			duration = self:GetDuration(),
-			alwaysVisible = self:IsAlwaysVisible(),
-			alwaysVisibleMode = self:GetAlwaysVisibleMode(),
-			fontSize = self:GetFontSize(),
-			fontFace = self:GetFontFace(),
-			enterColor = (function()
-				local r, g, b, a = self:GetEnterColor()
-				return { r = r, g = g, b = b, a = a }
-			end)(),
-			leaveColor = (function()
-				local r, g, b, a = self:GetLeaveColor()
-				return { r = r, g = g, b = b, a = a }
-			end)(),
 		},
-		onApply = function(_, _, data)
-			if not self._eqolEditModeHydrated then
-				self._eqolEditModeHydrated = true
-				local record = data or {}
-				seedEditModeRecordFromProfile(record)
-				CombatText:ApplyLayoutData(record)
-				return
-			end
-			CombatText:ApplyLayoutData(data)
+		onApply = function()
+			CombatText:_debugCheckExternal("onApply:before")
+			CombatText:ApplyStyle()
+			CombatText:UpdateFrameSize()
+			CombatText:RefreshDisplayMode()
+			CombatText:_debugCheckExternal("onApply:after")
 		end,
 		onEnter = function() CombatText:ShowEditModeHint(true) end,
 		onExit = function() CombatText:ShowEditModeHint(false) end,
@@ -570,6 +567,14 @@ function CombatText:RegisterEditMode()
 end
 
 function CombatText:OnSettingChanged(enabled)
+	if addon.db then
+		addon.db["_combatTextTraceEnabled"] = nil
+		addon.db["_combatTextTrace"] = nil
+	end
+	self:_debugEnsureWatcher(enabled == true)
+	self:_debugCheckExternal("OnSettingChanged:begin")
+	self:_debugTrace("OnSettingChanged:begin", { enabled = enabled == true })
+
 	if enabled then
 		self:EnsureFrame()
 		self:RegisterEditMode()
@@ -584,6 +589,8 @@ function CombatText:OnSettingChanged(enabled)
 	end
 
 	if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(EDITMODE_ID) end
+	self:_debugCheckExternal("OnSettingChanged:end")
+	self:_debugTrace("OnSettingChanged:end", { enabled = enabled == true })
 end
 
 return CombatText

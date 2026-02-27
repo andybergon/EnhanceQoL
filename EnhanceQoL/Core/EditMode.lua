@@ -335,6 +335,10 @@ function EditMode:EnsureLayoutData(id, layoutName)
 		record = {}
 		container[id] = record
 	end
+	local hadStoredPoint = record.point ~= nil
+	local hadStoredRelativePoint = record.relativePoint ~= nil
+	local hadStoredX = record.x ~= nil
+	local hadStoredY = record.y ~= nil
 	pruneRecordToPositionOnly(record)
 	self:_seedStoredPosition(record, entry)
 
@@ -352,10 +356,36 @@ function EditMode:EnsureLayoutData(id, layoutName)
 		self.runtimeLayoutData[id] = runtime
 	end
 
-	runtime.point = record.point or runtime.point or (entry.defaults and entry.defaults.point) or "CENTER"
-	runtime.relativePoint = record.relativePoint or runtime.relativePoint or runtime.point
-	if runtime.x == nil then runtime.x = record.x or (entry.defaults and entry.defaults.x) or 0 end
-	if runtime.y == nil then runtime.y = record.y or (entry.defaults and entry.defaults.y) or 0 end
+	-- Persisted position must always win; for legacy migration, keep runtime values
+	-- when no stored position existed yet.
+	if hadStoredPoint then
+		runtime.point = record.point
+	elseif runtime.point == nil then
+		runtime.point = record.point or (entry.defaults and entry.defaults.point) or "CENTER"
+	end
+
+	if hadStoredRelativePoint then
+		runtime.relativePoint = record.relativePoint
+	elseif runtime.relativePoint == nil then
+		runtime.relativePoint = record.relativePoint or runtime.point
+	end
+
+	if hadStoredX then
+		runtime.x = record.x
+	elseif runtime.x == nil then
+		runtime.x = record.x
+	end
+
+	if hadStoredY then
+		runtime.y = record.y
+	elseif runtime.y == nil then
+		runtime.y = record.y
+	end
+
+	if runtime.point == nil then runtime.point = (entry.defaults and entry.defaults.point) or "CENTER" end
+	if runtime.relativePoint == nil then runtime.relativePoint = runtime.point end
+	if runtime.x == nil then runtime.x = (entry.defaults and entry.defaults.x) or 0 end
+	if runtime.y == nil then runtime.y = (entry.defaults and entry.defaults.y) or 0 end
 
 	if record.point ~= runtime.point or record.relativePoint ~= runtime.relativePoint or record.x ~= runtime.x or record.y ~= runtime.y then
 		self:_writeStoredPosition(id, entry, runtime.point, runtime.relativePoint, runtime.x, runtime.y)
