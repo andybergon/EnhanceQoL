@@ -149,6 +149,7 @@ globals = {
 	"COOLDOWN_VIEWER_SETTINGS_CATEGORY_UTILITY",
 	"BuffFrame",
 	"DebuffFrame",
+	"GHOST",
 	"COOLDOWN_VIEWER_SETTINGS_CATEGORY_ESSENTIAL",
 	"ItemLocation",
 	"securecallfunction",

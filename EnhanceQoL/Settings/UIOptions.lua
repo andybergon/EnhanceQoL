@@ -1169,6 +1169,8 @@ function addon.functions.initUIOptions()
 	if addon.GCDBar and addon.GCDBar.OnSettingChanged then addon.GCDBar:OnSettingChanged(addon.db["gcdBarEnabled"]) end
 
 	local combatDefaults = (addon.CombatText and addon.CombatText.defaults) or {}
+	local combatAlwaysModeCombatOnly = addon.CombatText and addon.CombatText.ALWAYS_VISIBLE_MODE_COMBAT_ONLY or "COMBAT_ONLY"
+	local combatAlwaysModeStatus = addon.CombatText and addon.CombatText.ALWAYS_VISIBLE_MODE_STATUS or "STATUS"
 	local combatFont = combatDefaults.fontFace or (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
 	local function cloneColor(value, fallback)
 		local source = type(value) == "table" and value or fallback
@@ -1182,6 +1184,10 @@ function addon.functions.initUIOptions()
 	end
 	addon.functions.InitDBValue("combatTextEnabled", false)
 	addon.functions.InitDBValue("combatTextDuration", combatDefaults.duration or 3)
+	addon.functions.InitDBValue("combatTextAlwaysVisible", combatDefaults.alwaysVisible == true)
+	local alwaysVisibleMode = combatDefaults.alwaysVisibleMode
+	if alwaysVisibleMode ~= combatAlwaysModeCombatOnly and alwaysVisibleMode ~= combatAlwaysModeStatus then alwaysVisibleMode = combatAlwaysModeStatus end
+	addon.functions.InitDBValue("combatTextAlwaysVisibleMode", alwaysVisibleMode)
 	addon.functions.InitDBValue("combatTextFont", combatFont)
 	addon.functions.InitDBValue("combatTextFontSize", combatDefaults.fontSize or 32)
 	local defaultCombatColor = cloneColor(addon.db["combatTextColor"], combatDefaults.enterColor or combatDefaults.color or { r = 1, g = 1, b = 1, a = 1 })
@@ -1280,6 +1286,50 @@ local function createCastbarCategory()
 			addon.db["combatTextEnabled"] = value and true or false
 			if addon.CombatText and addon.CombatText.OnSettingChanged then addon.CombatText:OnSettingChanged(addon.db["combatTextEnabled"]) end
 		end,
+		parentSection = expandable,
+	})
+	local combatAlwaysVisible = addon.functions.SettingsCreateCheckbox(category, {
+		var = "combatTextAlwaysVisible",
+		text = L["combatTextAlwaysVisible"] or "Always show combat text",
+		desc = L["combatTextAlwaysVisibleDesc"] or "Keeps the combat text visible until the next combat state change.",
+		func = function(value)
+			addon.db["combatTextAlwaysVisible"] = value and true or false
+			if addon.CombatText then
+				if addon.CombatText.RefreshDisplayMode then
+					addon.CombatText:RefreshDisplayMode()
+				elseif addon.CombatText.RefreshHideTimer then
+					addon.CombatText:RefreshHideTimer()
+				end
+			end
+		end,
+		parentSection = expandable,
+	})
+	local combatAlwaysModeCombatOnly = addon.CombatText and addon.CombatText.ALWAYS_VISIBLE_MODE_COMBAT_ONLY or "COMBAT_ONLY"
+	local combatAlwaysModeStatus = addon.CombatText and addon.CombatText.ALWAYS_VISIBLE_MODE_STATUS or "STATUS"
+	local combatAlwaysModeOptions = {
+		[combatAlwaysModeCombatOnly] = L["combatTextAlwaysVisibleModeCombatOnly"] or "Only while in combat (+Combat)",
+		[combatAlwaysModeStatus] = L["combatTextAlwaysVisibleModeStatus"] or "Always show status (+/-Combat)",
+	}
+	addon.functions.SettingsCreateDropdown(category, {
+		var = "combatTextAlwaysVisibleMode",
+		text = L["combatTextAlwaysVisibleMode"] or "Always-show mode",
+		desc = L["combatTextAlwaysVisibleModeDesc"] or "Choose whether always-show mode is only active in combat, or shows + and - permanently.",
+		list = combatAlwaysModeOptions,
+		order = { combatAlwaysModeCombatOnly, combatAlwaysModeStatus },
+		default = combatAlwaysModeStatus,
+		get = function()
+			local mode = addon.db["combatTextAlwaysVisibleMode"]
+			if mode ~= combatAlwaysModeCombatOnly and mode ~= combatAlwaysModeStatus then mode = combatAlwaysModeStatus end
+			return mode
+		end,
+		set = function(mode)
+			if mode ~= combatAlwaysModeCombatOnly and mode ~= combatAlwaysModeStatus then mode = combatAlwaysModeStatus end
+			addon.db["combatTextAlwaysVisibleMode"] = mode
+			if addon.CombatText and addon.CombatText.RefreshDisplayMode then addon.CombatText:RefreshDisplayMode() end
+		end,
+		parent = true,
+		element = combatAlwaysVisible and combatAlwaysVisible.element,
+		parentCheck = function() return combatAlwaysVisible and combatAlwaysVisible.setting and combatAlwaysVisible.setting:GetValue() == true end,
 		parentSection = expandable,
 	})
 	addon.functions.SettingsCreateText(category, "|cffffd700" .. (L["combatTextEditModeHint"] or "Configure text size, font, color, and position in Edit Mode.") .. "|r", {

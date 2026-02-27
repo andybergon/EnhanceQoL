@@ -1,6 +1,13 @@
 # Changelog
 
-## [8.0.0] - 2026-02-25
+## [8.0.0] - 2026-02-27
+
+### ⚠️ Important Profile Notice
+
+- We changed how profile data is handled to make behavior more consistent and avoid unexpected overwrites when switching Edit Mode layouts.
+- In rare cases after updating, some users may notice that parts of their layout-based setup look different than before.
+- If that happens, please verify your active EQoL profile and re-import or restore your preferred profile setup once.
+- Going forward, profile changes should be easier to understand and more predictable for users.
 
 ### ✨ Added
 
@@ -10,10 +17,15 @@
 - Unit Frames (Profiles): Added create/copy/delete actions on the Profiles page.
 - Unit Frames (Profiles): Added quick UF profile switching in the minimap right-click menu.
 - Group Frames (Party/Raid): Added optional integration with `HarreksAdvancedRaidFrames`.
+- Group Frames (Party/Raid): Added a new `Healer Buff Placement` editor to place healer spell indicators exactly where you want them on frames.
+- Group Frames (Party/Raid): You can now create custom indicators with different visual styles (Icon, Square, Bar, Border, Tint) and assign healer spells to them.
+- Group Frames (Party/Raid): Indicators can now also be used as reminders when important buffs are missing.
+- Group Frames (Party/Raid): Added `/eqol hbp` as a quick shortcut to open the Healer Buff Placement editor, even outside Edit Mode.
 - Unit Frames (Player/Class Resources): Added per-resource settings via a new `Resource` dropdown, so anchor/strata/frame level offset/offset/scale can be configured per supported resource type.
 - Unit Frames (Player/Class Resources): Added `Visible resources` multi-select listing all supported resources, so you can preconfigure visibility on one character for every resource type.
 - Cooldown Panels (Edit Mode): Added support for Macro entries (`MACRO`) via drag & drop (macro list and action bar slots).
 - Cooldown Panels: Added support for assisted highlighting.
+- Combat Text: Added `Always show combat text` with mode selection (`Only while in combat (+Combat)` or `Always show status (+/-Combat)`).
 - Data Panels (Gold stream): Added configurable `Left-click action` (`Toggle gold display` / `Open bags`) and a direct `Gold display` selector (`Character` / `Warband gold`) in stream options.
 - Textures: Added a cropped version of Blizzards default texture.
 - Font: Added Expressway as a font option.
@@ -28,6 +40,7 @@
 - Data Panels (Item Level stream): Equipped-slot tooltip values now use current equipped item-level detection first, preventing incorrect per-slot values for some items.
 - Data Panels (Time stream): Font and text-scale style changes now redraw immediately instead of waiting for the next time tick or `/reload`.
 - Tooltips (Raider.IO compatibility): Raider.IO unit-tooltip sections now update reliably while hovering when pressing/releasing modifier keys (`showScoreModifier`), including with EQoL tooltip anchoring enabled.
+- Chat History: Missed CHAT_MSG_PARTY_LEADER.
 
 ---
 

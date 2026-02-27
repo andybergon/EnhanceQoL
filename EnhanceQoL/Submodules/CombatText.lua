@@ -24,6 +24,8 @@ local function defaultFontFace() return (addon.variables and addon.variables.def
 CombatText.defaults = CombatText.defaults
 	or {
 		duration = 3,
+		alwaysVisible = false,
+		alwaysVisibleMode = "STATUS",
 		fontSize = 32,
 		fontFace = defaultFontFace(),
 		color = { r = 1, g = 1, b = 1, a = 1 },
@@ -36,8 +38,16 @@ defaults.enterColor = defaults.enterColor or defaults.color or { r = 1, g = 1, b
 defaults.leaveColor = defaults.leaveColor or defaults.color or defaults.enterColor or { r = 1, g = 1, b = 1, a = 1 }
 defaults.color = defaults.color or defaults.enterColor
 
+CombatText.ALWAYS_VISIBLE_MODE_COMBAT_ONLY = CombatText.ALWAYS_VISIBLE_MODE_COMBAT_ONLY or "COMBAT_ONLY"
+CombatText.ALWAYS_VISIBLE_MODE_STATUS = CombatText.ALWAYS_VISIBLE_MODE_STATUS or "STATUS"
+local ALWAYS_VISIBLE_MODE_COMBAT_ONLY = CombatText.ALWAYS_VISIBLE_MODE_COMBAT_ONLY
+local ALWAYS_VISIBLE_MODE_STATUS = CombatText.ALWAYS_VISIBLE_MODE_STATUS
+if defaults.alwaysVisibleMode ~= ALWAYS_VISIBLE_MODE_COMBAT_ONLY and defaults.alwaysVisibleMode ~= ALWAYS_VISIBLE_MODE_STATUS then defaults.alwaysVisibleMode = ALWAYS_VISIBLE_MODE_STATUS end
+
 local DB_ENABLED = "combatTextEnabled"
 local DB_DURATION = "combatTextDuration"
+local DB_ALWAYS_VISIBLE = "combatTextAlwaysVisible"
+local DB_ALWAYS_VISIBLE_MODE = "combatTextAlwaysVisibleMode"
 local DB_FONT = "combatTextFont"
 local DB_FONT_SIZE = "combatTextFontSize"
 local DB_COLOR = "combatTextColor"
@@ -77,6 +87,11 @@ local function normalizeFontFace(value)
 	return value
 end
 
+local function normalizeAlwaysVisibleMode(value)
+	if value == ALWAYS_VISIBLE_MODE_COMBAT_ONLY then return ALWAYS_VISIBLE_MODE_COMBAT_ONLY end
+	return ALWAYS_VISIBLE_MODE_STATUS
+end
+
 local function fontFaceOptions()
 	local list = {}
 	local defaultPath = defaultFontFace()
@@ -105,6 +120,10 @@ local function getCombatText(inCombat)
 end
 
 function CombatText:GetDuration() return clamp(getValue(DB_DURATION, defaults.duration), 0.5, 10) end
+
+function CombatText:IsAlwaysVisible() return getValue(DB_ALWAYS_VISIBLE, defaults.alwaysVisible) == true end
+
+function CombatText:GetAlwaysVisibleMode() return normalizeAlwaysVisibleMode(getValue(DB_ALWAYS_VISIBLE_MODE, defaults.alwaysVisibleMode)) end
 
 function CombatText:GetFontSize() return clamp(getValue(DB_FONT_SIZE, defaults.fontSize), 8, 96) end
 
@@ -184,6 +203,30 @@ function CombatText:CancelHideTimer()
 	end
 end
 
+function CombatText:RefreshHideTimer()
+	self:CancelHideTimer()
+	if self.previewing or self:IsAlwaysVisible() then return end
+	if not self.frame or not self.frame:IsShown() then return end
+	local duration = self:GetDuration()
+	if duration > 0 then self.hideTimer = C_Timer.NewTimer(duration, function()
+		CombatText.hideTimer = nil
+		CombatText:HideText()
+	end) end
+end
+
+function CombatText:RefreshDisplayMode()
+	if self.previewing then return end
+	if self:IsAlwaysVisible() then
+		self:CancelHideTimer()
+		if addon.db and addon.db[DB_ENABLED] then
+			local inCombat = type(InCombatLockdown) == "function" and InCombatLockdown() == true
+			self:ShowCombatText(inCombat)
+		end
+		return
+	end
+	self:RefreshHideTimer()
+end
+
 function CombatText:SetText(text)
 	if not self.frame or not self.frame.text then return end
 	self.frame.text:SetText(text or "")
@@ -193,15 +236,10 @@ end
 function CombatText:ShowText(text, r, g, b, a)
 	local frame = self:EnsureFrame()
 	if not frame then return end
-	self:CancelHideTimer()
 	self:ApplyStyle(r, g, b, a)
 	self:SetText(text)
 	frame:Show()
-	local duration = self:GetDuration()
-	if duration > 0 then self.hideTimer = C_Timer.NewTimer(duration, function()
-		CombatText.hideTimer = nil
-		CombatText:HideText()
-	end) end
+	self:RefreshHideTimer()
 end
 
 function CombatText:HideText()
@@ -212,6 +250,10 @@ end
 
 function CombatText:ShowCombatText(inCombat)
 	if self.previewing then return end
+	if not inCombat and self:IsAlwaysVisible() and self:GetAlwaysVisibleMode() == ALWAYS_VISIBLE_MODE_COMBAT_ONLY then
+		self:HideText()
+		return
+	end
 	local r, g, b, a
 	if inCombat then
 		r, g, b, a = self:GetEnterColor()
@@ -234,7 +276,22 @@ function CombatText:ShowEditModeHint(show)
 	else
 		self.previewing = nil
 		if self.frame.bg then self.frame.bg:Hide() end
-		self:HideText()
+		if addon.db and addon.db[DB_ENABLED] then
+			if C_Timer and C_Timer.After then
+				C_Timer.After(0, function()
+					if CombatText.previewing then return end
+					if addon.db and addon.db[DB_ENABLED] then
+						CombatText:RefreshDisplayMode()
+					else
+						CombatText:HideText()
+					end
+				end)
+			else
+				self:RefreshDisplayMode()
+			end
+		else
+			self:HideText()
+		end
 	end
 end
 
@@ -243,6 +300,15 @@ function CombatText:OnEvent(event)
 		self:ShowCombatText(true)
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		self:ShowCombatText(false)
+	elseif event == "PLAYER_ENTERING_WORLD" then
+		-- Delay one frame so the display state is applied after login/loading transitions.
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0, function()
+				if addon.db and addon.db[DB_ENABLED] then CombatText:RefreshDisplayMode() end
+			end)
+		elseif addon.db and addon.db[DB_ENABLED] then
+			self:RefreshDisplayMode()
+		end
 	end
 end
 
@@ -251,6 +317,7 @@ function CombatText:RegisterEvents()
 	local frame = self:EnsureFrame()
 	frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 	frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+	frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	frame:SetScript("OnEvent", function(_, event) CombatText:OnEvent(event) end)
 	self.eventsRegistered = true
 end
@@ -259,6 +326,7 @@ function CombatText:UnregisterEvents()
 	if not self.eventsRegistered or not self.frame then return end
 	self.frame:UnregisterEvent("PLAYER_REGEN_DISABLED")
 	self.frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	self.frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
 	self.frame:SetScript("OnEvent", nil)
 	self.eventsRegistered = false
 end
@@ -267,12 +335,16 @@ function CombatText:ApplyLayoutData(data)
 	if not data or not addon.db then return end
 
 	local duration = clamp(data.duration or defaults.duration, 0.5, 10)
+	local alwaysVisible = data.alwaysVisible == true
+	local alwaysVisibleMode = normalizeAlwaysVisibleMode(data.alwaysVisibleMode)
 	local fontSize = clamp(data.fontSize or defaults.fontSize, 8, 96)
 	local fontFace = normalizeFontFace(data.fontFace) or defaultFontFace()
 	local enterR, enterG, enterB, enterA = normalizeColor(data.enterColor or data.color or defaults.enterColor, defaults.enterColor)
 	local leaveR, leaveG, leaveB, leaveA = normalizeColor(data.leaveColor or data.enterColor or data.color or defaults.leaveColor, defaults.leaveColor)
 
 	addon.db[DB_DURATION] = duration
+	addon.db[DB_ALWAYS_VISIBLE] = alwaysVisible
+	addon.db[DB_ALWAYS_VISIBLE_MODE] = alwaysVisibleMode
 	addon.db[DB_FONT_SIZE] = fontSize
 	addon.db[DB_FONT] = fontFace
 	addon.db[DB_ENTER_COLOR] = { r = enterR, g = enterG, b = enterB, a = enterA }
@@ -281,6 +353,7 @@ function CombatText:ApplyLayoutData(data)
 
 	self:ApplyStyle()
 	self:UpdateFrameSize()
+	self:RefreshDisplayMode()
 end
 
 local function applySetting(field, value)
@@ -290,6 +363,14 @@ local function applySetting(field, value)
 		local duration = clamp(value, 0.5, 10)
 		addon.db[DB_DURATION] = duration
 		value = duration
+	elseif field == "alwaysVisible" then
+		local alwaysVisible = value == true
+		addon.db[DB_ALWAYS_VISIBLE] = alwaysVisible
+		value = alwaysVisible
+	elseif field == "alwaysVisibleMode" then
+		local alwaysVisibleMode = normalizeAlwaysVisibleMode(value)
+		addon.db[DB_ALWAYS_VISIBLE_MODE] = alwaysVisibleMode
+		value = alwaysVisibleMode
 	elseif field == "fontSize" then
 		local fontSize = clamp(value, 8, 96)
 		addon.db[DB_FONT_SIZE] = fontSize
@@ -318,6 +399,11 @@ local function applySetting(field, value)
 	if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, field, value, nil, true) end
 	CombatText:ApplyStyle()
 	CombatText:UpdateFrameSize()
+	if field == "alwaysVisible" or field == "alwaysVisibleMode" then
+		CombatText:RefreshDisplayMode()
+	else
+		CombatText:RefreshHideTimer()
+	end
 end
 
 local editModeRegistered = false
@@ -339,6 +425,35 @@ function CombatText:RegisterEditMode()
 				get = function() return CombatText:GetDuration() end,
 				set = function(_, value) applySetting("duration", value) end,
 				formatter = function(value) return string.format("%.1fs", tonumber(value) or 0) end,
+				isEnabled = function() return not CombatText:IsAlwaysVisible() end,
+			},
+			{
+				name = L["combatTextAlwaysVisible"] or "Always visible",
+				kind = SettingType.Checkbox,
+				field = "alwaysVisible",
+				default = defaults.alwaysVisible == true,
+				get = function() return CombatText:IsAlwaysVisible() end,
+				set = function(_, value) applySetting("alwaysVisible", value) end,
+			},
+			{
+				name = L["combatTextAlwaysVisibleMode"] or "Always-show mode",
+				kind = SettingType.Dropdown,
+				field = "alwaysVisibleMode",
+				get = function() return CombatText:GetAlwaysVisibleMode() end,
+				set = function(_, value) applySetting("alwaysVisibleMode", value) end,
+				isEnabled = function() return CombatText:IsAlwaysVisible() end,
+				generator = function(_, root)
+					root:CreateRadio(
+						L["combatTextAlwaysVisibleModeCombatOnly"] or "Only while in combat (+Combat)",
+						function() return CombatText:GetAlwaysVisibleMode() == ALWAYS_VISIBLE_MODE_COMBAT_ONLY end,
+						function() applySetting("alwaysVisibleMode", ALWAYS_VISIBLE_MODE_COMBAT_ONLY) end
+					)
+					root:CreateRadio(
+						L["combatTextAlwaysVisibleModeStatus"] or "Always show status (+/-Combat)",
+						function() return CombatText:GetAlwaysVisibleMode() == ALWAYS_VISIBLE_MODE_STATUS end,
+						function() applySetting("alwaysVisibleMode", ALWAYS_VISIBLE_MODE_STATUS) end
+					)
+				end,
 			},
 			{
 				name = L["combatTextFontSize"] or "Font size",
@@ -401,6 +516,8 @@ function CombatText:RegisterEditMode()
 			x = 0,
 			y = 120,
 			duration = self:GetDuration(),
+			alwaysVisible = self:IsAlwaysVisible(),
+			alwaysVisibleMode = self:GetAlwaysVisibleMode(),
 			fontSize = self:GetFontSize(),
 			fontFace = self:GetFontFace(),
 			enterColor = (function()
@@ -432,6 +549,7 @@ function CombatText:OnSettingChanged(enabled)
 		self:RegisterEditMode()
 		self:RegisterEvents()
 		self:ApplyStyle()
+		self:RefreshDisplayMode()
 	else
 		self:UnregisterEvents()
 		self.previewing = nil

@@ -1954,7 +1954,16 @@ applyClassResourceLayout = function(cfg)
 				if frame.SetScale then frame:SetScale(scale) end
 				if frame.SetFrameStrata and st.frame.GetFrameStrata then frame:SetFrameStrata(resourceStrata or st.frame:GetFrameStrata()) end
 				if frame.SetFrameLevel then frame:SetFrameLevel(minLevel) end
-				if frame.Show and frame.IsShown and not frame:IsShown() then frame:Show() end
+				local shouldForceShow = true
+				if type(frame.eqolShouldShowClassResource) == "function" then
+					local ok, result = pcall(frame.eqolShouldShowClassResource, frame)
+					if ok and result == false then shouldForceShow = false end
+				end
+				if shouldForceShow then
+					if frame.Show and frame.IsShown and not frame:IsShown() then frame:Show() end
+				elseif frame.Hide then
+					frame:Hide()
+				end
 			else
 				ClassResourceUtil.restoreClassResourceFrame(frame)
 				if frame.Hide then frame:Hide() end
@@ -2203,16 +2212,7 @@ local UF_EDITMODE_FRAME_IDS = {
 function UF.SyncEditModeLayoutAnchors(units)
 	if type(units) ~= "table" or #units == 0 then return end
 	local editMode = addon and addon.EditMode
-	if not (editMode and editMode.GetActiveLayoutName) then return end
-	local layoutName = editMode:GetActiveLayoutName() or "_Global"
-	addon.db = addon.db or {}
-	addon.db.editModeLayouts = addon.db.editModeLayouts or {}
-	local layouts = addon.db.editModeLayouts
-	local layout = layouts[layoutName]
-	if type(layout) ~= "table" then
-		layout = {}
-		layouts[layoutName] = layout
-	end
+	if not (editMode and editMode.EnsureLayoutData) then return end
 
 	for _, unit in ipairs(units) do
 		local frameId = UF_EDITMODE_FRAME_IDS[unit]
@@ -2220,12 +2220,13 @@ function UF.SyncEditModeLayoutAnchors(units)
 			local cfg = ensureDB(unit)
 			local anchor = cfg and cfg.anchor
 			if anchor then
-				local data = layout[frameId] or {}
-				data.point = anchor.point or data.point or "CENTER"
-				data.relativePoint = anchor.relativePoint or anchor.point or data.relativePoint or data.point
-				data.x = anchor.x or 0
-				data.y = anchor.y or 0
-				layout[frameId] = data
+				local data = editMode:EnsureLayoutData(frameId)
+				if type(data) == "table" then
+					data.point = anchor.point or data.point or "CENTER"
+					data.relativePoint = anchor.relativePoint or anchor.point or data.relativePoint or data.point
+					data.x = anchor.x or 0
+					data.y = anchor.y or 0
+				end
 			end
 		end
 	end
@@ -3630,7 +3631,8 @@ local function applyVisibilityDriver(unit, enabled)
 	elseif unit == UNIT.FOCUS then
 		baseCond = "[@focus,exists] show; hide"
 	elseif unit == UNIT.PET then
-		baseCond = "[@pet,exists] show; hide"
+		-- Keep pet frame configurable in Edit Mode even when no pet exists.
+		baseCond = inEdit and "show" or "[@pet,exists] show; hide"
 	elseif isBossUnit(unit) then
 		baseCond = ("[@%s,exists] show; hide"):format(unit)
 	end

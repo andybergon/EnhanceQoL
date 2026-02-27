@@ -6724,6 +6724,27 @@ local function registerUnitFrame(unit, info)
 	if not frame then return end
 	local layout = calcLayout(unit, frame)
 	local settingsList = buildUnitSettings(unit)
+	local function applyAnchorFromEditModeData(data)
+		if type(data) ~= "table" or not data.point then return end
+		local cfg = ensureConfig(unit)
+		cfg.anchor = cfg.anchor or {}
+		local oldPoint = cfg.anchor.point
+		local oldRelativePoint = cfg.anchor.relativePoint
+		local oldX = cfg.anchor.x or 0
+		local oldY = cfg.anchor.y or 0
+		local newPoint = data.point
+		local newRelativePoint = data.relativePoint or data.point
+		local newX = data.x or 0
+		local newY = data.y or 0
+		cfg.anchor.relativeTo = cfg.anchor.relativeTo or "UIParent"
+		if oldPoint == newPoint and oldRelativePoint == newRelativePoint and oldX == newX and oldY == newY then return end
+		cfg.anchor.point = newPoint
+		cfg.anchor.relativePoint = newRelativePoint
+		cfg.anchor.x = newX
+		cfg.anchor.y = newY
+		requestRefresh(unit)
+		refreshSettingsUI()
+	end
 	EditMode:RegisterFrame(info.frameId, {
 		frame = frame,
 		title = info.title,
@@ -6733,27 +6754,7 @@ local function registerUnitFrame(unit, info)
 		sliderHeight = 28,
 		layoutDefaults = layout,
 		settingsMaxHeight = DEFAULT_SETTINGS_MAX_HEIGHT,
-		onApply = function(_, _, data)
-			if not data.point then return end
-			local cfg = ensureConfig(unit)
-			cfg.anchor = cfg.anchor or {}
-			local oldPoint = cfg.anchor.point
-			local oldRelativePoint = cfg.anchor.relativePoint
-			local oldX = cfg.anchor.x or 0
-			local oldY = cfg.anchor.y or 0
-			local newPoint = data.point
-			local newRelativePoint = data.relativePoint or data.point
-			local newX = data.x or 0
-			local newY = data.y or 0
-			cfg.anchor.relativeTo = cfg.anchor.relativeTo or "UIParent"
-			if oldPoint == newPoint and oldRelativePoint == newRelativePoint and oldX == newX and oldY == newY then return end
-			cfg.anchor.point = newPoint
-			cfg.anchor.relativePoint = newRelativePoint
-			cfg.anchor.x = newX
-			cfg.anchor.y = newY
-			requestRefresh(unit)
-			refreshSettingsUI()
-		end,
+		onPositionChanged = function(_, _, data) applyAnchorFromEditModeData(data) end,
 		onEnter = function(activeFrame) syncEditModeSelectionStrata(activeFrame) end,
 		isEnabled = function() return ensureConfig(unit).enabled == true end,
 		settings = settingsList,
@@ -6764,6 +6765,8 @@ local function registerUnitFrame(unit, info)
 	registeredUnitFrames[unit] = frame
 	applyFrameSettingsMaxHeight(frame)
 	hideFrameReset(frame)
+	-- Keep EditMode data in sync with the authoritative UF profile anchor.
+	refreshEditModeFrame(unit)
 end
 
 local function registerEditModeFrames()
