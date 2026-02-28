@@ -1182,6 +1182,7 @@ end
 
 function addon.functions.initUIOptions()
 	local defaults = (addon.GCDBar and addon.GCDBar.defaults) or {}
+	local xpDefaults = (addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.defaults) or {}
 	addon.functions.InitDBValue("gcdBarEnabled", false)
 	addon.functions.InitDBValue("gcdBarWidth", defaults.width or 200)
 	addon.functions.InitDBValue("gcdBarHeight", defaults.height or 18)
@@ -1206,6 +1207,42 @@ function addon.functions.initUIOptions()
 	addon.functions.InitDBValue("gcdBarHideInPetBattle", defaults.hideInPetBattle == true)
 
 	if addon.GCDBar and addon.GCDBar.OnSettingChanged then addon.GCDBar:OnSettingChanged(addon.db["gcdBarEnabled"]) end
+
+	addon.functions.InitDBValue("xpBarEnabled", false)
+	addon.functions.InitDBValue("xpBarWidth", xpDefaults.width or 260)
+	addon.functions.InitDBValue("xpBarHeight", xpDefaults.height or 16)
+	addon.functions.InitDBValue("xpBarTexture", xpDefaults.texture or "DEFAULT")
+	addon.functions.InitDBValue("xpBarColor", xpDefaults.color or { r = 0.20, g = 0.65, b = 0.95, a = 1 })
+	addon.functions.InitDBValue("xpBarRestedColor", xpDefaults.restedColor or { r = 0.20, g = 0.85, b = 1.00, a = 1 })
+	addon.functions.InitDBValue("xpBarBackgroundEnabled", xpDefaults.bgEnabled == true)
+	addon.functions.InitDBValue("xpBarBackgroundTexture", xpDefaults.bgTexture or "SOLID")
+	addon.functions.InitDBValue("xpBarBackgroundColor", xpDefaults.bgColor or { r = 0, g = 0, b = 0, a = 0.45 })
+	addon.functions.InitDBValue("xpBarBorderEnabled", xpDefaults.borderEnabled == true)
+	addon.functions.InitDBValue("xpBarBorderTexture", xpDefaults.borderTexture or "DEFAULT")
+	addon.functions.InitDBValue("xpBarBorderColor", xpDefaults.borderColor or { r = 0, g = 0, b = 0, a = 0.85 })
+	addon.functions.InitDBValue("xpBarBorderSize", xpDefaults.borderSize or 1)
+	addon.functions.InitDBValue("xpBarBorderOffset", xpDefaults.borderOffset or 0)
+	addon.functions.InitDBValue("xpBarFillDirection", xpDefaults.fillDirection or "LEFT")
+	addon.functions.InitDBValue("xpBarAnchorTarget", xpDefaults.anchorRelativeFrame or xpDefaults.anchorTarget or "UIParent")
+	addon.functions.InitDBValue("xpBarAnchorPoint", xpDefaults.anchorPoint or "CENTER")
+	addon.functions.InitDBValue("xpBarAnchorRelativePoint", xpDefaults.anchorRelativePoint or xpDefaults.anchorPoint or "CENTER")
+	addon.functions.InitDBValue("xpBarAnchorOffsetX", xpDefaults.anchorOffsetX or 0)
+	addon.functions.InitDBValue("xpBarAnchorOffsetY", xpDefaults.anchorOffsetY or -170)
+	addon.functions.InitDBValue("xpBarAnchorMatchWidth", xpDefaults.anchorMatchRelativeWidth == true)
+	addon.functions.InitDBValue("xpBarShowText", xpDefaults.textEnabled ~= false)
+	addon.functions.InitDBValue("xpBarTextMode", xpDefaults.textMode or xpDefaults.textCenterMode or "CURMAXPERCENT")
+	addon.functions.InitDBValue("xpBarTextLeftMode", xpDefaults.textLeftMode or "LEVEL")
+	addon.functions.InitDBValue("xpBarTextCenterMode", xpDefaults.textCenterMode or xpDefaults.textMode or "CURMAXPERCENT")
+	addon.functions.InitDBValue("xpBarTextRightMode", xpDefaults.textRightMode or "PERCENT_RESTED")
+	addon.functions.InitDBValue("xpBarTextSize", xpDefaults.textSize or 11)
+	addon.functions.InitDBValue("xpBarTextFont", xpDefaults.textFont or "DEFAULT")
+	addon.functions.InitDBValue("xpBarTextOutline", xpDefaults.textOutline or "OUTLINE")
+	addon.functions.InitDBValue("xpBarTextColor", xpDefaults.textColor or { r = 1, g = 1, b = 1, a = 1 })
+	addon.functions.InitDBValue("xpBarHideInPetBattle", xpDefaults.hideInPetBattle == true)
+	addon.functions.InitDBValue("xpBarHideBlizzardTracking", xpDefaults.hideBlizzardTracking ~= false)
+	addon.functions.InitDBValue("xpBarDebug", false)
+
+	if addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.OnSettingChanged then addon.Aura.ExperienceBar:OnSettingChanged(addon.db["xpBarEnabled"]) end
 
 	local combatDefaults = (addon.CombatText and addon.CombatText.defaults) or {}
 	local combatAlwaysModeCombatOnly = addon.CombatText and addon.CombatText.ALWAYS_VISIBLE_MODE_COMBAT_ONLY or "COMBAT_ONLY"
@@ -1311,6 +1348,24 @@ local function createCastbarCategory()
 	})
 
 	addon.functions.SettingsCreateText(category, "|cffffd700" .. (L["gcdBarEditModeHint"] or "Configure size, texture, and color in Edit Mode.") .. "|r", {
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateHeadline(category, L["ExperienceBar"] or "Experience Bar", {
+		parentSection = expandable,
+	})
+	addon.functions.SettingsCreateCheckbox(category, {
+		var = "xpBarEnabled",
+		text = L["xpBarEnabled"] or "Enable Experience bar",
+		desc = L["xpBarDesc"] or "Shows your experience as a customizable bar.",
+		func = function(value)
+			addon.db["xpBarEnabled"] = value and true or false
+			if addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.OnSettingChanged then addon.Aura.ExperienceBar:OnSettingChanged(addon.db["xpBarEnabled"]) end
+		end,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateText(category, "|cffffd700" .. (L["xpBarEditModeHint"] or "Configure anchor, style, and text in Edit Mode.") .. "|r", {
 		parentSection = expandable,
 	})
 

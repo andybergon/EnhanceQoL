@@ -5445,7 +5445,32 @@ local function setAllHooks()
 
 	local LSM = LibStub("LibSharedMedia-3.0")
 	local lsmSoundDirty = false
+	local function refreshExperienceBarForMedia(mediaType, mediaKey)
+		local xpBar = addon.Aura and addon.Aura.ExperienceBar
+		if not (xpBar and xpBar.IsEnabled and xpBar:IsEnabled()) then return end
+		if not xpBar.frame then return end
+
+		local shouldRefresh = false
+		if mediaType == "statusbar" then
+			local textureKey = xpBar.GetTextureKey and xpBar:GetTextureKey() or nil
+			local bgTextureKey = xpBar.GetBackgroundTextureKey and xpBar:GetBackgroundTextureKey() or nil
+			shouldRefresh = mediaKey == textureKey or mediaKey == bgTextureKey
+		elseif mediaType == "border" then
+			local borderKey = xpBar.GetBorderTextureKey and xpBar:GetBorderTextureKey() or nil
+			shouldRefresh = mediaKey == borderKey
+		elseif mediaType == "font" then
+			local fontKey = xpBar.GetTextFont and xpBar:GetTextFont() or nil
+			shouldRefresh = mediaKey == fontKey
+		end
+
+		if shouldRefresh then
+			if xpBar.ApplyAppearance then xpBar:ApplyAppearance() end
+			if xpBar.UpdateSoon then xpBar:UpdateSoon() end
+		end
+	end
+
 	LSM:RegisterCallback("LibSharedMedia_Registered", function(event, mediaType, ...)
+		local mediaKey = ...
 		if mediaType == "sound" then
 			if not lsmSoundDirty then
 				lsmSoundDirty = true
@@ -5460,8 +5485,12 @@ local function setAllHooks()
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.RefreshPotionTextureDropdown then addon.MythicPlus.functions.RefreshPotionTextureDropdown() end
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.applyPotionBarTexture then addon.MythicPlus.functions.applyPotionBarTexture() end
 			if addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.RefreshTextureDropdown then addon.Aura.ResourceBars.RefreshTextureDropdown() end
+			refreshExperienceBarForMedia(mediaType, mediaKey)
 		elseif mediaType == "border" then
 			if ActionBarLabels and ActionBarLabels.ResetBorderCache then ActionBarLabels.ResetBorderCache() end
+			refreshExperienceBarForMedia(mediaType, mediaKey)
+		elseif mediaType == "font" then
+			refreshExperienceBarForMedia(mediaType, mediaKey)
 		end
 	end)
 
@@ -5579,6 +5608,23 @@ function loadMain()
 			end
 
 			openHealerBuffEditor()
+		elseif msg:match("^xpbardebug") then
+			local arg = msg:match("^xpbardebug%s*(%S*)")
+			arg = arg and arg:lower() or ""
+			if arg == "on" then
+				addon.db.xpBarDebug = true
+			elseif arg == "off" then
+				addon.db.xpBarDebug = false
+			elseif arg == "toggle" or arg == "" then
+				addon.db.xpBarDebug = not (addon.db.xpBarDebug == true)
+			elseif arg == "status" then
+				-- only print below
+			elseif arg == "dump" then
+				if addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.DebugDump then addon.Aura.ExperienceBar:DebugDump("slash-dump") end
+			end
+			local state = addon.db.xpBarDebug == true and "ON" or "OFF"
+			print("|cff00ff98Enhance QoL|r: XP bar debug " .. state .. " (use: /eqol xpbardebug on|off|toggle|status|dump)")
+			if addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.UpdateSoon then addon.Aura.ExperienceBar:UpdateSoon() end
 		else
 			OpenSettingsRoot()
 		end
