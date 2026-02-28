@@ -9,6 +9,10 @@
 - Cooldown Panels (Edit Mode): Added a `Static text color` option for static entry text.
 - Square Minimap Stats (Location): Added `Show zone` so zone and subzone can be toggled independently (`zone only`, `subzone only`, or both).
 
+### 🐛 Fixed
+
+- Character/Inspect Frame: Enchant text now clears correctly when swapping from an enchanted item to an unenchanted item.
+
 ---
 
 ## [8.2.0] - 2026-02-27

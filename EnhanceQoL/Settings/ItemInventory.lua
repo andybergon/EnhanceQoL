@@ -534,6 +534,7 @@ local function onInspect(arg1)
 									local showMissingOverlay = addon.db["showMissingEnchantOverlayOnCharframe"] ~= false
 									local enchantText = getTooltipInfoFromLink(itemLink)
 									local foundEnchant = enchantText ~= nil
+									element.enchant:SetText("")
 									if foundEnchant then
 										element.enchant:SetFormattedText(enchantText)
 										if element.borderGradient then element.borderGradient:Hide() end
@@ -730,10 +731,10 @@ local function setIlvlText(element, slot)
 					element.borderGradient:Hide()
 					local showMissingOverlay = addon.db["showMissingEnchantOverlayOnCharframe"] ~= false
 					local foundEnchant = enchantText ~= nil
+					element.enchant:SetText("")
 					if foundEnchant then element.enchant:SetFormattedText(enchantText) end
 
 					if not foundEnchant and UnitLevel("player") == addon.variables.maxLevel then
-						element.enchant:SetText("")
 						if
 							nil == addon.variables.shouldEnchantedChecks[slot]
 							or (nil ~= addon.variables.shouldEnchantedChecks[slot] and addon.variables.shouldEnchantedChecks[slot].func(eItem:GetCurrentItemLevel()))
