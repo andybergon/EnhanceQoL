@@ -115,26 +115,6 @@ local function getValue(key, fallback)
 	return value
 end
 
-local function isXPBarDebugEnabled()
-	if _G and _G.EQOL_DEBUG_XPBAR == true then return true end
-	return addon and addon.db and addon.db.xpBarDebug == true
-end
-
-local function debugXPBar(tag, ...)
-	if not isXPBarDebugEnabled() then return end
-	local msg = ""
-	local count = select("#", ...)
-	for i = 1, count do
-		local part = tostring(select(i, ...))
-		if i == 1 then
-			msg = part
-		else
-			msg = msg .. " " .. part
-		end
-	end
-	print("|cff00ff98Enhance QoL|r: [XPBar/" .. tostring(tag) .. "] " .. msg)
-end
-
 local function shouldHideInPetBattleForXP() return getValue(DB_HIDE_IN_PET_BATTLE, defaults.hideInPetBattle) == true end
 
 local function isPetBattleActive() return C_PetBattles and C_PetBattles.IsInBattle and C_PetBattles.IsInBattle() == true end
@@ -438,55 +418,6 @@ local function formatXPText(mode, ctx)
 	if mode == "PERCENT_RESTED" then return string.format("%.1f%% (+%.1f%%)", ctx.currentPercent or 0, ctx.restedPercent or 0) end
 	if mode == "CURMAX_RESTED" then return string.format("%s / %s (+%s)", formatNumber(ctx.current), formatNumber(ctx.max), formatNumber(ctx.rested or 0)) end
 	return nil
-end
-
-function ExperienceBar:DebugDump(source)
-	if not isXPBarDebugEnabled() then return end
-	local currentXP, maxXP = getXPValues()
-	local restedXP = getRestedXP()
-	local fraction = 0
-	if maxXP > 0 then fraction = currentXP / maxXP end
-	local shown = self.frame and self.frame.IsShown and self.frame:IsShown() or false
-	local minValue, maxValue = 0, 0
-	local curValue = 0
-	if self.frame and self.frame.GetMinMaxValues then
-		minValue, maxValue = self.frame:GetMinMaxValues()
-	end
-	if self.frame and self.frame.GetValue then curValue = self.frame:GetValue() or 0 end
-	local tex = self.frame and self.frame.GetStatusBarTexture and self.frame:GetStatusBarTexture()
-	local texW = tex and tex.GetWidth and tex:GetWidth() or 0
-	local texA = tex and tex.GetAlpha and tex:GetAlpha() or 0
-	if addon and addon.db then
-		addon.db.xpBarDebugLast = {
-			source = tostring(source or "-"),
-			xp = currentXP,
-			maxXP = maxXP,
-			restedXP = restedXP,
-			fraction = fraction,
-			shown = shown and true or false,
-			minValue = tonumber(minValue) or 0,
-			maxValue = tonumber(maxValue) or 0,
-			value = tonumber(curValue) or 0,
-			textureWidth = tonumber(texW) or 0,
-			textureAlpha = tonumber(texA) or 0,
-			textureKey = tostring(self:GetTextureKey() or ""),
-			anchorTarget = tostring(self:GetAnchorRelativeFrame() or ""),
-		}
-	end
-	debugXPBar(
-		"DUMP",
-		tostring(source or "-"),
-		string.format("xp=%d/%d rested=%d frac=%.4f", currentXP, maxXP, restedXP, fraction),
-		string.format(
-			"shown=%s min=%.3f max=%.3f val=%.3f texW=%.2f texA=%.2f",
-			tostring(shown),
-			tonumber(minValue) or 0,
-			tonumber(maxValue) or 0,
-			tonumber(curValue) or 0,
-			tonumber(texW) or 0,
-			tonumber(texA) or 0
-		)
-	)
 end
 
 function ExperienceBar:IsEnabled() return addon.db and addon.db[DB_ENABLED] == true end
@@ -898,7 +829,6 @@ function ExperienceBar:EnsureFrame()
 
 	bar:HookScript("OnShow", function()
 		if ExperienceBar and ExperienceBar.previewing then return end
-		debugXPBar("FRAME", "OnShow")
 		if ExperienceBar and ExperienceBar.UpdateSoon then ExperienceBar:UpdateSoon() end
 	end)
 
@@ -930,7 +860,6 @@ function ExperienceBar:StartBootstrapRefresh()
 		return
 	end
 	if self._bootstrapTicker then return end
-	debugXPBar("BOOTSTRAP", "start")
 	self._bootstrapTries = 0
 	self._bootstrapTicker = C_Timer.NewTicker(0.25, function()
 		if not (ExperienceBar and ExperienceBar.IsEnabled and ExperienceBar:IsEnabled()) then
@@ -941,7 +870,6 @@ function ExperienceBar:StartBootstrapRefresh()
 		ExperienceBar:UpdateXP()
 		local _, maxXP = getXPValues()
 		if maxXP > 0 or (ExperienceBar._bootstrapTries or 0) >= 32 then
-			debugXPBar("BOOTSTRAP", "stop", "tries=" .. tostring(ExperienceBar._bootstrapTries), "maxXP=" .. tostring(maxXP))
 			ExperienceBar:StopBootstrapRefresh()
 		end
 	end)
@@ -1025,12 +953,10 @@ end
 function ExperienceBar:UpdateXP()
 	if self.previewing then return end
 	if not self.frame then return end
-	self:DebugDump("UpdateXP/start")
 
 	if shouldHideInPetBattleForXP() and isPetBattleActive() then
 		self.frame:Hide()
 		self:ApplyBlizzardTrackingVisibility()
-		debugXPBar("UpdateXP", "hidden in pet battle")
 		return
 	end
 
@@ -1040,8 +966,6 @@ function ExperienceBar:UpdateXP()
 		self.frame:Hide()
 		self:ApplyBlizzardTrackingVisibility()
 		self:StartBootstrapRefresh()
-		debugXPBar("UpdateXP", "maxXP<=0", tostring(currentXP), tostring(maxXP))
-		self:DebugDump("UpdateXP/max<=0")
 		return
 	end
 
@@ -1067,7 +991,6 @@ function ExperienceBar:UpdateXP()
 	self:UpdateTextFromContext(ctx)
 	self.frame:Show()
 	self:ApplyBlizzardTrackingVisibility()
-	self:DebugDump("UpdateXP/applied")
 end
 
 function ExperienceBar:UpdateSoon()
@@ -1125,14 +1048,6 @@ function ExperienceBar:RegisterEvents()
 	frame:RegisterEvent("PET_BATTLE_OPENING_START")
 	frame:RegisterEvent("PET_BATTLE_CLOSE")
 	frame:SetScript("OnEvent", function(_, event, ...)
-		if isXPBarDebugEnabled() then
-			if event == "PLAYER_XP_UPDATE" then
-				local unit = ...
-				debugXPBar("EVENT", event, "unit=" .. tostring(unit))
-			else
-				debugXPBar("EVENT", event)
-			end
-		end
 		if event == "PLAYER_XP_UPDATE" then
 			local unit = ...
 			if unit and unit ~= "player" then return end

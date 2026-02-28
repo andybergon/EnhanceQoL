@@ -375,19 +375,22 @@ local function registerEditModeBars()
 		local function getBarVisibilitySelection()
 			local c = curSpecCfg()
 			if not c then return nil end
-			local normalized = ResourceBars.NormalizeVisibilityConfig and ResourceBars.NormalizeVisibilityConfig(c.visibility, c) or nil
-			if not normalized then
-				local fallbackLegacy
-				if getGlobalVisibilityFallback("hideOutOfCombat") then
-					fallbackLegacy = fallbackLegacy or {}
-					fallbackLegacy.ALWAYS_IN_COMBAT = true
+				local normalized = ResourceBars.NormalizeVisibilityConfig and ResourceBars.NormalizeVisibilityConfig(c.visibility, c) or nil
+				if not normalized then
+					local fallbackLegacy = nil
+					local function ensureFallbackLegacy()
+						if fallbackLegacy == nil then fallbackLegacy = {} end
+					end
+					if getGlobalVisibilityFallback("hideOutOfCombat") then
+						ensureFallbackLegacy()
+						fallbackLegacy.ALWAYS_IN_COMBAT = true
+					end
+					if getGlobalVisibilityFallback("hideMounted") then
+						ensureFallbackLegacy()
+						fallbackLegacy.PLAYER_NOT_MOUNTED = true
+					end
+					if fallbackLegacy and ResourceBars.NormalizeVisibilityConfig then normalized = ResourceBars.NormalizeVisibilityConfig(fallbackLegacy) end
 				end
-				if getGlobalVisibilityFallback("hideMounted") then
-					fallbackLegacy = fallbackLegacy or {}
-					fallbackLegacy.PLAYER_NOT_MOUNTED = true
-				end
-				if fallbackLegacy and ResourceBars.NormalizeVisibilityConfig then normalized = ResourceBars.NormalizeVisibilityConfig(fallbackLegacy) end
-			end
 			if ResourceBars.CopyVisibilitySelection then return ResourceBars.CopyVisibilitySelection(normalized) end
 			return normalized and CopyTable(normalized) or nil
 		end

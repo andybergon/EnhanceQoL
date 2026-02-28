@@ -5605,31 +5605,14 @@ function loadMain()
 				end
 				local GF = UF and UF.GroupFrames
 				if GF and GF.ToggleHealerBuffPlacementEditor then GF:ToggleHealerBuffPlacementEditor(kind) end
-			end
+				end
 
-			openHealerBuffEditor()
-		elseif msg:match("^xpbardebug") then
-			local arg = msg:match("^xpbardebug%s*(%S*)")
-			arg = arg and arg:lower() or ""
-			if arg == "on" then
-				addon.db.xpBarDebug = true
-			elseif arg == "off" then
-				addon.db.xpBarDebug = false
-			elseif arg == "toggle" or arg == "" then
-				addon.db.xpBarDebug = not (addon.db.xpBarDebug == true)
-			elseif arg == "status" then
-				-- only print below
-			elseif arg == "dump" then
-				if addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.DebugDump then addon.Aura.ExperienceBar:DebugDump("slash-dump") end
+				openHealerBuffEditor()
+			else
+				OpenSettingsRoot()
 			end
-			local state = addon.db.xpBarDebug == true and "ON" or "OFF"
-			print("|cff00ff98Enhance QoL|r: XP bar debug " .. state .. " (use: /eqol xpbardebug on|off|toggle|status|dump)")
-			if addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.UpdateSoon then addon.Aura.ExperienceBar:UpdateSoon() end
-		else
-			OpenSettingsRoot()
 		end
 	end
-end
 
 -- Erstelle ein Frame f��r Events
 local frameLoad = CreateFrame("Frame")

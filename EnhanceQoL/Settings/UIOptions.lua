@@ -1240,7 +1240,6 @@ function addon.functions.initUIOptions()
 	addon.functions.InitDBValue("xpBarTextColor", xpDefaults.textColor or { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("xpBarHideInPetBattle", xpDefaults.hideInPetBattle == true)
 	addon.functions.InitDBValue("xpBarHideBlizzardTracking", xpDefaults.hideBlizzardTracking ~= false)
-	addon.functions.InitDBValue("xpBarDebug", false)
 
 	if addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.OnSettingChanged then addon.Aura.ExperienceBar:OnSettingChanged(addon.db["xpBarEnabled"]) end
 

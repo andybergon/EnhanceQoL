@@ -6,12 +6,21 @@
 
 - Resource Bars (Mage Frost): Added support for `Icicles` as an aura-based resource bar.
 - Resource Bars (Edit Mode): Added per-bar `Show when` (same visibility rules as Cooldown Panels) directly under `Frame`, including migration from legacy mounted/combat hide settings.
+- Aura (Experience Bar): Added a fully customizable Experience Bar with Edit Mode integration (anchor target/point/offset, optional match-width, texture/background/border, and hide options for pet battles + Blizzard tracking bars).
+- Aura (Experience Bar): Added text customization with independent `Left / Center / Right` slots and selectable content (`Level`, `Current/Max`, `Percent`, rested variants), plus font, size, outline, and text color controls.
+- Aura (Experience Bar): Added separate fill colors for rested and non-rested XP states.
 
 ### 🔄 Changed
 
 - Castbars (Unit Frames + Standalone): Increased `Cast bar height` slider maximum from `40` to `200`.
 - Square Minimap Stats: Added configurable coordinate precision (`0-3` decimals) and automatic location text truncation (`...`) to fit minimap width.
 - Unit Frames (Focus/ToT/Pet): Extended `Show when` rules with player-scoped conditions such as `Mounted`, `Not mounted`, `Player is casting`, `When I have a target`, and `In party/raid` (same rule handling as Player/Target).
+
+### 🐛 Fixed
+
+- Aura (Experience Bar): Fixed startup/reload timing where the bar could stay visually empty or hidden until Edit Mode was opened once.
+- Aura (Experience Bar): Fixed rested percent text so it no longer shows incorrect values when rested XP is `0`.
+- Aura (Experience Bar): Fixed SharedMedia timing issues by reapplying appearance when matching media keys are registered, ensuring textures/fonts become visible immediately after late media registration.
 
 ---
 
