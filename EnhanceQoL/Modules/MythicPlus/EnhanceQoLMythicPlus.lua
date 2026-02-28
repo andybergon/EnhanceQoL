@@ -259,8 +259,6 @@ end
 
 addon.MythicPlus.functions.createBRFrame = createBRFrame
 
-ensureBRAnchor()
-
 local function setBRInfo(info)
 	if brButton and brButton.cooldownFrame and info then
 		local current = info.currentCharges
@@ -466,6 +464,8 @@ function addon.MythicPlus.functions.InitMain()
 
 	-- Setze den Event-Handler
 	frameLoad:SetScript("OnEvent", eventHandler)
+
+	if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.createBRFrame then addon.MythicPlus.functions.createBRFrame() end
 
 	if addon.db["mythicPlusEnableDungeonFilter"] then addon.MythicPlus.functions.addDungeonFilter() end
 end
