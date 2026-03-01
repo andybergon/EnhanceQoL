@@ -1,6 +1,10 @@
 # Changelog
 
-## [8.5.2] - 2026-03-01
+## [8.6.0] - 2026-03-01
+
+### ✨ Added
+
+- Aura (Experience Bar): Added optional progression text modes for `Left / Center / Right` slots: `Time this level`, `XP per hour`, `Leveling in`, and `Leveling in (+XP/h)`.
 
 ### 🐛 Fixed
 
