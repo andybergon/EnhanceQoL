@@ -3885,9 +3885,37 @@ local function initUI()
 	addon.functions.InitDBValue("enableMailboxAddressBook", false)
 	addon.functions.InitDBValue("mailboxContacts", {})
 
+	local function suppressMinimapBlobRings()
+		if not Minimap then return end
+
+		local setters = {
+			{ name = "SetArchBlobRingAlpha", value = 0 },
+			{ name = "SetArchBlobRingScalar", value = 0 },
+			{ name = "SetQuestBlobRingAlpha", value = 0 },
+			{ name = "SetQuestBlobRingScalar", value = 0 },
+			{ name = "SetTaskBlobRingAlpha", value = 0 },
+			{ name = "SetTaskBlobRingScalar", value = 0 },
+		}
+
+		for _, setter in ipairs(setters) do
+			local fn = Minimap[setter.name]
+			if type(fn) == "function" then fn(Minimap, setter.value) end
+		end
+	end
+
 	local function makeSquareMinimap()
 		MinimapCompassTexture:Hide()
 		Minimap:SetMaskTexture("Interface\\BUTTONS\\WHITE8X8")
+		suppressMinimapBlobRings()
+
+		addon.variables = addon.variables or {}
+		if not addon.variables.squareMinimapBlobRingHooked and Minimap.HookScript then
+			Minimap:HookScript("OnEvent", function(_, event)
+				if event == "PLAYER_ENTERING_WORLD" and addon.db and addon.db["enableSquareMinimap"] then suppressMinimapBlobRings() end
+			end)
+			addon.variables.squareMinimapBlobRingHooked = true
+		end
+
 		function GetMinimapShape() return "SQUARE" end
 	end
 	if addon.db["enableSquareMinimap"] then makeSquareMinimap() end
