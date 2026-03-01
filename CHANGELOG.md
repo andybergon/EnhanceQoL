@@ -7,6 +7,10 @@
 - Castbars (Unit Frames + Standalone): Added `Cast name anchor` (`LEFT` / `CENTER` / `RIGHT`) so the spell name can be centered or right-aligned instead of always being left-aligned.
 - Character/Inspect Frame (Enchants): Added `Enchant display` mode selector with `Full`, `Badge (E)`, and `Warning only`.
 
+### 🐛 Fixed
+
+- Mouse (Crosshair): Fixed crosshair registration in Edit Mode while the feature is disabled.
+
 ---
 
 ## [8.4.0] - 2026-03-01

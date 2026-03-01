@@ -1013,10 +1013,7 @@ addon.Mouse.functions.refreshRingStyle = refreshRingStyle
 
 local function isCrosshairWanted(db, context)
 	if not db then return false end
-	if db["mouseCrosshairEnabled"] ~= true then
-		if addon.EditMode and addon.EditMode.IsInEditMode and addon.EditMode:IsInEditMode() then return true end
-		return false
-	end
+	if db["mouseCrosshairEnabled"] ~= true then return false end
 	if addon.EditMode and addon.EditMode.IsInEditMode and addon.EditMode:IsInEditMode() then return true end
 	return isCrosshairVisibilityMatch(context)
 end
@@ -1295,7 +1292,18 @@ refreshCrosshairVisibility = function()
 	local db = addon.db
 	if not db then return false end
 	migrateLegacyCrosshairVisibility()
-	local frame = ensureCrosshairFrame()
+	local enabled = db["mouseCrosshairEnabled"] == true
+	local frame = addon.mouseCrosshair or _G[CROSSHAIR_FRAME_NAME]
+	if not enabled then
+		if crosshairEditModeRegistered and addon.EditMode and addon.EditMode.UnregisterFrame then
+			addon.EditMode:UnregisterFrame(CROSSHAIR_EDITMODE_ID, false)
+			crosshairEditModeRegistered = false
+		end
+		if frame then frame:Hide() end
+		return false
+	end
+
+	frame = ensureCrosshairFrame()
 	registerCrosshairWithEditMode(frame)
 	applyCrosshairStyle(frame)
 
