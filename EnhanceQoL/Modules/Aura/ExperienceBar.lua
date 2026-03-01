@@ -111,6 +111,10 @@ local BLIZZARD_TRACKING_FRAMES = {
 	"StatusTrackingBarManager",
 }
 
+local XP_BAR_FRAME_NAME = "EQOL_XPBar"
+local XP_BAR_EVENT_FRAME_NAME = "EQOL_XPBarEventDriver"
+local registerEditModeCallbacks
+
 local function getValue(key, fallback)
 	if not addon.db then return fallback end
 	local value = addon.db[key]
@@ -833,9 +837,23 @@ function ExperienceBar:ApplySize()
 end
 
 function ExperienceBar:EnsureFrame()
-	if self.frame then return self.frame end
+	if self.frame then
+		if self.frame.GetParent and self.frame:GetParent() ~= UIParent then self.frame:SetParent(UIParent) end
+		return self.frame
+	end
 
-	local bar = CreateFrame("StatusBar", "EQOL_XPBar", UIParent)
+	local existing = _G and _G[XP_BAR_FRAME_NAME]
+	if existing then
+		self.frame = existing
+		if existing.GetParent and existing:GetParent() ~= UIParent then existing:SetParent(UIParent) end
+		self:ApplyAppearance()
+		self:ApplySize()
+		self:RegisterEditMode(existing)
+		registerEditModeCallbacks()
+		return existing
+	end
+
+	local bar = CreateFrame("StatusBar", XP_BAR_FRAME_NAME, UIParent)
 	bar:SetMinMaxValues(0, 1)
 	bar:SetClampedToScreen(true)
 	bar:Hide()
@@ -893,8 +911,30 @@ function ExperienceBar:EnsureFrame()
 	self.frame = bar
 	self:ApplyAppearance()
 	self:ApplySize()
+	self:RegisterEditMode(bar)
+	registerEditModeCallbacks()
 
 	return bar
+end
+
+function ExperienceBar:EnsureEventFrame()
+	if self.eventFrame then return self.eventFrame end
+	local frame = _G and _G[XP_BAR_EVENT_FRAME_NAME]
+	if not frame then frame = CreateFrame("Frame", XP_BAR_EVENT_FRAME_NAME, UIParent) end
+	frame:Hide()
+	self.eventFrame = frame
+	return frame
+end
+
+function ExperienceBar:DespawnFrame()
+	if not self.frame then return end
+	self.frame:Hide()
+	if self.frame.editBg then self.frame.editBg:Hide() end
+	if self.frame.editLabel then self.frame.editLabel:Hide() end
+	if self.frame.GetParent and self.frame:GetParent() ~= nil then self.frame:SetParent(nil) end
+	self._lastXPContext = nil
+	self._hasRested = nil
+	self._lastFraction = nil
 end
 
 local function shouldShowCustomXPBar()
@@ -1008,10 +1048,9 @@ end
 
 function ExperienceBar:UpdateXP()
 	if self.previewing then return end
-	if not self.frame then return end
 
 	if shouldHideInPetBattleForXP() and isPetBattleActive() then
-		self.frame:Hide()
+		if self.frame then self.frame:Hide() end
 		self:ApplyBlizzardTrackingVisibility()
 		return
 	end
@@ -1019,13 +1058,15 @@ function ExperienceBar:UpdateXP()
 	self:MaybeUpdateAnchor()
 	local currentXP, maxXP = getXPValues()
 	if maxXP <= 0 then
-		self.frame:Hide()
+		self:DespawnFrame()
 		self:ApplyBlizzardTrackingVisibility()
-		self:StartBootstrapRefresh()
+		if not self.frame then self:StartBootstrapRefresh() end
 		return
 	end
 
 	self:StopBootstrapRefresh()
+	local frame = self:EnsureFrame()
+	if not frame then return end
 
 	local restedXP = getRestedXP()
 	local ctx = buildXPContext(getPlayerLevel(), currentXP, maxXP, restedXP)
@@ -1042,12 +1083,12 @@ function ExperienceBar:UpdateXP()
 	end
 	self._lastFraction = fraction
 
-	self.frame:SetMinMaxValues(0, 1)
-	self.frame:SetValue(fraction)
+	frame:SetMinMaxValues(0, 1)
+	frame:SetValue(fraction)
 	self:ApplyCurrentFillColor(self._hasRested)
 	self:UpdateRestedOverlay(ctx)
 	self:UpdateTextFromContext(ctx)
-	self.frame:Show()
+	frame:Show()
 	self:ApplyBlizzardTrackingVisibility()
 end
 
@@ -1095,7 +1136,7 @@ end
 
 function ExperienceBar:RegisterEvents()
 	if self.eventsRegistered then return end
-	local frame = self:EnsureFrame()
+	local frame = self:EnsureEventFrame()
 	frame:RegisterEvent("PLAYER_LOGIN")
 	frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	frame:RegisterEvent("PLAYER_ALIVE")
@@ -1120,19 +1161,19 @@ function ExperienceBar:RegisterEvents()
 end
 
 function ExperienceBar:UnregisterEvents()
-	if not self.eventsRegistered or not self.frame then return end
-	self.frame:UnregisterEvent("PLAYER_LOGIN")
-	self.frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
-	self.frame:UnregisterEvent("PLAYER_ALIVE")
-	self.frame:UnregisterEvent("PLAYER_XP_UPDATE")
-	self.frame:UnregisterEvent("PLAYER_LEVEL_UP")
-	self.frame:UnregisterEvent("UPDATE_EXHAUSTION")
-	self.frame:UnregisterEvent("PLAYER_UPDATE_RESTING")
-	self.frame:UnregisterEvent("ENABLE_XP_GAIN")
-	self.frame:UnregisterEvent("DISABLE_XP_GAIN")
-	self.frame:UnregisterEvent("PET_BATTLE_OPENING_START")
-	self.frame:UnregisterEvent("PET_BATTLE_CLOSE")
-	self.frame:SetScript("OnEvent", nil)
+	if not self.eventsRegistered or not self.eventFrame then return end
+	self.eventFrame:UnregisterEvent("PLAYER_LOGIN")
+	self.eventFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
+	self.eventFrame:UnregisterEvent("PLAYER_ALIVE")
+	self.eventFrame:UnregisterEvent("PLAYER_XP_UPDATE")
+	self.eventFrame:UnregisterEvent("PLAYER_LEVEL_UP")
+	self.eventFrame:UnregisterEvent("UPDATE_EXHAUSTION")
+	self.eventFrame:UnregisterEvent("PLAYER_UPDATE_RESTING")
+	self.eventFrame:UnregisterEvent("ENABLE_XP_GAIN")
+	self.eventFrame:UnregisterEvent("DISABLE_XP_GAIN")
+	self.eventFrame:UnregisterEvent("PET_BATTLE_OPENING_START")
+	self.eventFrame:UnregisterEvent("PET_BATTLE_CLOSE")
+	self.eventFrame:SetScript("OnEvent", nil)
 	self.eventsRegistered = false
 end
 
@@ -1191,7 +1232,7 @@ function ExperienceBar:BuildLayoutRecordFromProfile()
 	return record
 end
 
-local function registerEditModeCallbacks()
+registerEditModeCallbacks = function()
 	if editModeCallbacksRegistered then return end
 	local lib = addon.EditModeLib
 	if not (lib and lib.RegisterCallback) then return end
@@ -1462,8 +1503,10 @@ local function applySetting(field, value)
 	ExperienceBar:UpdateSoon()
 end
 
-function ExperienceBar:RegisterEditMode()
+function ExperienceBar:RegisterEditMode(frame)
 	if editModeRegistered or not EditMode or not EditMode.RegisterFrame then return end
+	local editFrame = frame or self.frame
+	if not editFrame then return end
 
 	local settings
 	if SettingType then
@@ -1924,7 +1967,7 @@ function ExperienceBar:RegisterEditMode()
 	end
 
 	EditMode:RegisterFrame(EDITMODE_ID, {
-		frame = self:EnsureFrame(),
+		frame = editFrame,
 		title = L["ExperienceBar"] or "Experience Bar",
 		layoutDefaults = {
 			point = self:GetAnchorPoint(),
@@ -1987,7 +2030,7 @@ function ExperienceBar:RegisterEditMode()
 		end,
 		onEnter = function() ExperienceBar:ShowEditModeHint(true) end,
 		onExit = function() ExperienceBar:ShowEditModeHint(false) end,
-		isEnabled = function() return addon.db and addon.db[DB_ENABLED] end,
+		isEnabled = function() return addon.db and addon.db[DB_ENABLED] and shouldShowCustomXPBar() end,
 		settings = settings,
 		relativeTo = function() return ExperienceBar:ResolveAnchorFrame() end,
 		allowDrag = function() return ExperienceBar:AnchorUsesUIParent() end,
@@ -2002,9 +2045,6 @@ end
 
 function ExperienceBar:OnSettingChanged(enabled)
 	if enabled then
-		self:EnsureFrame()
-		self:RegisterEditMode()
-		registerEditModeCallbacks()
 		self:RegisterEvents()
 		self:ApplyLayoutData(self:BuildLayoutRecordFromProfile())
 		self:RefreshAnchor()

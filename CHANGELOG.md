@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.5.2] - 2026-03-01
+
+### 🐛 Fixed
+
+- Action Bars (Button text): Fixed an interaction where enabling `Change keybind font` could make keybind labels visible again on bars selected in `Hide keybinds per bar`. Per-bar hide now always takes precedence.
+
+---
+
 ## [8.5.1] - 2026-03-01
 
 ### 🐛 Fixed

@@ -579,6 +579,14 @@ local function UpdateHotkeyVisibility(hotkey, hide)
 	end
 end
 
+local function RefreshHotkeyVisibility(button, barNameOverride)
+	if not button then return end
+	local hotkey = GetActionButtonHotkey(button)
+	if not hotkey then return end
+	local barName = barNameOverride or DetermineButtonBarName(button)
+	UpdateHotkeyVisibility(hotkey, ShouldHideHotkey(barName))
+end
+
 local HOTKEY_SHORT_REPLACEMENTS = {
 	{ "MOUSE WHEEL DOWN", "MWD" },
 	{ "MOUSE WHEEL UP", "MWU" },
@@ -672,7 +680,7 @@ local function ShortenHotkeyText(text)
 end
 Labels.ShortenHotkeyText = ShortenHotkeyText
 
-local function ApplyHotkeyStyling(button)
+local function ApplyHotkeyStyling(button, barNameOverride)
 	if not addon.db then return end
 	local hotkey = GetActionButtonHotkey(button)
 	if not hotkey then return end
@@ -707,9 +715,6 @@ local function ApplyHotkeyStyling(button)
 		RestoreTextColorOverride(hotkey, "EQOL_OriginalHotkeyColor", "EQOL_UsingHotkeyColorOverride")
 	end
 
-	local barName = DetermineButtonBarName(button)
-	UpdateHotkeyVisibility(hotkey, ShouldHideHotkey(barName))
-
 	if addon.db.actionBarShortHotkeys then
 		if not hotkey.EQOL_ShortApplied then hotkey.EQOL_OriginalHotkeyText = originalText end
 		local baseText = hotkey.EQOL_OriginalHotkeyText or originalText
@@ -724,6 +729,9 @@ local function ApplyHotkeyStyling(button)
 		hotkey.EQOL_ShortApplied = nil
 		hotkey.EQOL_ShortValue = nil
 	end
+
+	-- Keep per-bar hide as the final authority, even after font/text updates.
+	RefreshHotkeyVisibility(button, barNameOverride)
 end
 
 local function InstallHotkeyHook()
@@ -758,7 +766,11 @@ if not Labels.hotkeyHookInstalled then
 end
 
 function Labels.RefreshAllHotkeyStyles()
-	ForEachActionButton(function(button) ApplyHotkeyStyling(button) end)
+	ForEachActionButton(function(button, info) ApplyHotkeyStyling(button, info and info.name) end)
+end
+
+function Labels.RefreshAllHotkeyVisibility()
+	ForEachActionButton(function(button, info) RefreshHotkeyVisibility(button, info and info.name) end)
 end
 
 local function InstallCountHook()
@@ -800,12 +812,18 @@ local function RefreshHotkeyColorOverride(button)
 	if not addon.db then return end
 	local hotkey = GetActionButtonHotkey(button)
 	if not hotkey then return end
+	local barName = DetermineButtonBarName(button)
+	if ShouldHideHotkey(barName) then
+		RefreshHotkeyVisibility(button, barName)
+		return
+	end
 	if addon.db.actionBarHotkeyFontOverride then
 		local fontColor = addon.db.actionBarHotkeyFontColor
 		ApplyTextColorOverride(hotkey, fontColor, "EQOL_OriginalHotkeyColor", "EQOL_UsingHotkeyColorOverride")
 	elseif hotkey.EQOL_UsingHotkeyColorOverride then
 		RestoreTextColorOverride(hotkey, "EQOL_OriginalHotkeyColor", "EQOL_UsingHotkeyColorOverride")
 	end
+	RefreshHotkeyVisibility(button, barName)
 end
 
 hooksecurefunc("ActionButton_UpdateRangeIndicator", function(self, checksRange, inRange)
