@@ -23,6 +23,7 @@
 - Group Frames (Healer Buff Placement): Fixed Indicator Settings scroll behavior when switching from long to short indicator styles (for example `Tint`), so settings are no longer hidden off-screen.
 - Group Frames (Private Auras): Fixed private aura anchor drift when a power bar is shown by anchoring to the frame container consistently.
 - Square Minimap Stats (Location): In `subzone only` mode, location text now automatically falls back to zone text when no subzone name is available.
+- Experience Bar: Fixed a visible seam between normal XP fill and rested overlay fill, so both segments now blend continuously at the transition.
 
 ---
 
