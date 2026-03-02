@@ -862,9 +862,14 @@ function ExperienceBar:UpdateRestedOverlay(ctx)
 	local barSize = vertical and (self.frame:GetHeight() or 0) or (self.frame:GetWidth() or 0)
 	if barSize <= 0 then return end
 
+	local seamOverlapPx = 1
 	local startPx = startFraction * barSize
 	local endPx = endFraction * barSize
+	startPx = math.max(0, startPx - seamOverlapPx)
 	if endPx <= startPx then return end
+	local startTex = clamp(startPx / barSize, 0, 1)
+	local endTex = clamp(endPx / barSize, 0, 1)
+	if endTex <= startTex then return end
 
 	local rr, rg, rb, ra = self:GetRestedColor()
 	overlay:SetVertexColor(rr or 1, rg or 1, rb or 1, ra or 1)
@@ -872,15 +877,19 @@ function ExperienceBar:UpdateRestedOverlay(ctx)
 	if fillDirection == "LEFT" then
 		overlay:SetPoint("TOPLEFT", self.frame, "TOPLEFT", startPx, 0)
 		overlay:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMLEFT", endPx, 0)
+		overlay:SetTexCoord(startTex, endTex, 0, 1)
 	elseif fillDirection == "RIGHT" then
 		overlay:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -startPx, 0)
 		overlay:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMRIGHT", -endPx, 0)
+		overlay:SetTexCoord(1 - endTex, 1 - startTex, 0, 1)
 	elseif fillDirection == "UP" then
 		overlay:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 0, startPx)
 		overlay:SetPoint("TOPRIGHT", self.frame, "BOTTOMRIGHT", 0, endPx)
+		overlay:SetTexCoord(0, 1, 1 - endTex, 1 - startTex)
 	else -- DOWN
 		overlay:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, -startPx)
 		overlay:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", 0, -endPx)
+		overlay:SetTexCoord(0, 1, startTex, endTex)
 	end
 
 	overlay:Show()
