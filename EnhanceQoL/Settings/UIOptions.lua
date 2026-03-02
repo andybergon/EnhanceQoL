@@ -46,6 +46,16 @@ local fontOrder = {}
 local borderOrder = {}
 local QUICK_SLOT_BORDER = "Interface\\Buttons\\UI-Quickslot2"
 
+local function getGlobalFontConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
+	return "__EQOL_GLOBAL_FONT__"
+end
+
+local function getGlobalFontConfigLabel()
+	if addon.functions and addon.functions.GetGlobalFontConfigLabel then return addon.functions.GetGlobalFontConfigLabel() end
+	return "Use global font config"
+end
+
 addon.db = addon.db or {}
 addon.db.actionBarHiddenHotkeys = type(addon.db.actionBarHiddenHotkeys) == "table" and addon.db.actionBarHiddenHotkeys or {}
 
@@ -100,10 +110,12 @@ local function notifyFrameRuleLocked(label)
 	print("|cff00ff98Enhance QoL|r: " .. base)
 end
 
-local function buildFontDropdown()
+local function buildFontDropdown(targetOrder, includeGlobalOption)
 	local map = {
 		[addon.variables.defaultFont] = L["actionBarFontDefault"] or "Blizzard Font",
 	}
+	local globalKey = getGlobalFontConfigKey()
+	if includeGlobalOption ~= false then map[globalKey] = getGlobalFontConfigLabel() end
 	local LSM = LibStub("LibSharedMedia-3.0", true)
 	if LSM and LSM.HashTable then
 		for name, path in pairs(LSM:HashTable("font") or {}) do
@@ -111,12 +123,15 @@ local function buildFontDropdown()
 		end
 	end
 	local list, order = addon.functions.prepareListForDropdown(map)
-	wipe(fontOrder)
-	for i, key in ipairs(order) do
-		fontOrder[i] = key
+	wipe(targetOrder)
+	if includeGlobalOption ~= false and list[globalKey] then targetOrder[#targetOrder + 1] = globalKey end
+	for _, key in ipairs(order) do
+		if key ~= globalKey then targetOrder[#targetOrder + 1] = key end
 	end
 	return list
 end
+
+local function buildOverrideFontDropdown() return buildFontDropdown(fontOrder, true) end
 
 local function buildBorderDropdown()
 	local map = {}
@@ -461,6 +476,7 @@ end
 
 local function createLabelControls(category, expandable)
 	addon.functions.SettingsCreateHeadline(category, L["actionBarLabelGroupTitle"] or "Button text", { parentSection = expandable })
+	local globalFontKey = getGlobalFontConfigKey()
 
 	local outlineOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "MONOCHROMEOUTLINE" }
 	local outlineOptions = {
@@ -506,13 +522,13 @@ local function createLabelControls(category, expandable)
 	addon.functions.SettingsCreateScrollDropdown(category, {
 		var = "actionBarMacroFontFace",
 		text = L["actionBarMacroFontLabel"] or "Macro name font",
-		listFunc = buildFontDropdown,
+		listFunc = buildOverrideFontDropdown,
 		order = fontOrder,
-		default = addon.variables.defaultFont,
+		default = globalFontKey,
 		get = function()
-			local current = addon.db.actionBarMacroFontFace or addon.variables.defaultFont
-			local list = buildFontDropdown()
-			if not list[current] then current = addon.variables.defaultFont end
+			local current = addon.db.actionBarMacroFontFace or globalFontKey
+			local list = buildOverrideFontDropdown()
+			if not list[current] then current = globalFontKey end
 			return current
 		end,
 		set = function(key)
@@ -600,13 +616,13 @@ local function createLabelControls(category, expandable)
 	addon.functions.SettingsCreateScrollDropdown(category, {
 		var = "actionBarHotkeyFontFace",
 		text = L["actionBarHotkeyFontLabel"] or "Keybind font",
-		listFunc = buildFontDropdown,
+		listFunc = buildOverrideFontDropdown,
 		order = fontOrder,
-		default = addon.variables.defaultFont,
+		default = globalFontKey,
 		get = function()
-			local current = addon.db.actionBarHotkeyFontFace or addon.variables.defaultFont
-			local list = buildFontDropdown()
-			if not list[current] then current = addon.variables.defaultFont end
+			local current = addon.db.actionBarHotkeyFontFace or globalFontKey
+			local list = buildOverrideFontDropdown()
+			if not list[current] then current = globalFontKey end
 			return current
 		end,
 		set = function(key)
@@ -693,13 +709,13 @@ local function createLabelControls(category, expandable)
 	addon.functions.SettingsCreateScrollDropdown(category, {
 		var = "actionBarCountFontFace",
 		text = L["actionBarCountFontLabel"] or "Charge/stack font",
-		listFunc = buildFontDropdown,
+		listFunc = buildOverrideFontDropdown,
 		order = fontOrder,
-		default = addon.variables.defaultFont,
+		default = globalFontKey,
 		get = function()
-			local current = addon.db.actionBarCountFontFace or addon.variables.defaultFont
-			local list = buildFontDropdown()
-			if not list[current] then current = addon.variables.defaultFont end
+			local current = addon.db.actionBarCountFontFace or globalFontKey
+			local list = buildOverrideFontDropdown()
+			if not list[current] then current = globalFontKey end
 			return current
 		end,
 		set = function(key)
@@ -1247,7 +1263,7 @@ function addon.functions.initUIOptions()
 	addon.functions.InitDBValue("xpBarTextCenterMode", xpDefaults.textCenterMode or xpDefaults.textMode or "CURMAXPERCENT")
 	addon.functions.InitDBValue("xpBarTextRightMode", xpDefaults.textRightMode or "PERCENT_RESTED")
 	addon.functions.InitDBValue("xpBarTextSize", xpDefaults.textSize or 11)
-	addon.functions.InitDBValue("xpBarTextFont", xpDefaults.textFont or "DEFAULT")
+	addon.functions.InitDBValue("xpBarTextFont", xpDefaults.textFont or (addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"))
 	addon.functions.InitDBValue("xpBarTextOutline", xpDefaults.textOutline or "OUTLINE")
 	addon.functions.InitDBValue("xpBarTextColor", xpDefaults.textColor or { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("xpBarTextAbbreviateNumbers", xpDefaults.abbreviateNumbers == true)
@@ -1259,7 +1275,7 @@ function addon.functions.initUIOptions()
 	local combatDefaults = (addon.CombatText and addon.CombatText.defaults) or {}
 	local combatAlwaysModeCombatOnly = addon.CombatText and addon.CombatText.ALWAYS_VISIBLE_MODE_COMBAT_ONLY or "COMBAT_ONLY"
 	local combatAlwaysModeStatus = addon.CombatText and addon.CombatText.ALWAYS_VISIBLE_MODE_STATUS or "STATUS"
-	local combatFont = combatDefaults.fontFace or (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	local combatFont = combatDefaults.fontFace or (addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__")
 	local function cloneColor(value, fallback)
 		local source = type(value) == "table" and value or fallback
 		source = type(source) == "table" and source or { r = 1, g = 1, b = 1, a = 1 }

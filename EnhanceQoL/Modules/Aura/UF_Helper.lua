@@ -412,6 +412,11 @@ function H.trim(str)
 end
 
 function H.getFont(path)
+	local fallbackFont = (addon.functions and addon.functions.GetGlobalDefaultFontFace and addon.functions.GetGlobalDefaultFontFace())
+		or (addon.variables and addon.variables.defaultFont)
+		or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font))
+		or STANDARD_TEXT_FONT
+	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(path) then return fallbackFont end
 	if type(path) == "string" and path ~= "" then
 		local lower = path:lower()
 		if path:find("\\") or path:find("/") or lower:find(".ttf", 1, true) or lower:find(".otf", 1, true) or lower:find(".ttc", 1, true) then return path end
@@ -421,7 +426,7 @@ function H.getFont(path)
 		end
 		return path
 	end
-	return addon.variables and addon.variables.defaultFont or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font)) or STANDARD_TEXT_FONT
+	return fallbackFont
 end
 
 function H.applyFont(fs, fontPath, size, outline)

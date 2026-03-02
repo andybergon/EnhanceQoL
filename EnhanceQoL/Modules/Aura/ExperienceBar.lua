@@ -26,6 +26,21 @@ for _, point in ipairs(ANCHOR_POINTS) do
 	VALID_ANCHOR_POINTS[point] = true
 end
 
+local function globalFontConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
+	return "__EQOL_GLOBAL_FONT__"
+end
+
+local function globalFontConfigLabel()
+	if addon.functions and addon.functions.GetGlobalFontConfigLabel then return addon.functions.GetGlobalFontConfigLabel() end
+	return "Use global font config"
+end
+
+local function defaultFontFace()
+	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
+	return (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+end
+
 ExperienceBar.defaults = ExperienceBar.defaults
 	or {
 		width = 260,
@@ -55,7 +70,7 @@ ExperienceBar.defaults = ExperienceBar.defaults
 		textCenterMode = "CURMAXPERCENT",
 		textRightMode = "PERCENT_RESTED",
 		textSize = 11,
-		textFont = "DEFAULT",
+		textFont = globalFontConfigKey(),
 		textOutline = "OUTLINE",
 		textColor = { r = 1, g = 1, b = 1, a = 1 },
 		abbreviateNumbers = false,
@@ -232,6 +247,7 @@ local function fontOptions()
 		list[#list + 1] = { value = value, label = label }
 	end
 
+	add(globalFontConfigKey(), globalFontConfigLabel())
 	add("DEFAULT", _G.DEFAULT)
 	if LSM and LSM.HashTable then
 		for name, path in pairs(LSM:HashTable("font") or {}) do
@@ -240,12 +256,22 @@ local function fontOptions()
 	end
 
 	table.sort(list, function(a, b) return tostring(a.label) < tostring(b.label) end)
+	local globalKey = globalFontConfigKey()
+	for idx, option in ipairs(list) do
+		if option.value == globalKey then
+			if idx > 1 then
+				table.remove(list, idx)
+				table.insert(list, 1, option)
+			end
+			break
+		end
+	end
 	return list
 end
 
 local function resolveFontPath(key)
-	local defaultFont = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
-	if not key or key == "" or key == "DEFAULT" then return defaultFont end
+	local defaultFont = defaultFontFace()
+	if not key or key == "" or key == "DEFAULT" or key == globalFontConfigKey() then return defaultFont end
 	if LSM and LSM.Fetch then
 		local font = LSM:Fetch("font", key, true)
 		if font then return font end

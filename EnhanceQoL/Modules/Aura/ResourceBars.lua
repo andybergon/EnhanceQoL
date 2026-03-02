@@ -1558,10 +1558,15 @@ local function isEQOLFrameName(name)
 end
 -- Fixed, non-DB defaults are stored in ResourcebarVars (RB)
 
-local function defaultFontPath() return (addon.variables and addon.variables.defaultFont) or (LSM and LSM.DefaultMedia and LSM:Fetch("font", LSM.DefaultMedia.font)) or STANDARD_TEXT_FONT end
+local function defaultFontPath()
+	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
+	return (addon.variables and addon.variables.defaultFont) or (LSM and LSM.DefaultMedia and LSM:Fetch("font", LSM.DefaultMedia.font)) or STANDARD_TEXT_FONT
+end
 
 local function resolveFontFace(cfg)
-	if cfg and cfg.fontFace and cfg.fontFace ~= "" then return cfg.fontFace end
+	local configured = cfg and cfg.fontFace
+	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(configured, defaultFontPath()) end
+	if configured and configured ~= "" then return configured end
 	return defaultFontPath()
 end
 
@@ -4988,9 +4993,7 @@ function visibilityLogic:BuildDriver(cfg)
 	end
 
 	local cached = self.driverCache and self.driverCache[cfg]
-	if cached and cached.signature == driverSignature then
-		return cached.expr, cached.usesManualVisibility, cached.visibilityCfg
-	end
+	if cached and cached.signature == driverSignature then return cached.expr, cached.usesManualVisibility, cached.visibilityCfg end
 
 	local visibilityCfg = self:NormalizeConfig(cfg.visibility, cfg)
 	if visibilityCfg == nil and (shouldHideOutOfCombat or shouldHideMounted) then

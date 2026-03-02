@@ -193,7 +193,9 @@ end
 
 local function applyEnchantTextStyle(fontString)
 	if not fontString or not fontString.SetFont then return end
-	local defaultFace = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	local defaultFace = (addon.functions and addon.functions.GetGlobalDefaultFontFace and addon.functions.GetGlobalDefaultFontFace())
+		or (addon.variables and addon.variables.defaultFont)
+		or STANDARD_TEXT_FONT
 	local configuredFace = addon.db and addon.db["ilvlFontFace"]
 	local face = defaultFace
 	if addon.functions and addon.functions.ResolveFontFace then
@@ -1623,7 +1625,7 @@ function addon.functions.initItemInventory()
 	addon.functions.InitDBValue("charIlvlPosition", "TOPRIGHT")
 	addon.functions.InitDBValue("ilvlUseItemQualityColor", true)
 	addon.functions.InitDBValue("ilvlTextColor", { r = 1, g = 1, b = 1, a = 1 })
-	addon.functions.InitDBValue("ilvlFontFace", addon.variables.defaultFont)
+	addon.functions.InitDBValue("ilvlFontFace", addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__")
 	addon.functions.InitDBValue("ilvlFontSize", 14)
 	addon.functions.InitDBValue("ilvlFontOutline", "OUTLINE")
 	addon.functions.InitDBValue("fadeBagQualityIcons", false)

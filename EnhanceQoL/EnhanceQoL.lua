@@ -2600,6 +2600,8 @@ addon.functions.initializePersistentCVars = initializePersistentCVars
 -- removed: addPartyFrame (party settings relocated to Social/UI sections)
 
 local function initActionBars()
+	local globalFontKey = addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or addon.variables.defaultFont
+	addon.functions.InitDBValue("globalFontFace", addon.variables.defaultFont)
 	addon.functions.InitDBValue("actionBarAnchorEnabled", false)
 	addon.functions.InitDBValue("actionBarFadeStrength", 1)
 	addon.functions.InitDBValue("actionBarFullRangeColoring", false)
@@ -2616,16 +2618,16 @@ local function initActionBars()
 	addon.functions.InitDBValue("hideMacroNames", false)
 	addon.functions.InitDBValue("actionBarMacroFontOverride", false)
 	addon.functions.InitDBValue("actionBarHotkeyFontOverride", false)
-	addon.functions.InitDBValue("actionBarMacroFontFace", addon.variables.defaultFont)
+	addon.functions.InitDBValue("actionBarMacroFontFace", globalFontKey)
 	addon.functions.InitDBValue("actionBarMacroFontSize", 12)
 	addon.functions.InitDBValue("actionBarMacroFontOutline", "OUTLINE")
 	addon.functions.InitDBValue("actionBarMacroFontColor", { r = 1, g = 1, b = 1, a = 1 })
-	addon.functions.InitDBValue("actionBarHotkeyFontFace", addon.variables.defaultFont)
+	addon.functions.InitDBValue("actionBarHotkeyFontFace", globalFontKey)
 	addon.functions.InitDBValue("actionBarHotkeyFontSize", 12)
 	addon.functions.InitDBValue("actionBarHotkeyFontOutline", "OUTLINE")
 	addon.functions.InitDBValue("actionBarHotkeyFontColor", { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("actionBarCountFontOverride", false)
-	addon.functions.InitDBValue("actionBarCountFontFace", addon.variables.defaultFont)
+	addon.functions.InitDBValue("actionBarCountFontFace", globalFontKey)
 	addon.functions.InitDBValue("actionBarCountFontSize", 12)
 	addon.functions.InitDBValue("actionBarCountFontOutline", "OUTLINE")
 	addon.functions.InitDBValue("actionBarCountFontColor", { r = 1, g = 1, b = 1, a = 1 })
@@ -3789,7 +3791,7 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapBorderSize", 1)
 	addon.functions.InitDBValue("squareMinimapBorderColor", { r = 0, g = 0, b = 0 })
 	addon.functions.InitDBValue("enableSquareMinimapStats", false)
-	addon.functions.InitDBValue("squareMinimapStatsFont", STANDARD_TEXT_FONT)
+	addon.functions.InitDBValue("squareMinimapStatsFont", addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__")
 	addon.functions.InitDBValue("squareMinimapStatsOutline", "OUTLINE")
 	addon.functions.InitDBValue("squareMinimapStatsTime", true)
 	addon.functions.InitDBValue("squareMinimapStatsTimeAnchor", "BOTTOMLEFT")
@@ -5475,6 +5477,7 @@ local function setAllHooks()
 
 	local LSM = LibStub("LibSharedMedia-3.0")
 	local lsmSoundDirty = false
+	local lsmFontDirty = false
 	local function refreshExperienceBarForMedia(mediaType, mediaKey)
 		local xpBar = addon.Aura and addon.Aura.ExperienceBar
 		if not (xpBar and xpBar.IsEnabled and xpBar:IsEnabled()) then return end
@@ -5496,6 +5499,53 @@ local function setAllHooks()
 		if shouldRefresh then
 			if xpBar.ApplyAppearance then xpBar:ApplyAppearance() end
 			if xpBar.UpdateSoon then xpBar:UpdateSoon() end
+		end
+	end
+
+	local function refreshGlobalFontConsumers()
+		if ActionBarLabels then
+			if ActionBarLabels.RefreshAllMacroNameVisibility then ActionBarLabels.RefreshAllMacroNameVisibility() end
+			if ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
+			if ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
+		end
+		if addon.functions and addon.functions.refreshItemLevelDisplays then addon.functions.refreshItemLevelDisplays() end
+		if addon.CombatText then
+			if addon.CombatText.ApplyStyle then addon.CombatText:ApplyStyle() end
+			if addon.CombatText.UpdateFrameSize then addon.CombatText:UpdateFrameSize() end
+		end
+		if addon.DataPanel and addon.DataPanel.List and addon.DataPanel.Get then
+			for id in pairs(addon.DataPanel.List() or {}) do
+				local panel = addon.DataPanel.Get(id)
+				if panel and panel.ApplyTextStyle then panel:ApplyTextStyle() end
+			end
+		end
+		if addon.Aura then
+			local xpBar = addon.Aura.ExperienceBar
+			if xpBar and xpBar.ApplyAppearance then
+				xpBar:ApplyAppearance()
+				if xpBar.UpdateSoon then xpBar:UpdateSoon() end
+			end
+			if addon.Aura.ResourceBars and addon.Aura.ResourceBars.Refresh then addon.Aura.ResourceBars.Refresh() end
+			if addon.Aura.CooldownPanels and addon.Aura.CooldownPanels.RefreshAllPanels then addon.Aura.CooldownPanels:RefreshAllPanels() end
+			if addon.Aura.UF and addon.Aura.UF.Refresh then addon.Aura.UF.Refresh() end
+			if addon.Aura.UF and addon.Aura.UF.GroupFrames and addon.Aura.UF.GroupFrames.RefreshTextStyles then addon.Aura.UF.GroupFrames:RefreshTextStyles() end
+		end
+	end
+
+	addon.functions.RefreshGlobalFontConsumers = refreshGlobalFontConsumers
+
+	local function queueGlobalFontRefresh()
+		if lsmFontDirty then return end
+		lsmFontDirty = true
+		local trigger = C_Timer and C_Timer.After
+		if trigger then
+			trigger(0.2, function()
+				lsmFontDirty = false
+				if addon.functions and addon.functions.RefreshGlobalFontConsumers then addon.functions.RefreshGlobalFontConsumers() end
+			end)
+		else
+			lsmFontDirty = false
+			if addon.functions and addon.functions.RefreshGlobalFontConsumers then addon.functions.RefreshGlobalFontConsumers() end
 		end
 	end
 
@@ -5521,6 +5571,7 @@ local function setAllHooks()
 			refreshExperienceBarForMedia(mediaType, mediaKey)
 		elseif mediaType == "font" then
 			refreshExperienceBarForMedia(mediaType, mediaKey)
+			queueGlobalFontRefresh()
 		end
 	end)
 

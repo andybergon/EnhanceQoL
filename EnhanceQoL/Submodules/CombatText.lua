@@ -19,7 +19,20 @@ local EDITMODE_ID = "combatText"
 local PREVIEW_PADDING_X = 20
 local PREVIEW_PADDING_Y = 10
 
-local function defaultFontFace() return (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT end
+local function defaultFontFace()
+	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
+	return (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+end
+
+local function globalFontConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
+	return "__EQOL_GLOBAL_FONT__"
+end
+
+local function globalFontConfigLabel()
+	if addon.functions and addon.functions.GetGlobalFontConfigLabel then return addon.functions.GetGlobalFontConfigLabel() end
+	return "Use global font config"
+end
 
 CombatText.defaults = CombatText.defaults
 	or {
@@ -27,7 +40,7 @@ CombatText.defaults = CombatText.defaults
 		alwaysVisible = false,
 		alwaysVisibleMode = "STATUS",
 		fontSize = 32,
-		fontFace = defaultFontFace(),
+		fontFace = globalFontConfigKey(),
 		color = { r = 1, g = 1, b = 1, a = 1 },
 		enterColor = { r = 1, g = 1, b = 1, a = 1 },
 		leaveColor = { r = 1, g = 1, b = 1, a = 1 },
@@ -120,6 +133,7 @@ local function fontFaceOptions()
 	end
 	if defaultPath and not hasDefault then list[#list + 1] = { value = defaultPath, label = DEFAULT } end
 	table.sort(list, function(a, b) return tostring(a.label) < tostring(b.label) end)
+	table.insert(list, 1, { value = globalFontConfigKey(), label = globalFontConfigLabel() })
 	return list
 end
 
@@ -140,10 +154,16 @@ function CombatText:GetAlwaysVisibleMode() return normalizeAlwaysVisibleMode(get
 
 function CombatText:GetFontSize() return clamp(getValue(DB_FONT_SIZE, defaults.fontSize), 8, 96) end
 
-function CombatText:GetFontFace()
+function CombatText:GetFontFaceSetting()
 	local face = normalizeFontFace(getValue(DB_FONT, defaults.fontFace))
-	if not face then face = defaultFontFace() end
+	if not face then face = defaults.fontFace end
 	return face
+end
+
+function CombatText:GetFontFace()
+	local face = self:GetFontFaceSetting()
+	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(face, defaultFontFace()) end
+	return face or defaultFontFace()
 end
 
 function CombatText:GetEnterColor()
@@ -366,7 +386,7 @@ function CombatText:ApplyLayoutData(data)
 	local alwaysVisible = data.alwaysVisible == true
 	local alwaysVisibleMode = normalizeAlwaysVisibleMode(data.alwaysVisibleMode)
 	local fontSize = clamp(data.fontSize or defaults.fontSize, 8, 96)
-	local fontFace = normalizeFontFace(data.fontFace) or defaultFontFace()
+	local fontFace = normalizeFontFace(data.fontFace) or defaults.fontFace
 	local enterR, enterG, enterB, enterA = normalizeColor(data.enterColor or data.color or defaults.enterColor, defaults.enterColor)
 	local leaveR, leaveG, leaveB, leaveA = normalizeColor(data.leaveColor or data.enterColor or data.color or defaults.leaveColor, defaults.leaveColor)
 
@@ -406,7 +426,7 @@ local function applySetting(field, value)
 		addon.db[DB_FONT_SIZE] = fontSize
 		value = fontSize
 	elseif field == "fontFace" then
-		local fontFace = normalizeFontFace(value) or defaultFontFace()
+		local fontFace = normalizeFontFace(value) or defaults.fontFace
 		addon.db[DB_FONT] = fontFace
 		value = fontFace
 	elseif field == "enterColor" then
@@ -502,11 +522,11 @@ function CombatText:RegisterEditMode()
 				kind = SettingType.Dropdown,
 				field = "fontFace",
 				height = 200,
-				get = function() return CombatText:GetFontFace() end,
+				get = function() return CombatText:GetFontFaceSetting() end,
 				set = function(_, value) applySetting("fontFace", value) end,
 				generator = function(_, root)
 					for _, option in ipairs(fontFaceOptions()) do
-						root:CreateRadio(option.label, function() return CombatText:GetFontFace() == option.value end, function() applySetting("fontFace", option.value) end)
+						root:CreateRadio(option.label, function() return CombatText:GetFontFaceSetting() == option.value end, function() applySetting("fontFace", option.value) end)
 					end
 				end,
 			},

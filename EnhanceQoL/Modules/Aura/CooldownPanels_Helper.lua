@@ -450,8 +450,11 @@ function Helper.NormalizeOpacity(value, fallback)
 end
 
 function Helper.ResolveFontPath(value, fallback)
+	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(value) then value = nil end
+	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(fallback) then fallback = nil end
 	if type(value) == "string" and value ~= "" then return value end
 	if type(fallback) == "string" and fallback ~= "" then return fallback end
+	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
 	return STANDARD_TEXT_FONT
 end
 
@@ -460,7 +463,10 @@ function Helper.GetCountFontDefaults(frame)
 		local icon = frame.icons and frame.icons[1]
 		if icon and icon.count and icon.count.GetFont then return icon.count:GetFont() end
 	end
-	local fallback = (addon.variables and addon.variables.defaultFont) or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font)) or STANDARD_TEXT_FONT
+	local fallback = (addon.functions and addon.functions.GetGlobalDefaultFontFace and addon.functions.GetGlobalDefaultFontFace())
+		or (addon.variables and addon.variables.defaultFont)
+		or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font))
+		or STANDARD_TEXT_FONT
 	return fallback, 12, "OUTLINE"
 end
 
@@ -475,6 +481,8 @@ end
 function Helper.GetFontOptions(defaultPath)
 	local list = {}
 	local seen = {}
+	local globalFontKey = addon.functions and addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"
+	local globalFontLabel = addon.functions and addon.functions.GetGlobalFontConfigLabel and addon.functions.GetGlobalFontConfigLabel() or "Use global font config"
 	local function add(path, label)
 		if type(path) ~= "string" or path == "" then return end
 		local key = string.lower(path)
@@ -489,6 +497,7 @@ function Helper.GetFontOptions(defaultPath)
 	end
 	if defaultPath then add(defaultPath, DEFAULT) end
 	table.sort(list, function(a, b) return tostring(a.label) < tostring(b.label) end)
+	table.insert(list, 1, { value = globalFontKey, label = globalFontLabel })
 	return list
 end
 

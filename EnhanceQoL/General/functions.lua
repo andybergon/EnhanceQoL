@@ -16,18 +16,40 @@ local UnitHealth, UnitHealthMax = UnitHealth, UnitHealthMax
 local UnitPower, UnitPowerMax = UnitPower, UnitPowerMax
 local UnitHealthPercent = UnitHealthPercent
 local UnitPowerPercent = UnitPowerPercent
+local GLOBAL_FONT_CONFIG_KEY = "__EQOL_GLOBAL_FONT__"
+local GLOBAL_FONT_CONFIG_LABEL = "Use global font config"
 
 local function normalizeMediaValue(value)
 	if type(value) ~= "string" or value == "" then return nil end
 	return value
 end
 
-local function defaultFontFace() return (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT end
+local function isGlobalFontConfigValue(value) return normalizeMediaValue(value) == GLOBAL_FONT_CONFIG_KEY end
+
+function addon.functions.GetGlobalFontConfigKey() return GLOBAL_FONT_CONFIG_KEY end
+
+function addon.functions.GetGlobalFontConfigLabel()
+	if L and L["useGlobalFontConfig"] then return L["useGlobalFontConfig"] end
+	return GLOBAL_FONT_CONFIG_LABEL
+end
+
+function addon.functions.IsGlobalFontConfigValue(value) return isGlobalFontConfigValue(value) end
+
+function addon.functions.GetLocaleDefaultFontFace() return (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT end
+
+function addon.functions.GetGlobalDefaultFontFace()
+	local localeDefault = addon.functions.GetLocaleDefaultFontFace()
+	local configured = addon.db and addon.db.globalFontFace
+	return addon.functions.ResolveLSMMedia("font", configured, localeDefault, false) or localeDefault
+end
+
+local function defaultFontFace() return addon.functions.GetGlobalDefaultFontFace() end
 
 function addon.functions.ResolveLSMMedia(mediaType, configured, fallback, allowPath)
 	local mediaKind = normalizeMediaValue(mediaType)
 	local fallbackValue = normalizeMediaValue(fallback)
 	local configuredValue = normalizeMediaValue(configured)
+	if isGlobalFontConfigValue(configuredValue) then return fallbackValue end
 	if not configuredValue then return fallbackValue end
 	if configuredValue == fallbackValue then return configuredValue end
 	if not mediaKind then
@@ -56,6 +78,7 @@ end
 
 function addon.functions.ResolveFontFace(configured, fallback)
 	local fallbackFace = normalizeMediaValue(fallback) or defaultFontFace()
+	if isGlobalFontConfigValue(configured) then return fallbackFace end
 	return addon.functions.ResolveLSMMedia("font", configured, fallbackFace, true) or fallbackFace
 end
 

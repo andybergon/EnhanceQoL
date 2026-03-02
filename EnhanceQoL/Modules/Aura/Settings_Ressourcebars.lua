@@ -177,6 +177,21 @@ local function toUIColor(value, fallback)
 	return { r = r, g = g, b = b, a = a }
 end
 
+local function globalFontDefaultPath()
+	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
+	return (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+end
+
+local function globalFontConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
+	return "__EQOL_GLOBAL_FONT__"
+end
+
+local function globalFontConfigLabel()
+	if addon.functions and addon.functions.GetGlobalFontConfigLabel then return addon.functions.GetGlobalFontConfigLabel() end
+	return "Use global font config"
+end
+
 local function resolveStatusbarPreviewPath(key)
 	if not key then return nil end
 	if key == "DEFAULT" then return (ResourceBars and ResourceBars.DEFAULT_RB_TEX) or "Interface\\Buttons\\WHITE8x8" end
@@ -1765,11 +1780,24 @@ local function registerEditModeBars()
 					field = "fontFace",
 					parentId = "textsettings",
 					generator = function(_, root)
-						local function currentFontPath()
+						local function currentFontSetting()
 							local c = curSpecCfg()
-							return (c and c.fontFace) or cfg.fontFace or addon.variables.defaultFont
+							return (c and c.fontFace) or cfg.fontFace or globalFontConfigKey()
+						end
+						local function currentFontPath()
+							local configured = currentFontSetting()
+							if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(configured, globalFontDefaultPath()) end
+							return configured or globalFontDefaultPath()
 						end
 						local currentPath = currentFontPath()
+						local globalFontValue = globalFontConfigKey()
+						local function isGlobalSelected() return currentFontSetting() == globalFontValue end
+						root:CreateCheckbox(globalFontConfigLabel(), function() return currentFontSetting() == globalFontValue end, function()
+							local c = curSpecCfg()
+							if not c then return end
+							c.fontFace = globalFontValue
+							queueRefresh()
+						end)
 						local seen = {}
 						if not LibStub then return end
 						local media = LibStub("LibSharedMedia-3.0", true)
@@ -1778,20 +1806,20 @@ local function registerEditModeBars()
 						for _, name in ipairs(media:List("font") or {}) do
 							local path = hash[name] or name
 							seen[path] = name
-							root:CreateCheckbox(name, function() return currentFontPath() == path end, function()
+							root:CreateCheckbox(name, function() return (not isGlobalSelected()) and currentFontPath() == path end, function()
 								local c = curSpecCfg()
 								if not c then return end
-								if currentFontPath() == path then return end
+								if (not isGlobalSelected()) and currentFontPath() == path then return end
 								c.fontFace = path
 								queueRefresh()
 							end)
 						end
 						if currentPath and not seen[currentPath] then
 							local label = tostring(currentPath)
-							root:CreateCheckbox(label, function() return currentFontPath() == currentPath end, function()
+							root:CreateCheckbox(label, function() return (not isGlobalSelected()) and currentFontPath() == currentPath end, function()
 								local c = curSpecCfg()
 								if not c then return end
-								if currentFontPath() == currentPath then return end
+								if (not isGlobalSelected()) and currentFontPath() == currentPath then return end
 								c.fontFace = currentPath
 								queueRefresh()
 							end)
@@ -1799,7 +1827,7 @@ local function registerEditModeBars()
 					end,
 					get = function()
 						local c = curSpecCfg()
-						return (c and c.fontFace) or cfg.fontFace or addon.variables.defaultFont
+						return (c and c.fontFace) or cfg.fontFace or globalFontConfigKey()
 					end,
 					set = function(_, value)
 						local c = curSpecCfg()
@@ -1821,7 +1849,7 @@ local function registerEditModeBars()
 						queueRefresh()
 					end,
 					hasOpacity = true,
-					default = addon.variables.defaultFont,
+					default = globalFontConfigKey(),
 				}
 
 				local outlineOptions = {
@@ -2063,11 +2091,24 @@ local function registerEditModeBars()
 					field = "fontFace",
 					parentId = "textsettings",
 					generator = function(_, root)
-						local function currentFontPath()
+						local function currentFontSetting()
 							local c = curSpecCfg()
-							return (c and c.fontFace) or cfg.fontFace or addon.variables.defaultFont
+							return (c and c.fontFace) or cfg.fontFace or globalFontConfigKey()
+						end
+						local function currentFontPath()
+							local configured = currentFontSetting()
+							if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(configured, globalFontDefaultPath()) end
+							return configured or globalFontDefaultPath()
 						end
 						local currentPath = currentFontPath()
+						local globalFontValue = globalFontConfigKey()
+						local function isGlobalSelected() return currentFontSetting() == globalFontValue end
+						root:CreateCheckbox(globalFontConfigLabel(), function() return currentFontSetting() == globalFontValue end, function()
+							local c = curSpecCfg()
+							if not c then return end
+							c.fontFace = globalFontValue
+							queueRefresh()
+						end)
 						local seen = {}
 						if not LibStub then return end
 						local media = LibStub("LibSharedMedia-3.0", true)
@@ -2076,20 +2117,20 @@ local function registerEditModeBars()
 						for _, name in ipairs(media:List("font") or {}) do
 							local path = hash[name] or name
 							seen[path] = name
-							root:CreateCheckbox(name, function() return currentFontPath() == path end, function()
+							root:CreateCheckbox(name, function() return (not isGlobalSelected()) and currentFontPath() == path end, function()
 								local c = curSpecCfg()
 								if not c then return end
-								if currentFontPath() == path then return end
+								if (not isGlobalSelected()) and currentFontPath() == path then return end
 								c.fontFace = path
 								queueRefresh()
 							end)
 						end
 						if currentPath and not seen[currentPath] then
 							local label = tostring(currentPath)
-							root:CreateCheckbox(label, function() return currentFontPath() == currentPath end, function()
+							root:CreateCheckbox(label, function() return (not isGlobalSelected()) and currentFontPath() == currentPath end, function()
 								local c = curSpecCfg()
 								if not c then return end
-								if currentFontPath() == currentPath then return end
+								if (not isGlobalSelected()) and currentFontPath() == currentPath then return end
 								c.fontFace = currentPath
 								queueRefresh()
 							end)
@@ -2097,7 +2138,7 @@ local function registerEditModeBars()
 					end,
 					get = function()
 						local c = curSpecCfg()
-						return (c and c.fontFace) or cfg.fontFace or addon.variables.defaultFont
+						return (c and c.fontFace) or cfg.fontFace or globalFontConfigKey()
 					end,
 					set = function(_, value)
 						local c = curSpecCfg()
@@ -2119,7 +2160,7 @@ local function registerEditModeBars()
 						queueRefresh()
 					end,
 					hasOpacity = true,
-					default = addon.variables.defaultFont,
+					default = globalFontConfigKey(),
 				}
 
 				local outlineOptions = {

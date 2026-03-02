@@ -12,6 +12,17 @@ local DEFAULT_BORDER_EDGE_SIZE = 16
 local DEFAULT_BORDER_PADDING = 0
 local LSM = LibStub("LibSharedMedia-3.0", true)
 
+local function getDefaultFontFace()
+	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
+	return (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+end
+
+local function resolveFontFace(configured)
+	local fallback = getDefaultFontFace()
+	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(configured, fallback) or fallback end
+	return fallback
+end
+
 local function GetActionBarButtonPrefix(barName)
 	if not barName then return nil, 0 end
 	if barName == "MainMenuBar" or barName == "MainActionBar" then return "ActionButton", DEFAULT_ACTION_BUTTON_COUNT end
@@ -418,7 +429,7 @@ local RestoreTextColorOverride
 function Labels.RefreshAllMacroNameVisibility()
 	local hide = addon.db and addon.db.hideMacroNames
 	local overrideEnabled = addon.db and addon.db.actionBarMacroFontOverride and not hide
-	local fontFace = addon.db and addon.db.actionBarMacroFontFace or addon.variables.defaultFont
+	local fontFace = resolveFontFace(addon.db and addon.db.actionBarMacroFontFace)
 	local fontSize = tonumber(addon.db and addon.db.actionBarMacroFontSize) or 12
 	local fontOutline = addon.db and addon.db.actionBarMacroFontOutline or "OUTLINE"
 	local fontColor = addon.db and addon.db.actionBarMacroFontColor
@@ -434,14 +445,14 @@ function Labels.RefreshAllMacroNameVisibility()
 						local face, size, outline = nameFrame:GetFont()
 						nameFrame.EQOL_OriginalMacroFont = { face = face, size = size, outline = outline }
 					end
-					local ok = nameFrame:SetFont(fontFace or addon.variables.defaultFont, fontSize, fontOutline or "OUTLINE")
-					if not ok then nameFrame:SetFont(addon.variables.defaultFont, fontSize, fontOutline or "OUTLINE") end
+					local ok = nameFrame:SetFont(fontFace or getDefaultFontFace(), fontSize, fontOutline or "OUTLINE")
+					if not ok then nameFrame:SetFont(getDefaultFontFace(), fontSize, fontOutline or "OUTLINE") end
 					nameFrame.EQOL_UsingMacroOverride = true
 					ApplyTextColorOverride(nameFrame, fontColor, "EQOL_OriginalMacroColor", "EQOL_UsingMacroColorOverride")
 				else
 					if nameFrame.EQOL_UsingMacroOverride then
 						local orig = nameFrame.EQOL_OriginalMacroFont or {}
-						local face = orig.face or addon.variables.defaultFont
+						local face = orig.face or getDefaultFontFace()
 						local size = orig.size or 12
 						local outline = orig.outline or "OUTLINE"
 						nameFrame:SetFont(face, size, outline)
@@ -480,8 +491,9 @@ Labels.NormalizeFontSize = NormalizeFontSize
 
 local function ApplyFontWithFallback(region, face, size, outline)
 	if not region or not region.SetFont then return end
-	local ok = region:SetFont(face or addon.variables.defaultFont, size, outline or "OUTLINE")
-	if not ok then region:SetFont(addon.variables.defaultFont, size, outline or "OUTLINE") end
+	local resolvedFace = resolveFontFace(face)
+	local ok = region:SetFont(resolvedFace or getDefaultFontFace(), size, outline or "OUTLINE")
+	if not ok then region:SetFont(getDefaultFontFace(), size, outline or "OUTLINE") end
 end
 
 local function NormalizeColorComponent(value, fallback)
@@ -530,7 +542,7 @@ local function ApplyCountStyling(button)
 	if not addon.db then return end
 	local count = GetActionButtonCount(button)
 	if not count then return end
-	local face = addon.db.actionBarCountFontFace or addon.variables.defaultFont
+	local face = resolveFontFace(addon.db.actionBarCountFontFace)
 	local size = NormalizeFontSize(addon.db.actionBarCountFontSize, 6, 32)
 	local outline = addon.db.actionBarCountFontOutline or "OUTLINE"
 	local fontColor = addon.db.actionBarCountFontColor
@@ -545,7 +557,7 @@ local function ApplyCountStyling(button)
 	else
 		if count.EQOL_UsingCountOverride then
 			local orig = count.EQOL_OriginalCountFont or {}
-			local restoreFace = orig.face or addon.variables.defaultFont
+			local restoreFace = resolveFontFace(orig.face)
 			local restoreSize = orig.size or size
 			local restoreOutline = orig.outline or "OUTLINE"
 			ApplyFontWithFallback(count, restoreFace, restoreSize, restoreOutline)
@@ -690,7 +702,7 @@ local function ApplyHotkeyStyling(button, barNameOverride)
 		hotkey.EQOL_ShortValue = nil
 	end
 
-	local face = addon.db.actionBarHotkeyFontFace or addon.variables.defaultFont
+	local face = resolveFontFace(addon.db.actionBarHotkeyFontFace)
 	local size = NormalizeFontSize(addon.db.actionBarHotkeyFontSize, 6, 32)
 	local outline = addon.db.actionBarHotkeyFontOutline or "OUTLINE"
 	local fontColor = addon.db.actionBarHotkeyFontColor
@@ -705,7 +717,7 @@ local function ApplyHotkeyStyling(button, barNameOverride)
 	else
 		if hotkey.EQOL_UsingHotkeyOverride then
 			local orig = hotkey.EQOL_OriginalHotkeyFont or {}
-			local restoreFace = orig.face or addon.variables.defaultFont
+			local restoreFace = resolveFontFace(orig.face)
 			local restoreSize = orig.size or size
 			local restoreOutline = orig.outline or "OUTLINE"
 			ApplyFontWithFallback(hotkey, restoreFace, restoreSize, restoreOutline)

@@ -221,7 +221,20 @@ local function defaultsFor(unit)
 	if UF.defaults then return UF.defaults[unit] or UF.defaults.player end
 	return {}
 end
-local function defaultFontPath() return (addon.variables and addon.variables.defaultFont) or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font)) or STANDARD_TEXT_FONT end
+local function defaultFontPath()
+	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
+	return (addon.variables and addon.variables.defaultFont) or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font)) or STANDARD_TEXT_FONT
+end
+
+local function globalFontConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
+	return "__EQOL_GLOBAL_FONT__"
+end
+
+local function globalFontConfigLabel()
+	if addon.functions and addon.functions.GetGlobalFontConfigLabel then return addon.functions.GetGlobalFontConfigLabel() end
+	return "Use global font config"
+end
 
 local pendingDebounce = {}
 local pendingTimers = {}
@@ -877,7 +890,11 @@ end
 local function fontOptions()
 	local list = {}
 	local defaultPath = defaultFontPath()
-	if not LSM then return list end
+	local globalOption = { value = globalFontConfigKey(), label = globalFontConfigLabel() }
+	if not LSM then
+		list[#list + 1] = globalOption
+		return list
+	end
 	local hash = LSM:HashTable("font") or {}
 	local hasDefault = false
 	for name, path in pairs(hash) do
@@ -886,6 +903,7 @@ local function fontOptions()
 	end
 	if defaultPath and not hasDefault then list[#list + 1] = { value = defaultPath, label = DEFAULT } end
 	table.sort(list, function(a, b) return tostring(a.label) < tostring(b.label) end)
+	table.insert(list, 1, globalOption)
 	return list
 end
 
@@ -1668,12 +1686,12 @@ local function appendSecondaryPowerSettings(list, unit, def, textureOpts, addDiv
 		local secondaryFont = checkboxDropdown(
 			L["Font"] or "Font",
 			fontOptions,
-			function() return getValue(unit, { "secondaryPower", "font" }, secondaryDef.font or defaultFontPath()) end,
+			function() return getValue(unit, { "secondaryPower", "font" }, secondaryDef.font or globalFontConfigKey()) end,
 			function(val)
 				setValue(unit, { "secondaryPower", "font" }, val)
 				refreshSelf()
 			end,
-			secondaryDef.font or defaultFontPath(),
+			secondaryDef.font or globalFontConfigKey(),
 			"secondaryPower"
 		)
 		secondaryFont.isEnabled = isSecondaryPowerEnabled
@@ -2807,10 +2825,10 @@ local function buildUnitSettings(unit)
 	end, healthDef.fontSize or 14, "health", true)
 
 	if #fontOptions() > 0 then
-		list[#list + 1] = checkboxDropdown(L["Font"] or "Font", fontOptions, function() return getValue(unit, { "health", "font" }, healthDef.font or defaultFontPath()) end, function(val)
+		list[#list + 1] = checkboxDropdown(L["Font"] or "Font", fontOptions, function() return getValue(unit, { "health", "font" }, healthDef.font or globalFontConfigKey()) end, function(val)
 			setValue(unit, { "health", "font" }, val)
 			refresh()
-		end, healthDef.font or defaultFontPath(), "health")
+		end, healthDef.font or globalFontConfigKey(), "health")
 	end
 
 	list[#list + 1] = checkboxDropdown(
@@ -3581,10 +3599,10 @@ local function buildUnitSettings(unit)
 	list[#list + 1] = powerFontSize
 
 	if #fontOptions() > 0 then
-		local powerFont = checkboxDropdown(L["Font"] or "Font", fontOptions, function() return getValue(unit, { "power", "font" }, powerDef.font or defaultFontPath()) end, function(val)
+		local powerFont = checkboxDropdown(L["Font"] or "Font", fontOptions, function() return getValue(unit, { "power", "font" }, powerDef.font or globalFontConfigKey()) end, function(val)
 			setValue(unit, { "power", "font" }, val)
 			refreshSelf()
-		end, powerDef.font or defaultFontPath(), "power")
+		end, powerDef.font or globalFontConfigKey(), "power")
 		powerFont.isEnabled = isPowerEnabled
 		list[#list + 1] = powerFont
 	end
@@ -4479,14 +4497,14 @@ local function buildUnitSettings(unit)
 		castNameY.isEnabled = isCastNameEnabled
 		list[#list + 1] = castNameY
 
-		local function getCastFont() return getValue(unit, { "cast", "font" }, castDef.font or "") end
+		local function getCastFont() return getValue(unit, { "cast", "font" }, castDef.font or globalFontConfigKey()) end
 
 		local castNameFont = {
 			name = L["Font"] or "Font",
 			kind = settingType.DropdownColor,
 			height = 180,
 			parentId = "cast",
-			default = castDef.font or "",
+			default = castDef.font or globalFontConfigKey(),
 			generator = function(_, root)
 				local opts = fontOptions()
 				if type(opts) ~= "table" then return end
@@ -5278,10 +5296,10 @@ local function buildUnitSettings(unit)
 	end
 
 	if #fontOptions() > 0 then
-		local statusFont = checkboxDropdown(L["Font"] or "Font", fontOptions, function() return getValue(unit, { "status", "font" }, statusDef.font or defaultFontPath()) end, function(val)
+		local statusFont = checkboxDropdown(L["Font"] or "Font", fontOptions, function() return getValue(unit, { "status", "font" }, statusDef.font or globalFontConfigKey()) end, function(val)
 			setValue(unit, { "status", "font" }, val)
 			refreshSelf()
-		end, statusDef.font or defaultFontPath(), "status")
+		end, statusDef.font or globalFontConfigKey(), "status")
 		statusFont.isEnabled = isStatusTextEnabled
 		list[#list + 1] = statusFont
 	end
@@ -5533,12 +5551,12 @@ local function buildUnitSettings(unit)
 		local unitStatusFontSetting = checkboxDropdown(
 			L["Font"] or "Font",
 			fontOptions,
-			function() return getValue(unit, { "status", "unitStatus", "font" }, usDef.font or statusDef.font or defaultFontPath()) end,
+			function() return getValue(unit, { "status", "unitStatus", "font" }, usDef.font or statusDef.font or globalFontConfigKey()) end,
 			function(val)
 				setValue(unit, { "status", "unitStatus", "font" }, val)
 				refreshSelf()
 			end,
-			usDef.font or statusDef.font or defaultFontPath(),
+			usDef.font or statusDef.font or globalFontConfigKey(),
 			"unitStatus"
 		)
 		unitStatusFontSetting.isEnabled = isUnitStatusEnabled
@@ -5634,12 +5652,12 @@ local function buildUnitSettings(unit)
 			local groupFontSetting = checkboxDropdown(
 				L["UFUnitStatusGroupFont"] or "Group number font",
 				fontOptions,
-				function() return getValue(unit, { "status", "unitStatus", "groupFont" }, usDef.groupFont or usDef.font or statusDef.font or defaultFontPath()) end,
+				function() return getValue(unit, { "status", "unitStatus", "groupFont" }, usDef.groupFont or usDef.font or statusDef.font or globalFontConfigKey()) end,
 				function(val)
 					setValue(unit, { "status", "unitStatus", "groupFont" }, val)
 					refreshSelf()
 				end,
-				usDef.groupFont or usDef.font or statusDef.font or defaultFontPath(),
+				usDef.groupFont or usDef.font or statusDef.font or globalFontConfigKey(),
 				"unitStatus"
 			)
 			groupFontSetting.isEnabled = isGroupEnabled
@@ -5911,12 +5929,12 @@ local function buildUnitSettings(unit)
 		local combatFontSetting = checkboxDropdown(
 			L["UFCombatFeedbackFont"] or "Combat feedback font",
 			fontOptions,
-			function() return getValue(unit, { "combatFeedback", "font" }, combatDef.font or defaultFontPath()) end,
+			function() return getValue(unit, { "combatFeedback", "font" }, combatDef.font or globalFontConfigKey()) end,
 			function(val)
 				setValue(unit, { "combatFeedback", "font" }, val)
 				refreshSelf()
 			end,
-			combatDef.font or defaultFontPath(),
+			combatDef.font or globalFontConfigKey(),
 			"combatFeedback"
 		)
 		combatFontSetting.isEnabled = isCombatFeedbackEnabled

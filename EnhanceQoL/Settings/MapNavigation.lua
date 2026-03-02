@@ -58,6 +58,16 @@ local squareMinimapStatsAnchorOptions = {
 	BOTTOMRIGHT = L["squareMinimapStatsAnchorBottomRight"] or "Bottom Right",
 }
 
+local function getGlobalFontConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
+	return "__EQOL_GLOBAL_FONT__"
+end
+
+local function getGlobalFontConfigLabel()
+	if addon.functions and addon.functions.GetGlobalFontConfigLabel then return addon.functions.GetGlobalFontConfigLabel() end
+	return "Use global font config"
+end
+
 local function normalizeSquareMinimapStatsOutlineSelection(primary, secondary)
 	local outline = getSettingSelectedValue(primary, secondary)
 	if outline == nil or outline == "" then return "OUTLINE" end
@@ -74,17 +84,20 @@ local function normalizeSquareMinimapAnchorSelection(primary, secondary, fallbac
 end
 
 local function normalizeSquareMinimapStatsFontSelection(primary, secondary)
-	local fallback = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	local fallback = getGlobalFontConfigKey()
 	local selected = getSettingSelectedValue(primary, secondary)
-	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(selected, fallback) or fallback end
+	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(selected) then return fallback end
 	if type(selected) == "string" and selected ~= "" then return selected end
 	return fallback
 end
 
 local function buildSquareMinimapStatsFontDropdown()
 	local defaultFont = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	local globalFontKey = getGlobalFontConfigKey()
+	local globalFontLabel = getGlobalFontConfigLabel()
 	local map = {
 		[defaultFont] = L["actionBarFontDefault"] or "Blizzard font",
+		[globalFontKey] = globalFontLabel,
 	}
 	local LSM = LibStub("LibSharedMedia-3.0", true)
 	if LSM and LSM.HashTable then
@@ -94,8 +107,9 @@ local function buildSquareMinimapStatsFontDropdown()
 	end
 	local list, order = addon.functions.prepareListForDropdown(map)
 	wipe(squareMinimapStatsFontOrder)
-	for i, key in ipairs(order or {}) do
-		squareMinimapStatsFontOrder[i] = key
+	if list[globalFontKey] then squareMinimapStatsFontOrder[#squareMinimapStatsFontOrder + 1] = globalFontKey end
+	for _, key in ipairs(order or {}) do
+		if key ~= globalFontKey then squareMinimapStatsFontOrder[#squareMinimapStatsFontOrder + 1] = key end
 	end
 	return list
 end
@@ -319,12 +333,12 @@ data = {
 				text = L["squareMinimapStatsFont"] or "Font (all stats)",
 				listFunc = buildSquareMinimapStatsFontDropdown,
 				order = squareMinimapStatsFontOrder,
-				default = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT,
+				default = getGlobalFontConfigKey(),
 				get = function()
-					local defaultFont = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
-					local current = addon.db and addon.db.squareMinimapStatsFont or defaultFont
+					local globalFontKey = getGlobalFontConfigKey()
+					local current = addon.db and addon.db.squareMinimapStatsFont or globalFontKey
 					local list = buildSquareMinimapStatsFontDropdown()
-					if not list[current] then current = defaultFont end
+					if not list[current] then current = globalFontKey end
 					return current
 				end,
 				set = function(value, maybeValue)
@@ -2132,7 +2146,7 @@ end
 
 local squareMinimapStatsDefaults = {
 	enableSquareMinimapStats = false,
-	squareMinimapStatsFont = STANDARD_TEXT_FONT,
+	squareMinimapStatsFont = getGlobalFontConfigKey(),
 	squareMinimapStatsOutline = "OUTLINE",
 	squareMinimapStatsTime = true,
 	squareMinimapStatsTimeAnchor = "BOTTOMLEFT",
@@ -2281,7 +2295,9 @@ local function getSquareMinimapStatsColor(colorKey)
 end
 
 local function getSquareMinimapStatsFontPath()
-	local fallback = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	local fallback = (addon.functions and addon.functions.GetGlobalDefaultFontFace and addon.functions.GetGlobalDefaultFontFace())
+		or (addon.variables and addon.variables.defaultFont)
+		or STANDARD_TEXT_FONT
 	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(addon.db and addon.db.squareMinimapStatsFont, fallback) or fallback end
 	local font = addon.db and addon.db.squareMinimapStatsFont
 	if type(font) ~= "string" or font == "" then font = fallback end
