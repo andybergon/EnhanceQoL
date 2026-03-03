@@ -6,6 +6,10 @@
 
 - Group Frames (Healer Buff Placement): Added new Restoration Shaman spell families `Ancestral Vigor` (`207400`), `Earthliving Weapon` (`382024`), and `Hydrobubble` (`444490`).
 
+### 🐛 Fixed
+
+- Standalone Castbar: Fixed unnecessary runtime work while disabled by making frame creation, Edit Mode registration, and cast-event registration lazy/active-only.
+
 ---
 
 ## [8.7.1] - 2026-03-02
