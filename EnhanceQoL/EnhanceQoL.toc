@@ -107,8 +107,10 @@ Modules\Sound\Sound.xml
 Modules\Tooltip\Locales\[TextLocale].lua
 Modules\Tooltip\Tooltip.xml
 
+#@debug@
 # Visibility
-# Modules\Visibility\Visibility.xml
+Modules\Visibility\Visibility.xml
+#@end-debug@
 
 # MythicPlus
 Modules\MythicPlus\MythicPlus.xml
