@@ -1163,16 +1163,19 @@ local function getFamilyForAura(compiled, aura, unit)
 	if familyId == nil then return nil end
 	if shouldIgnoreFamilyForUnit(familyId, unit) then return nil end
 
+	local sourceUnit = aura.sourceUnit
+	if issecretvalue and issecretvalue(sourceUnit) then return nil end
+	if sourceUnit ~= nil then
+		local fromPlayer = sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle"
+		if not fromPlayer and UnitIsUnit then fromPlayer = UnitIsUnit(sourceUnit, "player") or UnitIsUnit(sourceUnit, "pet") or UnitIsUnit(sourceUnit, "vehicle") end
+		if fromPlayer then return familyId end
+		return nil
+	end
+
 	local isFromPlayerOrPlayerPet = aura.isFromPlayerOrPlayerPet
 	if issecretvalue and issecretvalue(isFromPlayerOrPlayerPet) then return nil end
 	if isFromPlayerOrPlayerPet == true then return familyId end
-
-	local sourceUnit = aura.sourceUnit
-	if issecretvalue and issecretvalue(sourceUnit) then return nil end
-	local fromPlayer = sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle"
-	if not fromPlayer and UnitIsUnit and sourceUnit then fromPlayer = UnitIsUnit(sourceUnit, "player") or UnitIsUnit(sourceUnit, "pet") or UnitIsUnit(sourceUnit, "vehicle") end
-	if not fromPlayer then return nil end
-	return familyId
+	return nil
 end
 
 function HB.ShouldSuppressRegularBuffAura(kind, cfg, aura, compiled, unit)

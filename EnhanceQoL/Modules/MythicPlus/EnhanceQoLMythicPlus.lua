@@ -78,6 +78,15 @@ for i = 1, #BLOODLUST_LOCKOUT_IDS do
 end
 local BLOODLUST_READY_SPELL_ID = 2825
 local BLOODLUST_FALLBACK_ICON = BLOODLUST_DEFAULT_ICON_IDS[1]
+local BLOODLUST_LOCKOUT_DURATION_SECONDS = 600
+local BLOODLUST_ACTIVE_SOUND_GRACE_SECONDS = 10
+local BLOODLUST_ACTIVE_SOUND_MIN_REMAINING = BLOODLUST_LOCKOUT_DURATION_SECONDS - BLOODLUST_ACTIVE_SOUND_GRACE_SECONDS
+local BLOODLUST_READY_CLASSES = {
+	SHAMAN = true,
+	HUNTER = true,
+	MAGE = true,
+	EVOKER = true,
+}
 local BLOODLUST_GLOBAL_FONT_KEY = addon.functions and addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"
 local BLOODLUST_GLOBAL_FONT_LABEL = addon.functions and addon.functions.GetGlobalFontConfigLabel and addon.functions.GetGlobalFontConfigLabel() or "Use global font config"
 local bloodlustTrackedAuraInstanceIDs = {}
@@ -1486,10 +1495,22 @@ local function refreshBloodlustTracker(playReadySound)
 	if auraInstanceID and not (issecretvalue and issecretvalue(auraInstanceID)) then bloodlustTrackedAuraInstanceIDs[auraInstanceID] = true end
 
 	local isActive = aura ~= nil
+	local shouldPlayDebuffActiveSound = false
 	if bloodlustStateInitialized and not bloodlustStateActive and isActive and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffActive"] then
+		local expiration = aura and aura.expirationTime
+		if expiration and not (issecretvalue and issecretvalue(expiration)) then
+			expiration = tonumber(expiration)
+			if expiration and expiration > 0 then
+				local remaining = expiration - GetTime()
+				shouldPlayDebuffActiveSound = remaining > BLOODLUST_ACTIVE_SOUND_MIN_REMAINING
+			end
+		end
+	end
+	if shouldPlayDebuffActiveSound then
 		playBloodlustSound("mythicPlusBloodlustTrackerUseCustomDebuffSound", "mythicPlusBloodlustTrackerDebuffSoundFile")
 	end
-	if playReadySound and not isActive and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] then
+	local classToken = addon.variables.unitClass
+	if playReadySound and not isActive and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] and BLOODLUST_READY_CLASSES[classToken] then
 		playBloodlustSound("mythicPlusBloodlustTrackerUseCustomReadySound", "mythicPlusBloodlustTrackerReadySoundFile")
 	end
 

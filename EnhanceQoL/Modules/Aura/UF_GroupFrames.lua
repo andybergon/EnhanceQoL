@@ -917,11 +917,6 @@ local function stopDispelGlow(frame)
 	if LCG.ProcGlow_Stop then LCG.ProcGlow_Stop(frame, DISPEL_GLOW_KEY) end
 	if LCG.ButtonGlow_Stop then LCG.ButtonGlow_Stop(frame) end
 end
-local function stopDispelGlowIfActive(st, frame)
-	if not (st and st._dispelGlowActive) then return end
-	st._dispelGlowActive = nil
-	stopDispelGlow(frame)
-end
 
 local function resolveDispelIndicatorEnabled(cfg, kind)
 	local sc = cfg and cfg.status or {}
@@ -5334,7 +5329,7 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 	if glowEnabled == nil then glowEnabled = defDispel.glowEnabled == true end
 	if not overlayEnabled and not glowEnabled then
 		hideDispelTint(st)
-		stopDispelGlowIfActive(st, st.barGroup or self)
+		stopDispelGlow(st.barGroup or self)
 		return
 	end
 	if allowSample then
@@ -5342,7 +5337,7 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 		if showSample == nil then showSample = defDispel.showSample == true end
 		if not showSample then
 			hideDispelTint(st)
-			stopDispelGlowIfActive(st, st.barGroup or self)
+			stopDispelGlow(st.barGroup or self)
 			return
 		end
 	end
@@ -5358,10 +5353,8 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 	local bgAlpha = fillAlpha * (fa or 1)
 
 	local r, g, b
-	local colorKey
 	if allowSample then
 		r, g, b = GFH.GetDebuffColorFromName("Magic")
-		colorKey = "Magic"
 	else
 		local unit = getUnit(self)
 		if unit and cache and cache.order and cache.auras then
@@ -5409,21 +5402,17 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 						elseif color.r then
 							r, g, b = color.r, color.g, color.b
 						end
-						colorKey = auraId
 					end
 				end
 				if not r then
 					local dispelName = dispelAura.dispelName
 					if not (issecretvalue and issecretvalue(dispelName)) and dispelName and dispelName ~= "" then
-						colorKey = dispelName
 						r, g, b = GFH.GetDebuffColorFromName(dispelName)
 					end
 				end
 			end
 		end
 	end
-
-	if r and not colorKey then colorKey = "UNKNOWN" end
 
 	if overlayEnabled then
 		if r then
@@ -5436,13 +5425,13 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 	end
 
 	if glowEnabled then
-		GF:UpdateDispelGlow(self, r, g, b, colorKey)
+		GF:UpdateDispelGlow(self, r, g, b)
 	else
-		stopDispelGlowIfActive(st, st.barGroup or self)
+		stopDispelGlow(st.barGroup or self)
 	end
 end
 
-function GF:UpdateDispelGlow(self, r, g, b, colorKey)
+function GF:UpdateDispelGlow(self, r, g, b)
 	local st = getState(self)
 	if not st then return end
 	if not (LCG and LCG.PixelGlow_Start) then return end
@@ -5454,11 +5443,11 @@ function GF:UpdateDispelGlow(self, r, g, b, colorKey)
 	local glowEnabled = dcfg.glowEnabled
 	if glowEnabled == nil then glowEnabled = defDispel.glowEnabled == true end
 	if not glowEnabled then
-		stopDispelGlowIfActive(st, st.barGroup or self)
+		stopDispelGlow(st.barGroup or self)
 		return
 	end
 	if not (r and g and b) then
-		stopDispelGlowIfActive(st, st.barGroup or self)
+		stopDispelGlow(st.barGroup or self)
 		return
 	end
 
@@ -5482,28 +5471,9 @@ function GF:UpdateDispelGlow(self, r, g, b, colorKey)
 		scale = 4
 	end
 
-	if
-		st._dispelGlowActive
-		and st._dispelGlowLines == lines
-		and st._dispelGlowFreq == freq
-		and st._dispelGlowThickness == thickness
-		and st._dispelGlowX == xoff
-		and st._dispelGlowY == yoff
-		and st._dispelGlowEffect == effect
-		and colorKey
-		and st._dispelGlowKey == colorKey
-	then
-		return
-	end
-
 	local target = st.barGroup or self
-	stopDispelGlowIfActive(st, target)
-	local glowColor = st._dispelGlowColor
-	if not glowColor then
-		glowColor = { 1, 1, 1, 1 }
-		st._dispelGlowColor = glowColor
-	end
-	glowColor[1], glowColor[2], glowColor[3], glowColor[4] = cr, cg, cb, 1
+	stopDispelGlow(target)
+	local glowColor = { cr, cg, cb, 1 }
 	if effect == "SHINE" and LCG.AutoCastGlow_Start then
 		LCG.AutoCastGlow_Start(target, glowColor, lines, freq, scale, xoff, yoff, DISPEL_GLOW_KEY)
 	elseif effect == "BLIZZARD" and LCG.ButtonGlow_Start then
@@ -5511,13 +5481,6 @@ function GF:UpdateDispelGlow(self, r, g, b, colorKey)
 	else
 		LCG.PixelGlow_Start(target, glowColor, lines, freq, nil, thickness, xoff, yoff, nil, DISPEL_GLOW_KEY)
 	end
-	st._dispelGlowActive = true
-	st._dispelGlowLines = lines
-	st._dispelGlowFreq = freq
-	st._dispelGlowThickness = thickness
-	st._dispelGlowX, st._dispelGlowY = xoff, yoff
-	st._dispelGlowEffect = effect
-	st._dispelGlowKey = colorKey
 end
 
 function GF:UpdateRange(self, inRange)

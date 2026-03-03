@@ -418,16 +418,43 @@ local function unitHasAuraBySpellId(unit, spellId)
 		if C_UnitAuras.GetUnitAuraBySpellID(unit, spellId) ~= nil then return true end
 	end
 
-	if AuraUtil and AuraUtil.FindAuraBySpellID then
-		if AuraUtil.FindAuraBySpellID(spellId, unit, AURA_FILTER_HELPFUL) ~= nil then return true end
+	if C_UnitAuras and C_UnitAuras.GetAuraSlots and C_UnitAuras.GetAuraDataBySlot then
+		local continuationToken
+		for _ = 1, AURA_SLOT_SCAN_GUARD do
+			local slots
+			if continuationToken ~= nil then
+				slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE, continuationToken) }
+			else
+				slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE) }
+			end
+
+			local nextToken = slots and slots[1] or nil
+			if issecretvalue and issecretvalue(nextToken) then nextToken = nil end
+
+			for i = 2, (slots and #slots or 0) do
+				local slot = slots[i]
+				if not (issecretvalue and issecretvalue(slot)) then
+					local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
+					if aura and not (issecretvalue and issecretvalue(aura)) then
+						local isHelpful = aura.isHelpful
+						if issecretvalue and issecretvalue(isHelpful) then isHelpful = nil end
+						if isHelpful ~= false then
+							local auraSpellId = normalizeSpellId(aura.spellId)
+							if auraSpellId and auraSpellId == spellId then return true end
+						end
+					end
+				end
+			end
+
+			if nextToken == nil then break end
+			continuationToken = nextToken
+		end
 	end
 
 	-- Some weapon-imbue auras can surface with an alternate spellID but keep the same aura name.
-	if AuraUtil and AuraUtil.FindAuraByName then
-		local spellName = safeGetSpellName(spellId)
-		if type(spellName) == "string" and spellName ~= "" then
-			if AuraUtil.FindAuraByName(spellName, unit, AURA_FILTER_HELPFUL) ~= nil then return true end
-		end
+	local spellName = safeGetSpellName(spellId)
+	if type(spellName) == "string" and spellName ~= "" and Reminder and Reminder.UnitHasAnyAuraName then
+		if Reminder:UnitHasAnyAuraName(unit, { spellName }) then return true end
 	end
 
 	return false
@@ -618,11 +645,7 @@ function Reminder:GetFlaskCandidatesForCurrentSpec()
 
 	local specId = self:GetCurrentSpecId()
 	local now = nowSeconds()
-	if self.flaskCacheDirty ~= true
-		and self.flaskCandidateCacheReady == true
-		and self.flaskCandidateCacheSpecId == specId
-		and (now - (tonumber(self.flaskCandidateCacheTime) or 0)) <= 0.75
-	then
+	if self.flaskCacheDirty ~= true and self.flaskCandidateCacheReady == true and self.flaskCandidateCacheSpecId == specId and (now - (tonumber(self.flaskCandidateCacheTime) or 0)) <= 0.75 then
 		return self.flaskCandidateCache, self.flaskSelectedType
 	end
 
@@ -716,13 +739,44 @@ end
 function Reminder:UnitHasAnyAuraName(unit, auraNames)
 	if type(auraNames) ~= "table" then return false end
 	if type(unit) ~= "string" or unit == "" then return false end
-	if not (AuraUtil and AuraUtil.FindAuraByName) then return false end
+	if not (C_UnitAuras and C_UnitAuras.GetAuraSlots and C_UnitAuras.GetAuraDataBySlot) then return false end
 
+	local targetNames = {}
 	for i = 1, #auraNames do
 		local auraName = auraNames[i]
-		if type(auraName) == "string" and auraName ~= "" then
-			if AuraUtil.FindAuraByName(auraName, unit, AURA_FILTER_HELPFUL) ~= nil then return true end
+		if type(auraName) == "string" and auraName ~= "" then targetNames[auraName] = true end
+	end
+	if not next(targetNames) then return false end
+
+	local continuationToken
+	for _ = 1, AURA_SLOT_SCAN_GUARD do
+		local slots
+		if continuationToken ~= nil then
+			slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE, continuationToken) }
+		else
+			slots = { C_UnitAuras.GetAuraSlots(unit, AURA_FILTER_HELPFUL, AURA_SLOT_BATCH_SIZE) }
 		end
+
+		local nextToken = slots and slots[1] or nil
+		if issecretvalue and issecretvalue(nextToken) then nextToken = nil end
+
+		for i = 2, (slots and #slots or 0) do
+			local slot = slots[i]
+			if not (issecretvalue and issecretvalue(slot)) then
+				local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
+				if aura and not (issecretvalue and issecretvalue(aura)) then
+					local isHelpful = aura.isHelpful
+					if issecretvalue and issecretvalue(isHelpful) then isHelpful = nil end
+					if isHelpful ~= false then
+						local activeName = aura.name
+						if not (issecretvalue and issecretvalue(activeName)) and type(activeName) == "string" and targetNames[activeName] then return true end
+					end
+				end
+			end
+		end
+
+		if nextToken == nil then break end
+		continuationToken = nextToken
 	end
 
 	return false
