@@ -9,6 +9,7 @@
 - Shared Media (Performance): Fixed settings freezes with very large SharedMedia libraries by introducing a global, sorted media cache for `sound`/`font`/`border`/`statusbar`/`background` instead of rebuilding lists on each settings open.
 - Shared Media (Live Updates): New media registrations now invalidate the relevant cache via the `LibSharedMedia_Registered` callback, so newly added sounds/fonts/textures appear without repeated full rescans.
 - Settings Dropdowns: Reworked affected dropdown providers (including Mythic+ Bloodlust Tracker, Class Buff Reminder, UI/Aura/Food/Sound related settings) to consume cached values directly, preventing repeated per-open sorting and list reconstruction.
+- Group Frames (Healer Buff Placement): Sometimes stale buffs were shown
 
 ---
 
