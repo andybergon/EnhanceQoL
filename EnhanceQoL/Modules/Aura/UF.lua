@@ -5468,11 +5468,11 @@ local function updateHealth(cfg, unit)
 		if st.overAbsorbGlow then
 			local glowAbsorb = absorbValueForGlow
 			if glowAbsorb == nil then glowAbsorb = abs end
-			local showGlow = hc.useAbsorbGlow ~= false and ((C_StringUtil and not C_StringUtil.TruncateWhenZero(glowAbsorb)) or (not issecretvalue and glowAbsorb > 0))
-			-- (not (C_StringUtil and C_StringUtil.TruncateWhenZero(abs)) or (not addon.variables.isMidnight and abs))
-			if showGlow then
+			if hc.useAbsorbGlow ~= false then
+				st.overAbsorbGlow:SetAlpha(glowAbsorb or 0)
 				st.overAbsorbGlow:Show()
 			else
+				st.overAbsorbGlow:SetAlpha(0)
 				st.overAbsorbGlow:Hide()
 			end
 		end
@@ -6680,6 +6680,7 @@ local function ensureFrames(unit)
 		if st.overAbsorbGlow then
 			st.overAbsorbGlow:SetTexture(798066)
 			st.overAbsorbGlow:SetBlendMode("ADD")
+			if st.overAbsorbGlow.SetDrawLayer then st.overAbsorbGlow:SetDrawLayer("OVERLAY", 7) end
 			st.overAbsorbGlow:SetAlpha(0.8)
 			st.overAbsorbGlow:Hide()
 		end
@@ -6941,9 +6942,15 @@ local function applyBars(cfg, unit)
 		st.absorb:SetValue(0, interpolation)
 		if st.overAbsorbGlow then
 			st.overAbsorbGlow:ClearAllPoints()
-			local glowAnchor = (reverseAbsorb and absorbDontOverflow and st.absorb2) or st.absorb or st.health
-			st.overAbsorbGlow:SetPoint("TOPLEFT", glowAnchor, "TOPRIGHT", -7, 0)
-			st.overAbsorbGlow:SetPoint("BOTTOMLEFT", glowAnchor, "BOTTOMRIGHT", -7, 0)
+			local glowParent = (st.health and st.health.absorbClip) or st.health
+			if glowParent and st.overAbsorbGlow.GetParent and st.overAbsorbGlow:GetParent() ~= glowParent then st.overAbsorbGlow:SetParent(glowParent) end
+			if reverseHealth then
+				st.overAbsorbGlow:SetPoint("TOPRIGHT", st.health, "TOPLEFT", 7, 0)
+				st.overAbsorbGlow:SetPoint("BOTTOMRIGHT", st.health, "BOTTOMLEFT", 7, 0)
+			else
+				st.overAbsorbGlow:SetPoint("TOPLEFT", st.health, "TOPRIGHT", -7, 0)
+				st.overAbsorbGlow:SetPoint("BOTTOMLEFT", st.health, "BOTTOMRIGHT", -7, 0)
+			end
 		end
 		if st.overAbsorbGlow then st.overAbsorbGlow:Hide() end
 	elseif st.overAbsorbGlow then

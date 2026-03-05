@@ -17,6 +17,7 @@ local HB = UF.GroupFramesHealerBuffs
 
 local GFH = UF.GroupFramesHelper
 local AuraUtil = UF.AuraUtil
+local UFHelper = addon.Aura.UFHelper
 
 local floor = math.floor
 local max = math.max
@@ -355,9 +356,7 @@ local function getPlayerFamilyProvisionMap()
 	specId = tonumber(specId) or 0
 
 	local cacheKey = tostring(classToken or "") .. "|" .. tostring(specId)
-	if _playerFamilyProvisionCache.key == cacheKey and _playerFamilyProvisionCache.map ~= nil then
-		return _playerFamilyProvisionCache.map
-	end
+	if _playerFamilyProvisionCache.key == cacheKey and _playerFamilyProvisionCache.map ~= nil then return _playerFamilyProvisionCache.map end
 
 	local map = {}
 	local specMap = classToken and PROVIDER_SPEC_IDS[classToken] or nil
@@ -668,6 +667,11 @@ function HB.CreateDefaultGroup(id)
 		barThickness = 6,
 		inset = 0,
 		borderSize = 2,
+		indicatorBorderEnabled = false,
+		indicatorBorderTexture = "DEFAULT",
+		indicatorBorderSize = 1,
+		indicatorBorderOffset = 0,
+		indicatorBorderColor = { 0, 0, 0, 0.95 },
 		ruleMatch = RULE_MATCH_ANY,
 		iconMode = ICON_MODE_ALL,
 		showCooldownSwipe = true,
@@ -709,6 +713,17 @@ local function normalizeGroup(group, id)
 	group.barThickness = roundInt(clamp(group.barThickness, 1, 96, 6))
 	group.inset = roundInt(clamp(group.inset, 0, 60, 0))
 	group.borderSize = roundInt(clamp(group.borderSize, 1, 24, 2))
+	local indicatorBorderEnabled = group.indicatorBorderEnabled
+	if indicatorBorderEnabled == nil then indicatorBorderEnabled = group.iconBorderEnabled end
+	group.indicatorBorderEnabled = indicatorBorderEnabled == true
+	local indicatorBorderTexture = group.indicatorBorderTexture
+	if indicatorBorderTexture == nil then indicatorBorderTexture = group.iconBorderTexture end
+	indicatorBorderTexture = tostring(indicatorBorderTexture or "DEFAULT")
+	if indicatorBorderTexture == "" then indicatorBorderTexture = "DEFAULT" end
+	group.indicatorBorderTexture = indicatorBorderTexture
+	group.indicatorBorderSize = roundInt(clamp(group.indicatorBorderSize or group.iconBorderSize, 1, 24, 1))
+	group.indicatorBorderOffset = roundInt(clamp(group.indicatorBorderOffset or group.iconBorderOffset, -12, 12, 0))
+	group.indicatorBorderColor = normalizeColor(group.indicatorBorderColor or group.iconBorderColor, { 0, 0, 0, 0.95 })
 	group.ruleMatch = normalizeRuleMatch(group.ruleMatch or group.matchMode or group.ruleMode)
 	group.iconMode = normalizeIconMode(group.iconMode or group.iconDisplayMode or group.iconRuleMode)
 	local showCooldownSwipe = group.showCooldownSwipe
@@ -745,6 +760,11 @@ local function normalizeGroup(group, id)
 	group.chargeSize = nil
 	group.cooldownFontSizeOverride = nil
 	group.countFontSizeOverride = nil
+	group.iconBorderEnabled = nil
+	group.iconBorderTexture = nil
+	group.iconBorderSize = nil
+	group.iconBorderOffset = nil
+	group.iconBorderColor = nil
 	group.color = normalizeColor(group.color, { 1, 0.82, 0.1, 0.9 })
 	return group
 end
@@ -1588,6 +1608,67 @@ local function styleIconButton(btn)
 	if btn.icon then btn.icon:SetVertexColor(1, 1, 1, 1) end
 end
 
+local function resolveBorderTexture(key)
+	if UFHelper and UFHelper.resolveBorderTexture then return UFHelper.resolveBorderTexture(key) end
+	if not key or key == "" or key == "DEFAULT" then return "Interface\\Buttons\\WHITE8x8" end
+	return key
+end
+
+local function ensureIndicatorBorderFrame(btn)
+	if not btn then return nil end
+	local border = btn._hbIndicatorBorder
+	if not border then
+		border = CreateFrame("Frame", nil, btn.overlay or btn, "BackdropTemplate")
+		border:EnableMouse(false)
+		btn._hbIndicatorBorder = border
+	end
+	local parent = btn.overlay or btn
+	if border:GetParent() ~= parent then border:SetParent(parent) end
+	border:SetFrameStrata(parent:GetFrameStrata() or btn:GetFrameStrata())
+	local baseLevel = parent:GetFrameLevel() or btn:GetFrameLevel() or 0
+	border:SetFrameLevel(baseLevel + 2)
+	return border
+end
+
+local function applyIndicatorBorder(btn, group)
+	if not btn then return end
+	local style = tostring(group and group.style or ""):upper()
+	local enabled = (style == STYLE_ICON or style == STYLE_SQUARE) and group and group.indicatorBorderEnabled == true
+	local border = btn._hbIndicatorBorder
+	if not enabled then
+		if border then border:Hide() end
+		return
+	end
+	border = ensureIndicatorBorderFrame(btn)
+	if not border then return end
+	local size = max(1, roundInt(tonumber(group.indicatorBorderSize) or 1))
+	local offset = roundInt(tonumber(group.indicatorBorderOffset) or 0)
+	if offset > 12 then offset = 12 end
+	if offset < -12 then offset = -12 end
+	local texture = resolveBorderTexture(group.indicatorBorderTexture or "DEFAULT")
+	local key = tostring(texture) .. "|" .. tostring(size)
+	if border._hbBackdropKey ~= key then
+		border._hbBackdropKey = key
+		border:SetBackdrop({
+			bgFile = "Interface\\Buttons\\WHITE8x8",
+			edgeFile = texture,
+			tile = false,
+			edgeSize = size,
+			insets = { left = size, right = size, top = size, bottom = size },
+		})
+	end
+	if border._hbOffset ~= offset then
+		border._hbOffset = offset
+		border:ClearAllPoints()
+		border:SetPoint("TOPLEFT", btn, "TOPLEFT", -offset, offset)
+		border:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", offset, -offset)
+	end
+	local br, bg, bb, ba = resolveColor(group.indicatorBorderColor)
+	border:SetBackdropColor(0, 0, 0, 0)
+	border:SetBackdropBorderColor(br, bg, bb, ba)
+	border:Show()
+end
+
 local function getPlaceholderAura(state, ruleId, familyId)
 	state.tempPlaceholderByRule = state.tempPlaceholderByRule or {}
 	local aura = state.tempPlaceholderByRule[ruleId]
@@ -1649,6 +1730,23 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 	local force = collectActiveRulesForGroup(state, compiled, group.id, activeRules, changedFamilies, maxRules)
 	local style = getAuraStyleForGroup(state, cfg, group)
 	local styleHash = tostring(style._eqolStyleHash or "") .. "|" .. tostring(group.style or STYLE_ICON)
+	styleHash = styleHash
+		.. "|"
+		.. tostring(group.indicatorBorderEnabled == true)
+		.. "|"
+		.. tostring(group.indicatorBorderTexture or "DEFAULT")
+		.. "|"
+		.. tostring(group.indicatorBorderSize or 1)
+		.. "|"
+		.. tostring(group.indicatorBorderOffset or 0)
+		.. "|"
+		.. tostring(group.indicatorBorderColor and group.indicatorBorderColor[1] or 0)
+		.. "|"
+		.. tostring(group.indicatorBorderColor and group.indicatorBorderColor[2] or 0)
+		.. "|"
+		.. tostring(group.indicatorBorderColor and group.indicatorBorderColor[3] or 0)
+		.. "|"
+		.. tostring(group.indicatorBorderColor and group.indicatorBorderColor[4] or 0.95)
 	if group.style == STYLE_SQUARE then
 		local cr, cg, cb, ca = resolveColor(group.color)
 		styleHash = table.concat({ styleHash, cr, cg, cb, ca }, ":")
@@ -1709,6 +1807,7 @@ local function renderIconStyleForGroup(btn, st, state, compiled, cfg, group, cha
 			styleIconButton(button)
 			setAuraTooltipState(button, style.showTooltip == true and (auraInstanceId and auraInstanceId > 0))
 		end
+		applyIndicatorBorder(button, group)
 		if button.SetSize then button:SetSize(group.size, group.size) end
 		positionAuraButton(button, container, primary, secondary, index, group.perRow, group.size, group.spacing)
 		button:Show()
