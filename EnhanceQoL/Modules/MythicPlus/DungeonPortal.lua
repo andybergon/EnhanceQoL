@@ -1352,30 +1352,39 @@ end
 
 local keyStoneFrame
 local measureFontString
+local function EnsureMeasureFontString()
+	if measureFontString then return measureFontString end
+	if not UIParent or not UIParent.CreateFontString then return nil end
+	measureFontString = UIParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	if measureFontString and measureFontString.Hide then measureFontString:Hide() end
+	return measureFontString
+end
+
 local function calculateMaxWidth(dataTable)
+	local fontString = EnsureMeasureFontString()
+	if not fontString then return 200 end
 	local maxWidth = 0
 	for key, data in pairs(dataTable) do
 		if UnitInParty(key) or key == UnitName("player") then
-			if not measureFontString then return end
 			local widthMap = 0
 			if data.challengeMapID and data.challengeMapID > 0 then
 				local mapData = mapInfo[data.challengeMapID]
 				if not mapData then mapData = { mapName = L["NoKeystone"] } end
-				measureFontString:SetText(mapData.mapName or "")
-				widthMap = measureFontString:GetStringWidth() + 25 + buttonSize
+				fontString:SetText(mapData.mapName or "")
+				widthMap = fontString:GetStringWidth() + 25 + buttonSize
 			else
-				measureFontString:SetText(L["NoKeystone"] or "")
-				widthMap = measureFontString:GetStringWidth() + 25 + buttonSize
+				fontString:SetText(L["NoKeystone"] or "")
+				widthMap = fontString:GetStringWidth() + 25 + buttonSize
 			end
 			local uName = UnitName(key)
 
-			measureFontString:SetText(uName or "")
-			local widthCharName = measureFontString:GetStringWidth() + 25 + buttonSize
+			fontString:SetText(uName or "")
+			local widthCharName = fontString:GetStringWidth() + 25 + buttonSize
 			local width = max(widthCharName, widthMap)
 			if width > maxWidth then maxWidth = width end
 		end
 	end
-	return maxWidth
+	return max(maxWidth, 200)
 end
 
 local function updateKeystoneInfo()
@@ -1426,8 +1435,9 @@ local function updateKeystoneInfo()
 							mapName = L["NoKeystone"],
 						}
 					end
+
 					local frame = CreateFrame("Frame", nil, keyStoneFrame, "BackdropTemplate")
-					SafeSetSize(frame, maxWidthKeystone, 50)
+					SafeSetSize(frame, maxWidthKeystone or 200, 50)
 					frame:SetPoint("TOPRIGHT", keyStoneFrame, "TOPRIGHT", 0, -50 * index)
 					frame:SetBackdrop({
 						bgFile = "Interface\\Buttons\\WHITE8x8", -- Hintergrund
@@ -1496,6 +1506,7 @@ local function updateKeystoneInfo()
 						levelText:SetText((data.level or "0"))
 						levelText:SetTextColor(1, 1, 1)
 					end
+
 					-- Spielername in Klassenfarbe
 					local playerNameText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 					playerNameText:SetPoint("BOTTOMLEFT", button, "BOTTOMRIGHT", 5, 0)
@@ -1522,8 +1533,7 @@ function addon.MythicPlus.functions.togglePartyKeystone()
 		if addon.db["groupfinderShowPartyKeystone"] and not IsInRaid() then
 			if not isRegistered then
 				isRegistered = true
-				measureFontString = UIParent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-				measureFontString:Hide()
+				EnsureMeasureFontString()
 				openRaidLib.RegisterCallback(addon.MythicPlus, "KeystoneUpdate", "onKeystoneUpdate")
 				openRaidLib.RequestKeystoneDataFromParty()
 			end

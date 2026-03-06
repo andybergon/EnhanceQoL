@@ -254,6 +254,14 @@ local function isTrackedUnit(unit)
 	return false
 end
 
+local function canEvaluateUnit(unit)
+	if type(unit) ~= "string" or unit == "" then return false end
+	if not (UnitExists and UnitExists(unit)) then return false end
+	if not (UnitIsConnected and UnitIsConnected(unit)) then return false end
+	if UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit) then return false end
+	return true
+end
+
 local function isAIFollowerUnit(unit)
 	if type(unit) ~= "string" or unit == "player" then return false end
 	if not UnitInPartyIsAI then return false end
@@ -772,7 +780,7 @@ end
 
 function Reminder:GetSupplementalMissingEntries()
 	if not self:CanCheckFlaskReminder() then return nil end
-	if not (UnitExists and UnitExists("player") and UnitIsConnected and UnitIsConnected("player") and not UnitIsDeadOrGhost("player")) then return nil end
+	if not canEvaluateUnit("player") then return nil end
 	local flaskEntry = self:GetFlaskMissingEntry()
 	if not flaskEntry then return nil end
 	return { flaskEntry }
@@ -2310,7 +2318,7 @@ function Reminder:ComputeMissing(provider)
 	if provider and provider.scope == PROVIDER_SCOPE_SELF then
 		self.selfProviderStatusProvider = nil
 		self.selfProviderStatus = nil
-		if not (UnitExists and UnitExists("player") and UnitIsConnected and UnitIsConnected("player") and not UnitIsDeadOrGhost("player")) then return 0, 0 end
+		if not canEvaluateUnit("player") then return 0, 0 end
 
 		local status = self:GetSelfProviderStatus(provider, true)
 		if status then return status.missing, status.total end
@@ -2497,6 +2505,13 @@ function Reminder:UpdateDisplay()
 		return
 	end
 
+	if not canEvaluateUnit("player") then
+		self:SetGlowShown(false)
+		self.missingActive = false
+		frame:Hide()
+		return
+	end
+
 	local missing, total = 0, 0
 	if classProvider then
 		missing, total = self:ComputeMissing(provider)
@@ -2627,6 +2642,9 @@ function Reminder:RegisterEvents()
 	self.eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 	self.eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 	self.eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+	self.eventFrame:RegisterEvent("PLAYER_DEAD")
+	self.eventFrame:RegisterEvent("PLAYER_ALIVE")
+	self.eventFrame:RegisterEvent("PLAYER_UNGHOST")
 	self.eventFrame:SetScript("OnEvent", function(_, event, ...) Reminder:HandleEvent(event, ...) end)
 
 	self.eventsRegistered = true

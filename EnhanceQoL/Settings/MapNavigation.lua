@@ -2271,6 +2271,7 @@ local function getSquareMinimapStatsState()
 	addon.variables.squareMinimapStats = addon.variables.squareMinimapStats or {
 		frames = {},
 		elapsed = {},
+		renderConfig = {},
 	}
 	return addon.variables.squareMinimapStats
 end
@@ -2364,6 +2365,30 @@ local function getSquareMinimapFontStringWidth(fontString)
 	local width = fontString.GetUnboundedStringWidth and fontString:GetUnboundedStringWidth() or nil
 	if not width or width <= 0 then width = fontString:GetStringWidth() or 0 end
 	return width
+end
+
+local squareMinimapCoordinateFormatCache = {}
+
+local function getSquareMinimapCoordinateFormat(decimals)
+	local fmt = squareMinimapCoordinateFormatCache[decimals]
+	if fmt then return fmt end
+	fmt = ("%%.%df, %%.%df"):format(decimals, decimals)
+	squareMinimapCoordinateFormatCache[decimals] = fmt
+	return fmt
+end
+
+local function roundScaledValue(value, scale)
+	local scaled = (tonumber(value) or 0) * scale
+	if scaled >= 0 then return math.floor(scaled + 0.5) end
+	return math.ceil(scaled - 0.5)
+end
+
+local function clearSquareMinimapCoordinateCache(frame)
+	if not frame then return end
+	frame._eqolCoordinatesMapID = nil
+	frame._eqolCoordinatesDecimals = nil
+	frame._eqolCoordinatesX = nil
+	frame._eqolCoordinatesY = nil
 end
 
 local function utf8Iter(str) return (str or ""):gmatch("[%z\1-\127\194-\244][\128-\191]*") end
@@ -2572,16 +2597,37 @@ local function getSquareMinimapLocationText()
 	return ""
 end
 
-local function getSquareMinimapCoordinatesText()
-	if addon.db.squareMinimapStatsCoordinatesHideInInstance and IsInInstance and IsInInstance() then return "" end
+local function getSquareMinimapCoordinatesText(frame, renderCfg)
+	if renderCfg and renderCfg.hideInInstance and IsInInstance and IsInInstance() then
+		clearSquareMinimapCoordinateCache(frame)
+		return ""
+	end
 	if not (C_Map and C_Map.GetBestMapForUnit and C_Map.GetPlayerMapPosition) then return "" end
 	local mapID = C_Map.GetBestMapForUnit("player")
-	if not mapID then return "" end
+	if not mapID then
+		clearSquareMinimapCoordinateCache(frame)
+		return ""
+	end
 	local pos = C_Map.GetPlayerMapPosition(mapID, "player")
-	if not pos then return "" end
-	local decimals = math.floor(clamp(tonumber(addon.db and addon.db.squareMinimapStatsCoordinatesDecimals) or 2, 0, 3) + 0.5)
-	local fmt = "%." .. tostring(decimals) .. "f, %." .. tostring(decimals) .. "f"
-	return string.format(fmt, (pos.x or 0) * 100, (pos.y or 0) * 100)
+	if not pos then
+		clearSquareMinimapCoordinateCache(frame)
+		return ""
+	end
+	local decimals = (renderCfg and renderCfg.decimals) or 2
+	local scale = 10 ^ decimals
+	local x = roundScaledValue((pos.x or 0) * 100, scale)
+	local y = roundScaledValue((pos.y or 0) * 100, scale)
+	if frame and frame._eqolCoordinatesMapID == mapID and frame._eqolCoordinatesDecimals == decimals and frame._eqolCoordinatesX == x and frame._eqolCoordinatesY == y then
+		return frame._eqolPrimaryText or ""
+	end
+	local text = string.format(getSquareMinimapCoordinateFormat(decimals), x / scale, y / scale)
+	if frame then
+		frame._eqolCoordinatesMapID = mapID
+		frame._eqolCoordinatesDecimals = decimals
+		frame._eqolCoordinatesX = x
+		frame._eqolCoordinatesY = y
+	end
+	return text
 end
 
 local function getSquareMinimapLatencySplitTexts()
@@ -2616,8 +2662,272 @@ local function getSquareMinimapStatText(statKey)
 	end
 	if statKey == "latency" then return getSquareMinimapLatencyText() end
 	if statKey == "location" then return getSquareMinimapLocationText() end
-	if statKey == "coordinates" then return getSquareMinimapCoordinatesText() end
+	if statKey == "coordinates" then
+		return getSquareMinimapCoordinatesText(nil, {
+			decimals = math.floor(clamp(tonumber(addon.db and addon.db.squareMinimapStatsCoordinatesDecimals) or 2, 0, 3) + 0.5),
+			hideInInstance = addon.db and addon.db.squareMinimapStatsCoordinatesHideInInstance == true,
+		})
+	end
 	return ""
+end
+
+local function buildSquareMinimapTimeText(frame, renderCfg)
+	local localParts = date("*t")
+	local localHour = localParts and localParts.hour or nil
+	local localMinute = localParts and localParts.min or nil
+	local localSecond = localParts and localParts.sec or 0
+	local serverHour, serverMinute = nil, nil
+	if GetGameTime then
+		serverHour, serverMinute = GetGameTime()
+	end
+
+	local mode = renderCfg and renderCfg.timeDisplayMode or "server"
+	local use24Hour = renderCfg and renderCfg.timeUse24Hour ~= false
+	local showSeconds = renderCfg and renderCfg.timeShowSeconds == true
+
+	if
+		frame
+		and frame._eqolTimeMode == mode
+		and frame._eqolTimeUse24Hour == use24Hour
+		and frame._eqolTimeShowSeconds == showSeconds
+		and frame._eqolTimeLocalHour == localHour
+		and frame._eqolTimeLocalMinute == localMinute
+		and frame._eqolTimeLocalSecond == localSecond
+		and frame._eqolTimeServerHour == serverHour
+		and frame._eqolTimeServerMinute == serverMinute
+	then
+		return frame._eqolPrimaryText or ""
+	end
+
+	local localText = formatSquareMinimapClock(localHour, localMinute, localSecond, use24Hour, showSeconds)
+	local serverText = formatSquareMinimapClock(serverHour, serverMinute, localSecond, use24Hour, showSeconds)
+	local text
+	if mode == "localTime" then
+		text = localText
+	elseif mode == "both" then
+		if serverText == "" then
+			text = localText
+		elseif localText == "" then
+			text = serverText
+		else
+			text = ("%s / %s"):format(serverText, localText)
+		end
+	else
+		text = serverText ~= "" and serverText or localText
+	end
+
+	if frame then
+		frame._eqolTimeMode = mode
+		frame._eqolTimeUse24Hour = use24Hour
+		frame._eqolTimeShowSeconds = showSeconds
+		frame._eqolTimeLocalHour = localHour
+		frame._eqolTimeLocalMinute = localMinute
+		frame._eqolTimeLocalSecond = localSecond
+		frame._eqolTimeServerHour = serverHour
+		frame._eqolTimeServerMinute = serverMinute
+	end
+	return text
+end
+
+local function buildSquareMinimapLocationText(frame, renderCfg)
+	local zone = GetZoneText and GetZoneText() or nil
+	if not zone or zone == "" then zone = GetRealZoneText and GetRealZoneText() or "" end
+	local subzone = GetSubZoneText and GetSubZoneText() or ""
+	local showZone = renderCfg and renderCfg.locationShowZone ~= false
+	local showSubzone = renderCfg and renderCfg.locationShowSubzone ~= false
+
+	if frame and frame._eqolLocationZone == zone and frame._eqolLocationSubzone == subzone and frame._eqolLocationShowZone == showZone and frame._eqolLocationShowSubzone == showSubzone then
+		return frame._eqolPrimaryText or ""
+	end
+
+	local text = ""
+	if showZone or showSubzone then
+		if showZone and showSubzone then
+			if subzone ~= "" and subzone ~= zone then
+				if zone and zone ~= "" then
+					text = zone .. " - " .. subzone
+				else
+					text = subzone
+				end
+			elseif zone and zone ~= "" then
+				text = zone
+			else
+				text = subzone
+			end
+		elseif showZone then
+			text = (zone and zone ~= "") and zone or subzone
+		elseif showSubzone then
+			text = (subzone ~= "" and subzone) or zone or ""
+		end
+	end
+
+	if frame then
+		frame._eqolLocationZone = zone
+		frame._eqolLocationSubzone = subzone
+		frame._eqolLocationShowZone = showZone
+		frame._eqolLocationShowSubzone = showSubzone
+	end
+	return text
+end
+
+local function getSquareMinimapFPSBucket(renderCfg, value)
+	local medium = renderCfg and renderCfg.fpsThresholdMedium or 30
+	local high = renderCfg and renderCfg.fpsThresholdHigh or 60
+	if value >= high then return "high" end
+	if value >= medium then return "mid" end
+	return "low"
+end
+
+local function getSquareMinimapFPSBucketColor(renderCfg, bucket)
+	if bucket == "high" then return renderCfg.fpsColorHighR, renderCfg.fpsColorHighG, renderCfg.fpsColorHighB end
+	if bucket == "mid" then return renderCfg.fpsColorMidR, renderCfg.fpsColorMidG, renderCfg.fpsColorMidB end
+	return renderCfg.fpsColorLowR, renderCfg.fpsColorLowG, renderCfg.fpsColorLowB
+end
+
+local function buildSquareMinimapFPSText(frame, renderCfg)
+	local fps = math.floor((GetFramerate() or 0) + 0.5)
+	local bucket = getSquareMinimapFPSBucket(renderCfg, fps)
+	if frame and frame._eqolFPSValue == fps and frame._eqolFPSBucket == bucket then return frame._eqolPrimaryText or "" end
+	local r, g, b = getSquareMinimapFPSBucketColor(renderCfg, bucket)
+	local text = ("FPS %s"):format(colorizeSquareMinimapText(fps, r, g, b))
+	if frame then
+		frame._eqolFPSValue = fps
+		frame._eqolFPSBucket = bucket
+	end
+	return text
+end
+
+local function getSquareMinimapLatencyBucket(renderCfg, value)
+	local low = renderCfg and renderCfg.latencyThresholdLow or 50
+	local mid = renderCfg and renderCfg.latencyThresholdMid or 150
+	if value <= low then return "low" end
+	if value <= mid then return "mid" end
+	return "high"
+end
+
+local function getSquareMinimapLatencyBucketColor(renderCfg, bucket)
+	if bucket == "low" then return renderCfg.latencyColorLowR, renderCfg.latencyColorLowG, renderCfg.latencyColorLowB end
+	if bucket == "mid" then return renderCfg.latencyColorMidR, renderCfg.latencyColorMidG, renderCfg.latencyColorMidB end
+	return renderCfg.latencyColorHighR, renderCfg.latencyColorHighG, renderCfg.latencyColorHighB
+end
+
+local function buildSquareMinimapLatencyTexts(frame, renderCfg)
+	local _, _, home, world = GetNetStats()
+	home = math.floor((home or 0) + 0.5)
+	world = math.floor((world or 0) + 0.5)
+	local mode = renderCfg and renderCfg.latencyMode or "max"
+	local homeBucket = getSquareMinimapLatencyBucket(renderCfg, home)
+	local worldBucket = getSquareMinimapLatencyBucket(renderCfg, world)
+	local maxValue = math.max(home, world)
+	local maxBucket = getSquareMinimapLatencyBucket(renderCfg, maxValue)
+
+	if
+		frame
+		and frame._eqolLatencyMode == mode
+		and frame._eqolLatencyHome == home
+		and frame._eqolLatencyWorld == world
+		and frame._eqolLatencyHomeBucket == homeBucket
+		and frame._eqolLatencyWorldBucket == worldBucket
+		and frame._eqolLatencyMaxBucket == maxBucket
+	then
+		return frame._eqolPrimaryText or "", frame._eqolSecondaryText or ""
+	end
+
+	local hr, hg, hb = getSquareMinimapLatencyBucketColor(renderCfg, homeBucket)
+	local wr, wg, wb = getSquareMinimapLatencyBucketColor(renderCfg, worldBucket)
+	local homeText = ("H %sms"):format(colorizeSquareMinimapText(home, hr, hg, hb))
+	local worldText = ("W %sms"):format(colorizeSquareMinimapText(world, wr, wg, wb))
+	local primaryText, secondaryText = "", ""
+	if mode == "home" then
+		primaryText = homeText
+	elseif mode == "world" then
+		primaryText = worldText
+	elseif mode == "split" or mode == "split_vertical" then
+		primaryText = homeText
+		secondaryText = worldText
+	else
+		local mr, mg, mb = getSquareMinimapLatencyBucketColor(renderCfg, maxBucket)
+		primaryText = ("MS %s"):format(colorizeSquareMinimapText(maxValue, mr, mg, mb))
+	end
+
+	if frame then
+		frame._eqolLatencyMode = mode
+		frame._eqolLatencyHome = home
+		frame._eqolLatencyWorld = world
+		frame._eqolLatencyHomeBucket = homeBucket
+		frame._eqolLatencyWorldBucket = worldBucket
+		frame._eqolLatencyMaxBucket = maxBucket
+	end
+	return primaryText, secondaryText
+end
+
+local function getSquareMinimapStatRenderConfig(statKey)
+	local state = getSquareMinimapStatsState()
+	state.renderConfig = state.renderConfig or {}
+	local cached = state.renderConfig[statKey]
+	if cached then return cached end
+
+	local cfg = squareMinimapStatsConfig[statKey]
+	if not (cfg and addon.db) then return nil end
+
+	local point = normalizeSquareMinimapAnchor(addon.db[cfg.anchorKey], cfg.anchorPoint)
+	local x = tonumber(addon.db[cfg.offsetXKey]) or squareMinimapStatsDefaults[cfg.offsetXKey] or 0
+	local y = tonumber(addon.db[cfg.offsetYKey]) or squareMinimapStatsDefaults[cfg.offsetYKey] or 0
+	local size = clamp(tonumber(addon.db[cfg.fontSizeKey]) or squareMinimapStatsDefaults[cfg.fontSizeKey] or 12, 8, 32)
+	local latencyMode = statKey == "latency" and (addon.db.squareMinimapStatsLatencyMode or "max") or nil
+	local useVerticalLatency = statKey == "latency" and latencyMode == "split_vertical"
+	local lineGap = math.max(math.floor(size * 0.15), 2)
+	local justify = getSquareMinimapStatJustify(point)
+	local fontPath = getSquareMinimapStatsFontPath()
+	local outline = getSquareMinimapStatsOutlineFlag()
+	local r, g, b, a = getSquareMinimapStatsColor(cfg.colorKey)
+
+	cached = {
+		point = point,
+		x = x,
+		y = y,
+		size = size,
+		latencyMode = latencyMode,
+		useVerticalLatency = useVerticalLatency,
+		lineGap = lineGap,
+		justify = justify,
+		fontPath = fontPath,
+		outline = outline,
+		r = r,
+		g = g,
+		b = b,
+		a = a,
+		timeDisplayMode = statKey == "time" and (addon.db.squareMinimapStatsTimeDisplayMode or "server") or nil,
+		timeUse24Hour = statKey == "time" and addon.db.squareMinimapStatsTimeUse24Hour ~= false or nil,
+		timeShowSeconds = statKey == "time" and addon.db.squareMinimapStatsTimeShowSeconds == true or nil,
+		fpsThresholdMedium = statKey == "fps" and math.max(1, math.floor((tonumber(addon.db.squareMinimapStatsFPSThresholdMedium) or 30) + 0.5)) or nil,
+		fpsThresholdHigh = statKey == "fps" and math.max(
+			math.max(1, math.floor((tonumber(addon.db.squareMinimapStatsFPSThresholdMedium) or 30) + 0.5)),
+			math.floor((tonumber(addon.db.squareMinimapStatsFPSThresholdHigh) or 60) + 0.5)
+		) or nil,
+		latencyThresholdLow = statKey == "latency" and math.max(0, math.floor((tonumber(addon.db.squareMinimapStatsLatencyThresholdLow) or 50) + 0.5)) or nil,
+		latencyThresholdMid = statKey == "latency" and math.max(
+			math.max(0, math.floor((tonumber(addon.db.squareMinimapStatsLatencyThresholdLow) or 50) + 0.5)),
+			math.floor((tonumber(addon.db.squareMinimapStatsLatencyThresholdMid) or 150) + 0.5)
+		) or nil,
+		useZoneColor = statKey == "location" and addon.db.squareMinimapStatsLocationUseZoneColor == true or false,
+		locationShowZone = statKey == "location" and addon.db.squareMinimapStatsLocationShowZone ~= false or nil,
+		locationShowSubzone = statKey == "location" and addon.db.squareMinimapStatsLocationShowSubzone ~= false or nil,
+		decimals = statKey == "coordinates" and math.floor(clamp(tonumber(addon.db.squareMinimapStatsCoordinatesDecimals) or 2, 0, 3) + 0.5) or nil,
+		hideInInstance = statKey == "coordinates" and addon.db.squareMinimapStatsCoordinatesHideInInstance == true or false,
+	}
+	if statKey == "fps" then
+		cached.fpsColorLowR, cached.fpsColorLowG, cached.fpsColorLowB = getSquareMinimapStatsColor("squareMinimapStatsFPSColorLow")
+		cached.fpsColorMidR, cached.fpsColorMidG, cached.fpsColorMidB = getSquareMinimapStatsColor("squareMinimapStatsFPSColorMid")
+		cached.fpsColorHighR, cached.fpsColorHighG, cached.fpsColorHighB = getSquareMinimapStatsColor("squareMinimapStatsFPSColorHigh")
+	end
+	if statKey == "latency" then
+		cached.latencyColorLowR, cached.latencyColorLowG, cached.latencyColorLowB = getSquareMinimapStatsColor("squareMinimapStatsLatencyColorLow")
+		cached.latencyColorMidR, cached.latencyColorMidG, cached.latencyColorMidB = getSquareMinimapStatsColor("squareMinimapStatsLatencyColorMid")
+		cached.latencyColorHighR, cached.latencyColorHighG, cached.latencyColorHighB = getSquareMinimapStatsColor("squareMinimapStatsLatencyColorHigh")
+	end
+	state.renderConfig[statKey] = cached
+	return cached
 end
 
 local function getSquareMinimapStatsInterval(statKey)
@@ -2628,6 +2938,7 @@ local function getSquareMinimapStatsInterval(statKey)
 	if statKey == "fps" then return clamp(tonumber(addon.db.squareMinimapStatsFPSUpdateInterval) or 0.25, 0.1, 2.0) end
 	if statKey == "latency" then return clamp(tonumber(addon.db.squareMinimapStatsLatencyUpdateInterval) or 1.0, 0.2, 5.0) end
 	if statKey == "coordinates" then return clamp(tonumber(addon.db.squareMinimapStatsCoordinatesUpdateInterval) or 0.2, 0.1, 1.0) end
+	if statKey == "location" then return nil end
 	return 0.5
 end
 
@@ -2638,18 +2949,24 @@ local function updateSquareMinimapStat(statKey)
 	if not frame then return end
 
 	if not shouldShowSquareMinimapStats() or addon.db[cfg.enabledKey] ~= true then
+		if statKey == "coordinates" then clearSquareMinimapCoordinateCache(frame) end
 		frame:Hide()
 		return
 	end
 
-	local point = normalizeSquareMinimapAnchor(addon.db[cfg.anchorKey], cfg.anchorPoint)
-	local x = tonumber(addon.db[cfg.offsetXKey]) or squareMinimapStatsDefaults[cfg.offsetXKey] or 0
-	local y = tonumber(addon.db[cfg.offsetYKey]) or squareMinimapStatsDefaults[cfg.offsetYKey] or 0
-	local size = clamp(tonumber(addon.db[cfg.fontSizeKey]) or squareMinimapStatsDefaults[cfg.fontSizeKey] or 12, 8, 32)
-	local latencyMode = statKey == "latency" and (addon.db.squareMinimapStatsLatencyMode or "max") or nil
-	local useVerticalLatency = statKey == "latency" and latencyMode == "split_vertical"
-	local lineGap = math.max(math.floor(size * 0.15), 2)
-	local justify = getSquareMinimapStatJustify(point)
+	local renderCfg = getSquareMinimapStatRenderConfig(statKey)
+	if not renderCfg then
+		if statKey == "coordinates" then clearSquareMinimapCoordinateCache(frame) end
+		frame:Hide()
+		return
+	end
+	local point = renderCfg.point
+	local x = renderCfg.x
+	local y = renderCfg.y
+	local size = renderCfg.size
+	local useVerticalLatency = renderCfg.useVerticalLatency
+	local lineGap = renderCfg.lineGap
+	local justify = renderCfg.justify
 
 	if frame._eqolAnchorPoint ~= point or frame._eqolAnchorX ~= x or frame._eqolAnchorY ~= y then
 		frame:ClearAllPoints()
@@ -2659,8 +2976,8 @@ local function updateSquareMinimapStat(statKey)
 		frame._eqolAnchorY = y
 	end
 
-	local r, g, b, a = getSquareMinimapStatsColor(cfg.colorKey)
-	if statKey == "location" and addon.db.squareMinimapStatsLocationUseZoneColor then
+	local r, g, b, a = renderCfg.r, renderCfg.g, renderCfg.b, renderCfg.a
+	if renderCfg.useZoneColor then
 		r, g, b = getSquareMinimapStatsZoneColor()
 		a = 1
 	end
@@ -2680,8 +2997,8 @@ local function updateSquareMinimapStat(statKey)
 		frame._eqolTextJustify = justify
 	end
 
-	local fontPath = getSquareMinimapStatsFontPath()
-	local outline = getSquareMinimapStatsOutlineFlag()
+	local fontPath = renderCfg.fontPath
+	local outline = renderCfg.outline
 	if frame._eqolFontPath ~= fontPath or frame._eqolFontSize ~= size or frame._eqolFontOutline ~= outline then
 		local ok = frame.text:SetFont(fontPath, size, outline)
 		if not ok then frame.text:SetFont((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, outline) end
@@ -2704,7 +3021,7 @@ local function updateSquareMinimapStat(statKey)
 	local secondaryText = ""
 	local showSecondary = false
 	if useVerticalLatency then
-		local homeText, worldText = getSquareMinimapLatencySplitTexts()
+		local homeText, worldText = buildSquareMinimapLatencyTexts(frame, renderCfg)
 		local stackUpwards = point and point:find("BOTTOM", 1, true) ~= nil
 		local secondaryY
 		if stackUpwards then
@@ -2724,7 +3041,19 @@ local function updateSquareMinimapStat(statKey)
 		end
 		showSecondary = true
 	else
-		primaryText = getSquareMinimapStatText(statKey) or ""
+		if statKey == "time" then
+			primaryText = buildSquareMinimapTimeText(frame, renderCfg) or ""
+		elseif statKey == "fps" then
+			primaryText = buildSquareMinimapFPSText(frame, renderCfg) or ""
+		elseif statKey == "latency" then
+			primaryText = buildSquareMinimapLatencyTexts(frame, renderCfg) or ""
+		elseif statKey == "location" then
+			primaryText = buildSquareMinimapLocationText(frame, renderCfg) or ""
+		elseif statKey == "coordinates" then
+			primaryText = getSquareMinimapCoordinatesText(frame, renderCfg) or ""
+		else
+			primaryText = getSquareMinimapStatText(statKey) or ""
+		end
 		if statKey == "location" then
 			local maxWidth = getSquareMinimapLocationMaxWidth(point, x)
 			if maxWidth and maxWidth > 0 then primaryText = truncateSquareMinimapTextToWidth(frame.text, primaryText, maxWidth) end
@@ -2860,11 +3189,15 @@ local function updateSquareMinimapStatsTicker(delta)
 	local state = getSquareMinimapStatsState()
 	for _, statKey in ipairs(squareMinimapStatsOrder) do
 		if isSquareMinimapStatEnabled(statKey) then
-			state.elapsed[statKey] = (state.elapsed[statKey] or 0) + delta
 			local interval = getSquareMinimapStatsInterval(statKey)
-			if state.elapsed[statKey] >= interval then
+			if interval and interval > 0 then
+				state.elapsed[statKey] = (state.elapsed[statKey] or 0) + delta
+				if state.elapsed[statKey] >= interval then
+					state.elapsed[statKey] = 0
+					updateSquareMinimapStat(statKey)
+				end
+			else
 				state.elapsed[statKey] = 0
-				updateSquareMinimapStat(statKey)
 			end
 		else
 			state.elapsed[statKey] = 0
@@ -2892,6 +3225,7 @@ function addon.functions.applySquareMinimapStats(force)
 	if not Minimap then return end
 
 	local state = getSquareMinimapStatsState()
+	if force then state.renderConfig = {} end
 	syncSquareMinimapStatsEvents()
 	if not shouldRunSquareMinimapStats() then
 		hideSquareMinimapStats()

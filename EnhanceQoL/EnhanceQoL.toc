@@ -109,7 +109,7 @@ Modules\Tooltip\Tooltip.xml
 
 #@debug@
 # Visibility
-Modules\Visibility\Visibility.xml
+#Modules\Visibility\Visibility.xml
 #@end-debug@
 
 # MythicPlus

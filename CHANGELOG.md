@@ -1,6 +1,6 @@
 # Changelog
 
-## [8.9.0] - 2026-03-05
+## [8.9.0] - 2026-03-06
 
 ### ✨ Added
 
@@ -18,11 +18,16 @@
 - Resource Bars (Threshold Colors): Added per-resource threshold color overrides with up to `10` configurable points (value + color), including Secret-safe handling for power types that expose secret values.
 - Standalone Castbar: Added configurable `Reverse fill` in `Bar style`.
 - Group Frames (Party / Growth): Added `Center vertical` and `Center horizontal` growth modes for center-outward party expansion from the anchor midpoint.
+- Mythic+ (Teleports): Added the Engineering wormhole to Quel'Thalas to the teleport list.
+- Mover: Added PvPMatchResults Frame
 
 ### 🐛 Fixed
 
 - Unit Frames (Absorb Glow): Fixed absorb glow placement and clipping for reverse/overflow layouts. The glow is now anchored to the health-frame edge while being clipped to the health fill region.
 - Cooldown Panels (Ready Glow): Fixed inconsistent/stuck ready-glow behavior for Items and Slot-based Trinkets. Ready glow now initializes correctly on reload, clears reliably when cooldown starts, and stays in sync when toggling `Glow` or changing `Glow duration` in Edit Mode.
+
+- Mythic+ (Party Keystone): Fixed an issue where opening the party keystone panel could trigger an error instead of showing the entries correctly.
+- Class Buff Reminder: Fixed reminders showing while your character is dead or a ghost.
 
 ---
 
