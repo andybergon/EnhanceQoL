@@ -565,7 +565,12 @@ end
 
 local roundToPixel = GFH.RoundToPixel
 
-local function roundToEvenPixel(value, scale) return roundToPixel(value, scale) end
+local function roundToEvenPixel(value, scale)
+	value = tonumber(value) or 0
+	if value == 0 then return 0 end
+	-- Snap half-size to pixel grid and double it so final size always lands on an even pixel count.
+	return roundToPixel(value * 0.5, scale) * 2
+end
 
 local layoutTexts = GFH.LayoutTexts
 

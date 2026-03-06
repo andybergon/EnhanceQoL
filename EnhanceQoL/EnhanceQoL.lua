@@ -628,6 +628,15 @@ local function IsPlayerMounted()
 	return false
 end
 
+local function IsPlayerMountedOrInVehicleUI()
+	if IsPlayerMounted() then return true end
+	if UnitHasVehicleUI and UnitHasVehicleUI("player") then return true end
+	if UnitInVehicle and UnitInVehicle("player") then return true end
+	if C_ActionBar and C_ActionBar.HasVehicleActionBar and C_ActionBar.HasVehicleActionBar() then return true end
+	if HasVehicleActionBar and HasVehicleActionBar() then return true end
+	return false
+end
+
 local function UpdateFrameVisibilityContext()
 	local inCombat = false
 	if InCombatLockdown and InCombatLockdown() then
@@ -1180,7 +1189,7 @@ end
 local function computeCooldownViewerTargetAlpha(cfg, state)
 	if not cfg or not next(cfg) then return 1 end
 
-	local mounted = (IsMounted and IsMounted()) or IsInDruidTravelForm()
+	local mounted = IsPlayerMountedOrInVehicleUI()
 	local inCombat = (InCombatLockdown and InCombatLockdown()) or (UnitAffectingCombat and UnitAffectingCombat("player"))
 
 	local hovered = state and state.hovered
@@ -1452,6 +1461,18 @@ local COOLDOWN_VIEWER_EVENTS = {
 	"UPDATE_SHAPESHIFT_FORM",
 	"PLAYER_TARGET_CHANGED",
 	"GROUP_ROSTER_UPDATE",
+	"UPDATE_BONUS_ACTIONBAR",
+	"UPDATE_VEHICLE_ACTIONBAR",
+	"UPDATE_OVERRIDE_ACTIONBAR",
+	"UPDATE_POSSESS_BAR",
+	"VEHICLE_UPDATE",
+}
+
+local COOLDOWN_VIEWER_UNIT_EVENTS = {
+	"UNIT_ENTERING_VEHICLE",
+	"UNIT_ENTERED_VEHICLE",
+	"UNIT_EXITING_VEHICLE",
+	"UNIT_EXITED_VEHICLE",
 }
 
 local function setCooldownViewerWatcherEnabled(watcher, enabled)
@@ -1460,6 +1481,9 @@ local function setCooldownViewerWatcherEnabled(watcher, enabled)
 		if watcher._eqolEventsRegistered then return end
 		for _, event in ipairs(COOLDOWN_VIEWER_EVENTS) do
 			watcher:RegisterEvent(event)
+		end
+		for _, event in ipairs(COOLDOWN_VIEWER_UNIT_EVENTS) do
+			SafeRegisterUnitEvent(watcher, event, "player")
 		end
 		SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_START", "player")
 		SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_STOP", "player")
@@ -1580,7 +1604,7 @@ local function getSpellActivationOverlayAlphaValue(key, fallback)
 end
 
 local function computeSpellActivationOverlayTargetAlpha(cfg, activeAlpha, hiddenAlpha)
-	local mounted = IsPlayerMounted()
+	local mounted = IsPlayerMountedOrInVehicleUI()
 	local isSkyriding = addon.variables and addon.variables.isPlayerSkyriding and true or false
 	local hasTarget = UnitExists and UnitExists("target") and true or false
 	local isCasting = IsPlayerCasting()
@@ -1678,6 +1702,15 @@ EnsureSpellActivationOverlayWatcher = function()
 	watcher:RegisterEvent("PLAYER_TARGET_CHANGED")
 	watcher:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 	watcher:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+	watcher:RegisterEvent("UPDATE_BONUS_ACTIONBAR")
+	watcher:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+	watcher:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
+	watcher:RegisterEvent("UPDATE_POSSESS_BAR")
+	watcher:RegisterEvent("VEHICLE_UPDATE")
+	SafeRegisterUnitEvent(watcher, "UNIT_ENTERING_VEHICLE", "player")
+	SafeRegisterUnitEvent(watcher, "UNIT_ENTERED_VEHICLE", "player")
+	SafeRegisterUnitEvent(watcher, "UNIT_EXITING_VEHICLE", "player")
+	SafeRegisterUnitEvent(watcher, "UNIT_EXITED_VEHICLE", "player")
 	SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_START", "player")
 	SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_STOP", "player")
 	SafeRegisterUnitEvent(watcher, "UNIT_SPELLCAST_FAILED", "player")
