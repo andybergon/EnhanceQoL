@@ -3036,6 +3036,14 @@ local function createPanelFrame(panelId, panel)
 	editDropZone.panelId = panelId
 	frame.editDropZone = editDropZone
 
+	local editGrid = CreateFrame("Frame", nil, frame)
+	editGrid:SetAllPoints(frame)
+	editGrid:SetFrameLevel((frame:GetFrameLevel() or 0) + 1)
+	editGrid:EnableMouse(false)
+	editGrid.cells = {}
+	editGrid:Hide()
+	frame.editGrid = editGrid
+
 	local editMoveHandle = CreateFrame("Button", nil, frame, "BackdropTemplate")
 	editMoveHandle:SetSize(72, 16)
 	editMoveHandle:SetPoint("BOTTOM", frame, "TOP", 0, 4)
@@ -3085,6 +3093,54 @@ local function createPanelFrame(panelId, panel)
 	end)
 
 	return frame
+end
+
+function CooldownPanels:UpdateLayoutEditGrid(panelId, slotCount)
+	local runtime = getRuntime(panelId)
+	local frame = runtime and runtime.frame
+	local panel = self:GetPanel(panelId)
+	local grid = frame and frame.editGrid
+	local showGrid = grid and panel and self:IsPanelLayoutEditActive(panelId) and Helper.IsFixedLayout(panel.layout)
+	if not grid then return end
+	slotCount = tonumber(slotCount) or 0
+	if not showGrid or slotCount < 1 then
+		grid:Hide()
+		for i = 1, #(grid.cells or {}) do
+			local cell = grid.cells[i]
+			if cell then cell:Hide() end
+		end
+		return
+	end
+	grid:Show()
+	grid.cells = grid.cells or {}
+	for i = 1, slotCount do
+		local icon = frame.icons and frame.icons[i]
+		local cell = grid.cells[i]
+		if not cell then
+			cell = CreateFrame("Frame", nil, grid, "BackdropTemplate")
+			cell:SetBackdrop({
+				bgFile = "Interface\\Buttons\\WHITE8x8",
+				edgeFile = "Interface\\Buttons\\WHITE8x8",
+				edgeSize = 1,
+			})
+			cell:SetBackdropColor(0.08, 0.2, 0.24, 0.08)
+			cell:SetBackdropBorderColor(1, 1, 1, 0.14)
+			cell:EnableMouse(false)
+			grid.cells[i] = cell
+		end
+		if icon then
+			cell:ClearAllPoints()
+			cell:SetPoint("TOPLEFT", icon, "TOPLEFT", 0, 0)
+			cell:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 0, 0)
+			cell:Show()
+		else
+			cell:Hide()
+		end
+	end
+	for i = slotCount + 1, #grid.cells do
+		local cell = grid.cells[i]
+		if cell then cell:Hide() end
+	end
 end
 
 local function getGridDimensions(count, wrapCount, primaryHorizontal)
@@ -3914,6 +3970,42 @@ local function saveEditorPosition(frame)
 	addon.db.cooldownPanelsEditorY = y
 end
 
+function CooldownPanels:IsEditorFrameTooFarOffscreen(frame)
+	if not (frame and UIParent and frame.GetLeft and frame.GetRight and frame.GetTop and frame.GetBottom) then return false end
+	local left = frame:GetLeft()
+	local right = frame:GetRight()
+	local top = frame:GetTop()
+	local bottom = frame:GetBottom()
+	if not (left and right and top and bottom) then return false end
+	local screenWidth = UIParent:GetWidth() or 0
+	local screenHeight = UIParent:GetHeight() or 0
+	if screenWidth <= 0 or screenHeight <= 0 then return false end
+	local visibleLeft = math.max(left, 0)
+	local visibleRight = math.min(right, screenWidth)
+	local visibleBottom = math.max(bottom, 0)
+	local visibleTop = math.min(top, screenHeight)
+	local visibleWidth = visibleRight - visibleLeft
+	local visibleHeight = visibleTop - visibleBottom
+	local frameWidth = frame:GetWidth() or 0
+	local frameHeight = frame:GetHeight() or 0
+	local minVisibleWidth = math.min(frameWidth, math.max(160, math.floor(frameWidth * 0.25)))
+	local minVisibleHeight = math.min(frameHeight, math.max(60, math.floor(frameHeight * 0.15)))
+	return visibleWidth < minVisibleWidth or visibleHeight < minVisibleHeight
+end
+
+function CooldownPanels:ResetEditorPosition(frame)
+	if not (frame and UIParent) then return end
+	frame:ClearAllPoints()
+	frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	saveEditorPosition(frame)
+end
+
+function CooldownPanels:EnsureEditorFramePosition(frame)
+	if not (frame and UIParent) then return end
+	if frame:GetNumPoints() == 0 then frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0) end
+	if self:IsEditorFrameTooFarOffscreen(frame) then self:ResetEditorPosition(frame) end
+end
+
 local ensureDeletePopup
 local ensureCopyPopup
 
@@ -4089,7 +4181,7 @@ local function ensureEditor()
 	frame:SetSize(980, 560)
 	frame:SetPoint("CENTER")
 	applyEditorPosition(frame)
-	frame:SetClampedToScreen(true)
+	frame:SetClampedToScreen(false)
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
 	frame:RegisterForDrag("LeftButton")
@@ -4408,6 +4500,7 @@ local function ensureEditor()
 	end)
 
 	frame:SetScript("OnShow", function()
+		CooldownPanels:EnsureEditorFramePosition(frame)
 		frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 		frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 		updateEditModeButton()
@@ -6183,6 +6276,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 			setAssistedHighlight(icon, false)
 		end
 	end
+	self:UpdateLayoutEditGrid(panelId, fixedLayout and count or 0)
 end
 
 local function isSpellFlagged(map, baseId, effectiveId)
@@ -6240,6 +6334,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local runtime = getRuntime(panelId)
 	local frame = runtime.frame
 	if not frame then return end
+	self:UpdateLayoutEditGrid(panelId, 0)
 	local shared = CooldownPanels.runtime
 	local enabledPanels = shared and shared.enabledPanels
 	local eligible = enabledPanels and enabledPanels[panelId] or (not enabledPanels and panel.enabled ~= false and panelAllowsSpec(panel))
