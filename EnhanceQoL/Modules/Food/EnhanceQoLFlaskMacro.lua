@@ -14,6 +14,7 @@ local InCombatLockdown = InCombatLockdown
 local GetMacroInfo = GetMacroInfo
 local EditMacro = EditMacro
 local CreateMacro = CreateMacro
+local GetNumMacros = GetNumMacros
 
 local flaskMacroName = "EnhanceQoLFlaskMacro"
 
@@ -35,15 +36,21 @@ local function getCurrentSpecID()
 	return specID
 end
 
+local macroLimitWarned = false
+
 local function createMacroIfMissing()
 	if not addon.db.flaskMacroEnabled then return end
 	if InCombatLockdown and InCombatLockdown() then return end
 	if GetMacroInfo(flaskMacroName) == nil then
-		local macroId = CreateMacro(flaskMacroName, "INV_Misc_QuestionMark")
-		if not macroId then
-			print(L["flaskMacroLimitReached"] or "Flask Macro: Macro limit reached. Please free a slot.")
+		local numGlobal = GetNumMacros()
+		if numGlobal >= 120 then
+			if not macroLimitWarned then
+				macroLimitWarned = true
+				print(L["flaskMacroLimitReached"] or "Flask Macro: Macro limit reached. Please free a slot.")
+			end
 			return
 		end
+		CreateMacro(flaskMacroName, "INV_Misc_QuestionMark")
 		if not (InCombatLockdown and InCombatLockdown()) then EditMacro(flaskMacroName, flaskMacroName, nil, "#showtooltip") end
 	end
 end
