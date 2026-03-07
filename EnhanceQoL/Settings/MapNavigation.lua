@@ -2446,24 +2446,23 @@ local function restoreSquareMinimapTrackingButton()
 	if state.originalWidth and state.originalHeight then button:SetSize(state.originalWidth, state.originalHeight) end
 	if state.originalFrameLevel and button.SetFrameLevel then button:SetFrameLevel(state.originalFrameLevel) end
 	if state.holder then state.holder:Hide() end
+	state.isCustomized = false
 end
 
 function addon.functions.applySquareMinimapTrackingButton()
 	if not MinimapCluster or not MinimapCluster.Tracking then return end
 
+	local state = getSquareMinimapTrackingButtonState()
 	local trackingFrame = MinimapCluster.Tracking
 	local button = getBlizzardTrackingButton()
 	if not button then return end
 
-	local hiddenByUser = addon.db and addon.db.hiddenMinimapElements and addon.db.hiddenMinimapElements.Tracking == true
 	local showCustomButton = shouldShowSquareMinimapTrackingButton() and not isInGameTrackingDisabled()
 
 	if not showCustomButton then
-		restoreSquareMinimapTrackingButton()
-		if hiddenByUser or isInGameTrackingDisabled() then
-			trackingFrame:Hide()
-		else
-			trackingFrame:Show()
+		if state.isCustomized then
+			restoreSquareMinimapTrackingButton()
+			if not isInGameTrackingDisabled() then trackingFrame:Show() end
 		end
 		return
 	end
@@ -2491,6 +2490,7 @@ function addon.functions.applySquareMinimapTrackingButton()
 
 	holder:Show()
 	trackingFrame:Hide()
+	state.isCustomized = true
 end
 
 local function getSquareMinimapStatsColor(colorKey)

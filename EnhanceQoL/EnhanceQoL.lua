@@ -4346,29 +4346,42 @@ local function initUI()
 	function addon.functions.ApplyMinimapElementVisibility()
 		local cfg = addon.db and addon.db.hiddenMinimapElements or {}
 		local elems = getMinimapElementFrames()
-		local customTrackingButtonEnabled = addon.db and addon.db.enableSquareMinimap and addon.db.enableSquareMinimapStats and addon.db.squareMinimapStatsTrackingButton == true
+		local trackingDisabled = C_GameRules and C_GameRules.IsGameRuleActive and Enum and Enum.GameRule and C_GameRules.IsGameRuleActive(Enum.GameRule.IngameTrackingDisabled)
+		local customTrackingButtonEnabled = addon.db
+			and addon.db.enableSquareMinimap
+			and addon.db.enableSquareMinimapStats
+			and addon.db.squareMinimapStatsTrackingButton == true
+			and not trackingDisabled
 		for key, frames in pairs(elems) do
 			local shouldHide = cfg and cfg[key]
-			if key == "Tracking" and customTrackingButtonEnabled then shouldHide = true end
+			if key == "Tracking" then shouldHide = customTrackingButtonEnabled end
 			for _, f in ipairs(frames) do
 				if shouldHide then
 					f:Hide()
 					f._eqolMinimapHidden = true
 				elseif f._eqolMinimapHidden then
 					f._eqolMinimapHidden = nil
-					f:Show()
+					if key ~= "Tracking" or not trackingDisabled then f:Show() end
 				end
 				if not f._eqolMinimapHideHooked then
 					f._eqolMinimapHideHooked = true
 					local hookKey = key
 					f:HookScript("OnShow", function(self)
 						local c = addon.db and addon.db.hiddenMinimapElements
+						local hideForConfig = hookKey ~= "Tracking" and c and c[hookKey]
 						local hideForCustomTracking = hookKey == "Tracking"
 							and addon.db
 							and addon.db.enableSquareMinimap
 							and addon.db.enableSquareMinimapStats
 							and addon.db.squareMinimapStatsTrackingButton == true
-						if (c and c[hookKey]) or hideForCustomTracking then self:Hide() end
+							and not (
+								C_GameRules
+								and C_GameRules.IsGameRuleActive
+								and Enum
+								and Enum.GameRule
+								and C_GameRules.IsGameRuleActive(Enum.GameRule.IngameTrackingDisabled)
+							)
+						if hideForConfig or hideForCustomTracking then self:Hide() end
 					end)
 				end
 			end
