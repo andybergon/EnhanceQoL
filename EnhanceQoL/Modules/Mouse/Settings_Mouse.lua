@@ -616,6 +616,68 @@ data = {
 table.sort(data[1].children, function(a, b) return a.text < b.text end)
 addon.functions.SettingsCreateCheckboxes(cMouse, data)
 
+addon.functions.SettingsCreateHeadline(cMouse, LMain["RightClickTargeting"], { parentSection = expandable })
+
+local rctData = {
+	{
+		var = "disableRightClickTargetingInCombat",
+		text = LMain["disableRightClickTargetingInCombat"],
+		func = function(v) addon.db["disableRightClickTargetingInCombat"] = v end,
+		parentSection = expandable,
+		children = {
+			{
+				var = "disableDoubleClickTargetingInCombat",
+				text = LMain["disableDoubleClickTargetingInCombat"],
+				func = function(v) addon.db["disableDoubleClickTargetingInCombat"] = v end,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["disableRightClickTargetingInCombat"]
+						and addon.SettingsLayout.elements["disableRightClickTargetingInCombat"].setting
+						and addon.SettingsLayout.elements["disableRightClickTargetingInCombat"].setting:GetValue() == true
+				end,
+				parent = true,
+				default = false,
+				type = Settings.VarType.Boolean,
+				sType = "checkbox",
+				parentSection = expandable,
+			},
+		},
+	},
+	{
+		var = "disableRightClickTargetingOutOfCombat",
+		text = LMain["disableRightClickTargetingOutOfCombat"],
+		func = function(v) addon.db["disableRightClickTargetingOutOfCombat"] = v end,
+		parentSection = expandable,
+		children = {
+			{
+				var = "disableDoubleClickTargetingOutOfCombat",
+				text = LMain["disableDoubleClickTargetingOutOfCombat"],
+				func = function(v) addon.db["disableDoubleClickTargetingOutOfCombat"] = v end,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["disableRightClickTargetingOutOfCombat"]
+						and addon.SettingsLayout.elements["disableRightClickTargetingOutOfCombat"].setting
+						and addon.SettingsLayout.elements["disableRightClickTargetingOutOfCombat"].setting:GetValue() == true
+				end,
+				parent = true,
+				default = false,
+				type = Settings.VarType.Boolean,
+				sType = "checkbox",
+				parentSection = expandable,
+			},
+		},
+	},
+}
+addon.functions.SettingsCreateCheckboxes(cMouse, rctData)
+
+addon.functions.SettingsCreateSlider(cMouse, {
+	var = "doubleClickTimeFrame",
+	text = LMain["doubleClickTimeFrame"],
+	min = 0.1,
+	max = 0.5,
+	step = 0.1,
+	default = 0.2,
+	parentSection = expandable,
+})
+
 ----- REGION END
 
 function addon.functions.initMouse() end
