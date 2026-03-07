@@ -2033,6 +2033,12 @@ L["Right-Click for options"] = "Right-click for options"
 L["RightClickCloseTab"] = "Right-click a tab to close it.\
 Previous messages are saved in a per-player history.\
 Right-click a name for actions like Invite, Raider.IO link etc."
+L["RightClickTargeting"] = "Right Click Targeting"
+L["disableRightClickTargetingInCombat"] = "Disable right click targeting in combat"
+L["disableDoubleClickTargetingInCombat"] = "Disable double click targeting in combat"
+L["disableRightClickTargetingOutOfCombat"] = "Disable right click targeting out of combat"
+L["disableDoubleClickTargetingOutOfCombat"] = "Disable double click targeting out of combat"
+L["doubleClickTimeFrame"] = "Double click time frame"
 L["Ring Color"] = "Ring color"
 L["Role"] = "Role"
 L["Role icon anchor"] = "Role icon anchor"
