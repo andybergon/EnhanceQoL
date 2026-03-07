@@ -403,6 +403,7 @@ function ResourceBars.FormatBarTextByStyle(style, currentText, maxText, percentT
 	if style == "PERCENT" then return percentText end
 	if style == "CURRENT" then return currentText end
 	if style == "CURPERCENT" then return currentText .. " - " .. percentText end
+	if style == "CURMAXPERCENT" then return currentText .. " / " .. maxText .. " - " .. percentText end
 	return currentText .. " / " .. maxText
 end
 
