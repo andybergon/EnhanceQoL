@@ -11,11 +11,15 @@ External repo owned by R41z0r. We contribute via fork.
 
 ### Opening a PR to upstream
 
+Each PR branch must contain **only the commits for that feature** — never include unrelated commits from our `main` (like CLAUDE.md or other features).
+
 1. Fetch upstream: `git fetch upstream`
-2. Create a branch off upstream's main: `git checkout -b feat/my-feature upstream/main`
-3. Cherry-pick the relevant commits from main: `git cherry-pick <hash>` (or rebase)
+2. Create a branch off **upstream's** main: `git checkout -b feat/my-feature upstream/main`
+3. Cherry-pick only the relevant commit(s) from main: `git cherry-pick <hash>`
 4. Push the branch to our fork: `git push -u origin feat/my-feature`
 5. Open PR: `gh pr create --repo R41z0r/EnhanceQoL --head andybergon:feat/my-feature --base main`
+
+**Never push `main` directly to a PR branch** — `main` has fork-only commits (CLAUDE.md, etc.) that shouldn't go upstream.
 
 ### Syncing with upstream
 
