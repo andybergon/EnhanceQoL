@@ -1748,6 +1748,21 @@ function addon.functions.registerReloadUISlashCommand()
 	end
 end
 
+function addon.functions.registerClickCastSlashCommand()
+	if not SlashCmdList then return end
+	local commands = {}
+	local function canClaim(command) return isSlashCommandOwnedByEQOL(command, "EQOLCCB", "EQOLCCB", 2) or not isSlashCommandRegistered(command) end
+	if canClaim("/ccb") then commands[#commands + 1] = "/ccb" end
+	if canClaim("/clickcast") then commands[#commands + 1] = "/clickcast" end
+	if #commands == 0 then return end
+	_G.SLASH_EQOLCCB1 = commands[1]
+	_G.SLASH_EQOLCCB2 = commands[2]
+	SlashCmdList["EQOLCCB"] = function()
+		if InCombatLockdown and InCombatLockdown() then return end
+		if ToggleClickBindingFrame then ToggleClickBindingFrame() end
+	end
+end
+
 function addon.functions.catalystChecks()
 	-- No catalyst charges exist for Timerunners; ensure hidden
 	if addon.functions.IsTimerunner() then
