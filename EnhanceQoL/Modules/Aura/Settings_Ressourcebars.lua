@@ -1968,12 +1968,13 @@ local function registerEditModeBars()
 					{ key = "CURMAX", label = L["Current/Max"] or "Current/Max" },
 					{ key = "CURRENT", label = L["Current"] or "Current" },
 					{ key = "CURPERCENT", label = L["Current - Percent"] or "Current - Percent" },
+					{ key = "CURMAXPERCENT", label = L["Current/Max - Percent"] or "Current/Max - Percent" },
 					{ key = "NONE", label = NONE },
 				}
 				settingsList[#settingsList + 1] = {
 					name = LOCALE_TEXT_LABEL,
 					kind = settingType.Dropdown,
-					height = 220,
+					height = 240,
 					field = "textStyle",
 					parentId = "textsettings",
 					get = function()
