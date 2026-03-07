@@ -9,6 +9,7 @@ local UnitLevel = UnitLevel
 local GetMacroInfo = GetMacroInfo
 local EditMacro = EditMacro
 local CreateMacro = CreateMacro
+local GetNumMacros = GetNumMacros
 
 -- Recuperate info is shared via addon.Recuperate (Init.lua)
 
@@ -27,11 +28,23 @@ local function shouldBuildDrinkData() return isDrinkMacroEnabled() or isMageFood
 
 local function shouldUpdateRecuperateForDrinks() return isDrinkMacroEnabled() and addon.db.allowRecuperate == true end
 
+local macroLimitWarned = false
+
 local function createMacroIfMissing()
 	-- Respect enable toggle and guard against protected calls while in combat lockdown
 	if not addon.db.drinkMacroEnabled then return end
 	if InCombatLockdown and InCombatLockdown() then return end
-	if GetMacroInfo(drinkMacroName) == nil then CreateMacro(drinkMacroName, "INV_Misc_QuestionMark") end
+	if GetMacroInfo(drinkMacroName) == nil then
+		local numGlobal = GetNumMacros()
+		if numGlobal >= 120 then
+			if not macroLimitWarned then
+				macroLimitWarned = true
+				print(L["drinkMacroLimitReached"] or "Drink Macro: Macro limit reached. Please free a slot.")
+			end
+			return
+		end
+		CreateMacro(drinkMacroName, "INV_Misc_QuestionMark")
+	end
 end
 
 -- Find first available mana potion from user-defined list (preserves user order)

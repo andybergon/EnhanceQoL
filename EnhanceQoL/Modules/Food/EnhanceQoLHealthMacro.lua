@@ -16,6 +16,7 @@ local GetTime = GetTime
 local GetMacroInfo = GetMacroInfo
 local EditMacro = EditMacro
 local CreateMacro = CreateMacro
+local GetNumMacros = GetNumMacros
 
 local healthMacroName = "EnhanceQoLHealthMacro"
 
@@ -69,16 +70,22 @@ local function GetSpellCooldownSafe(spellId)
 	return start or 0, duration or 0, false
 end
 
+local macroLimitWarned = false
+
 local function createMacroIfMissing()
 	if not addon.db.healthMacroEnabled then return end
 	-- Avoid protected calls during combat lockdown
 	if InCombatLockdown and InCombatLockdown() then return end
 	if GetMacroInfo(healthMacroName) == nil then
-		local macroId = CreateMacro(healthMacroName, "INV_Misc_QuestionMark")
-		if not macroId then
-			print(L["healthMacroLimitReached"] or "Health Macro: Macro limit reached. Please free a slot.")
+		local numGlobal = GetNumMacros()
+		if numGlobal >= 120 then
+			if not macroLimitWarned then
+				macroLimitWarned = true
+				print(L["healthMacroLimitReached"] or "Health Macro: Macro limit reached. Please free a slot.")
+			end
 			return
 		end
+		CreateMacro(healthMacroName, "INV_Misc_QuestionMark")
 		-- Prefill with a sensible default
 		local demonicCount = C_Item.GetItemCount(224464, false, false) or 0
 		local normalCount = C_Item.GetItemCount(5512, false, false) or 0
