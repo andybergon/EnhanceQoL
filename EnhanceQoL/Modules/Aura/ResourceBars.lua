@@ -2728,6 +2728,10 @@ function updateHealthBar(evt)
 					text = percentStr
 				elseif style == "CURRENT" then
 					text = formatNumber(curHealth, useShortNumbers)
+				elseif style == "CURPERCENT" then
+					text = formatNumber(curHealth, useShortNumbers) .. " - " .. percentStr
+				elseif style == "CURMAXPERCENT" then
+					text = formatNumber(curHealth, useShortNumbers) .. " / " .. formatNumber(maxHealth, useShortNumbers) .. " - " .. percentStr
 				else -- CURMAX
 					text = formatNumber(curHealth, useShortNumbers) .. " / " .. formatNumber(maxHealth, useShortNumbers)
 				end
@@ -3649,6 +3653,10 @@ function updatePowerBar(type, runeSlot)
 					text = percentStr
 				elseif style == "CURRENT" then
 					text = formatNumber(curPower, useShortNumbers)
+				elseif style == "CURPERCENT" then
+					text = formatNumber(curPower, useShortNumbers) .. " - " .. percentStr
+				elseif style == "CURMAXPERCENT" then
+					text = formatNumber(curPower, useShortNumbers) .. " / " .. formatNumber(maxHealth, useShortNumbers) .. " - " .. percentStr
 				else
 					text = formatNumber(curPower, useShortNumbers) .. " / " .. formatNumber(maxHealth, useShortNumbers)
 				end
@@ -3748,6 +3756,10 @@ function updatePowerBar(type, runeSlot)
 					text = percentStr
 				elseif style == "CURRENT" then
 					text = formatNumber(stacks, useShortNumbers)
+				elseif style == "CURPERCENT" then
+					text = formatNumber(stacks, useShortNumbers) .. " - " .. percentStr
+				elseif style == "CURMAXPERCENT" then
+					text = formatNumber(stacks, useShortNumbers) .. " / " .. formatNumber(logicalMax, useShortNumbers) .. " - " .. percentStr
 				else
 					text = formatNumber(stacks, useShortNumbers) .. " / " .. formatNumber(logicalMax, useShortNumbers)
 				end
@@ -3904,6 +3916,18 @@ function updatePowerBar(type, runeSlot)
 					text = formatSoulShardValue(displayCur)
 				else
 					text = formatNumber(curPower, useShortNumbers)
+				end
+			elseif style == "CURPERCENT" then
+				if isSoulShards then
+					text = formatSoulShardValue(displayCur) .. " - " .. percentStr
+				else
+					text = formatNumber(curPower, useShortNumbers) .. " - " .. percentStr
+				end
+			elseif style == "CURMAXPERCENT" then
+				if isSoulShards then
+					text = formatSoulShardValue(displayCur) .. " / " .. formatSoulShardValue(displayMax) .. " - " .. percentStr
+				else
+					text = formatNumber(curPower, useShortNumbers) .. " / " .. formatNumber(maxPower, useShortNumbers) .. " - " .. percentStr
 				end
 			else -- CURMAX
 				if isSoulShards then
