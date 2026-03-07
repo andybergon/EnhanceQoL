@@ -1729,43 +1729,31 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
-					name = L["Reverse absorb fill"] or "Reverse absorb fill",
-					kind = settingType.Checkbox,
-					field = "absorbReverseFill",
+					name = L["Absorb fill mode"] or "Absorb fill mode",
+					kind = settingType.Dropdown,
+					field = "absorbFillMode",
 					parentId = "absorb",
+					values = {
+						{ value = "normal", text = L["Normal"] or "Normal" },
+						{ value = "reverse", text = L["Reverse fill"] or "Reverse fill" },
+						{ value = "overfill", text = L["Overfill"] or "Overfill" },
+					},
 					get = function()
 						local c = curSpecCfg()
-						return c and c.absorbReverseFill == true
+						if not c then return "normal" end
+						if c.absorbOverfill then return "overfill" end
+						if c.absorbReverseFill then return "reverse" end
+						return "normal"
 					end,
 					set = function(_, value)
 						local c = curSpecCfg()
 						if not c then return end
-						c.absorbReverseFill = value and true or false
-						if c.absorbReverseFill then c.absorbOverfill = false end
+						c.absorbReverseFill = value == "reverse"
+						c.absorbOverfill = value == "overfill"
 						queueRefresh()
 						refreshSettingsUI()
 					end,
-					default = false,
-				}
-
-				settingsList[#settingsList + 1] = {
-					name = L["Absorb overfill"] or "Absorb overfill",
-					kind = settingType.Checkbox,
-					field = "absorbOverfill",
-					parentId = "absorb",
-					get = function()
-						local c = curSpecCfg()
-						return c and c.absorbOverfill == true
-					end,
-					set = function(_, value)
-						local c = curSpecCfg()
-						if not c then return end
-						c.absorbOverfill = value and true or false
-						if c.absorbOverfill then c.absorbReverseFill = false end
-						queueRefresh()
-						refreshSettingsUI()
-					end,
-					default = false,
+					default = "normal",
 				}
 
 				settingsList[#settingsList + 1] = {
