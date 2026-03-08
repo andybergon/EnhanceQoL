@@ -1763,6 +1763,28 @@ function addon.functions.registerClickCastSlashCommand()
 	end
 end
 
+function addon.functions.registerVaultSlashCommand()
+	if not SlashCmdList then return end
+	local commands = {}
+	local function canClaim(command) return isSlashCommandOwnedByEQOL(command, "EQOLVAULT", "EQOLVAULT", 3) or not isSlashCommandRegistered(command) end
+	if canClaim("/vault") then commands[#commands + 1] = "/vault" end
+	if canClaim("/greatvault") then commands[#commands + 1] = "/greatvault" end
+	if canClaim("/weeklyvault") then commands[#commands + 1] = "/weeklyvault" end
+	if #commands == 0 then return end
+	_G.SLASH_EQOLVAULT1 = commands[1]
+	_G.SLASH_EQOLVAULT2 = commands[2]
+	_G.SLASH_EQOLVAULT3 = commands[3]
+	SlashCmdList["EQOLVAULT"] = function()
+		if InCombatLockdown and InCombatLockdown() then return end
+		C_AddOns.LoadAddOn("Blizzard_WeeklyRewards")
+		if WeeklyRewardsFrame and WeeklyRewardsFrame:IsShown() then
+			WeeklyRewardsFrame:Hide()
+		elseif WeeklyRewardsFrame then
+			WeeklyRewardsFrame:Show()
+		end
+	end
+end
+
 function addon.functions.catalystChecks()
 	-- No catalyst charges exist for Timerunners; ensure hidden
 	if addon.functions.IsTimerunner() then

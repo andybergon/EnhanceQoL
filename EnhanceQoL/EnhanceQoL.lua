@@ -3721,6 +3721,8 @@ local function initMap()
 	if addon.db["enableReloadUISlashCommand"] then addon.functions.registerReloadUISlashCommand() end
 	addon.functions.InitDBValue("enableClickCastSlashCommand", false)
 	if addon.db["enableClickCastSlashCommand"] then addon.functions.registerClickCastSlashCommand() end
+	addon.functions.InitDBValue("enableVaultSlashCommand", false)
+	if addon.db["enableVaultSlashCommand"] then addon.functions.registerVaultSlashCommand() end
 end
 
 local function initSocial()
