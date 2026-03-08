@@ -5941,7 +5941,7 @@ local eventHandlers = {
 
 			local skipOptionID = findGossipSkipOption(options)
 			if skipOptionID then
-				local behavior = addon.db["gossipSkipBehavior"] or "ACCEPT"
+				local behavior = addon.db["gossipSkipBehavior"] or "PAUSE"
 				if behavior == "PAUSE" then return end
 				if behavior == "SKIP" then
 					C_GossipInfo.SelectOption(skipOptionID)

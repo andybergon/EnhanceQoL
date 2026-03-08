@@ -316,7 +316,7 @@ local questingData = {
 						SKIP = L["gossipSkipAutoSkip"] or "Auto-skip",
 					}
 				end,
-				get = function() return addon.db and addon.db.gossipSkipBehavior or "ACCEPT" end,
+				get = function() return addon.db and addon.db.gossipSkipBehavior or "PAUSE" end,
 				set = function(key)
 					if not key or key == "" then key = "ACCEPT" end
 					addon.db["gossipSkipBehavior"] = key
@@ -562,7 +562,7 @@ function addon.functions.initQuest()
 	addon.functions.InitDBValue("autoChooseQuestModifier", "NONE")
 	addon.functions.InitDBValue("ignoreTrivialQuests", false)
 	addon.functions.InitDBValue("ignoreDailyQuests", false)
-	addon.functions.InitDBValue("gossipSkipBehavior", "ACCEPT")
+	addon.functions.InitDBValue("gossipSkipBehavior", "PAUSE")
 	addon.functions.InitDBValue("questTrackerShowQuestCount", false)
 	addon.functions.InitDBValue("questTrackerQuestCountOffsetX", 0)
 	addon.functions.InitDBValue("questTrackerQuestCountOffsetY", 0)
