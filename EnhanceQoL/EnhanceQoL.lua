@@ -3755,6 +3755,8 @@ local function initMap()
 	if addon.db["enableQuickKeybindSlashCommand"] then addon.functions.registerQuickKeybindSlashCommand() end
 	addon.functions.InitDBValue("enableReloadUISlashCommand", false)
 	if addon.db["enableReloadUISlashCommand"] then addon.functions.registerReloadUISlashCommand() end
+	addon.functions.InitDBValue("enableVaultSlashCommand", false)
+	if addon.db["enableVaultSlashCommand"] then addon.functions.registerVaultSlashCommand() end
 end
 
 local function initSocial()

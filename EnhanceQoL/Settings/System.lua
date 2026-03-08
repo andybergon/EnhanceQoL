@@ -248,6 +248,22 @@ addon.functions.SettingsCreateCheckbox(cGeneral, {
 	parentSection = utilitiesExpandable,
 })
 
+addon.functions.SettingsCreateCheckbox(cGeneral, {
+	var = "enableVaultSlashCommand",
+	text = L["enableVaultSlashCommand"],
+	desc = L["enableVaultSlashCommandDesc"],
+	func = function(value)
+		addon.db["enableVaultSlashCommand"] = value
+		if value then
+			addon.functions.registerVaultSlashCommand()
+		else
+			addon.variables.requireReload = true
+		end
+	end,
+	default = false,
+	parentSection = utilitiesExpandable,
+})
+
 local systemExpandable = addon.functions.SettingsCreateExpandableSection(cGeneral, {
 	name = L["SystemAndDebug"] or "System & Debug",
 	expanded = false,
