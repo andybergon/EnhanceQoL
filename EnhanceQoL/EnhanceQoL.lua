@@ -5731,6 +5731,23 @@ local function shouldAutoChooseQuest()
 	return not IsShiftKeyDown()
 end
 
+local function findGossipSkipOption(options)
+	if not options then return nil end
+	for _, v in pairs(options) do
+		if v.name then
+			local isRed = v.name:lower():match("^|cffff0000") ~= nil
+			local stripped = v.name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+			if isRed and stripped:match("^<.+>$") then
+				return v.gossipOptionID
+			end
+			if stripped:match("<Skip") then
+				return v.gossipOptionID
+			end
+		end
+	end
+	return nil
+end
+
 local COPPER_PER_GOLD = 10000
 
 function addon.functions.AutoSyncWarbandGold()
@@ -5921,6 +5938,16 @@ local eventHandlers = {
 			if npcId and ignored and ignored[npcId] then return end
 
 			local options = C_GossipInfo.GetOptions()
+
+			local skipOptionID = findGossipSkipOption(options)
+			if skipOptionID then
+				local behavior = addon.db["gossipSkipBehavior"] or "ACCEPT"
+				if behavior == "PAUSE" then return end
+				if behavior == "SKIP" then
+					C_GossipInfo.SelectOption(skipOptionID)
+					return
+				end
+			end
 
 			local aQuests = C_GossipInfo.GetAvailableQuests()
 
