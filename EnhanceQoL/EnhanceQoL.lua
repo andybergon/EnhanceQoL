@@ -5735,11 +5735,10 @@ local function findGossipSkipOption(options)
 	if not options then return nil end
 	for _, v in pairs(options) do
 		if v.name then
-			local isRed = v.name:lower():match("^|cffff0000") ~= nil
-			local stripped = v.name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-			if isRed and stripped:match("^<.+>$") then
+			if v.name:lower():match("|cffff0000<.+>|r") then
 				return v.gossipOptionID
 			end
+			local stripped = v.name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 			if stripped:match("<Skip") then
 				return v.gossipOptionID
 			end
