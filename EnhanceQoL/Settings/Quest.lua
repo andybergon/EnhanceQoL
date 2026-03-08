@@ -311,9 +311,9 @@ local questingData = {
 				desc = L["gossipSkipBehaviorDesc"],
 				listFunc = function()
 					return {
-						ACCEPT = L["gossipSkipAccept"] or "Accept normally",
 						PAUSE = L["gossipSkipPause"] or "Don't auto-accept",
 						SKIP = L["gossipSkipAutoSkip"] or "Auto-skip",
+						ACCEPT = L["gossipSkipAccept"] or "Accept normally",
 					}
 				end,
 				get = function() return addon.db and addon.db.gossipSkipBehavior or "PAUSE" end,
