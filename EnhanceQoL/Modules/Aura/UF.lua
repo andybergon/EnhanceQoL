@@ -1438,9 +1438,187 @@ function AuraUtil.getAuraFilters(unit)
 	return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL
 end
 
+function AuraUtil.cloneAuraSettingValue(value)
+	if type(value) ~= "table" then return value end
+	return CopyTable(value)
+end
+
+function AuraUtil.copyAuraSectionValues(dest, src)
+	if type(dest) ~= "table" or type(src) ~= "table" then return end
+	for key, value in pairs(src) do
+		dest[key] = AuraUtil.cloneAuraSettingValue(value)
+	end
+end
+
+AuraUtil._LEGACY_AURA_SECTION_EXCLUDES = {
+	buff = true,
+	debuff = true,
+	enabled = true,
+	combineLayout = true,
+	showBuffs = true,
+	showDebuffs = true,
+	size = true,
+	debuffSize = true,
+	padding = true,
+	spacing = true,
+	max = true,
+	perRow = true,
+	showCooldown = true,
+	showCooldownBuffs = true,
+	showCooldownDebuffs = true,
+	showCooldownText = true,
+	showCooldownTextBuffs = true,
+	showCooldownTextDebuffs = true,
+	showTooltip = true,
+	hidePermanentAuras = true,
+	hidePermanent = true,
+	anchor = true,
+	growth = true,
+	offset = true,
+	separateDebuffAnchor = true,
+	debuffAnchor = true,
+	debuffGrowth = true,
+	debuffOffset = true,
+	blizzardDispelBorder = true,
+	blizzardDispelBorderAlpha = true,
+	blizzardDispelBorderAlphaNot = true,
+	countFontSize = true,
+	countFontSizeBuff = true,
+	countFontSizeDebuff = true,
+	cooldownFontSize = true,
+	cooldownFontSizeBuff = true,
+	cooldownFontSizeDebuff = true,
+}
+
+function AuraUtil.buildLegacyAuraSection(src, isDebuff)
+	local section = {}
+	if type(src) ~= "table" then return section end
+
+	for key, value in pairs(src) do
+		if not AuraUtil._LEGACY_AURA_SECTION_EXCLUDES[key] then section[key] = AuraUtil.cloneAuraSettingValue(value) end
+	end
+
+	local enabled
+	if src.enabled == false then
+		enabled = false
+	else
+		enabled = isDebuff and src.showDebuffs or src.showBuffs
+		if enabled == nil then enabled = src.enabled end
+	end
+	if enabled ~= nil then section.enabled = enabled and true or false end
+
+	local size = isDebuff and src.debuffSize or src.size
+	if size == nil then size = src.size end
+	if size ~= nil then section.size = size end
+
+	local spacing = src.spacing
+	if spacing == nil then spacing = src.padding end
+	if spacing ~= nil then section.spacing = spacing end
+
+	if src.max ~= nil then section.max = src.max end
+	if src.perRow ~= nil then section.perRow = src.perRow end
+	if src.showTooltip ~= nil then section.showTooltip = src.showTooltip and true or false end
+
+	local showCooldown = isDebuff and src.showCooldownDebuffs or src.showCooldownBuffs
+	if showCooldown == nil then showCooldown = src.showCooldown end
+	if showCooldown ~= nil then section.showCooldown = showCooldown and true or false end
+
+	local showCooldownText = isDebuff and src.showCooldownTextDebuffs or src.showCooldownTextBuffs
+	if showCooldownText == nil then showCooldownText = src.showCooldownText end
+	if showCooldownText == nil then showCooldownText = showCooldown end
+	if showCooldownText ~= nil then section.showCooldownText = showCooldownText and true or false end
+
+	local countFontSize = isDebuff and src.countFontSizeDebuff or src.countFontSizeBuff
+	if countFontSize == nil then countFontSize = src.countFontSize end
+	if countFontSize ~= nil then section.countFontSize = countFontSize end
+
+	local cooldownFontSize = isDebuff and src.cooldownFontSizeDebuff or src.cooldownFontSizeBuff
+	if cooldownFontSize == nil then cooldownFontSize = src.cooldownFontSize end
+	if cooldownFontSize ~= nil then section.cooldownFontSize = cooldownFontSize end
+
+	local anchor = src.anchor
+	local growth = src.growth
+	local offset = src.offset
+	if isDebuff and src.separateDebuffAnchor == true then
+		if src.debuffAnchor ~= nil then anchor = src.debuffAnchor end
+		if src.debuffGrowth ~= nil then growth = src.debuffGrowth end
+		if type(src.debuffOffset) == "table" then offset = src.debuffOffset end
+	end
+	if anchor ~= nil then section.anchor = anchor end
+	if growth ~= nil then section.growth = growth end
+	if type(offset) == "table" then section.offset = AuraUtil.cloneAuraSettingValue(offset) end
+
+	local hidePermanent = src.hidePermanentAuras
+	if hidePermanent == nil then hidePermanent = src.hidePermanent end
+	if hidePermanent ~= nil then section.hidePermanentAuras = hidePermanent and true or false end
+
+	if isDebuff then
+		if src.blizzardDispelBorder ~= nil then section.blizzardDispelBorder = src.blizzardDispelBorder and true or false end
+		if src.blizzardDispelBorderAlpha ~= nil then section.blizzardDispelBorderAlpha = src.blizzardDispelBorderAlpha end
+		if src.blizzardDispelBorderAlphaNot ~= nil then section.blizzardDispelBorderAlphaNot = src.blizzardDispelBorderAlphaNot end
+	end
+
+	return section
+end
+
+function AuraUtil.resolveSingleAuraSection(src, defAc, sectionKey)
+	local isDebuff = sectionKey == "debuff"
+	local section = {}
+	AuraUtil.copyAuraSectionValues(section, AuraUtil.buildLegacyAuraSection(defAc, isDebuff))
+	if type(defAc) == "table" and type(defAc[sectionKey]) == "table" then AuraUtil.copyAuraSectionValues(section, defAc[sectionKey]) end
+	AuraUtil.copyAuraSectionValues(section, AuraUtil.buildLegacyAuraSection(src, isDebuff))
+	if type(src) == "table" and type(src[sectionKey]) == "table" then AuraUtil.copyAuraSectionValues(section, src[sectionKey]) end
+	return section
+end
+
+function AuraUtil.resolveSingleAuraCombineLayout(src, defAc)
+	if type(src) == "table" then
+		if src.combineLayout ~= nil then return src.combineLayout == true end
+		if src.separateDebuffAnchor ~= nil then return src.separateDebuffAnchor ~= true end
+	end
+	if type(defAc) == "table" then
+		if defAc.combineLayout ~= nil then return defAc.combineLayout == true end
+		if defAc.separateDebuffAnchor ~= nil then return defAc.separateDebuffAnchor ~= true end
+	end
+	return true
+end
+
+function AuraUtil.resolveSingleAuraConfig(ac, defAc)
+	local resolved = {
+		buff = AuraUtil.resolveSingleAuraSection(ac, defAc, "buff"),
+		debuff = AuraUtil.resolveSingleAuraSection(ac, defAc, "debuff"),
+		combineLayout = AuraUtil.resolveSingleAuraCombineLayout(ac, defAc),
+	}
+	if resolved.buff.enabled == nil then resolved.buff.enabled = true end
+	if resolved.debuff.enabled == nil then resolved.debuff.enabled = true end
+	resolved.enabled = (resolved.buff.enabled ~= false) or (resolved.debuff.enabled ~= false)
+	return resolved
+end
+
+function AuraUtil.ensureSingleAuraConfig(ac, defAc)
+	if type(ac) ~= "table" then return ac end
+	local resolved = AuraUtil.resolveSingleAuraConfig(ac, defAc)
+	ac.buff = resolved.buff
+	ac.debuff = resolved.debuff
+	ac.combineLayout = resolved.combineLayout == true
+	ac.enabled = resolved.enabled
+	ac.showBuffs = resolved.buff.enabled ~= false
+	ac.showDebuffs = resolved.debuff.enabled ~= false
+	ac.separateDebuffAnchor = ac.combineLayout ~= true
+	return ac
+end
+
 function AuraUtil.isAuraIconsEnabled(ac, def)
-	if ac and ac.enabled ~= nil then return ac.enabled ~= false end
 	local defAc = (def and def.auraIcons) or defaults.target.auraIcons
+	if type(ac) == "table" and (type(ac.buff) == "table" or type(ac.debuff) == "table") then
+		local resolved = AuraUtil.resolveSingleAuraConfig(ac, defAc)
+		return resolved.enabled == true
+	end
+	if ac and ac.enabled ~= nil then return ac.enabled ~= false end
+	if type(defAc) == "table" and (type(defAc.buff) == "table" or type(defAc.debuff) == "table") then
+		local resolved = AuraUtil.resolveSingleAuraConfig(nil, defAc)
+		return resolved.enabled == true
+	end
 	if defAc and defAc.enabled ~= nil then return defAc.enabled ~= false end
 	return true
 end
@@ -1671,17 +1849,23 @@ local function copySettings(fromUnit, toUnit, opts)
 			{ "visibilityFade" },
 			{ "width" },
 			{ "anchor" },
-			{ "spacing" },
-			{ "growth" },
 			{ "strata" },
 			{ "frameLevel" },
 			{ "smoothFill" },
-			{ "border" },
-			{ "highlight" },
 			{ "power", "detachedStrata" },
 			{ "power", "detachedFrameLevelOffset" },
 			{ "secondaryPower", "detachedStrata" },
 			{ "secondaryPower", "detachedFrameLevelOffset" },
+		},
+		layout = {
+			{ "spacing" },
+			{ "growth" },
+		},
+		border = {
+			{ "border" },
+		},
+		highlight = {
+			{ "highlight" },
 		},
 		portrait = {
 			{ "portrait" },
@@ -1731,9 +1915,8 @@ local function copySettings(fromUnit, toUnit, opts)
 		cast = {
 			{ "cast" },
 		},
-		status = {
+		name = {
 			{ "status", "enabled" },
-			{ "status", "fontSize" },
 			{ "status", "font" },
 			{ "status", "fontOutline" },
 			{ "status", "nameColorMode" },
@@ -1743,6 +1926,10 @@ local function copySettings(fromUnit, toUnit, opts)
 			{ "status", "nameOffset" },
 			{ "status", "nameMaxChars" },
 			{ "status", "nameFontSize" },
+		},
+		level = {
+			{ "status", "font" },
+			{ "status", "fontOutline" },
 			{ "status", "levelEnabled" },
 			{ "status", "hideLevelAtMax" },
 			{ "status", "levelColorMode" },
@@ -1752,10 +1939,12 @@ local function copySettings(fromUnit, toUnit, opts)
 			{ "status", "levelStrata" },
 			{ "status", "levelFrameLevelOffset" },
 			{ "status", "levelFontSize" },
-			{ "status", "classificationIcon" },
+		},
+		statusText = {
+			{ "status", "unitStatus" },
 		},
 		unitStatus = {
-			{ "status", "unitStatus" },
+			{ "status", "classificationIcon" },
 			{ "status", "combatIndicator" },
 			{ "pvpIndicator" },
 			{ "roleIndicator" },
@@ -1765,8 +1954,11 @@ local function copySettings(fromUnit, toUnit, opts)
 		combatFeedback = {
 			{ "combatFeedback" },
 		},
-		auras = {
-			{ "auraIcons" },
+		buffs = {
+			{ "auraIcons", "buff" },
+		},
+		debuffs = {
+			{ "auraIcons", "debuff" },
 		},
 		privateAuras = {
 			{ "privateAuras" },
@@ -3010,23 +3202,11 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken)
 		btn.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration, aura.timeMod)
 	end
 	local showCooldown = ac.showCooldown ~= false
-	if isDebuff then
-		if ac.showCooldownDebuffs ~= nil then showCooldown = ac.showCooldownDebuffs end
-	else
-		if ac.showCooldownBuffs ~= nil then showCooldown = ac.showCooldownBuffs end
-	end
 	local showCooldownText = ac.showCooldownText
 	if showCooldownText == nil then showCooldownText = showCooldown end
-	if isDebuff then
-		if ac.showCooldownTextDebuffs ~= nil then showCooldownText = ac.showCooldownTextDebuffs end
-	else
-		if ac.showCooldownTextBuffs ~= nil then showCooldownText = ac.showCooldownTextBuffs end
-	end
-	local cooldownFontSize = isDebuff and ac.cooldownFontSizeDebuff or ac.cooldownFontSizeBuff
+	local cooldownFontSize = ac.cooldownFontSize
 	if cooldownFontSize ~= nil and cooldownFontSize < 1 then cooldownFontSize = nil end
-	if cooldownFontSize == nil then cooldownFontSize = ac.cooldownFontSize end
-	local countFontSize = isDebuff and ac.countFontSizeDebuff or ac.countFontSizeBuff
-	if countFontSize == nil then countFontSize = ac.countFontSize end
+	local countFontSize = ac.countFontSize
 	btn.cd:SetHideCountdownNumbers(showCooldownText == false)
 	AuraUtil.styleAuraCount(btn, ac, countFontSize)
 	AuraUtil.styleAuraCooldownText(btn, ac, cooldownFontSize)
@@ -3375,29 +3555,58 @@ function AuraUtil.hideAuraContainers(st)
 	end
 end
 
+function AuraUtil.prepareSingleAuraSectionStyle(section)
+	local style = CopyTable(section or {})
+	style.size = tonumber(style.size) or 24
+	local padding = tonumber(style.spacing)
+	if padding == nil then padding = tonumber(style.padding) end
+	style.padding = padding or 0
+	style.max = AuraUtil.normalizeAuraQueryLimit(style.max) or 16
+	if style.showTooltip == nil then style.showTooltip = true end
+	if style.cooldownFontSize == nil or style.cooldownFontSize < 1 then style.cooldownFontSize = 12 end
+	return style
+end
+
+function AuraUtil.getSingleAuraRelayoutThreshold(ac, defAc)
+	local resolved = AuraUtil.resolveSingleAuraConfig(ac, defAc)
+	local buff = AuraUtil.prepareSingleAuraSectionStyle(resolved.buff)
+	local debuff = AuraUtil.prepareSingleAuraSectionStyle(resolved.debuff)
+	if resolved.combineLayout == true then return math.max(buff.max or 0, debuff.max or 0) + 1 end
+	return (buff.max or 0) + (debuff.max or 0) + 1
+end
+
 function AuraUtil.fillSampleAuras(unit, ac, hidePermanent)
 	local auras, order, indexById = AuraUtil.getAuraTables(unit)
 	if not auras or not order or not indexById then return end
-	local maxCount = ac and ac.max or 16
-	if not maxCount or maxCount < 1 then maxCount = 1 end
-	local showBuffs = ac and ac.showBuffs ~= false
-	local showDebuffs = ac and ac.showDebuffs ~= false
+	local resolved = AuraUtil.resolveSingleAuraConfig(ac)
+	local buffCfg = AuraUtil.prepareSingleAuraSectionStyle(resolved.buff)
+	local debuffCfg = AuraUtil.prepareSingleAuraSectionStyle(resolved.debuff)
+	local showBuffs = buffCfg.enabled ~= false
+	local showDebuffs = debuffCfg.enabled ~= false
 	if not showBuffs and not showDebuffs then return end
-	local separateDebuffs = ac and ac.separateDebuffAnchor == true
-	local debuffCount
-	local buffCount
-	if showBuffs and showDebuffs then
-		debuffCount = separateDebuffs and math.floor(maxCount * 0.4) or math.floor(maxCount * 0.3)
-		if maxCount > 1 and debuffCount < 1 then debuffCount = 1 end
-		if debuffCount >= maxCount then debuffCount = maxCount - 1 end
-		if debuffCount < 0 then debuffCount = 0 end
-		buffCount = maxCount - debuffCount
-	elseif showDebuffs then
-		debuffCount = maxCount
-		buffCount = 0
-	else
-		debuffCount = 0
-		buffCount = maxCount
+	local buffCount = showBuffs and (buffCfg.max or 0) or 0
+	local debuffCount = showDebuffs and (debuffCfg.max or 0) or 0
+	if resolved.combineLayout == true then
+		local maxCount = math.max(buffCfg.max or 0, debuffCfg.max or 0)
+		if showBuffs and not showDebuffs then
+			maxCount = buffCfg.max or 0
+		elseif showDebuffs and not showBuffs then
+			maxCount = debuffCfg.max or 0
+		end
+		if maxCount < 1 then maxCount = 1 end
+		if showBuffs and showDebuffs then
+			debuffCount = math.floor(maxCount * 0.3)
+			if maxCount > 1 and debuffCount < 1 then debuffCount = 1 end
+			if debuffCount >= maxCount then debuffCount = maxCount - 1 end
+			if debuffCount < 0 then debuffCount = 0 end
+			buffCount = maxCount - debuffCount
+		elseif showDebuffs then
+			debuffCount = maxCount
+			buffCount = 0
+		else
+			debuffCount = 0
+			buffCount = maxCount
+		end
 	end
 	local now = GetTime and GetTime() or 0
 	local base = unit == UNIT.PLAYER and -100000 or (unit == UNIT.TARGET or unit == "target") and -200000 or -300000
@@ -3411,7 +3620,15 @@ function AuraUtil.fillSampleAuras(unit, ac, hidePermanent)
 		else
 			duration = 0
 		end
-		if hidePermanent and duration <= 0 then duration = 45 end
+		local forceFinite = hidePermanent
+		if not forceFinite then
+			if isDebuff then
+				forceFinite = debuffCfg.hidePermanentAuras == true
+			else
+				forceFinite = buffCfg.hidePermanentAuras == true
+			end
+		end
+		if forceFinite and duration <= 0 then duration = 45 end
 		local expiration = duration > 0 and (now + duration) or nil
 		local stacks
 		if idx % 5 == 0 then
@@ -3462,44 +3679,15 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 		AuraUtil.hideAuraContainers(st)
 		return
 	end
-	ac.size = ac.size or 24
-	ac.padding = ac.padding or 0
-	ac.max = ac.max or 16
-	if ac.showTooltip == nil then ac.showTooltip = true end
-	if ac.cooldownFontSize == nil or ac.cooldownFontSize < 1 then ac.cooldownFontSize = 12 end
-	if ac.max < 1 then ac.max = 1 end
-	local showBuffs = ac.showBuffs ~= false
-	local showDebuffs = ac.showDebuffs ~= false
+	local resolved = AuraUtil.resolveSingleAuraConfig(ac, def and def.auraIcons)
+	local buffStyle = AuraUtil.prepareSingleAuraSectionStyle(resolved.buff)
+	local debuffStyle = AuraUtil.prepareSingleAuraSectionStyle(resolved.debuff)
+	local showBuffs = buffStyle.enabled ~= false
+	local showDebuffs = debuffStyle.enabled ~= false
 	if not showBuffs and not showDebuffs then
 		AuraUtil.hideAuraContainers(st)
 		return
 	end
-	local buffSize = ac.size
-	local debuffSize = ac.debuffSize or buffSize
-	local padding = ac.padding or 0
-	local buffLayout = st._auraBuffLayout
-	if not buffLayout then
-		buffLayout = {}
-		st._auraBuffLayout = buffLayout
-	end
-	buffLayout.size = buffSize
-	buffLayout.padding = padding
-	buffLayout.perRow = ac.perRow
-	local debuffLayout = buffLayout
-	if debuffSize ~= buffSize then
-		debuffLayout = st._auraDebuffLayout
-		if not debuffLayout then
-			debuffLayout = {}
-			st._auraDebuffLayout = debuffLayout
-		end
-		debuffLayout.size = debuffSize
-		debuffLayout.padding = padding
-		debuffLayout.perRow = ac.perRow
-	end
-	local combinedLayout = buffLayout
-	if debuffSize > buffSize then combinedLayout = debuffLayout end
-	if showBuffs and not showDebuffs then combinedLayout = buffLayout end
-	if showDebuffs and not showBuffs then combinedLayout = debuffLayout end
 	local auras, order, indexById = AuraUtil.getAuraTables(unit)
 	if not auras or not order or not indexById then return end
 	local _, harmfulFilter = AuraUtil.getAuraFilters(unit)
@@ -3521,16 +3709,54 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 		st._auraVisibleIsDebuff = visibleIsDebuff
 	end
 	local visibleCount = 0
+	local buffVisible = 0
+	local debuffVisible = 0
+	local combinedMax = math.max(buffStyle.max or 0, debuffStyle.max or 0)
+	if showBuffs and not showDebuffs then
+		combinedMax = buffStyle.max or 0
+	elseif showDebuffs and not showBuffs then
+		combinedMax = debuffStyle.max or 0
+	end
+	local useSeparateDebuffs = resolved.combineLayout ~= true
+	if useSeparateDebuffs and not st.debuffContainer then useSeparateDebuffs = false end
 	for i = 1, #order do
 		local auraId = order[i]
 		local aura = auras[auraId]
 		if aura then
 			local isDebuff = isAuraDebuff(aura)
-			if (isDebuff and showDebuffs) or (not isDebuff and showBuffs) then
-				visibleCount = visibleCount + 1
-				visibleIds[visibleCount] = auraId
-				visibleIsDebuff[visibleCount] = isDebuff == true
-				if visibleCount >= ac.max then break end
+			if isDebuff and showDebuffs then
+				if useSeparateDebuffs then
+					if debuffVisible < (debuffStyle.max or 0) then
+						debuffVisible = debuffVisible + 1
+						visibleCount = visibleCount + 1
+						visibleIds[visibleCount] = auraId
+						visibleIsDebuff[visibleCount] = true
+					end
+				elseif visibleCount < combinedMax then
+					debuffVisible = debuffVisible + 1
+					visibleCount = visibleCount + 1
+					visibleIds[visibleCount] = auraId
+					visibleIsDebuff[visibleCount] = true
+				end
+			elseif not isDebuff and showBuffs then
+				if useSeparateDebuffs then
+					if buffVisible < (buffStyle.max or 0) then
+						buffVisible = buffVisible + 1
+						visibleCount = visibleCount + 1
+						visibleIds[visibleCount] = auraId
+						visibleIsDebuff[visibleCount] = false
+					end
+				elseif visibleCount < combinedMax then
+					buffVisible = buffVisible + 1
+					visibleCount = visibleCount + 1
+					visibleIds[visibleCount] = auraId
+					visibleIsDebuff[visibleCount] = false
+				end
+			end
+			if useSeparateDebuffs then
+				if buffVisible >= (buffStyle.max or 0) and debuffVisible >= (debuffStyle.max or 0) then break end
+			elseif visibleCount >= combinedMax then
+				break
 			end
 		end
 	end
@@ -3544,12 +3770,16 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 	st._auraVisibleCount = visibleCount
 
 	local width = (st.auraContainer and st.auraContainer:GetWidth()) or (st.barGroup and st.barGroup:GetWidth()) or (st.frame and st.frame:GetWidth()) or 0
-	local useSeparateDebuffs = ac.separateDebuffAnchor == true
-	if useSeparateDebuffs and not st.debuffContainer then useSeparateDebuffs = false end
 	local auraLayout = UF._auraLayout
-	local buffPrimary, buffSecondary = auraLayout.resolveGrowth(ac, ac.anchor)
-	local perRow = auraLayout.calcPerRow(st, buffLayout, width, buffPrimary)
-	local perRowCombined = auraLayout.calcPerRow(st, combinedLayout, width, buffPrimary)
+	local buffAnchor = buffStyle.anchor or "BOTTOM"
+	local buffPrimary, buffSecondary = auraLayout.resolveGrowth(buffStyle, buffAnchor, buffStyle.growth)
+	local perRow = auraLayout.calcPerRow(st, buffStyle, width, buffPrimary)
+	local combinedAnchorStyle = showBuffs and buffStyle or debuffStyle
+	local combinedLayout = combinedAnchorStyle
+	if showBuffs and showDebuffs and (debuffStyle.size or 0) > (buffStyle.size or 0) then combinedLayout = debuffStyle end
+	local combinedAnchor = combinedAnchorStyle.anchor or "BOTTOM"
+	local combinedPrimary, combinedSecondary = auraLayout.resolveGrowth(combinedAnchorStyle, combinedAnchor, combinedAnchorStyle.growth)
+	local perRowCombined = auraLayout.calcPerRow(st, combinedLayout, width, combinedPrimary)
 
 	-- Combined layout (default, backward compatible)
 	if not useSeparateDebuffs then
@@ -3564,11 +3794,11 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 			local aura = auraId and auras[auraId]
 			if aura then
 				local isDebuff = visibleIsDebuff[i] == true
-				local layout = isDebuff and debuffLayout or buffLayout
+				local layout = isDebuff and debuffStyle or buffStyle
 				local btn
 				btn, st.auraButtons = AuraUtil.ensureAuraButton(st.auraContainer, st.auraButtons, i, layout)
-				AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unit)
-				AuraUtil.anchorAuraButton(btn, st.auraContainer, i, combinedLayout, perRowCombined, buffPrimary, buffSecondary)
+				AuraUtil.applyAuraToButton(btn, aura, layout, isDebuff, unit)
+				AuraUtil.anchorAuraButton(btn, st.auraContainer, i, combinedLayout, perRowCombined, combinedPrimary, combinedSecondary)
 			end
 		end
 		for idx = shown + 1, #(st.auraButtons or {}) do
@@ -3583,7 +3813,7 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 			st.debuffContainer:SetHeight(0.001)
 			st.debuffContainer:SetShown(false)
 		end
-		AuraUtil.updateAuraContainerSize(st.auraContainer, shown, combinedLayout, perRowCombined, buffPrimary)
+		AuraUtil.updateAuraContainerSize(st.auraContainer, shown, combinedLayout, perRowCombined, combinedPrimary)
 		return
 	end
 
@@ -3592,28 +3822,25 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 	local debuffButtons = st.debuffButtons or {}
 	local buffCount = 0
 	local debuffCount = 0
-	local shownTotal = 0
-	local debAnchor = ac.debuffAnchor or ac.anchor or "BOTTOM"
-	local debPrimary, debSecondary = auraLayout.resolveGrowth(ac, debAnchor, ac.debuffGrowth)
-	local perRowDebuff = auraLayout.calcPerRow(st, debuffLayout, width, debPrimary)
+	local debAnchor = debuffStyle.anchor or "BOTTOM"
+	local debPrimary, debSecondary = auraLayout.resolveGrowth(debuffStyle, debAnchor, debuffStyle.growth)
+	local perRowDebuff = auraLayout.calcPerRow(st, debuffStyle, width, debPrimary)
 	for i = 1, visibleCount do
-		if shownTotal >= ac.max then break end
 		local auraId = visibleIds[i]
 		local aura = auraId and auras[auraId]
 		if aura then
-			shownTotal = shownTotal + 1
 			if visibleIsDebuff[i] == true then
 				debuffCount = debuffCount + 1
 				local btn
-				btn, debuffButtons = AuraUtil.ensureAuraButton(st.debuffContainer, debuffButtons, debuffCount, debuffLayout)
-				AuraUtil.applyAuraToButton(btn, aura, ac, true, unit)
-				AuraUtil.anchorAuraButton(btn, st.debuffContainer, debuffCount, debuffLayout, perRowDebuff, debPrimary, debSecondary)
+				btn, debuffButtons = AuraUtil.ensureAuraButton(st.debuffContainer, debuffButtons, debuffCount, debuffStyle)
+				AuraUtil.applyAuraToButton(btn, aura, debuffStyle, true, unit)
+				AuraUtil.anchorAuraButton(btn, st.debuffContainer, debuffCount, debuffStyle, perRowDebuff, debPrimary, debSecondary)
 			else
 				buffCount = buffCount + 1
 				local btn
-				btn, buffButtons = AuraUtil.ensureAuraButton(st.auraContainer, buffButtons, buffCount, buffLayout)
-				AuraUtil.applyAuraToButton(btn, aura, ac, false, unit)
-				AuraUtil.anchorAuraButton(btn, st.auraContainer, buffCount, buffLayout, perRow, buffPrimary, buffSecondary)
+				btn, buffButtons = AuraUtil.ensureAuraButton(st.auraContainer, buffButtons, buffCount, buffStyle)
+				AuraUtil.applyAuraToButton(btn, aura, buffStyle, false, unit)
+				AuraUtil.anchorAuraButton(btn, st.auraContainer, buffCount, buffStyle, perRow, buffPrimary, buffSecondary)
 			end
 		end
 	end
@@ -3628,8 +3855,8 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 		if debuffButtons[idx] then debuffButtons[idx]:Hide() end
 	end
 
-	AuraUtil.updateAuraContainerSize(st.auraContainer, math.min(buffCount, ac.max), buffLayout, perRow, buffPrimary)
-	AuraUtil.updateAuraContainerSize(st.debuffContainer, math.min(debuffCount, ac.max), debuffLayout, perRowDebuff, debPrimary)
+	AuraUtil.updateAuraContainerSize(st.auraContainer, buffCount, buffStyle, perRow, buffPrimary)
+	AuraUtil.updateAuraContainerSize(st.debuffContainer, debuffCount, debuffStyle, perRowDebuff, debPrimary)
 end
 
 function AuraUtil.normalizeAuraQueryLimit(value)
@@ -3638,23 +3865,28 @@ function AuraUtil.normalizeAuraQueryLimit(value)
 	return value
 end
 
-function AuraUtil.getTargetAuraQueryLimits(ac, showBuffs, showDebuffs)
-	local maxCount = AuraUtil.normalizeAuraQueryLimit(ac and ac.max) or 16
+function AuraUtil.getTargetAuraQueryLimits(ac, defAc)
+	local resolved = AuraUtil.resolveSingleAuraConfig(ac, defAc)
+	local buff = AuraUtil.prepareSingleAuraSectionStyle(resolved.buff)
+	local debuff = AuraUtil.prepareSingleAuraSectionStyle(resolved.debuff)
+	local showBuffs = buff.enabled ~= false
+	local showDebuffs = debuff.enabled ~= false
 	local buffLimit
 	local debuffLimit
 
-	if showBuffs and showDebuffs and ac and ac.separateDebuffAnchor == true then
-		local debuffCount = math.floor(maxCount * 0.4)
-		if maxCount > 1 and debuffCount < 1 then debuffCount = 1 end
-		if debuffCount >= maxCount then debuffCount = maxCount - 1 end
-		if debuffCount < 0 then debuffCount = 0 end
-		local buffCount = maxCount - debuffCount
-		buffLimit = AuraUtil.normalizeAuraQueryLimit(buffCount + 1)
-		debuffLimit = AuraUtil.normalizeAuraQueryLimit(debuffCount + 1)
-	else
-		local cap = maxCount + 1
+	if resolved.combineLayout == true then
+		local combinedMax = math.max(buff.max or 0, debuff.max or 0)
+		if showBuffs and not showDebuffs then
+			combinedMax = buff.max or 0
+		elseif showDebuffs and not showBuffs then
+			combinedMax = debuff.max or 0
+		end
+		local cap = AuraUtil.normalizeAuraQueryLimit((combinedMax or 0) + 1)
 		buffLimit = showBuffs and cap or nil
 		debuffLimit = showDebuffs and cap or nil
+	else
+		buffLimit = showBuffs and AuraUtil.normalizeAuraQueryLimit((buff.max or 0) + 1) or nil
+		debuffLimit = showDebuffs and AuraUtil.normalizeAuraQueryLimit((debuff.max or 0) + 1) or nil
 	end
 
 	return buffLimit, debuffLimit
@@ -3693,16 +3925,18 @@ function AuraUtil.fullScanTargetAuras(unit)
 		AuraUtil.updateTargetAuraIcons(nil, unit)
 		return
 	end
-	local showBuffs = ac.showBuffs ~= false
-	local showDebuffs = ac.showDebuffs ~= false
+	local resolved = AuraUtil.resolveSingleAuraConfig(ac, def and def.auraIcons)
+	local buff = AuraUtil.prepareSingleAuraSectionStyle(resolved.buff)
+	local debuff = AuraUtil.prepareSingleAuraSectionStyle(resolved.debuff)
+	local showBuffs = buff.enabled ~= false
+	local showDebuffs = debuff.enabled ~= false
 	if not showBuffs and not showDebuffs then
 		AuraUtil.updateTargetAuraIcons(nil, unit)
 		return
 	end
 	if addon.EditModeLib and addon.EditModeLib:IsInEditMode() then
-		local hidePermanent = ac.hidePermanentAuras == true or ac.hidePermanent == true
 		if st then st._sampleAurasActive = true end
-		AuraUtil.fillSampleAuras(unit, ac, hidePermanent)
+		AuraUtil.fillSampleAuras(unit, ac)
 		AuraUtil.updateTargetAuraIcons(nil, unit)
 		return
 	end
@@ -3712,10 +3946,9 @@ function AuraUtil.fullScanTargetAuras(unit)
 		return
 	end
 	local helpfulFilter, harmfulFilter = AuraUtil.getAuraFilters(unit)
-	local hidePermanent = ac.hidePermanentAuras == true or ac.hidePermanent == true
-	local helpfulLimit, harmfulLimit = AuraUtil.getTargetAuraQueryLimits(ac, showBuffs, showDebuffs)
-	if showBuffs then AuraUtil.scanTargetAuraSlots(unit, helpfulFilter, helpfulLimit, hidePermanent) end
-	if showDebuffs then AuraUtil.scanTargetAuraSlots(unit, harmfulFilter, harmfulLimit, hidePermanent) end
+	local helpfulLimit, harmfulLimit = AuraUtil.getTargetAuraQueryLimits(ac, def and def.auraIcons)
+	if showBuffs then AuraUtil.scanTargetAuraSlots(unit, helpfulFilter, helpfulLimit, buff.hidePermanentAuras == true) end
+	if showDebuffs then AuraUtil.scanTargetAuraSlots(unit, harmfulFilter, harmfulLimit, debuff.hidePermanentAuras == true) end
 	AuraUtil.updateTargetAuraIcons(nil, unit)
 end
 
@@ -6549,24 +6782,27 @@ local function layoutFrame(cfg, unit)
 	if (unit == UNIT.PLAYER or unit == "target" or unit == UNIT.FOCUS or isBossUnit(unit)) and st.auraContainer then
 		st.auraContainer:ClearAllPoints()
 		local acfg = cfg.auraIcons or def.auraIcons or defaults.target.auraIcons or {}
-		local anchor = acfg.anchor or "BOTTOM"
+		local resolvedAuras = AuraUtil.resolveSingleAuraConfig(acfg, def and def.auraIcons)
+		local buffAura = AuraUtil.prepareSingleAuraSectionStyle(resolvedAuras.buff)
+		local debuffAura = AuraUtil.prepareSingleAuraSectionStyle(resolvedAuras.debuff)
+		local anchor = buffAura.anchor or "BOTTOM"
 		local defAx, defAy = UF._auraLayout.defaultOffset(anchor)
-		local baseAx = (acfg.offset and acfg.offset.x)
+		local baseAx = (buffAura.offset and buffAura.offset.x)
 		if baseAx == nil then baseAx = defAx end
-		local baseAy = (acfg.offset and acfg.offset.y)
+		local baseAy = (buffAura.offset and buffAura.offset.y)
 		if baseAy == nil then baseAy = defAy end
 		UF._auraLayout.positionContainer(st.auraContainer, anchor, st.barGroup, baseAx, baseAy, barAreaOffsetLeft, barAreaOffsetRight)
 		st.auraContainer:SetWidth(width + borderOffset * 2)
 
 		if st.debuffContainer then
 			st.debuffContainer:ClearAllPoints()
-			local useSeparateDebuffs = acfg.separateDebuffAnchor == true
-			local danchor = acfg.debuffAnchor or anchor
+			local useSeparateDebuffs = resolvedAuras.combineLayout ~= true
+			local danchor = debuffAura.anchor or anchor
 			local defDax, defDay = UF._auraLayout.defaultOffset(danchor)
-			local baseDax = (acfg.debuffOffset and acfg.debuffOffset.x)
-			if baseDax == nil then baseDax = baseAx end
+			local baseDax = (debuffAura.offset and debuffAura.offset.x)
 			if baseDax == nil then baseDax = defDax end
-			local baseDay = (acfg.debuffOffset and acfg.debuffOffset.y)
+			if baseDax == nil then baseDax = defDax end
+			local baseDay = (debuffAura.offset and debuffAura.offset.y)
 			if baseDay == nil then baseDay = defDay end
 			if useSeparateDebuffs then
 				UF._auraLayout.positionContainer(st.debuffContainer, danchor, st.barGroup, baseDax, baseDay, barAreaOffsetLeft, barAreaOffsetRight)
@@ -8528,8 +8764,11 @@ onEvent = function(self, event, unit, ...)
 		end
 		local ac = cfg.auraIcons or (def and def.auraIcons) or defaults.target.auraIcons or { size = 24, padding = 2, max = 16, showCooldown = true }
 		if not AuraUtil.isAuraIconsEnabled(ac, def) then return end
-		local showBuffs = ac.showBuffs ~= false
-		local showDebuffs = ac.showDebuffs ~= false
+		local resolvedAuras = AuraUtil.resolveSingleAuraConfig(ac, def and def.auraIcons)
+		local buffAuras = AuraUtil.prepareSingleAuraSectionStyle(resolvedAuras.buff)
+		local debuffAuras = AuraUtil.prepareSingleAuraSectionStyle(resolvedAuras.debuff)
+		local showBuffs = buffAuras.enabled ~= false
+		local showDebuffs = debuffAuras.enabled ~= false
 		if not showBuffs and not showDebuffs then
 			AuraUtil.resetTargetAuras(unit)
 			AuraUtil.updateTargetAuraIcons(nil, unit)
@@ -8552,42 +8791,39 @@ onEvent = function(self, event, unit, ...)
 			AuraUtil.fullScanTargetAuras(unit)
 			return
 		end
-		ac.size = ac.size or 24
-		ac.padding = ac.padding or 0
-		ac.max = ac.max or 16
-		if ac.max < 1 then ac.max = 1 end
-		local hidePermanent = ac.hidePermanentAuras == true or ac.hidePermanent == true
 		local st = states[unit]
 		if not st or not st.auraContainer then return end
 		local auras, order, indexById = AuraUtil.getAuraTables(unit)
 		if not auras or not order or not indexById then return end
+		local relayoutThreshold = AuraUtil.getSingleAuraRelayoutThreshold(ac, def and def.auraIcons)
 		local firstChanged
 		if eventInfo.addedAuras then
 			for _, aura in ipairs(eventInfo.addedAuras) do
-				if
-					aura
-					and (
-						(hidePermanent and AuraUtil.isPermanentAura(aura, unit))
+				local isDebuffAura = aura and not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, harmfulFilter)
+				local shouldHide = false
+				if aura then
+					local hidePermanent = isDebuffAura and (debuffAuras.hidePermanentAuras == true) or (buffAuras.hidePermanentAuras == true)
+					shouldHide = (hidePermanent and AuraUtil.isPermanentAura(aura, unit))
 						or (UF.GlobalAuraIgnore and UF.GlobalAuraIgnore.ShouldIgnoreAura and UF.GlobalAuraIgnore.ShouldIgnoreAura(unit, aura))
-					)
-				then
+				end
+				if aura and shouldHide then
 					if auras[aura.auraInstanceID] then
 						auras[aura.auraInstanceID] = nil
 						local idx = AuraUtil.removeTargetAuraFromOrder(aura.auraInstanceID, unit)
-						if idx and idx <= (ac.max + 1) then
+						if idx and idx <= relayoutThreshold then
 							if not firstChanged or idx < firstChanged then firstChanged = idx end
 						end
 					end
-				elseif aura and showDebuffs and not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, harmfulFilter) then
+				elseif aura and showDebuffs and isDebuffAura then
 					AuraUtil.cacheTargetAura(aura, unit)
 					local idx = AuraUtil.addTargetAuraToOrder(aura.auraInstanceID, unit)
-					if idx and idx <= ac.max then
+					if idx and idx <= relayoutThreshold then
 						if not firstChanged or idx < firstChanged then firstChanged = idx end
 					end
 				elseif aura and showBuffs and not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, helpfulFilter) then
 					AuraUtil.cacheTargetAura(aura, unit)
 					local idx = AuraUtil.addTargetAuraToOrder(aura.auraInstanceID, unit)
-					if idx and idx <= ac.max then
+					if idx and idx <= relayoutThreshold then
 						if not firstChanged or idx < firstChanged then firstChanged = idx end
 					end
 				end
@@ -8600,7 +8836,11 @@ onEvent = function(self, event, unit, ...)
 				local keepAura = false
 				if
 					data
-					and not (hidePermanent and AuraUtil.isPermanentAura(data, unit))
+					and not (((not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, data.auraInstanceID, harmfulFilter) and debuffAuras.hidePermanentAuras == true) or (C_UnitAuras.IsAuraFilteredOutByInstanceID(
+						unit,
+						data.auraInstanceID,
+						harmfulFilter
+					) and buffAuras.hidePermanentAuras == true)) and AuraUtil.isPermanentAura(data, unit))
 					and not (UF.GlobalAuraIgnore and UF.GlobalAuraIgnore.ShouldIgnoreAura and UF.GlobalAuraIgnore.ShouldIgnoreAura(unit, data))
 				then
 					if showDebuffs and not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, data.auraInstanceID, harmfulFilter) then
@@ -8616,7 +8856,7 @@ onEvent = function(self, event, unit, ...)
 					auras[inst] = nil
 					if idx then idx = AuraUtil.removeTargetAuraFromOrder(inst, unit) end
 				end
-				if idx and idx <= (ac.max + 1) then
+				if idx and idx <= relayoutThreshold then
 					if not firstChanged or idx < firstChanged then firstChanged = idx end
 				end
 			end
@@ -8625,7 +8865,7 @@ onEvent = function(self, event, unit, ...)
 			for _, inst in ipairs(eventInfo.removedAuraInstanceIDs) do
 				auras[inst] = nil
 				local idx = AuraUtil.removeTargetAuraFromOrder(inst, unit)
-				if idx and idx <= (ac.max + 1) then -- +1 to relayout if we pulled a hidden aura into view
+				if idx and idx <= relayoutThreshold then
 					if not firstChanged or idx < firstChanged then firstChanged = idx end
 				end
 			end
@@ -9197,6 +9437,8 @@ UF.StopEventsIfInactive = function() ensureEventHandling() end
 UF.UpdateBossFrames = updateBossFrames
 UF.HideBossFrames = hideBossFrames
 UF.FullScanTargetAuras = AuraUtil.fullScanTargetAuras
+UF.ResolveSingleAuraConfig = AuraUtil.resolveSingleAuraConfig
+UF.EnsureSingleAuraConfig = AuraUtil.ensureSingleAuraConfig
 UF.CopySettings = copySettings
 addon.Aura.functions = addon.Aura.functions or {}
 addon.Aura.functions.importUFProfile = UF.ImportProfile

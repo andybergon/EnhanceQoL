@@ -9517,73 +9517,81 @@ function GF._copyUnitAuraIconsToGroup(sectionId, srcAuras, dest)
 	if type(srcAuras) ~= "table" or type(dest) ~= "table" then return false end
 	local ac = ensureAuraConfig(dest)
 	local copied = false
+	local resolved = UF and UF.ResolveSingleAuraConfig and UF.ResolveSingleAuraConfig(srcAuras) or nil
+	local srcBuff = resolved and resolved.buff or nil
+	local srcDebuff = resolved and resolved.debuff or nil
 
 	if sectionId == "buffs" then
 		local buff = ac.buff or {}
 		ac.buff = buff
-		local enabled = srcAuras.showBuffs
-		if enabled == nil then enabled = srcAuras.enabled end
+		local source = srcBuff or {}
+		local enabled = source.enabled
 		if enabled ~= nil then
 			buff.enabled = enabled and true or false
 			copied = true
 		end
-		if srcAuras.size ~= nil then
-			buff.size = srcAuras.size
+		if source.size ~= nil then
+			buff.size = source.size
 			copied = true
 		end
-		local perRow = tonumber(srcAuras.perRow)
+		local perRow = tonumber(source.perRow)
 		if perRow and perRow > 0 then
 			buff.perRow = perRow
 			copied = true
 		end
-		if srcAuras.max ~= nil then
-			buff.max = srcAuras.max
+		if source.max ~= nil then
+			buff.max = source.max
 			copied = true
 		end
-		if srcAuras.padding ~= nil then
-			buff.spacing = srcAuras.padding
+		local spacing = source.spacing
+		if spacing == nil then spacing = source.padding end
+		if spacing ~= nil then
+			buff.spacing = spacing
 			copied = true
 		end
-		if srcAuras.anchor ~= nil then
-			buff.anchorPoint = srcAuras.anchor
+		local anchor = source.anchor
+		if anchor == nil then anchor = source.anchorPoint end
+		if anchor ~= nil then
+			buff.anchorPoint = anchor
 			copied = true
 		end
-		local offset = srcAuras.offset
+		local offset = source.offset
 		if type(offset) == "table" then
 			buff.x = offset.x or 0
 			buff.y = offset.y or 0
 			copied = true
 		end
-		if srcAuras.showTooltip ~= nil then
-			buff.showTooltip = srcAuras.showTooltip == true
+		if source.showTooltip ~= nil then
+			buff.showTooltip = source.showTooltip == true
 			copied = true
 		end
-		local showCooldown = srcAuras.showCooldownBuffs
-		if showCooldown == nil then showCooldown = srcAuras.showCooldown end
+		local showCooldown = source.showCooldown
 		if showCooldown ~= nil then
 			buff.showCooldown = showCooldown and true or false
 			copied = true
 		end
-		if srcAuras.countAnchor ~= nil then
-			buff.countAnchor = srcAuras.countAnchor
+		if source.showCooldownText ~= nil then
+			buff.showCooldownText = source.showCooldownText == true
 			copied = true
 		end
-		if type(srcAuras.countOffset) == "table" then
-			buff.countOffset = GF._groupCopyCloneValue(srcAuras.countOffset)
+		if source.countAnchor ~= nil then
+			buff.countAnchor = source.countAnchor
 			copied = true
 		end
-		local countSize = srcAuras.countFontSizeBuff
-		if countSize == nil then countSize = srcAuras.countFontSize end
+		if type(source.countOffset) == "table" then
+			buff.countOffset = GF._groupCopyCloneValue(source.countOffset)
+			copied = true
+		end
+		local countSize = source.countFontSize
 		if countSize ~= nil then
 			buff.countFontSize = countSize
 			copied = true
 		end
-		if srcAuras.countFontOutline ~= nil then
-			buff.countFontOutline = srcAuras.countFontOutline
+		if source.countFontOutline ~= nil then
+			buff.countFontOutline = source.countFontOutline
 			copied = true
 		end
-		local cooldownSize = srcAuras.cooldownFontSizeBuff
-		if cooldownSize == nil then cooldownSize = srcAuras.cooldownFontSize end
+		local cooldownSize = source.cooldownFontSize
 		if cooldownSize ~= nil then
 			buff.cooldownFontSize = cooldownSize
 			copied = true
@@ -9591,37 +9599,35 @@ function GF._copyUnitAuraIconsToGroup(sectionId, srcAuras, dest)
 	elseif sectionId == "debuffs" then
 		local debuff = ac.debuff or {}
 		ac.debuff = debuff
-		local enabled = srcAuras.showDebuffs
-		if enabled == nil then enabled = srcAuras.enabled end
+		local source = srcDebuff or {}
+		local enabled = source.enabled
 		if enabled ~= nil then
 			debuff.enabled = enabled and true or false
 			copied = true
 		end
-		local debuffSize = srcAuras.debuffSize
-		if debuffSize == nil then debuffSize = srcAuras.size end
+		local debuffSize = source.size
 		if debuffSize ~= nil then
 			debuff.size = debuffSize
 			copied = true
 		end
-		local perRow = tonumber(srcAuras.perRow)
+		local perRow = tonumber(source.perRow)
 		if perRow and perRow > 0 then
 			debuff.perRow = perRow
 			copied = true
 		end
-		if srcAuras.max ~= nil then
-			debuff.max = srcAuras.max
+		if source.max ~= nil then
+			debuff.max = source.max
 			copied = true
 		end
-		if srcAuras.padding ~= nil then
-			debuff.spacing = srcAuras.padding
+		local spacing = source.spacing
+		if spacing == nil then spacing = source.padding end
+		if spacing ~= nil then
+			debuff.spacing = spacing
 			copied = true
 		end
-		local anchor = srcAuras.anchor
-		local offset = srcAuras.offset
-		if srcAuras.separateDebuffAnchor == true then
-			if srcAuras.debuffAnchor ~= nil then anchor = srcAuras.debuffAnchor end
-			if type(srcAuras.debuffOffset) == "table" then offset = srcAuras.debuffOffset end
-		end
+		local anchor = source.anchor
+		if anchor == nil then anchor = source.anchorPoint end
+		local offset = source.offset
 		if anchor ~= nil then
 			debuff.anchorPoint = anchor
 			copied = true
@@ -9631,40 +9637,41 @@ function GF._copyUnitAuraIconsToGroup(sectionId, srcAuras, dest)
 			debuff.y = offset.y or 0
 			copied = true
 		end
-		if srcAuras.showTooltip ~= nil then
-			debuff.showTooltip = srcAuras.showTooltip == true
+		if source.showTooltip ~= nil then
+			debuff.showTooltip = source.showTooltip == true
 			copied = true
 		end
-		local showCooldown = srcAuras.showCooldownDebuffs
-		if showCooldown == nil then showCooldown = srcAuras.showCooldown end
+		local showCooldown = source.showCooldown
 		if showCooldown ~= nil then
 			debuff.showCooldown = showCooldown and true or false
 			copied = true
 		end
-		if srcAuras.blizzardDispelBorder ~= nil then
-			debuff.showDispelIcon = srcAuras.blizzardDispelBorder == true
+		if source.showCooldownText ~= nil then
+			debuff.showCooldownText = source.showCooldownText == true
 			copied = true
 		end
-		if srcAuras.countAnchor ~= nil then
-			debuff.countAnchor = srcAuras.countAnchor
+		if source.blizzardDispelBorder ~= nil then
+			debuff.showDispelIcon = source.blizzardDispelBorder == true
 			copied = true
 		end
-		if type(srcAuras.countOffset) == "table" then
-			debuff.countOffset = GF._groupCopyCloneValue(srcAuras.countOffset)
+		if source.countAnchor ~= nil then
+			debuff.countAnchor = source.countAnchor
 			copied = true
 		end
-		local countSize = srcAuras.countFontSizeDebuff
-		if countSize == nil then countSize = srcAuras.countFontSize end
+		if type(source.countOffset) == "table" then
+			debuff.countOffset = GF._groupCopyCloneValue(source.countOffset)
+			copied = true
+		end
+		local countSize = source.countFontSize
 		if countSize ~= nil then
 			debuff.countFontSize = countSize
 			copied = true
 		end
-		if srcAuras.countFontOutline ~= nil then
-			debuff.countFontOutline = srcAuras.countFontOutline
+		if source.countFontOutline ~= nil then
+			debuff.countFontOutline = source.countFontOutline
 			copied = true
 		end
-		local cooldownSize = srcAuras.cooldownFontSizeDebuff
-		if cooldownSize == nil then cooldownSize = srcAuras.cooldownFontSize end
+		local cooldownSize = source.cooldownFontSize
 		if cooldownSize ~= nil then
 			debuff.cooldownFontSize = cooldownSize
 			copied = true
