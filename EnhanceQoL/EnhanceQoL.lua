@@ -4415,6 +4415,27 @@ local function initUI()
 	addon.variables.bagButtonPoint = {}
 	addon.variables.buttonSink = nil
 
+	local function clearTrackedMinimapButton(btnName)
+		if not btnName then return end
+		addon.variables.bagButtons[btnName] = nil
+		addon.variables.bagButtonState[btnName] = nil
+	end
+
+	local function shouldIgnoreMinimapButton(btnName)
+		if not btnName then return true end
+		return btnName == "MinimapZoomIn"
+			or btnName == "MinimapZoomOut"
+			or btnName == "MiniMapWorldMapButton"
+			or btnName == "MiniMapTracking"
+			or btnName == "GameTimeFrame"
+			or btnName == "MinimapMailFrame"
+			or btnName:match("^GatherMatePin")
+			or btnName:match("^HandyNotesPin")
+			or btnName:match("^TTMinimapButton")
+			or btnName == addonName .. "_ButtonSinkMap"
+			or btnName == "ZygorGuidesViewerMapIcon"
+	end
+
 	local function hoverOutFrame()
 		if addon.variables.buttonSink and LDBIcon.objects[addonName .. "_ButtonSinkMap"] then
 			if not MouseIsOver(addon.variables.buttonSink) and not MouseIsOver(LDBIcon.objects[addonName .. "_ButtonSinkMap"]) then
@@ -4871,20 +4892,9 @@ local function initUI()
 		for _, child in ipairs({ Minimap:GetChildren() }) do
 			if child:IsObjectType("Button") and child:GetName() then
 				local btnName = child:GetName():gsub("^LibDBIcon10_", ""):gsub(".*_LibDBIcon_", "")
-				if
-					not (
-						btnName == "MinimapZoomIn"
-						or btnName == "MinimapZoomOut"
-						or btnName == "MiniMapWorldMapButton"
-						or btnName == "MiniMapTracking"
-						or btnName == "GameTimeFrame"
-						or btnName == "MinimapMailFrame"
-						or btnName:match("^HandyNotesPin")
-						or btnName:match("^TTMinimapButton")
-						or btnName == addonName .. "_ButtonSinkMap"
-						or btnName == "ZygorGuidesViewerMapIcon"
-					)
-				then
+				if shouldIgnoreMinimapButton(btnName) then
+					clearTrackedMinimapButton(btnName)
+				else
 					local pData = addon.variables.bagButtonPoint[btnName] or {}
 					if not pData.point then
 						local point, relativeTo, relativePoint, xOfs, yOfs = child:GetPoint()
@@ -5272,6 +5282,36 @@ local function CreateUI()
 			root:CreateButton(L["CH_TITLE_HISTORY"], function()
 				if addon.ChatIM.ChannelHistory.ToggleWindow then addon.ChatIM.ChannelHistory:ToggleWindow() end
 			end)
+		end
+
+		if addon.db["enableChatIM"] and addon.ChatIM and addon.ChatIM.GetOpenTabs then
+			DoDevider()
+			local chatLabel = L["Instant Chats"] or "Instant Chats"
+			local chatMenu = root:CreateButton(chatLabel)
+			local openTabs = addon.ChatIM:GetOpenTabs()
+			local windowShown = addon.ChatIM.widget and addon.ChatIM.widget.frame and addon.ChatIM.widget.frame:IsShown()
+
+			if #openTabs > 0 then
+				local toggleLabel = ((windowShown and (HIDE or "Hide")) or (SHOW or "Show")) .. " " .. chatLabel
+				chatMenu:CreateButton(toggleLabel, function()
+					if addon.ChatIM.widget and addon.ChatIM.widget.frame and addon.ChatIM.widget.frame:IsShown() then
+						addon.ChatIM:HideWindow()
+					else
+						addon.ChatIM:FocusConversation(openTabs[1].value)
+					end
+					return MenuResponse and MenuResponse.Close
+				end)
+				if chatMenu.CreateDivider then chatMenu:CreateDivider() end
+				for _, tab in ipairs(openTabs) do
+					chatMenu:CreateButton(tab.label, function()
+						addon.ChatIM:FocusConversation(tab.value, true)
+						return MenuResponse and MenuResponse.Close
+					end)
+				end
+			else
+				local emptyButton = chatMenu:CreateButton(L["ChatIMMenuNoOpenChats"] or "No open chats")
+				if emptyButton and emptyButton.SetEnabled then emptyButton:SetEnabled(false) end
+			end
 		end
 
 		local ufProfiles = addon.Aura and addon.Aura.UF and addon.Aura.UF.Profiles

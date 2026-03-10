@@ -1123,6 +1123,7 @@ L["enableChatIMDesc"] = "Open whispers in a compact IM-style window.\n/eim to op
 L["enableChatIMFade"] = "Fade Instant Messenger when unfocused"
 L["enableChatIMFadeDesc"] = "Reduce the window’s opacity when it loses focus"
 L["Instant Chats"] = "Instant Chats"
+L["ChatIMMenuNoOpenChats"] = "No open chats"
 L["RightClickCloseTab"] = "Right-click a tab to close it.\nPrevious messages are saved in a per-player history.\nRight-click a name for actions like Invite, Raider.IO link etc."
 L["ChatIMHistoryLimit"] = "Maximum stored messages per player"
 L["ChatIMHistoryPlayer"] = "History for"
