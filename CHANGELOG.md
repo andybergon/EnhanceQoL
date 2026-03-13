@@ -70,6 +70,7 @@
 - Resource Bars (Threshold Colors / Max Color): Fixed percent-based secret/curve resource bars (for example Fury) so `Use max color` no longer suppresses `Threshold colors`. Threshold colors now evaluate through a step color curve for protected percentage values, while `Max color` still applies cleanly at full resource.
 - Ignore List: Fixed a Retail secret-value error while scanning party/raid members for ignored players.
 - Minimap Button Bin: Fixed `GatherMatePin*` minimap pins being treated as minimap buttons, so they no longer appear in the Button Sink or its exclude list.
+- Minimap Button Bin: Fixed `PlumberLandingPageMinimapButton` being collected into the Button Sink. The Plumber landing-page minimap button is now permanently excluded.
 - Item Upgrades: Fixed upgrade indicators and upgrade-only checks suggesting off-armor-type gear (for example Cloth on Leather classes). Bag, merchant, and loot-toast upgrade checks now respect the current spec's actual armor proficiency.
 - Sound: Fixed mute selections for direct sound groups so they are reapplied correctly after login or `/reload`.
 - Experience Bar: Fixed rested text values being capped to the XP remaining in the current level. Text modes now show the real banked rested XP from `GetXPExhaustion()`, while the overlay remains limited to the current level segment.

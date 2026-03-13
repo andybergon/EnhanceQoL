@@ -4492,6 +4492,7 @@ local function initUI()
 			or btnName == "MiniMapTracking"
 			or btnName == "GameTimeFrame"
 			or btnName == "MinimapMailFrame"
+			or btnName == "PlumberLandingPageMinimapButton"
 			or btnName:match("^GatherMatePin")
 			or btnName:match("^HandyNotesPin")
 			or btnName:match("^TTMinimapButton")
