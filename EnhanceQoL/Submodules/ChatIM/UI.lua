@@ -669,6 +669,49 @@ function ChatIM:UpdateTabLabel(sender)
 	self:RefreshTabCallbacks()
 end
 
+function ChatIM:GetOpenTabs()
+	local entries = {}
+	if not self.tabList then return entries end
+
+	for _, item in ipairs(self.tabList) do
+		local tab = self.tabs and self.tabs[item.value]
+		local baseName = (tab and tab.displayName) or Ambiguate(item.value, "short")
+		table.insert(entries, {
+			value = item.value,
+			label = (tab and tab.label) or item.text or baseName,
+			baseName = baseName,
+			unread = tab and tab.unread or false,
+		})
+	end
+
+	table.sort(entries, function(a, b)
+		if a.unread ~= b.unread then return a.unread end
+		return string.lower(a.baseName or a.label or "") < string.lower(b.baseName or b.label or "")
+	end)
+
+	return entries
+end
+
+function ChatIM:FocusConversation(sender, focusEdit)
+	if not sender then return end
+	self:CreateUI()
+	if not self.tabs or not self.tabs[sender] then return end
+
+	if self.widget and self.widget.frame then
+		UIFrameFlashStop(self.widget.frame)
+		if not self.widget.frame:IsShown() then self:ShowWindow() end
+	end
+
+	if self.tabGroup then self.tabGroup:SelectTab(sender) end
+
+	if focusEdit then
+		C_Timer.After(0, function()
+			local tab = ChatIM.tabs and ChatIM.tabs[sender]
+			if tab and tab.edit and tab.edit:IsShown() then tab.edit:SetFocus() end
+		end)
+	end
+end
+
 function ChatIM:ClearEditFocus()
 	local tab = ChatIM.activeTab and ChatIM.tabs[ChatIM.activeTab]
 	if tab and tab.edit then tab.edit:ClearFocus() end
@@ -758,9 +801,5 @@ function ChatIM:StartWhisper(target, bnetID, accountTag)
 	else
 		self:CreateTab(target)
 	end
-	if self.widget and self.widget.frame and not self.widget.frame:IsShown() then self:ShowWindow() end
-	if not self.tabGroup then return end
-	self.tabGroup:SelectTab(target)
-	local tab = self.tabs[target]
-	-- if tab and tab.edit then tab.edit:SetFocus() end
+	self:FocusConversation(target)
 end

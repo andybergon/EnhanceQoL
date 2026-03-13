@@ -56,8 +56,7 @@ local function OpenChatIMForEditBox(editBox)
 		if name then
 			if not name:match("-") then name = name .. "-" .. (GetRealmName()):gsub("%s", "") end
 			ChatIM:StartWhisper(name)
-			local tab = ChatIM.tabs[name]
-			tab.edit:SetFocus()
+			ChatIM:FocusConversation(name, true)
 		end
 	elseif chatType == "BN_WHISPER" then
 		local target = editBox:GetAttribute("tellTarget") or ChatEdit_GetLastTellTarget()
@@ -67,8 +66,7 @@ local function OpenChatIMForEditBox(editBox)
 			if bnetID then
 				local info = C_BattleNet.GetAccountInfoByID and C_BattleNet.GetAccountInfoByID(bnetID)
 				ChatIM:StartWhisper(plain, bnetID, info and info.battleTag)
-				local tab = ChatIM.tabs[target]
-				tab.edit:SetFocus()
+				ChatIM:FocusConversation(plain, true)
 			end
 		end
 	end
@@ -77,14 +75,7 @@ end
 local function focusTab(target)
 	if issecretvalue and issecretvalue(target) then return end
 	ChatIM:CreateTab(target)
-	if ChatIM.widget and ChatIM.widget.frame and not ChatIM.widget.frame:IsShown() then
-		UIFrameFlashStop(ChatIM.widget.frame)
-		ChatIM:ShowWindow()
-	end
-	local tab = ChatIM.tabs[target]
-	if tab and tab.edit then
-		ChatIM.tabGroup:SelectTab(target) -- tab.edit:SetFocus()
-	end
+	ChatIM:FocusConversation(target)
 end
 
 local frame = CreateFrame("Frame")

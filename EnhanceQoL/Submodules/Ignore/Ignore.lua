@@ -11,6 +11,7 @@ local L = addon.L
 -- luacheck: globals EQOLIgnoreFrame EQOLIgnoreFrame_OnLoad HybridScrollFrame_CreateButtons DeclineGuildInvite MenuUtil
 local AceGUI = addon.AceGUI
 local MU = MenuUtil
+local issecretvalue = _G.issecretvalue
 local Ignore = addon.Ignore or {}
 addon.Ignore = Ignore
 
@@ -972,7 +973,8 @@ Ignore.groupCheckFrame:SetScript("OnEvent", function()
 		local unit = prefix .. i
 		if UnitExists(unit) then
 			local n, r = UnitFullName(unit)
-			if n then
+			if issecretvalue and (issecretvalue(n) or issecretvalue(r)) then
+			elseif n then
 				r = r or (GetRealmName()):gsub("%s", "")
 				partyMembers[n .. "-" .. r] = true
 			end
@@ -980,6 +982,9 @@ Ignore.groupCheckFrame:SetScript("OnEvent", function()
 	end
 
 	local pn, pr = UnitFullName("player")
+	if issecretvalue and (issecretvalue(pn) or issecretvalue(pr)) then
+		pn, pr = nil, nil
+	end
 	pr = pr or (GetRealmName()):gsub("%s", "")
 	if pn then partyMembers[pn .. "-" .. pr] = true end
 

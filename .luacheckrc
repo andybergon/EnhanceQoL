@@ -364,6 +364,7 @@ globals = {
 	"EditModeUtil",
 	"GameTooltip_Hide",
 	"GameTooltip_SetDefaultAnchor",
+	"EnumUtil",
 	"GameTooltip_UnitColor",
 	"GetClassColoredTextForUnit",
 	"ImportDataStreamMixin",

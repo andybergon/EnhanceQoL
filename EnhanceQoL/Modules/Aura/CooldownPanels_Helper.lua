@@ -117,10 +117,17 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	growthPoint = "TOPLEFT",
 	radialRadius = 80,
 	radialRotation = 0,
+	radialArcDegrees = 360,
 	strata = "MEDIUM",
 	rangeOverlayEnabled = false,
 	rangeOverlayColor = { 1, 0.1, 0.1, 0.35 },
+	procGlowEnabled = true,
+	readyGlowStyle = "MARCHING_ANTS",
 	readyGlowColor = { 1, 0.82, 0.2, 1 },
+	pandemicGlowColor = { 1, 0.82, 0.2, 1 },
+	readyGlowInset = 0,
+	readyGlowDuration = 0,
+	readyGlowCheckPower = false,
 	noDesaturation = false,
 	checkPower = false,
 	powerTintColor = { 0.5, 0.5, 1, 1 },
@@ -143,11 +150,13 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	stackY = 1,
 	stackFontSize = 12,
 	stackFontStyle = "OUTLINE",
+	stackColor = { 1, 1, 1, 1 },
 	chargesAnchor = "TOP",
 	chargesX = 0,
 	chargesY = -1,
 	chargesFontSize = 12,
 	chargesFontStyle = "OUTLINE",
+	chargesColor = { 1, 1, 1, 1 },
 	keybindsEnabled = false,
 	keybindsIgnoreItems = false,
 	keybindAnchor = "TOPLEFT",
@@ -162,27 +171,76 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	cooldownGcdDrawBling = false,
 	cooldownGcdDrawSwipe = false,
 	cooldownTextColor = { 1, 1, 1, 1 },
+	staticTextFont = "",
+	staticTextSize = 12,
+	staticTextStyle = "OUTLINE",
+	staticTextColor = { 1, 1, 1, 1 },
+	staticTextAnchor = "CENTER",
+	staticTextX = 0,
+	staticTextY = 0,
 	showChargesCooldown = false,
 	showTooltips = false,
 }
 
 Helper.ENTRY_DEFAULTS = {
 	alwaysShow = true,
+	hideIcon = false,
+	iconSizeUseGlobal = true,
+	iconSize = 36,
+	iconOffsetX = 0,
+	iconOffsetY = 0,
 	showCooldown = true,
 	showCooldownText = true,
 	showCharges = false,
 	showStacks = false,
+	stackStyleUseGlobal = true,
+	stackAnchor = "BOTTOMRIGHT",
+	stackX = -1,
+	stackY = 1,
+	stackFont = "",
+	stackFontSize = 12,
+	stackFontStyle = "OUTLINE",
+	stackColor = { 1, 1, 1, 1 },
+	chargesStyleUseGlobal = true,
+	chargesAnchor = "TOP",
+	chargesX = 0,
+	chargesY = -1,
+	chargesFont = "",
+	chargesFontSize = 12,
+	chargesFontStyle = "OUTLINE",
+	chargesColor = { 1, 1, 1, 1 },
 	showItemUses = false,
 	showWhenEmpty = false,
 	useHighestRank = false,
 	showWhenNoCooldown = false,
 	showWhenMissing = false,
+	showIconTextureUseGlobal = true,
+	cooldownVisualsUseGlobal = true,
+	showChargesCooldown = false,
+	cooldownDrawEdge = true,
+	cooldownDrawBling = true,
+	cooldownDrawSwipe = true,
+	cooldownGcdDrawEdge = false,
+	cooldownGcdDrawBling = false,
+	cooldownGcdDrawSwipe = false,
+	cooldownTextUseGlobal = true,
+	noDesaturationUseGlobal = true,
+	noDesaturation = false,
+	checkPowerUseGlobal = true,
+	checkPower = false,
 	glowReady = false,
+	readyGlowCheckPower = false,
+	pandemicGlow = false,
+	pandemicGlowColor = nil,
+	procGlowEnabled = true,
+	procGlowUseGlobal = true,
+	glowUseGlobal = true,
 	glowDuration = 0,
 	soundReady = false,
 	soundReadyFile = "None",
 	staticText = "",
 	staticTextShowOnCooldown = false,
+	staticTextUseGlobal = true,
 	staticTextFont = "",
 	staticTextSize = 12,
 	staticTextStyle = "OUTLINE",
@@ -198,15 +256,39 @@ Helper.PREVIEW_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 Helper.PREVIEW_ICON_SIZE = 36
 Helper.PREVIEW_COUNT_FONT_MIN = 12
 Helper.OFFSET_RANGE = 200
+Helper.SPACING_RANGE = 200
+Helper.GLOW_INSET_RANGE = 20
 Helper.RADIAL_RADIUS_RANGE = 600
 Helper.RADIAL_ROTATION_RANGE = 360
+Helper.RADIAL_ARC_DEGREES_MIN = 15
+Helper.RADIAL_ARC_DEGREES_MAX = 360
 Helper.EXAMPLE_COOLDOWN_PERCENT = 0.55
+Helper.GLOW_STYLE_OPTIONS = {
+	{ value = "MARCHING_ANTS", labelKey = "CooldownPanelGlowStyleMarchingAnts", fallback = "Marching ants" },
+	{ value = "FLASH", labelKey = "CooldownPanelGlowStyleFlash", fallback = "Flash" },
+	{ value = "BLIZZARD", labelKey = "CooldownPanelGlowStyleBlizzard", fallback = "Blizzard" },
+}
 Helper.VALID_DIRECTIONS = {
 	RIGHT = true,
 	LEFT = true,
 	UP = true,
 	DOWN = true,
 }
+
+function Helper.NormalizeGlowStyle(style, fallback)
+	local normalized = type(style) == "string" and strupper(style) or nil
+	if normalized == "BLIZZARD" or normalized == "CLASSIC" or normalized == "BUTTON_GLOW" then return "BLIZZARD" end
+	if normalized == "MARCHING_ANTS" or normalized == "MARCHINGANTS" or normalized == "ANTS" then return "MARCHING_ANTS" end
+	if normalized == "FLASH" then return "FLASH" end
+	local normalizedFallback = type(fallback) == "string" and strupper(fallback) or nil
+	if normalizedFallback == "BLIZZARD" or normalizedFallback == "CLASSIC" or normalizedFallback == "BUTTON_GLOW" then return "BLIZZARD" end
+	if normalizedFallback == "FLASH" then return "FLASH" end
+	if normalizedFallback == "MARCHING_ANTS" or normalizedFallback == "MARCHINGANTS" or normalizedFallback == "ANTS" then return "MARCHING_ANTS" end
+	return Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle or "MARCHING_ANTS"
+end
+
+function Helper.NormalizeGlowInset(value, fallback) return Helper.ClampInt(value, -Helper.GLOW_INSET_RANGE, Helper.GLOW_INSET_RANGE, fallback) end
+
 Helper.VALID_LAYOUT_MODES = {
 	GRID = true,
 	FIXED = true,
@@ -897,6 +979,12 @@ function Helper.NormalizeRoot(root)
 	root.defaults.entry.showCharges = Helper.ENTRY_DEFAULTS.showCharges
 	root.defaults.entry.showStacks = Helper.ENTRY_DEFAULTS.showStacks
 	root.defaults.entry.glowReady = Helper.ENTRY_DEFAULTS.glowReady
+	root.defaults.entry.readyGlowCheckPower = Helper.ENTRY_DEFAULTS.readyGlowCheckPower
+	root.defaults.entry.pandemicGlow = Helper.ENTRY_DEFAULTS.pandemicGlow
+	root.defaults.entry.checkPower = Helper.ENTRY_DEFAULTS.checkPower
+	root.defaults.entry.checkPowerUseGlobal = Helper.ENTRY_DEFAULTS.checkPowerUseGlobal
+	root.defaults.entry.procGlowEnabled = Helper.ENTRY_DEFAULTS.procGlowEnabled
+	root.defaults.entry.procGlowUseGlobal = Helper.ENTRY_DEFAULTS.procGlowUseGlobal
 	root.defaults.entry.glowDuration = Helper.ENTRY_DEFAULTS.glowDuration
 	root.defaults.entry.soundReady = Helper.ENTRY_DEFAULTS.soundReady
 	root.defaults.entry.soundReadyFile = Helper.ENTRY_DEFAULTS.soundReadyFile
@@ -916,9 +1004,45 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.fixedSlotCount = Helper.NormalizeFixedSlotCount(panel.layout.fixedSlotCount, layoutDefaults.fixedSlotCount or Helper.PANEL_LAYOUT_DEFAULTS.fixedSlotCount or 0)
 	panel.layout.fixedGridColumns = Helper.NormalizeFixedGridSize(panel.layout.fixedGridColumns, layoutDefaults.fixedGridColumns or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridColumns or 0)
 	panel.layout.fixedGridRows = Helper.NormalizeFixedGridSize(panel.layout.fixedGridRows, layoutDefaults.fixedGridRows or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridRows or 0)
+	panel.layout.spacing = Helper.ClampInt(panel.layout.spacing, 0, Helper.SPACING_RANGE or 200, layoutDefaults.spacing or Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
+	panel.layout.radialArcDegrees = Helper.ClampInt(
+		panel.layout.radialArcDegrees,
+		Helper.RADIAL_ARC_DEGREES_MIN or 15,
+		Helper.RADIAL_ARC_DEGREES_MAX or 360,
+		layoutDefaults.radialArcDegrees or Helper.PANEL_LAYOUT_DEFAULTS.radialArcDegrees or 360
+	)
+	panel.layout.procGlowEnabled = panel.layout.procGlowEnabled ~= false
+	if panel.layout.procGlowStyle ~= nil then panel.layout.procGlowStyle = Helper.NormalizeGlowStyle(panel.layout.procGlowStyle, nil) end
+	if panel.layout.procGlowInset ~= nil then panel.layout.procGlowInset = Helper.NormalizeGlowInset(panel.layout.procGlowInset, nil) end
+	panel.layout.readyGlowStyle = Helper.NormalizeGlowStyle(panel.layout.readyGlowStyle, layoutDefaults.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle)
+	panel.layout.pandemicGlowStyle =
+		Helper.NormalizeGlowStyle(panel.layout.pandemicGlowStyle, layoutDefaults.pandemicGlowStyle or panel.layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle)
 	panel.layout.readyGlowColor = Helper.NormalizeColor(panel.layout.readyGlowColor, layoutDefaults.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor)
+	panel.layout.readyGlowInset = Helper.NormalizeGlowInset(panel.layout.readyGlowInset, layoutDefaults.readyGlowInset or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowInset or 0)
+	panel.layout.pandemicGlowInset =
+		Helper.NormalizeGlowInset(panel.layout.pandemicGlowInset, layoutDefaults.pandemicGlowInset or panel.layout.readyGlowInset or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowInset or 0)
+	panel.layout.pandemicGlowColor = Helper.NormalizeColor(
+		panel.layout.pandemicGlowColor,
+		layoutDefaults.pandemicGlowColor or panel.layout.readyGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor
+	)
+	panel.layout.readyGlowDuration = Helper.ClampInt(panel.layout.readyGlowDuration, 0, 30, layoutDefaults.readyGlowDuration or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowDuration or 0)
+	panel.layout.readyGlowCheckPower = panel.layout.readyGlowCheckPower == true
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
+	panel.layout.stackColor = Helper.NormalizeColor(panel.layout.stackColor, layoutDefaults.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
+	panel.layout.chargesColor = Helper.NormalizeColor(panel.layout.chargesColor, layoutDefaults.chargesColor or Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	panel.layout.cooldownTextColor = Helper.NormalizeColor(panel.layout.cooldownTextColor, layoutDefaults.cooldownTextColor or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor)
+	if panel.layout.cooldownTextFont ~= nil and type(panel.layout.cooldownTextFont) ~= "string" then panel.layout.cooldownTextFont = nil end
+	if panel.layout.cooldownTextSize ~= nil then panel.layout.cooldownTextSize = Helper.ClampInt(panel.layout.cooldownTextSize, 6, 64, 12) end
+	if panel.layout.cooldownTextStyle ~= nil then panel.layout.cooldownTextStyle = Helper.NormalizeFontStyleChoice(panel.layout.cooldownTextStyle, "NONE") end
+	if panel.layout.cooldownTextX ~= nil then panel.layout.cooldownTextX = Helper.ClampInt(panel.layout.cooldownTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
+	if panel.layout.cooldownTextY ~= nil then panel.layout.cooldownTextY = Helper.ClampInt(panel.layout.cooldownTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
+	if type(panel.layout.staticTextFont) ~= "string" then panel.layout.staticTextFont = layoutDefaults.staticTextFont or Helper.PANEL_LAYOUT_DEFAULTS.staticTextFont or "" end
+	panel.layout.staticTextSize = Helper.ClampInt(panel.layout.staticTextSize, 6, 64, layoutDefaults.staticTextSize or Helper.PANEL_LAYOUT_DEFAULTS.staticTextSize or 12)
+	panel.layout.staticTextStyle = Helper.NormalizeFontStyleChoice(panel.layout.staticTextStyle, layoutDefaults.staticTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.staticTextStyle or "OUTLINE")
+	panel.layout.staticTextColor = Helper.NormalizeColor(panel.layout.staticTextColor, layoutDefaults.staticTextColor or Helper.PANEL_LAYOUT_DEFAULTS.staticTextColor or { 1, 1, 1, 1 })
+	panel.layout.staticTextAnchor = Helper.NormalizeAnchor(panel.layout.staticTextAnchor, layoutDefaults.staticTextAnchor or Helper.PANEL_LAYOUT_DEFAULTS.staticTextAnchor or "CENTER")
+	panel.layout.staticTextX = Helper.ClampInt(panel.layout.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, layoutDefaults.staticTextX or Helper.PANEL_LAYOUT_DEFAULTS.staticTextX or 0)
+	panel.layout.staticTextY = Helper.ClampInt(panel.layout.staticTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, layoutDefaults.staticTextY or Helper.PANEL_LAYOUT_DEFAULTS.staticTextY or 0)
 	if type(panel.anchor) ~= "table" then panel.anchor = {} end
 	local anchor = panel.anchor
 	if anchor.point == nil then anchor.point = panel.point or "CENTER" end
@@ -982,10 +1106,89 @@ function Helper.NormalizeEntry(entry, defaults)
 	if duration < 0 then duration = 0 end
 	if duration > 30 then duration = 30 end
 	entry.glowDuration = math.floor(duration + 0.5)
+	local hasLegacySharedProcGlowVisual = entry.type == "SPELL" and (entry.glowStyle ~= nil or entry.glowInset ~= nil)
+	if hasLegacySharedProcGlowVisual then
+		if entry.procGlowStyle == nil then entry.procGlowStyle = entry.glowStyle end
+		if entry.procGlowInset == nil then entry.procGlowInset = entry.glowInset end
+	end
+	if entry.glowStyle ~= nil then entry.glowStyle = Helper.NormalizeGlowStyle(entry.glowStyle, nil) end
+	if entry.pandemicGlowStyle ~= nil then entry.pandemicGlowStyle = Helper.NormalizeGlowStyle(entry.pandemicGlowStyle, nil) end
+	if entry.procGlowStyle ~= nil then entry.procGlowStyle = Helper.NormalizeGlowStyle(entry.procGlowStyle, nil) end
+	if entry.glowInset ~= nil then entry.glowInset = Helper.NormalizeGlowInset(entry.glowInset, nil) end
+	if entry.pandemicGlowInset ~= nil then entry.pandemicGlowInset = Helper.NormalizeGlowInset(entry.pandemicGlowInset, nil) end
+	if entry.procGlowInset ~= nil then entry.procGlowInset = Helper.NormalizeGlowInset(entry.procGlowInset, nil) end
+	if type(entry.pandemicGlow) ~= "boolean" then entry.pandemicGlow = Helper.ENTRY_DEFAULTS.pandemicGlow end
+	if type(entry.hideIcon) ~= "boolean" then entry.hideIcon = Helper.ENTRY_DEFAULTS.hideIcon end
+	if type(entry.iconSizeUseGlobal) ~= "boolean" then entry.iconSizeUseGlobal = true end
+	entry.iconSize = Helper.ClampInt(entry.iconSize, 12, 128, Helper.ENTRY_DEFAULTS.iconSize or Helper.PANEL_LAYOUT_DEFAULTS.iconSize or 36)
+	entry.iconOffsetX = Helper.ClampInt(entry.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.iconOffsetX or 0)
+	entry.iconOffsetY = Helper.ClampInt(entry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.iconOffsetY or 0)
+	if type(entry.showIconTextureUseGlobal) ~= "boolean" then entry.showIconTextureUseGlobal = true end
+	if type(entry.stackStyleUseGlobal) ~= "boolean" then entry.stackStyleUseGlobal = true end
+	entry.stackAnchor = Helper.NormalizeAnchor(entry.stackAnchor, Helper.ENTRY_DEFAULTS.stackAnchor or Helper.PANEL_LAYOUT_DEFAULTS.stackAnchor or "BOTTOMRIGHT")
+	entry.stackX = Helper.ClampInt(entry.stackX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.stackX or 0)
+	entry.stackY = Helper.ClampInt(entry.stackY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.stackY or 0)
+	if type(entry.stackFont) ~= "string" then entry.stackFont = Helper.ENTRY_DEFAULTS.stackFont or "" end
+	entry.stackFontSize = Helper.ClampInt(entry.stackFontSize, 6, 64, Helper.ENTRY_DEFAULTS.stackFontSize or Helper.PANEL_LAYOUT_DEFAULTS.stackFontSize or 12)
+	entry.stackFontStyle = Helper.NormalizeFontStyleChoice(entry.stackFontStyle, Helper.ENTRY_DEFAULTS.stackFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.stackFontStyle or "OUTLINE")
+	entry.stackColor = Helper.NormalizeColor(entry.stackColor, Helper.ENTRY_DEFAULTS.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
+	if type(entry.chargesStyleUseGlobal) ~= "boolean" then entry.chargesStyleUseGlobal = true end
+	entry.chargesAnchor = Helper.NormalizeAnchor(entry.chargesAnchor, Helper.ENTRY_DEFAULTS.chargesAnchor or Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor or "TOP")
+	entry.chargesX = Helper.ClampInt(entry.chargesX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.chargesX or 0)
+	entry.chargesY = Helper.ClampInt(entry.chargesY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.chargesY or 0)
+	if type(entry.chargesFont) ~= "string" then entry.chargesFont = Helper.ENTRY_DEFAULTS.chargesFont or "" end
+	entry.chargesFontSize = Helper.ClampInt(entry.chargesFontSize, 6, 64, Helper.ENTRY_DEFAULTS.chargesFontSize or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontSize or 12)
+	entry.chargesFontStyle = Helper.NormalizeFontStyleChoice(entry.chargesFontStyle, Helper.ENTRY_DEFAULTS.chargesFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontStyle or "OUTLINE")
+	entry.chargesColor = Helper.NormalizeColor(entry.chargesColor, Helper.ENTRY_DEFAULTS.chargesColor or Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
+	if type(entry.cooldownVisualsUseGlobal) ~= "boolean" then entry.cooldownVisualsUseGlobal = true end
+	if type(entry.showChargesCooldown) ~= "boolean" then entry.showChargesCooldown = Helper.ENTRY_DEFAULTS.showChargesCooldown end
+	if type(entry.cooldownDrawEdge) ~= "boolean" then entry.cooldownDrawEdge = Helper.ENTRY_DEFAULTS.cooldownDrawEdge end
+	if type(entry.cooldownDrawBling) ~= "boolean" then entry.cooldownDrawBling = Helper.ENTRY_DEFAULTS.cooldownDrawBling end
+	if type(entry.cooldownDrawSwipe) ~= "boolean" then entry.cooldownDrawSwipe = Helper.ENTRY_DEFAULTS.cooldownDrawSwipe end
+	if type(entry.cooldownGcdDrawEdge) ~= "boolean" then entry.cooldownGcdDrawEdge = Helper.ENTRY_DEFAULTS.cooldownGcdDrawEdge end
+	if type(entry.cooldownGcdDrawBling) ~= "boolean" then entry.cooldownGcdDrawBling = Helper.ENTRY_DEFAULTS.cooldownGcdDrawBling end
+	if type(entry.cooldownGcdDrawSwipe) ~= "boolean" then entry.cooldownGcdDrawSwipe = Helper.ENTRY_DEFAULTS.cooldownGcdDrawSwipe end
+	if type(entry.cooldownTextUseGlobal) ~= "boolean" then entry.cooldownTextUseGlobal = true end
+	if type(entry.noDesaturationUseGlobal) ~= "boolean" then entry.noDesaturationUseGlobal = true end
+	if type(entry.noDesaturation) ~= "boolean" then entry.noDesaturation = Helper.ENTRY_DEFAULTS.noDesaturation end
+	if type(entry.checkPowerUseGlobal) ~= "boolean" then entry.checkPowerUseGlobal = Helper.ENTRY_DEFAULTS.checkPowerUseGlobal end
+	if type(entry.checkPower) ~= "boolean" then entry.checkPower = Helper.ENTRY_DEFAULTS.checkPower end
+	if type(entry.readyGlowCheckPower) ~= "boolean" then entry.readyGlowCheckPower = Helper.ENTRY_DEFAULTS.readyGlowCheckPower end
+	if type(entry.procGlowEnabled) ~= "boolean" then entry.procGlowEnabled = Helper.ENTRY_DEFAULTS.procGlowEnabled end
+	if type(entry.procGlowUseGlobal) ~= "boolean" then
+		entry.procGlowUseGlobal = (hasLegacySharedProcGlowVisual or entry.procGlowStyle ~= nil or entry.procGlowInset ~= nil or entry.procGlowEnabled ~= Helper.ENTRY_DEFAULTS.procGlowEnabled)
+				and false
+			or Helper.ENTRY_DEFAULTS.procGlowUseGlobal
+	end
+	if type(entry.glowUseGlobal) ~= "boolean" then
+		entry.glowUseGlobal = entry.glowDuration == (Helper.ENTRY_DEFAULTS.glowDuration or 0)
+			and entry.glowColor == nil
+			and entry.glowStyle == nil
+			and entry.glowInset == nil
+			and entry.pandemicGlowColor == nil
+			and entry.pandemicGlowStyle == nil
+			and entry.pandemicGlowInset == nil
+	end
 	if type(entry.soundReady) ~= "boolean" then entry.soundReady = Helper.ENTRY_DEFAULTS.soundReady end
 	if type(entry.soundReadyFile) ~= "string" or entry.soundReadyFile == "" then entry.soundReadyFile = Helper.ENTRY_DEFAULTS.soundReadyFile end
 	if type(entry.staticText) ~= "string" then entry.staticText = Helper.ENTRY_DEFAULTS.staticText end
 	if type(entry.staticTextShowOnCooldown) ~= "boolean" then entry.staticTextShowOnCooldown = Helper.ENTRY_DEFAULTS.staticTextShowOnCooldown end
+	if type(entry.staticTextUseGlobal) ~= "boolean" then
+		local defaultStaticColor = Helper.ENTRY_DEFAULTS.staticTextColor or { 1, 1, 1, 1 }
+		local currentStaticColor = Helper.NormalizeColor(entry.staticTextColor, defaultStaticColor)
+		local normalizedDefaultStaticColor = Helper.NormalizeColor(defaultStaticColor, defaultStaticColor)
+		local usesDefaultStaticStyle = (type(entry.staticTextFont) ~= "string" or entry.staticTextFont == "")
+			and Helper.ClampInt(entry.staticTextSize, 6, 64, Helper.ENTRY_DEFAULTS.staticTextSize or 12) == (Helper.ENTRY_DEFAULTS.staticTextSize or 12)
+			and Helper.NormalizeFontStyleChoice(entry.staticTextStyle, Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE") == (Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE")
+			and currentStaticColor[1] == normalizedDefaultStaticColor[1]
+			and currentStaticColor[2] == normalizedDefaultStaticColor[2]
+			and currentStaticColor[3] == normalizedDefaultStaticColor[3]
+			and currentStaticColor[4] == normalizedDefaultStaticColor[4]
+			and Helper.NormalizeAnchor(entry.staticTextAnchor, Helper.ENTRY_DEFAULTS.staticTextAnchor or "CENTER") == (Helper.ENTRY_DEFAULTS.staticTextAnchor or "CENTER")
+			and Helper.ClampInt(entry.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextX or 0) == (Helper.ENTRY_DEFAULTS.staticTextX or 0)
+			and Helper.ClampInt(entry.staticTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextY or 0) == (Helper.ENTRY_DEFAULTS.staticTextY or 0)
+		entry.staticTextUseGlobal = usesDefaultStaticStyle
+	end
 	if type(entry.staticTextFont) ~= "string" then entry.staticTextFont = Helper.ENTRY_DEFAULTS.staticTextFont end
 	entry.staticTextSize = Helper.ClampInt(entry.staticTextSize, 6, 64, Helper.ENTRY_DEFAULTS.staticTextSize or 12)
 	entry.staticTextStyle = Helper.NormalizeFontStyleChoice(entry.staticTextStyle, Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE")
@@ -993,6 +1196,14 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.staticTextAnchor = Helper.NormalizeAnchor(entry.staticTextAnchor, Helper.ENTRY_DEFAULTS.staticTextAnchor or "CENTER")
 	entry.staticTextX = Helper.ClampInt(entry.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextX or 0)
 	entry.staticTextY = Helper.ClampInt(entry.staticTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextY or 0)
+	if entry.cooldownTextFont ~= nil and type(entry.cooldownTextFont) ~= "string" then entry.cooldownTextFont = nil end
+	if entry.cooldownTextSize ~= nil then entry.cooldownTextSize = Helper.ClampInt(entry.cooldownTextSize, 6, 64, 12) end
+	if entry.cooldownTextStyle ~= nil then entry.cooldownTextStyle = Helper.NormalizeFontStyleChoice(entry.cooldownTextStyle, "NONE") end
+	if entry.cooldownTextColor ~= nil then entry.cooldownTextColor = Helper.NormalizeColor(entry.cooldownTextColor, Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor) end
+	if entry.cooldownTextX ~= nil then entry.cooldownTextX = Helper.ClampInt(entry.cooldownTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
+	if entry.cooldownTextY ~= nil then entry.cooldownTextY = Helper.ClampInt(entry.cooldownTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
+	if entry.glowColor ~= nil then entry.glowColor = Helper.NormalizeColor(entry.glowColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) end
+	if entry.pandemicGlowColor ~= nil then entry.pandemicGlowColor = Helper.NormalizeColor(entry.pandemicGlowColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) end
 	entry.slotIndex = Helper.NormalizeSlotIndex(entry.slotIndex)
 	entry.slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
 	entry.slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)

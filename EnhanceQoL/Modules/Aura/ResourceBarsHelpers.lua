@@ -46,6 +46,23 @@ local function normalizeGradientColor(value)
 	return 1, 1, 1, 1
 end
 
+local function isSecretGradientComponent(value) return issecretvalue and issecretvalue(value) end
+
+local function hasSecretGradientColor(r, g, b, a) return isSecretGradientComponent(r) or isSecretGradientComponent(g) or isSecretGradientComponent(b) or isSecretGradientComponent(a) end
+
+local function resolveSolidGradientColors(baseR, baseG, baseB, baseA)
+	local br = baseR ~= nil and baseR or 1
+	local bg = baseG ~= nil and baseG or 1
+	local bb = baseB ~= nil and baseB or 1
+	local ba = baseA ~= nil and baseA or 1
+	return br, bg, bb, ba, br, bg, bb, ba
+end
+
+local function canCreateGradientColor(r, g, b, a)
+	if hasSecretGradientColor(r, g, b, a) then return false end
+	return type(r) == "number" and type(g) == "number" and type(b) == "number" and type(a or 1) == "number"
+end
+
 local function resolveDiscreteSegmentBackground(cfg, fallbackTexture, fallbackR, fallbackG, fallbackB, fallbackA)
 	local bd = cfg and cfg.backdrop
 	if bd and bd.enabled == false then return nil, 0, 0, 0, 0, false end
@@ -88,7 +105,10 @@ local function isGradientDebugEnabled()
 	return addon and addon.db and addon.db.debugResourceBarsGradient == true
 end
 
-local function formatColor(r, g, b, a) return string.format("%.2f/%.2f/%.2f/%.2f", r or 0, g or 0, b or 0, a or 1) end
+local function formatColor(r, g, b, a)
+	if hasSecretGradientColor(r, g, b, a) then return "<secret>" end
+	return string.format("%.2f/%.2f/%.2f/%.2f", r or 0, g or 0, b or 0, a or 1)
+end
 
 local function debugGradient(bar, reason, cfg, baseR, baseG, baseB, baseA, sr, sg, sb, sa, er, eg, eb, ea, force)
 	if not isGradientDebugEnabled() then return end
@@ -131,6 +151,7 @@ local function clearGradientState(bar)
 	bar._rbGradientEnabled = nil
 	bar._rbGradientTex = nil
 	bar._rbGradDir = nil
+	bar._rbGradUsesSecretBase = nil
 	bar._rbGradSR = nil
 	bar._rbGradSG = nil
 	bar._rbGradSB = nil
@@ -962,13 +983,23 @@ function ResourceBars.ApplyBarGradient(bar, cfg, baseR, baseG, baseB, baseA, for
 	if not bar or not cfg or cfg.useGradient ~= true then return false end
 	local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
 	if not tex or not tex.SetGradient then return false end
-	local sr, sg, sb, sa, er, eg, eb, ea = resolveGradientColors(cfg, baseR, baseG, baseB, baseA)
+	local usesSecretBase = hasSecretGradientColor(baseR, baseG, baseB, baseA)
+	local sr, sg, sb, sa, er, eg, eb, ea
+	if usesSecretBase then
+		-- Secret colors cannot be used in Lua arithmetic. Fall back to a solid fill instead of
+		-- multiplying the configured gradient against the protected color values.
+		sr, sg, sb, sa, er, eg, eb, ea = resolveSolidGradientColors(baseR, baseG, baseB, baseA)
+	else
+		sr, sg, sb, sa, er, eg, eb, ea = resolveGradientColors(cfg, baseR, baseG, baseB, baseA)
+	end
 	local direction = (cfg and cfg.gradientDirection) or "VERTICAL"
 	if type(direction) == "string" then direction = direction:upper() end
 	if direction ~= "HORIZONTAL" then direction = "VERTICAL" end
 	if
-		not force
+		not usesSecretBase
+		and not force
 		and bar._rbGradientEnabled
+		and not bar._rbGradUsesSecretBase
 		and bar._rbGradientTex == tex
 		and bar._rbGradDir == direction
 		and bar._rbGradSR == sr
@@ -982,13 +1013,33 @@ function ResourceBars.ApplyBarGradient(bar, cfg, baseR, baseG, baseB, baseA, for
 	then
 		return true
 	end
-	tex:SetGradient(direction, CreateColor(sr, sg, sb, sa), CreateColor(er, eg, eb, ea))
+	if usesSecretBase then
+		-- Retail can return protected status-bar colors here. Keep the already-applied solid/curve tint
+		-- and skip SetGradient entirely instead of rewrapping secret values through CreateColor.
+		debugGradient(bar, "skip-secret", cfg, baseR, baseG, baseB, baseA, sr, sg, sb, sa, er, eg, eb, ea, force)
+		clearGradientState(bar)
+		return false
+	end
+	if not canCreateGradientColor(sr, sg, sb, sa) or not canCreateGradientColor(er, eg, eb, ea) then
+		debugGradient(bar, "skip-invalid", cfg, baseR, baseG, baseB, baseA, sr, sg, sb, sa, er, eg, eb, ea, force)
+		clearGradientState(bar)
+		return false
+	end
+	local startColor = CreateColor(sr, sg, sb, sa)
+	local endColor = CreateColor(er, eg, eb, ea)
+	tex:SetGradient(direction, startColor, endColor)
 	debugGradient(bar, "apply", cfg, baseR, baseG, baseB, baseA, sr, sg, sb, sa, er, eg, eb, ea, force)
 	bar._rbGradientEnabled = true
 	bar._rbGradientTex = tex
 	bar._rbGradDir = direction
-	bar._rbGradSR, bar._rbGradSG, bar._rbGradSB, bar._rbGradSA = sr, sg, sb, sa
-	bar._rbGradER, bar._rbGradEG, bar._rbGradEB, bar._rbGradEA = er, eg, eb, ea
+	bar._rbGradUsesSecretBase = usesSecretBase or nil
+	if usesSecretBase then
+		bar._rbGradSR, bar._rbGradSG, bar._rbGradSB, bar._rbGradSA = nil, nil, nil, nil
+		bar._rbGradER, bar._rbGradEG, bar._rbGradEB, bar._rbGradEA = nil, nil, nil, nil
+	else
+		bar._rbGradSR, bar._rbGradSG, bar._rbGradSB, bar._rbGradSA = sr, sg, sb, sa
+		bar._rbGradER, bar._rbGradEG, bar._rbGradEB, bar._rbGradEA = er, eg, eb, ea
+	end
 	return true
 end
 

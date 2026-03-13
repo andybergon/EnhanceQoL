@@ -58,6 +58,11 @@ local squareMinimapStatsAnchorOptions = {
 	BOTTOM = L["squareMinimapStatsAnchorBottom"] or "Bottom",
 	BOTTOMRIGHT = L["squareMinimapStatsAnchorBottomRight"] or "Bottom Right",
 }
+local squareMinimapStatsTimeLeftClickActionOrder = { "calendar", "clock" }
+local squareMinimapStatsTimeLeftClickActionOptions = {
+	calendar = L["Time left-click opens calendar"] or "Open calendar",
+	clock = L["Time left-click opens stopwatch"] or "Open stopwatch",
+}
 
 local function getCachedFontMedia()
 	local names = addon.functions and addon.functions.GetLSMMediaNames and addon.functions.GetLSMMediaNames("font")
@@ -82,6 +87,12 @@ local function normalizeSquareMinimapStatsOutlineSelection(primary, secondary)
 	if outline == "NONE" then return "NONE" end
 	if squareMinimapStatsOutlineOptions[outline] then return outline end
 	return "OUTLINE"
+end
+
+local function normalizeSquareMinimapTimeLeftClickAction(primary, secondary)
+	local action = getSettingSelectedValue(primary, secondary)
+	if action == "calendar" then return "calendar" end
+	return "clock"
 end
 
 local function normalizeSquareMinimapAnchorSelection(primary, secondary, fallback)
@@ -436,6 +447,23 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsTimeLeftClickAction",
+						text = L["Time left-click action"] or "Left-click action",
+						list = squareMinimapStatsTimeLeftClickActionOptions,
+						order = squareMinimapStatsTimeLeftClickActionOrder,
+						get = function() return normalizeSquareMinimapTimeLeftClickAction(addon.db and addon.db.squareMinimapStatsTimeLeftClickAction, nil) end,
+						set = function(value, maybeValue)
+							addon.db["squareMinimapStatsTimeLeftClickAction"] = normalizeSquareMinimapTimeLeftClickAction(value, maybeValue)
+							applySquareMinimapStatsNow(true)
+						end,
+						default = "calendar",
+						sType = "dropdown",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsTime"),
+						notify = "squareMinimapStatsTime",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsTimeAnchor",
 						text = L["squareMinimapStatsAnchor"] or "Anchor",
 						list = squareMinimapStatsAnchorOptions,
@@ -503,12 +531,26 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsTimeUseClassColor",
+						text = L["squareMinimapStatsUseClassColor"] or "Use class color",
+						func = function(value)
+							addon.db["squareMinimapStatsTimeUseClassColor"] = value and true or false
+							applySquareMinimapStatsNow(true)
+						end,
+						default = false,
+						sType = "checkbox",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsTime"),
+						notify = "squareMinimapStatsTime",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsTimeColor",
 						text = L["squareMinimapStatsColor"] or "Text color",
 						parent = true,
 						default = false,
 						sType = "colorpicker",
-						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsTime"),
+						parentCheck = function() return isSquareMinimapStatElementEnabled("squareMinimapStatsTime")() and addon.db and addon.db.squareMinimapStatsTimeUseClassColor ~= true end,
 						callback = function() applySquareMinimapStatsNow(true) end,
 						parentSection = mapExpandable,
 					},
@@ -690,12 +732,26 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsFPSUseClassColor",
+						text = L["squareMinimapStatsUseClassColor"] or "Use class color",
+						func = function(value)
+							addon.db["squareMinimapStatsFPSUseClassColor"] = value and true or false
+							applySquareMinimapStatsNow(true)
+						end,
+						default = false,
+						sType = "checkbox",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsFPS"),
+						notify = "squareMinimapStatsFPS",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsFPSColor",
 						text = L["squareMinimapStatsColor"] or "Text color",
 						parent = true,
 						default = false,
 						sType = "colorpicker",
-						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsFPS"),
+						parentCheck = function() return isSquareMinimapStatElementEnabled("squareMinimapStatsFPS")() and addon.db and addon.db.squareMinimapStatsFPSUseClassColor ~= true end,
 						callback = function() applySquareMinimapStatsNow(true) end,
 						parentSection = mapExpandable,
 					},
@@ -899,12 +955,26 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsLatencyUseClassColor",
+						text = L["squareMinimapStatsUseClassColor"] or "Use class color",
+						func = function(value)
+							addon.db["squareMinimapStatsLatencyUseClassColor"] = value and true or false
+							applySquareMinimapStatsNow(true)
+						end,
+						default = false,
+						sType = "checkbox",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsLatency"),
+						notify = "squareMinimapStatsLatency",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsLatencyColor",
 						text = L["squareMinimapStatsColor"] or "Text color",
 						parent = true,
 						default = false,
 						sType = "colorpicker",
-						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsLatency"),
+						parentCheck = function() return isSquareMinimapStatElementEnabled("squareMinimapStatsLatency")() and addon.db and addon.db.squareMinimapStatsLatencyUseClassColor ~= true end,
 						callback = function() applySquareMinimapStatsNow(true) end,
 						parentSection = mapExpandable,
 					},
@@ -958,16 +1028,36 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsLocationSubzoneBelowZone",
+						text = L["squareMinimapStatsLocationSubzoneBelowZone"] or "Show subzone below zone",
+						func = function(value)
+							addon.db["squareMinimapStatsLocationSubzoneBelowZone"] = value and true or false
+							applySquareMinimapStatsNow(true)
+						end,
+						default = false,
+						sType = "checkbox",
+						parent = true,
+						parentCheck = function()
+							return isSquareMinimapStatElementEnabled("squareMinimapStatsLocation")
+								and addon.db
+								and addon.db.squareMinimapStatsLocationShowZone ~= false
+								and addon.db.squareMinimapStatsLocationShowSubzone == true
+						end,
+						notify = "squareMinimapStatsLocation",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsLocationUseZoneColor",
 						text = L["squareMinimapStatsLocationUseZoneColor"] or "Use zone color",
 						func = function(value)
 							addon.db["squareMinimapStatsLocationUseZoneColor"] = value and true or false
+							if value then addon.db["squareMinimapStatsLocationUseClassColor"] = false end
 							applySquareMinimapStatsNow(true)
 						end,
 						default = true,
 						sType = "checkbox",
 						parent = true,
-						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsLocation"),
+						parentCheck = function() return isSquareMinimapStatElementEnabled("squareMinimapStatsLocation")() and addon.db and addon.db.squareMinimapStatsLocationUseClassColor ~= true end,
 						notify = "squareMinimapStatsLocation",
 						parentSection = mapExpandable,
 					},
@@ -1039,12 +1129,32 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsLocationUseClassColor",
+						text = L["squareMinimapStatsUseClassColor"] or "Use class color",
+						func = function(value)
+							addon.db["squareMinimapStatsLocationUseClassColor"] = value and true or false
+							if value then addon.db["squareMinimapStatsLocationUseZoneColor"] = false end
+							applySquareMinimapStatsNow(true)
+						end,
+						default = false,
+						sType = "checkbox",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsLocation"),
+						notify = "squareMinimapStatsLocation",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsLocationColor",
 						text = L["squareMinimapStatsColor"] or "Text color",
 						parent = true,
 						default = false,
 						sType = "colorpicker",
-						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsLocation"),
+						parentCheck = function()
+							return isSquareMinimapStatElementEnabled("squareMinimapStatsLocation")()
+								and addon.db
+								and addon.db.squareMinimapStatsLocationUseClassColor ~= true
+								and addon.db.squareMinimapStatsLocationUseZoneColor ~= true
+						end,
 						callback = function() applySquareMinimapStatsNow(true) end,
 						parentSection = mapExpandable,
 					},
@@ -1185,12 +1295,28 @@ data = {
 						parentSection = mapExpandable,
 					},
 					{
+						var = "squareMinimapStatsCoordinatesUseClassColor",
+						text = L["squareMinimapStatsUseClassColor"] or "Use class color",
+						func = function(value)
+							addon.db["squareMinimapStatsCoordinatesUseClassColor"] = value and true or false
+							applySquareMinimapStatsNow(true)
+						end,
+						default = false,
+						sType = "checkbox",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsCoordinates"),
+						notify = "squareMinimapStatsCoordinates",
+						parentSection = mapExpandable,
+					},
+					{
 						var = "squareMinimapStatsCoordinatesColor",
 						text = L["squareMinimapStatsColor"] or "Text color",
 						parent = true,
 						default = false,
 						sType = "colorpicker",
-						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsCoordinates"),
+						parentCheck = function()
+							return isSquareMinimapStatElementEnabled("squareMinimapStatsCoordinates")() and addon.db and addon.db.squareMinimapStatsCoordinatesUseClassColor ~= true
+						end,
 						callback = function() applySquareMinimapStatsNow(true) end,
 						parentSection = mapExpandable,
 					},
@@ -1264,6 +1390,19 @@ data = {
 						step = 1,
 						default = -3,
 						sType = "slider",
+						parent = true,
+						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsTrackingButton"),
+						parentSection = mapExpandable,
+					},
+					{
+						var = "squareMinimapStatsTrackingButtonShowBackground",
+						text = L["squareMinimapStatsTrackingButtonShowBackground"] or "Show border/background",
+						func = function(value)
+							addon.db["squareMinimapStatsTrackingButtonShowBackground"] = value and true or false
+							applySquareMinimapStatsNow(true)
+						end,
+						default = true,
+						sType = "checkbox",
 						parent = true,
 						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsTrackingButton"),
 						parentSection = mapExpandable,
@@ -2245,15 +2384,18 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsTimeOffsetY = 17,
 	squareMinimapStatsTimeFontSize = 18,
 	squareMinimapStatsTimeColor = { r = 1, g = 1, b = 1, a = 1 },
+	squareMinimapStatsTimeUseClassColor = false,
 	squareMinimapStatsTimeDisplayMode = "server",
 	squareMinimapStatsTimeUse24Hour = true,
 	squareMinimapStatsTimeShowSeconds = false,
+	squareMinimapStatsTimeLeftClickAction = "calendar",
 	squareMinimapStatsFPS = true,
 	squareMinimapStatsFPSAnchor = "BOTTOMLEFT",
 	squareMinimapStatsFPSOffsetX = 3,
 	squareMinimapStatsFPSOffsetY = 3,
 	squareMinimapStatsFPSFontSize = 12,
 	squareMinimapStatsFPSColor = { r = 1, g = 1, b = 1, a = 1 },
+	squareMinimapStatsFPSUseClassColor = false,
 	squareMinimapStatsFPSThresholdMedium = 30,
 	squareMinimapStatsFPSThresholdHigh = 60,
 	squareMinimapStatsFPSColorLow = { r = 1, g = 0, b = 0, a = 1 },
@@ -2266,6 +2408,7 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsLatencyOffsetY = 3,
 	squareMinimapStatsLatencyFontSize = 12,
 	squareMinimapStatsLatencyColor = { r = 1, g = 1, b = 1, a = 1 },
+	squareMinimapStatsLatencyUseClassColor = false,
 	squareMinimapStatsLatencyMode = "max",
 	squareMinimapStatsLatencyThresholdLow = 50,
 	squareMinimapStatsLatencyThresholdMid = 150,
@@ -2279,8 +2422,10 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsLocationOffsetY = -3,
 	squareMinimapStatsLocationFontSize = 12,
 	squareMinimapStatsLocationColor = { r = 1, g = 1, b = 1, a = 1 },
+	squareMinimapStatsLocationUseClassColor = false,
 	squareMinimapStatsLocationShowZone = true,
 	squareMinimapStatsLocationShowSubzone = false,
+	squareMinimapStatsLocationSubzoneBelowZone = false,
 	squareMinimapStatsLocationUseZoneColor = true,
 	squareMinimapStatsCoordinates = true,
 	squareMinimapStatsCoordinatesAnchor = "TOP",
@@ -2288,6 +2433,7 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsCoordinatesOffsetY = -17,
 	squareMinimapStatsCoordinatesFontSize = 12,
 	squareMinimapStatsCoordinatesColor = { r = 1, g = 1, b = 1, a = 1 },
+	squareMinimapStatsCoordinatesUseClassColor = false,
 	squareMinimapStatsCoordinatesHideInInstance = true,
 	squareMinimapStatsCoordinatesDecimals = 2,
 	squareMinimapStatsCoordinatesUpdateInterval = 0.2,
@@ -2295,6 +2441,7 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsTrackingButtonAnchor = "TOPLEFT",
 	squareMinimapStatsTrackingButtonOffsetX = 3,
 	squareMinimapStatsTrackingButtonOffsetY = -3,
+	squareMinimapStatsTrackingButtonShowBackground = true,
 	squareMinimapStatsTrackingButtonScale = 1.0,
 }
 
@@ -2306,6 +2453,7 @@ local squareMinimapStatsConfig = {
 		offsetYKey = "squareMinimapStatsTimeOffsetY",
 		fontSizeKey = "squareMinimapStatsTimeFontSize",
 		colorKey = "squareMinimapStatsTimeColor",
+		useClassColorKey = "squareMinimapStatsTimeUseClassColor",
 		anchorPoint = "BOTTOMLEFT",
 	},
 	fps = {
@@ -2315,6 +2463,7 @@ local squareMinimapStatsConfig = {
 		offsetYKey = "squareMinimapStatsFPSOffsetY",
 		fontSizeKey = "squareMinimapStatsFPSFontSize",
 		colorKey = "squareMinimapStatsFPSColor",
+		useClassColorKey = "squareMinimapStatsFPSUseClassColor",
 		anchorPoint = "BOTTOMLEFT",
 	},
 	latency = {
@@ -2324,6 +2473,7 @@ local squareMinimapStatsConfig = {
 		offsetYKey = "squareMinimapStatsLatencyOffsetY",
 		fontSizeKey = "squareMinimapStatsLatencyFontSize",
 		colorKey = "squareMinimapStatsLatencyColor",
+		useClassColorKey = "squareMinimapStatsLatencyUseClassColor",
 		anchorPoint = "BOTTOMRIGHT",
 	},
 	location = {
@@ -2333,6 +2483,7 @@ local squareMinimapStatsConfig = {
 		offsetYKey = "squareMinimapStatsLocationOffsetY",
 		fontSizeKey = "squareMinimapStatsLocationFontSize",
 		colorKey = "squareMinimapStatsLocationColor",
+		useClassColorKey = "squareMinimapStatsLocationUseClassColor",
 		anchorPoint = "TOP",
 	},
 	coordinates = {
@@ -2342,6 +2493,7 @@ local squareMinimapStatsConfig = {
 		offsetYKey = "squareMinimapStatsCoordinatesOffsetY",
 		fontSizeKey = "squareMinimapStatsCoordinatesFontSize",
 		colorKey = "squareMinimapStatsCoordinatesColor",
+		useClassColorKey = "squareMinimapStatsCoordinatesUseClassColor",
 		anchorPoint = "TOP",
 	},
 }
@@ -2355,6 +2507,8 @@ local function ensureSquareMinimapStatsDefaults()
 	end
 	addon.db.squareMinimapStatsFont = normalizeSquareMinimapStatsFontSelection(addon.db.squareMinimapStatsFont, nil)
 	addon.db.squareMinimapStatsOutline = normalizeSquareMinimapStatsOutlineSelection(addon.db.squareMinimapStatsOutline, nil)
+	addon.db.squareMinimapStatsTimeLeftClickAction =
+		normalizeSquareMinimapTimeLeftClickAction(addon.db.squareMinimapStatsTimeLeftClickAction, squareMinimapStatsDefaults.squareMinimapStatsTimeLeftClickAction)
 	addon.db.squareMinimapStatsTimeAnchor = normalizeSquareMinimapAnchorSelection(addon.db.squareMinimapStatsTimeAnchor, nil, squareMinimapStatsDefaults.squareMinimapStatsTimeAnchor)
 	addon.db.squareMinimapStatsFPSAnchor = normalizeSquareMinimapAnchorSelection(addon.db.squareMinimapStatsFPSAnchor, nil, squareMinimapStatsDefaults.squareMinimapStatsFPSAnchor)
 	addon.db.squareMinimapStatsLatencyAnchor = normalizeSquareMinimapAnchorSelection(addon.db.squareMinimapStatsLatencyAnchor, nil, squareMinimapStatsDefaults.squareMinimapStatsLatencyAnchor)
@@ -2476,12 +2630,14 @@ function addon.functions.applySquareMinimapTrackingButton()
 	local x = tonumber(addon.db and addon.db.squareMinimapStatsTrackingButtonOffsetX) or squareMinimapStatsDefaults.squareMinimapStatsTrackingButtonOffsetX or 0
 	local y = tonumber(addon.db and addon.db.squareMinimapStatsTrackingButtonOffsetY) or squareMinimapStatsDefaults.squareMinimapStatsTrackingButtonOffsetY or 0
 	local scale = clamp(tonumber(addon.db and addon.db.squareMinimapStatsTrackingButtonScale) or squareMinimapStatsDefaults.squareMinimapStatsTrackingButtonScale or 1, 0.5, 2.0)
+	local showBackground = not addon.db or addon.db.squareMinimapStatsTrackingButtonShowBackground ~= false
 
 	if holder:GetParent() ~= Minimap then holder:SetParent(Minimap) end
 	holder:SetFrameLevel((Minimap:GetFrameLevel() or 2) + 20)
 	holder:ClearAllPoints()
 	holder:SetPoint(point, Minimap, point, x, y)
 	holder:SetScale(scale)
+	holder.Background:SetShown(showBackground)
 
 	if button:GetParent() ~= holder then button:SetParent(holder) end
 	button:ClearAllPoints()
@@ -2501,6 +2657,14 @@ local function getSquareMinimapStatsColor(colorKey)
 		clamp(tonumber(color.g) or fallback.g or 1, 0, 1),
 		clamp(tonumber(color.b) or fallback.b or 1, 0, 1),
 		clamp(tonumber(color.a) or fallback.a or 1, 0, 1)
+end
+
+local function getSquareMinimapPlayerClassColor()
+	local classToken = (addon.variables and addon.variables.unitClass) or (UnitClass and select(2, UnitClass("player"))) or nil
+	local colors = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
+	local classColor = colors and classToken and colors[classToken] or nil
+	if not classColor then return 1, 1, 1 end
+	return clamp(tonumber(classColor.r) or 1, 0, 1), clamp(tonumber(classColor.g) or 1, 0, 1), clamp(tonumber(classColor.b) or 1, 0, 1)
 end
 
 local function getSquareMinimapStatsFontPath()
@@ -2696,6 +2860,9 @@ local function truncateSquareMinimapTextToWidth(fontString, text, maxWidth)
 	return best
 end
 
+local handleSquareMinimapTimeClick
+local configureSquareMinimapStatFrameInteraction
+
 local function ensureSquareMinimapStatFrame(statKey)
 	local state = getSquareMinimapStatsState()
 	local existing = state.frames[statKey]
@@ -2706,6 +2873,7 @@ local function ensureSquareMinimapStatFrame(statKey)
 			existing.textSecondary:SetJustifyV("MIDDLE")
 			existing.textSecondary:Hide()
 		end
+		configureSquareMinimapStatFrameInteraction(existing, statKey)
 		return existing
 	end
 	if not Minimap then return nil end
@@ -2720,6 +2888,7 @@ local function ensureSquareMinimapStatFrame(statKey)
 	frame.textSecondary:SetWordWrap(false)
 	frame.textSecondary:SetJustifyV("MIDDLE")
 	frame.textSecondary:Hide()
+	configureSquareMinimapStatFrameInteraction(frame, statKey)
 	frame:Hide()
 	state.frames[statKey] = frame
 	return frame
@@ -2780,30 +2949,49 @@ local function getSquareMinimapTimeText()
 	return serverText
 end
 
+local function getSquareMinimapTimeLeftClickAction()
+	return normalizeSquareMinimapTimeLeftClickAction(addon.db and addon.db.squareMinimapStatsTimeLeftClickAction, squareMinimapStatsDefaults.squareMinimapStatsTimeLeftClickAction)
+end
+
+handleSquareMinimapTimeClick = function(button)
+	if button ~= "LeftButton" then return end
+	if getSquareMinimapTimeLeftClickAction() == "calendar" then
+		if ToggleCalendar then
+			ToggleCalendar()
+		elseif ToggleTimeManager then
+			ToggleTimeManager()
+		end
+	elseif ToggleTimeManager then
+		ToggleTimeManager()
+	end
+end
+
+configureSquareMinimapStatFrameInteraction = function(frame, statKey)
+	if not frame then return end
+	if statKey == "time" then
+		frame:EnableMouse(true)
+		frame:SetHitRectInsets(-4, -4, -2, -2)
+		frame:SetScript("OnEnter", nil)
+		frame:SetScript("OnLeave", nil)
+		frame:SetScript("OnMouseUp", function(_, button) handleSquareMinimapTimeClick(button) end)
+	else
+		frame:EnableMouse(false)
+		frame:SetHitRectInsets(0, 0, 0, 0)
+		frame:SetScript("OnEnter", nil)
+		frame:SetScript("OnLeave", nil)
+		frame:SetScript("OnMouseUp", nil)
+	end
+end
+
+local getSquareMinimapLocationLines
+
 local function getSquareMinimapLocationText()
-	local zone = GetZoneText and GetZoneText() or nil
-	if not zone or zone == "" then zone = GetRealZoneText and GetRealZoneText() or "" end
-	local subzone = GetSubZoneText and GetSubZoneText() or ""
 	local showZone = addon.db.squareMinimapStatsLocationShowZone ~= false
 	local showSubzone = addon.db.squareMinimapStatsLocationShowSubzone ~= false
-	if not showZone and not showSubzone then return "" end
-	if showZone and showSubzone then
-		if subzone ~= "" and subzone ~= zone then
-			if zone and zone ~= "" then return zone .. " - " .. subzone end
-			return subzone
-		end
-		if zone and zone ~= "" then return zone end
-		return subzone
-	end
-	if showZone then
-		if zone and zone ~= "" then return zone end
-		return subzone
-	end
-	if showSubzone then
-		if subzone ~= "" then return subzone end
-		if zone and zone ~= "" then return zone end
-	end
-	return ""
+	local splitLines = addon.db.squareMinimapStatsLocationSubzoneBelowZone == true
+	local primaryText, secondaryText = getSquareMinimapLocationLines(showZone, showSubzone, splitLines)
+	if secondaryText ~= "" then return ("%s\n%s"):format(primaryText, secondaryText) end
+	return primaryText
 end
 
 local function getSquareMinimapCoordinatesText(frame, renderCfg)
@@ -2938,45 +3126,39 @@ local function buildSquareMinimapTimeText(frame, renderCfg)
 	return text
 end
 
-local function buildSquareMinimapLocationText(frame, renderCfg)
+getSquareMinimapLocationLines = function(showZone, showSubzone, splitLines)
 	local zone = GetZoneText and GetZoneText() or nil
 	if not zone or zone == "" then zone = GetRealZoneText and GetRealZoneText() or "" end
 	local subzone = GetSubZoneText and GetSubZoneText() or ""
+	if not showZone and not showSubzone then return "", "" end
+
+	if showZone and showSubzone then
+		if subzone ~= "" and subzone ~= zone then
+			if zone and zone ~= "" then
+				if splitLines then return zone, subzone end
+				return zone .. " - " .. subzone, ""
+			end
+			return subzone, ""
+		end
+		if zone and zone ~= "" then return zone, "" end
+		return subzone, ""
+	end
+
+	if showZone then
+		if zone and zone ~= "" then return zone, "" end
+		return subzone, ""
+	end
+
+	if subzone ~= "" then return subzone, "" end
+	if zone and zone ~= "" then return zone, "" end
+	return "", ""
+end
+
+local function buildSquareMinimapLocationTexts(renderCfg)
 	local showZone = renderCfg and renderCfg.locationShowZone ~= false
 	local showSubzone = renderCfg and renderCfg.locationShowSubzone ~= false
-
-	if frame and frame._eqolLocationZone == zone and frame._eqolLocationSubzone == subzone and frame._eqolLocationShowZone == showZone and frame._eqolLocationShowSubzone == showSubzone then
-		return frame._eqolPrimaryText or ""
-	end
-
-	local text = ""
-	if showZone or showSubzone then
-		if showZone and showSubzone then
-			if subzone ~= "" and subzone ~= zone then
-				if zone and zone ~= "" then
-					text = zone .. " - " .. subzone
-				else
-					text = subzone
-				end
-			elseif zone and zone ~= "" then
-				text = zone
-			else
-				text = subzone
-			end
-		elseif showZone then
-			text = (zone and zone ~= "") and zone or subzone
-		elseif showSubzone then
-			text = (subzone ~= "" and subzone) or zone or ""
-		end
-	end
-
-	if frame then
-		frame._eqolLocationZone = zone
-		frame._eqolLocationSubzone = subzone
-		frame._eqolLocationShowZone = showZone
-		frame._eqolLocationShowSubzone = showSubzone
-	end
-	return text
+	local splitLines = renderCfg and renderCfg.locationSubzoneBelowZone == true
+	return getSquareMinimapLocationLines(showZone, showSubzone, splitLines)
 end
 
 local function getSquareMinimapFPSBucket(renderCfg, value)
@@ -2996,12 +3178,17 @@ end
 local function buildSquareMinimapFPSText(frame, renderCfg)
 	local fps = math.floor((GetFramerate() or 0) + 0.5)
 	local bucket = getSquareMinimapFPSBucket(renderCfg, fps)
-	if frame and frame._eqolFPSValue == fps and frame._eqolFPSBucket == bucket then return frame._eqolPrimaryText or "" end
 	local r, g, b = getSquareMinimapFPSBucketColor(renderCfg, bucket)
+	if frame and frame._eqolFPSValue == fps and frame._eqolFPSBucket == bucket and frame._eqolFPSColorR == r and frame._eqolFPSColorG == g and frame._eqolFPSColorB == b then
+		return frame._eqolPrimaryText or ""
+	end
 	local text = ("FPS %s"):format(colorizeSquareMinimapText(fps, r, g, b))
 	if frame then
 		frame._eqolFPSValue = fps
 		frame._eqolFPSBucket = bucket
+		frame._eqolFPSColorR = r
+		frame._eqolFPSColorG = g
+		frame._eqolFPSColorB = b
 	end
 	return text
 end
@@ -3029,6 +3216,9 @@ local function buildSquareMinimapLatencyTexts(frame, renderCfg)
 	local worldBucket = getSquareMinimapLatencyBucket(renderCfg, world)
 	local maxValue = math.max(home, world)
 	local maxBucket = getSquareMinimapLatencyBucket(renderCfg, maxValue)
+	local hr, hg, hb = getSquareMinimapLatencyBucketColor(renderCfg, homeBucket)
+	local wr, wg, wb = getSquareMinimapLatencyBucketColor(renderCfg, worldBucket)
+	local mr, mg, mb = getSquareMinimapLatencyBucketColor(renderCfg, maxBucket)
 
 	if
 		frame
@@ -3038,12 +3228,19 @@ local function buildSquareMinimapLatencyTexts(frame, renderCfg)
 		and frame._eqolLatencyHomeBucket == homeBucket
 		and frame._eqolLatencyWorldBucket == worldBucket
 		and frame._eqolLatencyMaxBucket == maxBucket
+		and frame._eqolLatencyHomeColorR == hr
+		and frame._eqolLatencyHomeColorG == hg
+		and frame._eqolLatencyHomeColorB == hb
+		and frame._eqolLatencyWorldColorR == wr
+		and frame._eqolLatencyWorldColorG == wg
+		and frame._eqolLatencyWorldColorB == wb
+		and frame._eqolLatencyMaxColorR == mr
+		and frame._eqolLatencyMaxColorG == mg
+		and frame._eqolLatencyMaxColorB == mb
 	then
 		return frame._eqolPrimaryText or "", frame._eqolSecondaryText or ""
 	end
 
-	local hr, hg, hb = getSquareMinimapLatencyBucketColor(renderCfg, homeBucket)
-	local wr, wg, wb = getSquareMinimapLatencyBucketColor(renderCfg, worldBucket)
 	local homeText = ("H %sms"):format(colorizeSquareMinimapText(home, hr, hg, hb))
 	local worldText = ("W %sms"):format(colorizeSquareMinimapText(world, wr, wg, wb))
 	local primaryText, secondaryText = "", ""
@@ -3055,7 +3252,6 @@ local function buildSquareMinimapLatencyTexts(frame, renderCfg)
 		primaryText = homeText
 		secondaryText = worldText
 	else
-		local mr, mg, mb = getSquareMinimapLatencyBucketColor(renderCfg, maxBucket)
 		primaryText = ("MS %s"):format(colorizeSquareMinimapText(maxValue, mr, mg, mb))
 	end
 
@@ -3066,6 +3262,15 @@ local function buildSquareMinimapLatencyTexts(frame, renderCfg)
 		frame._eqolLatencyHomeBucket = homeBucket
 		frame._eqolLatencyWorldBucket = worldBucket
 		frame._eqolLatencyMaxBucket = maxBucket
+		frame._eqolLatencyHomeColorR = hr
+		frame._eqolLatencyHomeColorG = hg
+		frame._eqolLatencyHomeColorB = hb
+		frame._eqolLatencyWorldColorR = wr
+		frame._eqolLatencyWorldColorG = wg
+		frame._eqolLatencyWorldColorB = wb
+		frame._eqolLatencyMaxColorR = mr
+		frame._eqolLatencyMaxColorG = mg
+		frame._eqolLatencyMaxColorB = mb
 	end
 	return primaryText, secondaryText
 end
@@ -3106,6 +3311,7 @@ local function getSquareMinimapStatRenderConfig(statKey)
 		g = g,
 		b = b,
 		a = a,
+		useClassColor = cfg.useClassColorKey and addon.db[cfg.useClassColorKey] == true or false,
 		timeDisplayMode = statKey == "time" and (addon.db.squareMinimapStatsTimeDisplayMode or "server") or nil,
 		timeUse24Hour = statKey == "time" and addon.db.squareMinimapStatsTimeUse24Hour ~= false or nil,
 		timeShowSeconds = statKey == "time" and addon.db.squareMinimapStatsTimeShowSeconds == true or nil,
@@ -3122,6 +3328,7 @@ local function getSquareMinimapStatRenderConfig(statKey)
 		useZoneColor = statKey == "location" and addon.db.squareMinimapStatsLocationUseZoneColor == true or false,
 		locationShowZone = statKey == "location" and addon.db.squareMinimapStatsLocationShowZone ~= false or nil,
 		locationShowSubzone = statKey == "location" and addon.db.squareMinimapStatsLocationShowSubzone ~= false or nil,
+		locationSubzoneBelowZone = statKey == "location" and addon.db.squareMinimapStatsLocationSubzoneBelowZone == true or false,
 		decimals = statKey == "coordinates" and math.floor(clamp(tonumber(addon.db.squareMinimapStatsCoordinatesDecimals) or 2, 0, 3) + 0.5) or nil,
 		hideInInstance = statKey == "coordinates" and addon.db.squareMinimapStatsCoordinatesHideInInstance == true or false,
 	}
@@ -3186,7 +3393,9 @@ local function updateSquareMinimapStat(statKey)
 	end
 
 	local r, g, b, a = renderCfg.r, renderCfg.g, renderCfg.b, renderCfg.a
-	if renderCfg.useZoneColor then
+	if renderCfg.useClassColor then
+		r, g, b = getSquareMinimapPlayerClassColor()
+	elseif renderCfg.useZoneColor then
 		r, g, b = getSquareMinimapStatsZoneColor()
 		a = 1
 	end
@@ -3257,15 +3466,44 @@ local function updateSquareMinimapStat(statKey)
 		elseif statKey == "latency" then
 			primaryText = buildSquareMinimapLatencyTexts(frame, renderCfg) or ""
 		elseif statKey == "location" then
-			primaryText = buildSquareMinimapLocationText(frame, renderCfg) or ""
+			local topText, bottomText = buildSquareMinimapLocationTexts(renderCfg)
+			local maxWidth = getSquareMinimapLocationMaxWidth(point, x)
+			if maxWidth and maxWidth > 0 then
+				topText = truncateSquareMinimapTextToWidth(frame.text, topText, maxWidth)
+				if bottomText ~= "" then bottomText = truncateSquareMinimapTextToWidth(frame.textSecondary, bottomText, maxWidth) end
+			end
+
+			if bottomText ~= "" then
+				local stackUpwards = point and point:find("BOTTOM", 1, true) ~= nil
+				local secondaryY
+				if stackUpwards then
+					primaryText = bottomText or ""
+					secondaryText = topText or ""
+					secondaryY = size + lineGap
+				else
+					primaryText = topText or ""
+					secondaryText = bottomText or ""
+					secondaryY = -(size + lineGap)
+				end
+				if frame._eqolSecondaryPoint ~= point or frame._eqolSecondaryOffsetY ~= secondaryY then
+					frame.textSecondary:ClearAllPoints()
+					frame.textSecondary:SetPoint(point, frame, point, 0, secondaryY)
+					frame._eqolSecondaryPoint = point
+					frame._eqolSecondaryOffsetY = secondaryY
+				end
+				showSecondary = secondaryText ~= ""
+				if primaryText == "" and secondaryText ~= "" then
+					primaryText = secondaryText
+					secondaryText = ""
+					showSecondary = false
+				end
+			else
+				primaryText = topText or ""
+			end
 		elseif statKey == "coordinates" then
 			primaryText = getSquareMinimapCoordinatesText(frame, renderCfg) or ""
 		else
 			primaryText = getSquareMinimapStatText(statKey) or ""
-		end
-		if statKey == "location" then
-			local maxWidth = getSquareMinimapLocationMaxWidth(point, x)
-			if maxWidth and maxWidth > 0 then primaryText = truncateSquareMinimapTextToWidth(frame.text, primaryText, maxWidth) end
 		end
 	end
 
