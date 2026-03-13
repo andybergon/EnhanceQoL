@@ -231,10 +231,10 @@ H.RANGED_DPS_CLASSES = {
 local UnitSex = UnitSex
 local GetNumClasses = GetNumClasses
 local GetClassInfo = GetClassInfo
-local GetSpecializationInfo = GetSpecializationInfo
+local GetSpecializationInfoFn = C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo
 local GetNumSpecializations = GetNumSpecializations
 local GetSpecializationInfoForClassID = GetSpecializationInfoForClassID
-local GetNumSpecializationsForClassID = GetNumSpecializationsForClassID
+local GetNumSpecializationsForClassIDFn = C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID
 local GetInspectSpecialization = GetInspectSpecialization
 local NotifyInspect = NotifyInspect
 local ClearInspectPlayer = ClearInspectPlayer
@@ -866,9 +866,9 @@ end
 function H.GetUnitSpecId(unit)
 	if not unit then return nil end
 	if UnitIsUnit and UnitIsUnit(unit, "player") then
-		local specIndex = GetSpecialization and GetSpecialization()
-		if specIndex and GetSpecializationInfo then
-			local specId = GetSpecializationInfo(specIndex)
+		local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
+		if specIndex and GetSpecializationInfoFn then
+			local specId = GetSpecializationInfoFn(specIndex)
 			if specId and specId > 0 then return specId end
 		end
 	end
@@ -996,9 +996,9 @@ end
 
 function H.QueueInspectGroup()
 	if InCombatLockdown and InCombatLockdown() then return end
-	local playerSpec = GetSpecialization and GetSpecialization()
-	if playerSpec and GetSpecializationInfo then
-		local specId = GetSpecializationInfo(playerSpec)
+	local playerSpec = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
+	if playerSpec and GetSpecializationInfoFn then
+		local specId = GetSpecializationInfoFn(playerSpec)
 		if specId and specId > 0 then H.CacheUnitSpec("player", specId) end
 	end
 	if IsInRaid and IsInRaid() then
@@ -1560,7 +1560,7 @@ local function getClassInfoById(classId)
 end
 
 local function forEachSpec(callback)
-	local getSpecCount = (C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID) or GetNumSpecializationsForClassID
+	local getSpecCount = C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID
 	if not getSpecCount or not GetSpecializationInfoForClassID or not GetNumClasses then return false end
 	local sex = UnitSex and UnitSex("player") or nil
 	local numClasses = GetNumClasses() or 0
@@ -1596,9 +1596,9 @@ function H.BuildSpecOptions()
 			specName = specName or "",
 		}
 	end)
-	if not found and GetNumSpecializations and GetSpecializationInfo then
+	if not found and GetNumSpecializations and GetSpecializationInfoFn then
 		for i = 1, GetNumSpecializations() do
-			local specId, name = GetSpecializationInfo(i)
+			local specId, name = GetSpecializationInfoFn(i)
 			if specId and name then entries[#entries + 1] = { value = specId, label = name, className = "", specName = name } end
 		end
 	end
@@ -1621,9 +1621,9 @@ function H.DefaultSpecSelection()
 	local found = forEachSpec(function(specId)
 		if specId then sel[specId] = true end
 	end)
-	if not found and GetNumSpecializations and GetSpecializationInfo then
+	if not found and GetNumSpecializations and GetSpecializationInfoFn then
 		for i = 1, GetNumSpecializations() do
-			local specId = GetSpecializationInfo(i)
+			local specId = GetSpecializationInfoFn(i)
 			if specId then sel[specId] = true end
 		end
 	end

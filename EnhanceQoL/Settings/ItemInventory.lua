@@ -746,7 +746,7 @@ local function setIlvlText(element, slot)
 		if eItem and not eItem:IsItemEmpty() then
 			eItem:ContinueOnItemLoad(function()
 				local link = eItem:GetItemLink()
-				local itemQuality = link and select(3, GetItemInfo(link)) or nil
+				local itemQuality = link and select(3, C_Item.GetItemInfo(link)) or nil
 				updateCharRarityGlow(element, itemQuality)
 				local _, itemID, enchantID = string.match(link, "item:(%d+):(%d*):(%d*):(%d*):(%d*):(%d*):(%d*):(%d*):(%d*):(%d*):(%d*)")
 				local displayCount = 0

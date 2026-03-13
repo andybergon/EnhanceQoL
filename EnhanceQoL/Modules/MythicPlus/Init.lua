@@ -1114,11 +1114,11 @@ local function getHearthstoneName(entry)
 		local toyLink = C_ToyBox.GetToyLink(entry.id)
 		if type(toyLink) == "string" then
 			name = normalizeHearthstoneName(toyLink:match("%[(.-)%]"))
-			if (not name or name == "") and GetItemInfo then name = normalizeHearthstoneName(GetItemInfo(toyLink)) end
+			if (not name or name == "") and C_Item and C_Item.GetItemInfo then name = normalizeHearthstoneName(C_Item.GetItemInfo(toyLink)) end
 		end
 	end
 	if (not name or name == "") and C_Item and C_Item.GetItemNameByID then name = normalizeHearthstoneName(C_Item.GetItemNameByID(entry.id)) end
-	if (not name or name == "") and GetItemInfo then name = normalizeHearthstoneName(GetItemInfo(entry.id)) end
+	if (not name or name == "") and C_Item and C_Item.GetItemInfo then name = normalizeHearthstoneName(C_Item.GetItemInfo(entry.id)) end
 	if (not name or name == "") and C_Item and C_Item.GetItemInfo then
 		local info = C_Item.GetItemInfo(entry.id)
 		if type(info) == "table" then

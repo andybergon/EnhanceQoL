@@ -889,7 +889,7 @@ local function updateRegistration()
 		LOGIN_FRAME:RegisterEvent("PLAYER_LOGIN")
 		for _, e in ipairs(CHAT_EVENTS) do
 			if not Ignore.registeredFilters[e] then
-				ChatFrame_AddMessageEventFilter(e, ignoreChatFilter)
+				ChatFrameUtil.AddMessageEventFilter(e, ignoreChatFilter)
 				Ignore.registeredFilters[e] = true
 			end
 		end
@@ -902,7 +902,7 @@ local function updateRegistration()
 	else
 		for _, e in ipairs(CHAT_EVENTS) do
 			if Ignore.registeredFilters[e] then
-				ChatFrame_RemoveMessageEventFilter(e, ignoreChatFilter)
+				ChatFrameUtil.RemoveMessageEventFilter(e, ignoreChatFilter)
 				Ignore.registeredFilters[e] = nil
 			end
 		end

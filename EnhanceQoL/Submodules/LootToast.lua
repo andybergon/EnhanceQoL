@@ -29,11 +29,11 @@ end
 
 local function getItemLevelFromLink(link)
 	if not link then return nil end
-	if GetDetailedItemLevelInfo then
-		local level = GetDetailedItemLevelInfo(link)
+	if C_Item and C_Item.GetDetailedItemLevelInfo then
+		local level = C_Item.GetDetailedItemLevelInfo(link)
 		if level then return level end
 	end
-	return select(4, GetItemInfo(link))
+	return C_Item.GetCurrentItemLevel(link) or select(4, C_Item.GetItemInfo(link))
 end
 
 local EQUIP_LOC_TO_SLOTS = {

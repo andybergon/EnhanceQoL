@@ -1312,11 +1312,11 @@ local function getUnitRoleKey(unit)
 end
 
 local function getPlayerSpecId()
-	if not GetSpecialization then return nil end
-	local specIndex = GetSpecialization()
+	if not (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) then return nil end
+	local specIndex = C_SpecializationInfo.GetSpecialization()
 	if not specIndex then return nil end
-	if GetSpecializationInfo then
-		local specId = GetSpecializationInfo(specIndex)
+	if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
+		local specId = C_SpecializationInfo.GetSpecializationInfo(specIndex)
 		return specId
 	end
 	return nil

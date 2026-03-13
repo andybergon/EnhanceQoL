@@ -8,7 +8,7 @@ else
 end
 
 local UnitLevel = UnitLevel
-local GetNumSpecializationsForClassID = (C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID) or GetNumSpecializationsForClassID
+local GetNumSpecializationsForClassIDFn = C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID
 local GetSpecializationInfoForClassID = GetSpecializationInfoForClassID
 local tinsert = table.insert
 local tsort = table.sort
@@ -299,13 +299,6 @@ local function getBestItemCount(itemId)
 	local countApi = 0
 	local countBag = getDirectBagItemCount(targetId)
 
-	if GetItemCount then
-		local direct = tonumber(GetItemCount(targetId, false, false)) or 0
-		local defaultArgs = tonumber(GetItemCount(targetId)) or 0
-		if direct > countApi then countApi = direct end
-		if defaultArgs > countApi then countApi = defaultArgs end
-	end
-
 	if C_Item and C_Item.GetItemCount then
 		local cNoBank = tonumber(C_Item.GetItemCount(targetId, false, false)) or 0
 		local cDefault = tonumber(C_Item.GetItemCount(targetId)) or 0
@@ -339,9 +332,9 @@ end
 function addon.Flasks.functions.getPlayerSpecs()
 	local specs = {}
 	local classID = addon.variables and addon.variables.unitClassID
-	if not classID or not GetNumSpecializationsForClassID or not GetSpecializationInfoForClassID then return specs end
+	if not classID or not GetNumSpecializationsForClassIDFn or not GetSpecializationInfoForClassID then return specs end
 
-	local specCount = GetNumSpecializationsForClassID(classID) or 0
+	local specCount = GetNumSpecializationsForClassIDFn(classID) or 0
 	for i = 1, specCount do
 		local specID, specName = GetSpecializationInfoForClassID(classID, i)
 		if specID then specs[#specs + 1] = {
@@ -355,7 +348,7 @@ end
 function addon.Flasks.functions.getAllSpecs()
 	local specs = {}
 	local roleBucketBySpec = {}
-	local getSpecCount = (C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID) or GetNumSpecializationsForClassID
+	local getSpecCount = C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID
 	if not getSpecCount or not GetSpecializationInfoForClassID or not GetNumClasses then return addon.Flasks.functions.getPlayerSpecs() end
 
 	local sex = UnitSex and UnitSex("player") or nil

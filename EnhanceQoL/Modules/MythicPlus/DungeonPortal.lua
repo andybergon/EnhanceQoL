@@ -25,8 +25,8 @@ local checkCooldown
 
 local minFrameSize = 0
 
-local GetItemCooldown = C_Item.GetItemCooldown
-local GetItemCount = C_Item.GetItemCount
+local GetItemCooldownFn = C_Item.GetItemCooldown
+local GetItemCountFn = C_Item.GetItemCount
 local toyUsableCache = {}
 local toyUsableCacheTime = {}
 local TOY_USABLE_CACHE_TTL = 2
@@ -73,7 +73,7 @@ end
 local function FirstOwnedItemID(itemID)
 	if type(itemID) == "table" then
 		for _, id in ipairs(itemID) do
-			if GetItemCount(id) > 0 then return id end
+			if GetItemCountFn(id) > 0 then return id end
 		end
 		return itemID[1]
 	end
@@ -86,19 +86,19 @@ local function GetCooldownData(spellInfo)
 	local startTime, duration, modRate, isEnabled
 	if spellInfo.isToy then
 		if spellInfo.toyID then
-			local st, dur, en = GetItemCooldown(spellInfo.toyID)
+			local st, dur, en = GetItemCooldownFn(spellInfo.toyID)
 			startTime, duration, modRate, isEnabled = st, dur, 1, en
 		end
 	elseif spellInfo.isItem then
 		if spellInfo.itemID then
 			local id = FirstOwnedItemID(spellInfo.itemID)
-			local st, dur, en = GetItemCooldown(id)
+			local st, dur, en = GetItemCooldownFn(id)
 			startTime, duration, modRate, isEnabled = st, dur, 1, en
 		end
 	else
 		local spellID = spellInfo.spellID
-		if FindSpellOverrideByID then
-			local overrideSpellID = FindSpellOverrideByID(spellID)
+		if C_SpellBook and C_SpellBook.FindSpellOverrideByID then
+			local overrideSpellID = C_SpellBook.FindSpellOverrideByID(spellID)
 			if overrideSpellID and overrideSpellID ~= spellID then
 				spellID = overrideSpellID
 				spellInfo.spellID = spellID
@@ -551,9 +551,9 @@ end
 local GNOMISH = 20219
 local GOBLIN = 20222
 local function GetEngineeringBranch()
-	if IsPlayerSpell(GNOMISH) or IsSpellKnown(GNOMISH) then
+	if C_SpellBook.IsSpellKnown(GNOMISH, Enum.SpellBookSpellBank.Player) or C_SpellBook.IsSpellInSpellBook(GNOMISH, Enum.SpellBookSpellBank.Player, false) then
 		return true, false -- Gnomish Engineering
-	elseif IsPlayerSpell(GOBLIN) or IsSpellKnown(GOBLIN) then
+	elseif C_SpellBook.IsSpellKnown(GOBLIN, Enum.SpellBookSpellBank.Player) or C_SpellBook.IsSpellInSpellBook(GOBLIN, Enum.SpellBookSpellBank.Player, false) then
 		return false, true -- Goblin Engineering
 	else
 		return false, false -- keine Spezialisierung (oder kein Engineering)

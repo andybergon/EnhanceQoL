@@ -18,8 +18,6 @@ local ChatIM = addon.ChatIM
 ChatIM.maxHistoryLines = ChatIM.maxHistoryLines or (addon.db and addon.db["chatIMMaxHistory"]) or 250
 
 local MU = MenuUtil -- global ab 11.0+
--- TODO: Remove BNSendWhisper in 12.0.0
-local BNSendWhisper = BNSendWhisper or C_BattleNet.SendWhisper
 
 local regionTable = { "US", "KR", "EU", "TW", "CN" }
 local regionKey = regionTable[GetCurrentRegion()] or "EU" -- or EU for PTR because that is region 90+
@@ -184,8 +182,6 @@ function ChatIM:HookInsertLink()
 
 	if ChatFrameUtil and type(ChatFrameUtil.InsertLink) == "function" then
 		hooksecurefunc(ChatFrameUtil, "InsertLink", tryInsertLink)
-	elseif type(ChatEdit_InsertLink) == "function" then
-		hooksecurefunc("ChatEdit_InsertLink", tryInsertLink)
 	end
 	self.insertLinkHooked = true
 end
@@ -475,7 +471,7 @@ function ChatIM:CreateTab(sender, isBN, bnetID, battleTag)
 		if txt ~= "" and tgt then
 			local tab = ChatIM.tabs[tgt]
 			if tab and tab.isBN and tab.bnetID then
-				BNSendWhisper(tab.bnetID, txt)
+				C_BattleNet.SendWhisper(tab.bnetID, txt)
 			else
 				C_ChatInfo.SendChatMessage(txt, "WHISPER", nil, tgt)
 			end
@@ -554,15 +550,15 @@ function ChatIM:AddMessage(partner, text, outbound, isBN, bnetID)
 
 	if outbound then
 		if isBN then
-			ChatEdit_SetLastToldTarget(partner, "BN_WHISPER")
+			ChatFrameUtil.SetLastToldTarget(partner, "BN_WHISPER")
 		else
-			ChatEdit_SetLastToldTarget(partner, "WHISPER")
+			ChatFrameUtil.SetLastToldTarget(partner, "WHISPER")
 		end
 	else
 		if isBN then
-			ChatEdit_SetLastTellTarget(partner, "BN_WHISPER")
+			ChatFrameUtil.SetLastTellTarget(partner, "BN_WHISPER")
 		else
-			ChatEdit_SetLastTellTarget(partner, "WHISPER")
+			ChatFrameUtil.SetLastTellTarget(partner, "WHISPER")
 		end
 	end
 

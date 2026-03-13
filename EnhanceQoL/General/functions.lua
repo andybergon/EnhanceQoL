@@ -6,10 +6,10 @@ local SharedMedia = LibStub("LibSharedMedia-3.0", true)
 local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 local GetContainerItemInfo = C_Container.GetContainerItemInfo
-local GetItemInfoInstant = C_Item.GetItemInfoInstant
-local GetItemInfo = C_Item.GetItemInfo
+local GetItemInfoInstantFn = C_Item.GetItemInfoInstant
+local GetItemInfoFn = C_Item.GetItemInfo
 local GetBagItem = C_TooltipInfo.GetBagItem
-local IsEquippableItem = C_Item.IsEquippableItem
+local IsEquippableItemFn = C_Item.IsEquippableItem
 addon.functions = addon.functions or {}
 
 local UnitHealth, UnitHealthMax = UnitHealth, UnitHealthMax
@@ -908,10 +908,10 @@ end
 
 function addon.functions.IsItemRecommendedForSpec(itemLink, itemEquipLoc, classID, subclassID)
 	if not itemLink then return false end
-	if not IsEquippableItem(itemLink) then return false end
+	if not IsEquippableItemFn(itemLink) then return false end
 
 	if itemEquipLoc == nil or classID == nil or subclassID == nil then
-		local _, _, _, equipLoc, _, instantClassID, instantSubclassID = GetItemInfoInstant(itemLink)
+		local _, _, _, equipLoc, _, instantClassID, instantSubclassID = GetItemInfoInstantFn(itemLink)
 		itemEquipLoc = itemEquipLoc or equipLoc
 		if classID == nil then classID = instantClassID end
 		if subclassID == nil then subclassID = instantSubclassID end
@@ -1013,7 +1013,7 @@ local function updateButtonInfo(itemButton, bag, slot, frameName)
 	end
 	local itemLink = C_Container.GetContainerItemLink(bag, slot)
 	if itemLink then
-		local _, _, itemQuality, _, _, _, _, _, itemEquipLoc, _, sellPrice, classID, subclassID, tBindType, expId = GetItemInfo(itemLink)
+		local _, _, itemQuality, _, _, _, _, _, itemEquipLoc, _, sellPrice, classID, subclassID, tBindType, expId = GetItemInfoFn(itemLink)
 		if itemQuality == nil and GetContainerItemInfo then
 			local containerInfo = GetContainerItemInfo(bag, slot)
 			if containerInfo and containerInfo.quality ~= nil then itemQuality = containerInfo.quality end
@@ -1068,7 +1068,7 @@ local function updateButtonInfo(itemButton, bag, slot, frameName)
 				if
 					addon.itemBagFilters["usableOnly"]
 					and (
-						IsEquippableItem(itemLink) == false
+						IsEquippableItemFn(itemLink) == false
 						or (
 							(
 								nil == addon.itemBagFilterTypes[addon.variables.unitClass]

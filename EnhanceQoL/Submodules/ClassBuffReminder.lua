@@ -359,13 +359,13 @@ local function isUnitHealerRole(unit)
 end
 
 local function isPlayerOffhandShield()
-	if not GetItemInfoInstant then return false end
+	if not (C_Item and C_Item.GetItemInfoInstant) then return false end
 
 	local offhandSlot = INVSLOT_OFFHAND or 17
 	if GetInventoryItemID then
 		local offhandItemId = GetInventoryItemID("player", offhandSlot)
 		if offhandItemId then
-			local equipLocById = select(4, GetItemInfoInstant(offhandItemId))
+			local equipLocById = select(4, C_Item.GetItemInfoInstant(offhandItemId))
 			if equipLocById == "INVTYPE_SHIELD" then return true end
 		end
 	end
@@ -373,7 +373,7 @@ local function isPlayerOffhandShield()
 	if not GetInventoryItemLink then return false end
 	local offhandLink = GetInventoryItemLink("player", offhandSlot)
 	if type(offhandLink) ~= "string" or offhandLink == "" then return false end
-	local equipLoc = select(4, GetItemInfoInstant(offhandLink))
+	local equipLoc = select(4, C_Item.GetItemInfoInstant(offhandLink))
 	return equipLoc == "INVTYPE_SHIELD"
 end
 
@@ -489,13 +489,9 @@ local function safeIsPlayerSpell(spellId)
 	spellId = normalizeSpellId(spellId)
 	if not spellId then return false end
 
-	if C_SpellBook and C_SpellBook.IsSpellKnown then
-		if C_SpellBook.IsSpellKnown(spellId) then return true end
+	if C_SpellBook and C_SpellBook.IsSpellInSpellBook then
+		return C_SpellBook.IsSpellInSpellBook(spellId, Enum.SpellBookSpellBank.Player, true) == true
 	end
-
-	if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(spellId) then return true end
-
-	if IsPlayerSpell and IsPlayerSpell(spellId) then return true end
 
 	return false
 end
@@ -736,9 +732,9 @@ function Reminder:GetCurrentSpecId()
 	sid = tonumber(sid)
 	if sid and sid > 0 then return sid end
 
-	local specIndex = GetSpecialization and GetSpecialization() or nil
-	if not specIndex or not GetSpecializationInfo then return nil end
-	local specId = GetSpecializationInfo(specIndex)
+	local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization() or nil
+	if not specIndex or not (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) then return nil end
+	local specId = C_SpecializationInfo.GetSpecializationInfo(specIndex)
 	specId = tonumber(specId)
 	if not specId or specId <= 0 then return nil end
 	return specId
@@ -850,13 +846,11 @@ function Reminder:GetFlaskMissingEntry()
 	local displaySpellId
 	local displayLabel
 	for i = 1, #candidates do
-		local itemId = tonumber(candidates[i] and candidates[i].id)
-		if itemId and itemId > 0 then
+			local itemId = tonumber(candidates[i] and candidates[i].id)
+			if itemId and itemId > 0 then
 			local spellName, spellId
 			if C_Item and C_Item.GetItemSpell then
 				spellName, spellId = C_Item.GetItemSpell(itemId)
-			elseif GetItemSpell then
-				spellName, spellId = GetItemSpell(itemId)
 			end
 
 			spellId = normalizeSpellId(spellId)
@@ -870,7 +864,7 @@ function Reminder:GetFlaskMissingEntry()
 
 			local itemName
 			if C_Item and C_Item.GetItemNameByID then itemName = C_Item.GetItemNameByID(itemId) end
-			if (not itemName or itemName == "") and GetItemInfo then itemName = GetItemInfo(itemId) end
+			if (not itemName or itemName == "") and C_Item and C_Item.GetItemInfo then itemName = C_Item.GetItemInfo(itemId) end
 			if type(itemName) == "string" and itemName ~= "" then
 				dynamicAuraNames[#dynamicAuraNames + 1] = itemName
 				if not displayLabel then displayLabel = itemName end

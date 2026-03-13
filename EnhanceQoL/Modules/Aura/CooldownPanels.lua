@@ -217,7 +217,7 @@ end
 
 local function getClassSpecMenuData()
 	local classes = {}
-	local getSpecCount = (C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID) or GetNumSpecializationsForClassID
+	local getSpecCount = C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID
 	if not getSpecCount or not GetSpecializationInfoForClassID or not GetNumClasses then return classes end
 	local sex = UnitSex and UnitSex("player") or nil
 	local numClasses = GetNumClasses() or 0
@@ -1651,8 +1651,8 @@ local function getItemName(itemId)
 		local name = C_Item.GetItemNameByID(itemId)
 		if name then return name end
 	end
-	if GetItemInfo then
-		local name = GetItemInfo(itemId)
+	if C_Item and C_Item.GetItemInfo then
+		local name = C_Item.GetItemInfo(itemId)
 		if name then return name end
 	end
 	return nil
@@ -1715,11 +1715,11 @@ function CooldownPanels:GetEntryStandaloneTitle(entry)
 end
 
 getPlayerSpecId = function()
-	if not GetSpecialization then return nil end
-	local specIndex = GetSpecialization()
+	if not (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) then return nil end
+	local specIndex = C_SpecializationInfo.GetSpecialization()
 	if not specIndex then return nil end
-	if GetSpecializationInfo then
-		local specId = GetSpecializationInfo(specIndex)
+	if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
+		local specId = C_SpecializationInfo.GetSpecializationInfo(specIndex)
 		if type(specId) == "number" and specId > 0 then return specId end
 	end
 	if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
@@ -1733,7 +1733,7 @@ end
 local function getPlayerClassSpecMap()
 	local classId = UnitClass and select(3, UnitClass("player")) or nil
 	if not classId then return nil end
-	local getSpecCount = (C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID) or GetNumSpecializationsForClassID
+	local getSpecCount = C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID
 	if not getSpecCount or not GetSpecializationInfoForClassID then return nil end
 	local specs = {}
 	local sex = UnitSex and UnitSex("player") or nil

@@ -293,8 +293,6 @@ local function getPlayerSpecId()
 	local specIndex = nil
 	if C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then
 		specIndex = C_SpecializationInfo.GetSpecialization()
-	elseif GetSpecialization then
-		specIndex = GetSpecialization()
 	end
 	if not specIndex then return nil end
 
@@ -308,8 +306,8 @@ local function getPlayerSpecId()
 		if sid and sid > 0 then return sid end
 	end
 
-	if GetSpecializationInfo then
-		sid = tonumber(GetSpecializationInfo(specIndex))
+	if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
+		sid = tonumber(C_SpecializationInfo.GetSpecializationInfo(specIndex))
 		if sid and sid > 0 then return sid end
 	end
 

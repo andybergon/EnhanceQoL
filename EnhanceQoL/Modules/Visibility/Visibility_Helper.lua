@@ -352,7 +352,7 @@ function Helper.BuildContext(runtime)
 	local inVehicle = false
 	if UnitInVehicle then inVehicle = UnitInVehicle("player") and true or false end
 	if not inVehicle and UnitHasVehicleUI then inVehicle = UnitHasVehicleUI("player") and true or false end
-	if not inVehicle and HasVehicleActionBar then inVehicle = HasVehicleActionBar() and true or false end
+	if not inVehicle and C_ActionBar and C_ActionBar.HasVehicleActionBar then inVehicle = C_ActionBar.HasVehicleActionBar() and true or false end
 	local inPetBattle = C_PetBattles and C_PetBattles.IsInBattle and (C_PetBattles.IsInBattle() == true) or false
 	local hasTarget = UnitExists and UnitExists("target") and true or false
 	local casting = (UnitCastingInfo and UnitCastingInfo("player")) or (UnitChannelInfo and UnitChannelInfo("player"))

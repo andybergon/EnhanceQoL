@@ -18,15 +18,15 @@ local LSM = LibStub("LibSharedMedia-3.0", true)
 Helper.Api = Helper.Api or {}
 local Api = Helper.Api
 
-Api.GetItemInfoInstantFn = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+Api.GetItemInfoInstantFn = C_Item and C_Item.GetItemInfoInstant
 Api.GetItemIconByID = C_Item and C_Item.GetItemIconByID
-Api.GetItemCooldownFn = (C_Item and C_Item.GetItemCooldown) or GetItemCooldown
+Api.GetItemCooldownFn = C_Item and C_Item.GetItemCooldown
 Api.GetItemSpell = C_Item and C_Item.GetItemSpell
 Api.GetInventoryItemID = GetInventoryItemID
 Api.GetInventoryItemCooldown = GetInventoryItemCooldown
 Api.GetInventorySlotInfo = GetInventorySlotInfo
 Api.GetActionInfo = GetActionInfo
-Api.GetActionText = GetActionText
+Api.GetActionText = C_ActionBar and C_ActionBar.GetActionText
 Api.GetCursorInfo = GetCursorInfo
 Api.GetCursorPosition = GetCursorPosition
 Api.ClearCursor = ClearCursor
@@ -66,7 +66,6 @@ Api.DurationModifierRealTime = Enum and Enum.DurationTimeModifier and Enum.Durat
 function Api.GetItemCount(itemID, includeBank, includeUses, includeReagentBank, includeAccountBank)
 	if not itemID then return 0 end
 	if C_Item and C_Item.GetItemCount then return C_Item.GetItemCount(itemID, includeBank, includeUses, includeReagentBank, includeAccountBank) end
-	if GetItemCount then return GetItemCount(itemID, includeBank) end
 	return 0
 end
 
@@ -1339,7 +1338,7 @@ local THIRD_PARTY_ACTION_BUTTON_PREFIXES = {
 local ELVUI_ACTION_BARS = 15
 local ELVUI_ACTION_BUTTONS = 12
 
-local GetItemInfoInstantFn = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+local GetItemInfoInstantFn = C_Item and C_Item.GetItemInfoInstant
 local GetOverrideSpell = C_Spell and C_Spell.GetOverrideSpell
 local GetInventoryItemID = GetInventoryItemID
 local GetActionDisplayCount = C_ActionBar and C_ActionBar.GetActionDisplayCount

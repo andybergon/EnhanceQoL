@@ -300,7 +300,7 @@ local function shouldShowBRTracker()
 	if not IsInInstance() then return false end
 	local _, _, diff = GetInstanceInfo()
 	if diff == 8 then return true end
-	if isRaidDifficulty(diff) then return IsEncounterInProgress() end
+	if isRaidDifficulty(diff) then return C_InstanceEncounter.IsEncounterInProgress() end
 	return false
 end
 
@@ -1237,7 +1237,7 @@ local function shouldShowBloodlustTracker()
 	if not IsInInstance() then return false end
 	local _, _, diff = GetInstanceInfo()
 	if diff == 8 then return true end
-	if isRaidDifficulty(diff) then return IsEncounterInProgress() end
+	if isRaidDifficulty(diff) then return C_InstanceEncounter.IsEncounterInProgress() end
 	return false
 end
 

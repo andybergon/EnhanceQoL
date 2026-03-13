@@ -296,8 +296,8 @@ EnsureUnitData = function(unit)
 			ilvl = eq and tonumber(string.format("%.1f", eq))
 		end
 		local specName
-		local si = GetSpecialization and GetSpecialization()
-		if si then specName = select(2, GetSpecializationInfo(si)) end
+		local si = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
+		if si then specName = select(2, C_SpecializationInfo.GetSpecializationInfo(si)) end
 		local score = C_ChallengeMode and C_ChallengeMode.GetOverallDungeonScore and C_ChallengeMode.GetOverallDungeonScore()
 		InspectCache[guid] = { ilvl = ilvl, specName = specName, score = score, last = now() }
 		return
@@ -995,7 +995,7 @@ local function checkItem(tooltip, id, name, guid)
 
 	if addon.db["TooltipShowItemIcon"] then
 		local icon = nil
-		if id then icon = select(5, GetItemInfoInstant(id)) end
+		if id then icon = select(5, C_Item.GetItemInfoInstant(id)) end
 		local line = tooltip and _G[tooltip:GetName() .. "TextLeft1"]
 		if line then
 			local current = line:GetText()
@@ -1180,7 +1180,7 @@ if TooltipDataProcessor then
 			id = data.id
 			if ttInfo and ttInfo.getterArgs then
 				local actionSlot = ttInfo.getterArgs[1]
-				if actionSlot then id = GetActionText(actionSlot) end
+				if actionSlot then id = C_ActionBar.GetActionText(actionSlot) end
 			end
 			name = MACRO
 			checkSpell(tooltip, id, name)

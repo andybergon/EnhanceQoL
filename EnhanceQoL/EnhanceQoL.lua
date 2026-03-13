@@ -5,7 +5,7 @@
 -- luacheck: globals CancelDuel DeclineGroup C_PetBattles
 -- luacheck: globals ExpansionLandingPage ExpansionLandingPageMinimapButton ShowGarrisonLandingPage GarrisonLandingPage GarrisonLandingPage_Toggle GarrisonLandingPageMinimapButton CovenantSanctumFrame CovenantSanctumFrame_LoadUI EasyMenu
 -- luacheck: globals ActionButton_UpdateRangeIndicator MAINMENU_BUTTON PlayerCastingBarFrame TargetFrameSpellBar FocusFrameSpellBar ChatBubbleFont
--- luacheck: globals NUM_CHAT_WINDOWS ChatFrame1Tab ChatFrame2 ChatFrame2Tab FCF_SetWindowName FCFDock_UpdateTabs GENERAL_CHAT_DOCK EventUtil ClassTrainerFrame ClassTrainerTrainButton ClassTrainerFrameMoneyBg
+-- luacheck: globals ChatFrame1Tab ChatFrame2 ChatFrame2Tab FCF_SetWindowName FCFDock_UpdateTabs GENERAL_CHAT_DOCK EventUtil ClassTrainerFrame ClassTrainerTrainButton ClassTrainerFrameMoneyBg
 local addonName, addon = ...
 
 local LDB = LibStub("LibDataBroker-1.1")
@@ -663,7 +663,6 @@ local function IsPlayerMountedOrInVehicleUI()
 	if UnitHasVehicleUI and UnitHasVehicleUI("player") then return true end
 	if UnitInVehicle and UnitInVehicle("player") then return true end
 	if C_ActionBar and C_ActionBar.HasVehicleActionBar and C_ActionBar.HasVehicleActionBar() then return true end
-	if HasVehicleActionBar and HasVehicleActionBar() then return true end
 	return false
 end
 
@@ -3510,9 +3509,9 @@ local function initChatFrame()
 	addon.functions.ApplyChatLearnFilter = addon.functions.ApplyChatLearnFilter
 		or function(enabled)
 			if enabled then
-				ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", addon.functions.ChatLearnFilter)
+				ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_SYSTEM", addon.functions.ChatLearnFilter)
 			else
-				ChatFrame_RemoveMessageEventFilter("CHAT_MSG_SYSTEM", addon.functions.ChatLearnFilter)
+				ChatFrameUtil.RemoveMessageEventFilter("CHAT_MSG_SYSTEM", addon.functions.ChatLearnFilter)
 			end
 		end
 
@@ -3535,7 +3534,7 @@ local function initChatFrame()
 	end
 
 	local function forEachChatFrame(callback)
-		local maxFrames = math.max(NUM_CHAT_WINDOWS or 0, 50)
+		local maxFrames = math.max(Constants.ChatFrameConstants.MaxChatWindows or 0, 50)
 		for i = 1, maxFrames do
 			local frame = _G["ChatFrame" .. i]
 			if frame then callback(frame, getChatEditBox(frame)) end
@@ -4339,7 +4338,7 @@ local function initUI()
 					GameTooltip:ClearLines()
 					local template = (count == 1 and L and L["trainAllButtonTooltipSingle"]) or (L and L["trainAllButtonTooltipMulti"])
 					if template then
-						local moneyString = C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString and C_CurrencyInfo.GetCoinTextureString(cost) or GetCoinTextureString(cost)
+						local moneyString = C_CurrencyInfo.GetCoinTextureString(cost)
 						GameTooltip:AddLine(template:format(count, moneyString))
 						GameTooltip:Show()
 					end
