@@ -42,6 +42,7 @@ local STAGGER_EXTRA_COLORS = (AuraResourceBars and AuraResourceBars.STAGGER_EXTR
 	high = { r = 0.62, g = 0.2, b = 1.0, a = 1 },
 	extreme = { r = 1.0, g = 0.2, b = 0.8, a = 1 },
 }
+local fontOptions
 
 local strataOptions = {
 	{ value = "BACKGROUND", label = "BACKGROUND" },
@@ -854,6 +855,34 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		end, auraDef.cooldownFontSize or 14, parentId, true)
 		list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
 
+		if #fontOptions() > 0 then
+			list[#list + 1] = checkboxDropdown(
+				L["Cooldown text font"] or "Cooldown text font",
+				fontOptions,
+				function() return getAuraSectionValue(sectionKey, { "cooldownFont" }, auraDef.cooldownFont or globalFontConfigKey()) end,
+				function(val)
+					setAuraSectionValue(sectionKey, { "cooldownFont" }, val)
+					refreshSelf()
+				end,
+				auraDef.cooldownFont or globalFontConfigKey(),
+				parentId
+			)
+			list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
+		end
+
+		list[#list + 1] = checkboxDropdown(
+			L["Cooldown text outline"] or "Cooldown text outline",
+			outlineOptions,
+			function() return getAuraSectionValue(sectionKey, { "cooldownFontOutline" }, auraDef.cooldownFontOutline or "OUTLINE") end,
+			function(val)
+				setAuraSectionValue(sectionKey, { "cooldownFontOutline" }, val or nil)
+				refreshSelf()
+			end,
+			auraDef.cooldownFontOutline or "OUTLINE",
+			parentId
+		)
+		list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
+
 		list[#list + 1] = { name = "", kind = settingType.Divider, parentId = parentId }
 
 		list[#list + 1] = radioDropdown(
@@ -1406,7 +1435,7 @@ local function getCachedLSMMedia(mediaType)
 	return {}, {}
 end
 
-local function fontOptions()
+function fontOptions()
 	local list = {}
 	local defaultPath = defaultFontPath()
 	local globalOption = { value = globalFontConfigKey(), label = globalFontConfigLabel() }
