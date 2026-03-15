@@ -2127,6 +2127,7 @@ function CooldownPanels:RebuildSpellIndex()
 	local index = {}
 	local enabledPanels = {}
 	local itemPanels = {}
+	local itemUsesPanels = {}
 	local rangeCheckSpells = {}
 	if root and root.panels then
 		for panelId, panel in pairs(root.panels) do
@@ -2145,6 +2146,7 @@ function CooldownPanels:RebuildSpellIndex()
 						elseif macro and macro.kind == "ITEM" and entry.showCooldown ~= false then
 							itemPanels[panelId] = true
 						end
+						if macro and macro.kind == "ITEM" and entry.showItemUses == true then itemUsesPanels[panelId] = true end
 					end
 					if spellId then
 						local effectiveId = getEffectiveSpellId(spellId) or spellId
@@ -2159,6 +2161,7 @@ function CooldownPanels:RebuildSpellIndex()
 						end
 					end
 					if entry and (entry.type == "ITEM" or entry.type == "SLOT") and entry.showCooldown ~= false then itemPanels[panelId] = true end
+					if entry and entry.type == "ITEM" and entry.showItemUses == true then itemUsesPanels[panelId] = true end
 				end
 			end
 		end
@@ -2167,6 +2170,7 @@ function CooldownPanels:RebuildSpellIndex()
 	self.runtime.spellIndex = index
 	self.runtime.enabledPanels = enabledPanels
 	self.runtime.itemPanels = itemPanels
+	self.runtime.itemUsesPanels = itemUsesPanels
 	if updateRangeCheckSpells then updateRangeCheckSpells(rangeCheckSpells) end
 	self:RebuildPowerIndex()
 	self:RebuildChargesIndex()
@@ -7531,13 +7535,13 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 			y = spawnPosition.y,
 			onHide = function() CooldownPanels:ClearLayoutPanelStandaloneMenuState() end,
 		})
-			if dialog then
-				local state = self:GetLayoutPanelStandaloneMenuState()
-				state.panelId = panelId
-				state.hostFrame = registeredHostFrame
-				state.dialog = dialog
-			end
-			return
+		if dialog then
+			local state = self:GetLayoutPanelStandaloneMenuState()
+			state.panelId = panelId
+			state.hostFrame = registeredHostFrame
+			state.dialog = dialog
+		end
+		return
 	end
 
 	local panel = self:GetPanel(panelId)
@@ -10253,13 +10257,10 @@ local function refreshPreview(editor, panel)
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(baseLayout, entry) or true
 		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, true) or false
-		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale,
-			stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond,
-			stateTextureSpacingX, stateTextureSpacingY
+		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY
 		if entry then
-			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale,
-				stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond,
-				stateTextureSpacingX, stateTextureSpacingY = CooldownPanels:ResolveEntryStateTexture(entry)
+			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
+				CooldownPanels:ResolveEntryStateTexture(entry)
 		end
 		icon:Show()
 		icon.entryId = entryId
@@ -11116,13 +11117,10 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		local showItemUses = entry and resolvedType == "ITEM" and entry.showItemUses == true
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(layout, entry) or showIconTexture
 		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, true) or false
-		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale,
-			stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond,
-			stateTextureSpacingX, stateTextureSpacingY
+		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY
 		if entry then
-			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale,
-				stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond,
-				stateTextureSpacingX, stateTextureSpacingY = CooldownPanels:ResolveEntryStateTexture(entry)
+			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
+				CooldownPanels:ResolveEntryStateTexture(entry)
 		end
 		local slotColumn = previewGridColumns and (((i - 1) % previewGridColumns) + 1) or (editGridColumns and (((i - 1) % editGridColumns) + 1) or i)
 		local slotRow = previewGridColumns and (math.floor((i - 1) / previewGridColumns) + 1) or (editGridColumns and (math.floor((i - 1) / editGridColumns) + 1) or 1)
@@ -15657,6 +15655,8 @@ local function ensureUpdateFrame()
 			local runtime = CooldownPanels.runtime
 			local itemPanels = runtime and runtime.itemPanels
 			if not itemPanels or not next(itemPanels) then return end
+			local itemUsesPanels = runtime and runtime.itemUsesPanels
+			if itemUsesPanels and next(itemUsesPanels) then updateItemCountCache() end
 			for panelId in pairs(itemPanels) do
 				if CooldownPanels:GetPanel(panelId) then CooldownPanels:RefreshPanel(panelId) end
 			end
