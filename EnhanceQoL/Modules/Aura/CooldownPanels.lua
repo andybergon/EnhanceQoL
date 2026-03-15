@@ -1424,6 +1424,13 @@ function CooldownPanels.NormalizeMacroName(name)
 	return name
 end
 
+function CooldownPanels.NormalizePanelGroupName(name)
+	if type(name) ~= "string" then return nil end
+	if strtrim then name = strtrim(name) end
+	if name == "" then return nil end
+	return name
+end
+
 function CooldownPanels.ResolveMacroEntry(entry)
 	if not entry or entry.type ~= "MACRO" then return nil end
 	local function resolveMacroSpellId(token)
@@ -1847,7 +1854,177 @@ ensureRoot = function()
 		end
 		normalizedRoots[root] = true
 	end
+	if CooldownPanels.EnsureEditorGroupStorage then CooldownPanels.EnsureEditorGroupStorage(root) end
 	return root
+end
+
+CooldownPanels.EnsureEditorGroupStorage = function(root)
+	if not root then return nil end
+	if type(root.editorGroups) ~= "table" then root.editorGroups = {} end
+	if type(root.editorGroupOrder) ~= "table" then root.editorGroupOrder = {} end
+
+	local groups = root.editorGroups
+	local order = root.editorGroupOrder
+	local groupsByName = {}
+
+	for groupId, group in pairs(groups) do
+		if type(group) ~= "table" then
+			groups[groupId] = { id = groupId, name = "Group " .. tostring(groupId) }
+			group = groups[groupId]
+		end
+		group.id = normalizeId(group.id) or normalizeId(groupId) or groupId
+		group.name = CooldownPanels.NormalizePanelGroupName(group.name) or ("Group " .. tostring(group.id))
+		groupsByName[group.name] = group.id
+	end
+
+	Helper.SyncOrder(order, groups)
+
+	local panels = root.panels or {}
+	for panelId, panel in pairs(panels) do
+		if type(panel) == "table" then
+			local groupId = normalizeId(panel.editorGroupId)
+			if groupId and groups[groupId] then
+				panel.editorGroupId = groupId
+			else
+				panel.editorGroupId = nil
+			end
+
+			local legacyName = CooldownPanels.NormalizePanelGroupName(panel.editorGroup)
+			if legacyName and not panel.editorGroupId then
+				local existingId = groupsByName[legacyName]
+				if not existingId then
+					existingId = Helper.GetNextNumericId(groups)
+					groups[existingId] = { id = existingId, name = legacyName }
+					order[#order + 1] = existingId
+					groupsByName[legacyName] = existingId
+				end
+				panel.editorGroupId = existingId
+			end
+			panel.editorGroup = nil
+		end
+	end
+
+	Helper.SyncOrder(order, groups)
+	CooldownPanels:SortEditorGroupOrder(root)
+	return root
+end
+
+function CooldownPanels.GetEditorGroup(root, groupId)
+	root = CooldownPanels.EnsureEditorGroupStorage(root)
+	groupId = normalizeId(groupId)
+	return root and root.editorGroups and groupId and root.editorGroups[groupId] or nil
+end
+
+function CooldownPanels.GetEditorGroupName(root, groupId)
+	local group = CooldownPanels.GetEditorGroup(root, groupId)
+	return group and group.name or nil
+end
+
+function CooldownPanels.IsEditorGroupNameBefore(a, b)
+	local left = CooldownPanels.NormalizePanelGroupName(a) or ""
+	local right = CooldownPanels.NormalizePanelGroupName(b) or ""
+	if strcmputf8i then
+		local cmp = strcmputf8i(left, right)
+		if cmp ~= 0 then return cmp < 0 end
+	end
+	local leftLower = tostring(left):lower()
+	local rightLower = tostring(right):lower()
+	if leftLower ~= rightLower then return leftLower < rightLower end
+	return tostring(left) < tostring(right)
+end
+
+function CooldownPanels:SortEditorGroupOrder(root)
+	if not root then return nil end
+	if type(root.editorGroups) ~= "table" then root.editorGroups = {} end
+	if type(root.editorGroupOrder) ~= "table" then root.editorGroupOrder = {} end
+	Helper.SyncOrder(root.editorGroupOrder, root.editorGroups)
+	table.sort(root.editorGroupOrder, function(leftId, rightId)
+		local leftGroup = root.editorGroups[leftId]
+		local rightGroup = root.editorGroups[rightId]
+		local leftName = leftGroup and leftGroup.name or tostring(leftId or "")
+		local rightName = rightGroup and rightGroup.name or tostring(rightId or "")
+		if leftName == rightName then return (tonumber(leftId) or 0) < (tonumber(rightId) or 0) end
+		return CooldownPanels.IsEditorGroupNameBefore(leftName, rightName)
+	end)
+	return root.editorGroupOrder
+end
+
+function CooldownPanels:CreateEditorGroup(name)
+	local root = ensureRoot()
+	if not root then return nil end
+	root = CooldownPanels.EnsureEditorGroupStorage(root)
+	local groups = root.editorGroups
+	local order = root.editorGroupOrder
+	local groupId = Helper.GetNextNumericId(groups)
+	local groupName = CooldownPanels.NormalizePanelGroupName(name) or (L["CooldownPanelNewGroup"] or "New Group")
+	groups[groupId] = { id = groupId, name = groupName }
+	order[#order + 1] = groupId
+	self:SortEditorGroupOrder(root)
+	return groupId
+end
+
+function CooldownPanels:RenameEditorGroup(groupId, name)
+	local root = ensureRoot()
+	local group = CooldownPanels.GetEditorGroup(root, groupId)
+	if not group then return false end
+	name = CooldownPanels.NormalizePanelGroupName(name)
+	if not name then return false end
+	group.name = name
+	self:SortEditorGroupOrder(root)
+	return true
+end
+
+function CooldownPanels:DeleteEditorGroup(groupId)
+	local root = ensureRoot()
+	root = CooldownPanels.EnsureEditorGroupStorage(root)
+	groupId = normalizeId(groupId)
+	if not (root and root.editorGroups and groupId and root.editorGroups[groupId]) then return false end
+	root.editorGroups[groupId] = nil
+	Helper.SyncOrder(root.editorGroupOrder, root.editorGroups)
+	for _, panel in pairs(root.panels or {}) do
+		if panel and normalizeId(panel.editorGroupId) == groupId then panel.editorGroupId = nil end
+	end
+	return true
+end
+
+function CooldownPanels:GetEditorPanelGroupState(editor)
+	if not editor then return {} end
+	editor.panelGroupState = editor.panelGroupState or {}
+	return editor.panelGroupState
+end
+
+function CooldownPanels:GetEditorPanelGroupStateKey(groupId)
+	groupId = normalizeId(groupId)
+	if groupId ~= nil then return tostring(groupId) end
+	return "__ungrouped"
+end
+
+function CooldownPanels:IsEditorPanelGroupCollapsed(editor, groupId)
+	local state = self:GetEditorPanelGroupState(editor)
+	return state[self:GetEditorPanelGroupStateKey(groupId)] == true
+end
+
+function CooldownPanels:ToggleEditorPanelGroupCollapsed(editor, groupId)
+	local state = self:GetEditorPanelGroupState(editor)
+	local key = self:GetEditorPanelGroupStateKey(groupId)
+	if state[key] == true then
+		state[key] = nil
+	else
+		state[key] = true
+	end
+	return state[key] == true
+end
+
+function CooldownPanels:SetPanelEditorGroup(panelId, groupId)
+	local root = ensureRoot()
+	root = CooldownPanels.EnsureEditorGroupStorage(root)
+	panelId = normalizeId(panelId)
+	local panel = root and root.panels and panelId and root.panels[panelId] or nil
+	if not panel then return false end
+	groupId = normalizeId(groupId)
+	if groupId and not (root.editorGroups and root.editorGroups[groupId]) then groupId = nil end
+	panel.editorGroupId = groupId
+	return true
 end
 
 local function markRootOrderDirty(root)
@@ -5219,6 +5396,10 @@ local function showPanelFilterMenu(owner)
 		rootDescription:CreateTitle(L["CooldownPanelPanelFilters"] or "Panel filters")
 		rootDescription:CreateCheckbox(L["CooldownPanelOnlyMyClass"] or "Only show Panels of my Class", function() return addon.db and addon.db.cooldownPanelsFilterClass == true end, function()
 			if addon.db then addon.db.cooldownPanelsFilterClass = addon.db.cooldownPanelsFilterClass ~= true end
+			CooldownPanels:RefreshEditor()
+		end)
+		rootDescription:CreateCheckbox(L["CooldownPanelHideEmptyGroups"] or "Hide empty groups", function() return addon.db and addon.db.cooldownPanelsHideEmptyGroups == true end, function()
+			if addon.db then addon.db.cooldownPanelsHideEmptyGroups = addon.db.cooldownPanelsHideEmptyGroups ~= true end
 			CooldownPanels:RefreshEditor()
 		end)
 	end)
@@ -9026,6 +9207,7 @@ local function ensureEditor()
 	panelTitle:SetPoint("TOPLEFT", left, "TOPLEFT", 12, -12)
 
 	if addon.db and addon.db.cooldownPanelsFilterClass == nil then addon.db.cooldownPanelsFilterClass = false end
+	if addon.db and addon.db.cooldownPanelsHideEmptyGroups == nil then addon.db.cooldownPanelsHideEmptyGroups = false end
 	local filterButton = CreateFrame("Button", nil, left)
 	filterButton:SetSize(18, 18)
 	filterButton:SetPoint("TOPRIGHT", left, "TOPRIGHT", -10, -10)
@@ -9040,12 +9222,15 @@ local function ensureEditor()
 
 	local panelScroll = CreateFrame("ScrollFrame", nil, left, "UIPanelScrollFrameTemplate")
 	panelScroll:SetPoint("TOPLEFT", panelTitle, "BOTTOMLEFT", 0, -8)
-	panelScroll:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", -26, 44)
+	panelScroll:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", -26, 72)
 	local panelContent = CreateFrame("Frame", nil, panelScroll)
 	panelContent:SetSize(1, 1)
 	panelScroll:SetScrollChild(panelContent)
 	panelContent:SetWidth(panelScroll:GetWidth() or 1)
 	panelScroll:SetScript("OnSizeChanged", function(self) panelContent:SetWidth(self:GetWidth() or 1) end)
+
+	local addGroup = Helper.CreateButton(left, L["CooldownPanelAddGroup"] or "Add Group", 96, 22)
+	addGroup:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 12, 40)
 
 	local addPanel = Helper.CreateButton(left, L["CooldownPanelAddPanel"] or "Add Panel", 96, 22)
 	addPanel:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 12, 12)
@@ -9342,6 +9527,7 @@ local function ensureEditor()
 		previewFrame = previewFrame,
 		previewHintLabel = previewHintLabel,
 		entryHint = entryHint,
+		addGroup = addGroup,
 		addPanel = addPanel,
 		deletePanel = deletePanel,
 		addSpellBox = addSpellBox,
@@ -9386,6 +9572,10 @@ local function ensureEditor()
 	}
 
 	local editor = runtime.editor
+
+	addGroup:SetScript("OnClick", function()
+		if CooldownPanels.ShowEditorGroupCreatePopup then CooldownPanels:ShowEditorGroupCreatePopup() end
+	end)
 
 	addPanel:SetScript("OnClick", function()
 		local newName = L["CooldownPanelNewPanel"] or "New Panel"
@@ -9749,8 +9939,170 @@ ensureCopyPopup = function()
 	}
 end
 
+function CooldownPanels:EnsureEditorGroupCreatePopup()
+	if StaticPopupDialogs["EQOL_COOLDOWN_PANEL_GROUP_CREATE"] then return end
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_GROUP_CREATE"] = {
+		text = L["CooldownPanelCreateGroupPrompt"] or "Create group",
+		button1 = OKAY,
+		button2 = CANCEL,
+		hasEditBox = true,
+		editBoxWidth = 240,
+		enterClicksFirstButton = true,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnShow = function(self)
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			if editBox then
+				editBox:SetText("")
+				editBox:SetFocus()
+				if editBox.HighlightText then editBox:HighlightText() end
+			end
+		end,
+		OnAccept = function(self)
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			local text = editBox and editBox:GetText()
+			local groupId = CooldownPanels:CreateEditorGroup(text)
+			if groupId and CooldownPanels.IsEditorOpen and CooldownPanels:IsEditorOpen() then CooldownPanels:RefreshEditor() end
+		end,
+	}
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_GROUP_CREATE"].EditBoxOnEnterPressed = function(editBox)
+		local parent = editBox and editBox.GetParent and editBox:GetParent()
+		if parent and parent.button1 and parent.button1:IsEnabled() then parent.button1:Click() end
+	end
+end
+
+function CooldownPanels:EnsureEditorGroupRenamePopup()
+	if StaticPopupDialogs["EQOL_COOLDOWN_PANEL_GROUP_RENAME"] then return end
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_GROUP_RENAME"] = {
+		text = L["CooldownPanelRenameGroupPrompt"] or "Rename group",
+		button1 = OKAY,
+		button2 = CANCEL,
+		hasEditBox = true,
+		editBoxWidth = 240,
+		enterClicksFirstButton = true,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnShow = function(self, data)
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			local root = ensureRoot()
+			local currentName = data and CooldownPanels.GetEditorGroupName(root, data.groupId) or ""
+			if editBox then
+				editBox:SetText(currentName or "")
+				editBox:SetFocus()
+				if editBox.HighlightText then editBox:HighlightText() end
+			end
+		end,
+		OnAccept = function(self, data)
+			if not (data and data.groupId) then return end
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			local text = editBox and editBox:GetText()
+			if CooldownPanels:RenameEditorGroup(data.groupId, text) and CooldownPanels.IsEditorOpen and CooldownPanels:IsEditorOpen() then
+				CooldownPanels:RefreshEditor()
+			end
+		end,
+	}
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_GROUP_RENAME"].EditBoxOnEnterPressed = function(editBox)
+		local parent = editBox and editBox.GetParent and editBox:GetParent()
+		if parent and parent.button1 and parent.button1:IsEnabled() then parent.button1:Click() end
+	end
+end
+
+function CooldownPanels:EnsureEditorGroupDeletePopup()
+	if StaticPopupDialogs["EQOL_COOLDOWN_PANEL_GROUP_DELETE"] then return end
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_GROUP_DELETE"] = {
+		text = L["CooldownPanelDeleteGroupPrompt"] or "Delete group %s? Panels will stay ungrouped.",
+		button1 = YES,
+		button2 = CANCEL,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnAccept = function(_, data)
+			if not (data and data.groupId) then return end
+			if CooldownPanels:DeleteEditorGroup(data.groupId) and CooldownPanels.IsEditorOpen and CooldownPanels:IsEditorOpen() then
+				CooldownPanels:RefreshEditor()
+			end
+		end,
+	}
+end
+
+function CooldownPanels:ShowEditorGroupCreatePopup()
+	self:EnsureEditorGroupCreatePopup()
+	StaticPopup_Show("EQOL_COOLDOWN_PANEL_GROUP_CREATE")
+end
+
+function CooldownPanels:ShowEditorGroupRenamePopup(groupId)
+	groupId = normalizeId(groupId)
+	if not groupId then return end
+	self:EnsureEditorGroupRenamePopup()
+	StaticPopup_Show("EQOL_COOLDOWN_PANEL_GROUP_RENAME", nil, nil, { groupId = groupId })
+end
+
+function CooldownPanels:ShowEditorGroupMenu(owner, groupId)
+	groupId = normalizeId(groupId)
+	if not (owner and groupId and Api.MenuUtil and Api.MenuUtil.CreateContextMenu) then return end
+	local root = ensureRoot()
+	local groupName = CooldownPanels.GetEditorGroupName(root, groupId) or ("Group " .. tostring(groupId))
+	Api.MenuUtil.CreateContextMenu(owner, function(_, rootDescription)
+		rootDescription:CreateTitle(groupName)
+		rootDescription:CreateDivider()
+		rootDescription:CreateButton(L["CooldownPanelRename"] or "Rename", function() CooldownPanels:ShowEditorGroupRenamePopup(groupId) end)
+		rootDescription:CreateButton(DELETE or "Delete", function()
+			CooldownPanels:EnsureEditorGroupDeletePopup()
+			StaticPopup_Show("EQOL_COOLDOWN_PANEL_GROUP_DELETE", groupName, nil, { groupId = groupId })
+		end)
+	end)
+end
+
+function CooldownPanels:ShowPanelGroupAssignMenu(owner, panelId)
+	panelId = normalizeId(panelId)
+	if not (owner and panelId and Api.MenuUtil and Api.MenuUtil.CreateContextMenu) then return end
+	local root = ensureRoot()
+	root = CooldownPanels.EnsureEditorGroupStorage(root)
+	local panel = root and root.panels and root.panels[panelId] or nil
+	if not panel then return end
+	self:SortEditorGroupOrder(root)
+
+	Api.MenuUtil.CreateContextMenu(owner, function(_, rootDescription)
+		rootDescription:CreateTitle(panel.name or ("Panel " .. tostring(panelId)))
+		rootDescription:CreateDivider()
+
+		local currentGroupId = normalizeId(panel.editorGroupId)
+		local groupMenu = rootDescription:CreateButton(L["CooldownPanelAddToGroup"] or "Add to group")
+		groupMenu:CreateRadio(L["CooldownPanelUngrouped"] or "Ungrouped", function() return currentGroupId == nil end, function()
+			if CooldownPanels:SetPanelEditorGroup(panelId, nil) then CooldownPanels:RefreshEditor() end
+		end)
+
+		local hasGroups = false
+		for _, groupId in ipairs(root.editorGroupOrder or {}) do
+			local group = root.editorGroups and root.editorGroups[groupId] or nil
+			if group then
+				hasGroups = true
+				local targetGroupId = normalizeId(groupId)
+				local label = group.name or ("Group " .. tostring(targetGroupId))
+				groupMenu:CreateRadio(label, function() return currentGroupId == targetGroupId end, function()
+					if CooldownPanels:SetPanelEditorGroup(panelId, targetGroupId) then CooldownPanels:RefreshEditor() end
+				end)
+			end
+		end
+
+		if not hasGroups then
+			groupMenu:CreateButton(L["CooldownPanelNoGroups"] or "No groups", function() end)
+			rootDescription:CreateButton(L["CooldownPanelAddGroup"] or "Add Group", function() CooldownPanels:ShowEditorGroupCreatePopup() end)
+		end
+	end)
+end
+
 local function updateRowVisual(row, selected)
 	if not row or not row.bg then return end
+	if row._eqolPanelListKind == "bucket" then
+		row.bg:SetColorTexture(0, 0, 0, 0.3)
+		return
+	end
 	if selected then
 		row.bg:SetColorTexture(0.1, 0.6, 0.6, 0.35)
 	else
@@ -9786,75 +10138,241 @@ end
 local function refreshPanelList(editor, root, classSpecs)
 	local list = editor.panelList
 	if not list then return end
+	root = CooldownPanels.EnsureEditorGroupStorage(root)
 	local content = list.content
 	local rowHeight = 28
 	local spacing = 4
 	local index = 0
 	local filterByClass = addon.db and addon.db.cooldownPanelsFilterClass == true
+	local hideEmptyGroups = addon.db and addon.db.cooldownPanelsHideEmptyGroups == true
+	local groups = root.editorGroups or {}
+	local groupOrder = root.editorGroupOrder or {}
+	local groupedPanelIds = {}
+	local ungroupedPanelIds = {}
+	local entries = {}
+	local showUngroupedBucket = false
+
+	CooldownPanels:SortEditorGroupOrder(root)
+
+	for _, groupId in ipairs(groupOrder) do
+		if groups[groupId] then groupedPanelIds[groupId] = {} end
+	end
 
 	for _, panelId in ipairs(root.order or {}) do
 		local panel = root.panels and root.panels[panelId]
 		if panel and (not filterByClass or panelMatchesPlayerClass(panel, classSpecs)) then
-			index = index + 1
-			local row = editor.panelRows[index]
-			if not row then
-				row = Helper.CreateRowButton(content, rowHeight)
-				row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-				row.label:SetPoint("LEFT", row, "LEFT", 8, 0)
-				row.label:SetTextColor(1, 1, 1, 1)
+			local groupId = normalizeId(panel.editorGroupId)
+			if groupId and groups[groupId] then
+				local bucket = groupedPanelIds[groupId]
+				if not bucket then
+					bucket = {}
+					groupedPanelIds[groupId] = bucket
+				end
+				bucket[#bucket + 1] = panelId
+			else
+				ungroupedPanelIds[#ungroupedPanelIds + 1] = panelId
+			end
+		end
+	end
 
-				row.count = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-				row.count:SetPoint("RIGHT", row, "RIGHT", -8, 0)
-				row:RegisterForDrag("LeftButton")
-				row:SetScript("OnDragStart", function(self)
-					editor.dragPanelId = self.panelId
+	showUngroupedBucket = #ungroupedPanelIds > 0 or editor.draggingPanel == true
+
+	local function appendBucket(groupId, label, panelIds)
+		local collapsed = CooldownPanels:IsEditorPanelGroupCollapsed(editor, groupId)
+		entries[#entries + 1] = {
+			kind = "bucket",
+			groupId = groupId,
+			label = label,
+			count = #panelIds,
+			collapsed = collapsed,
+		}
+		if collapsed then return end
+		for _, panelId in ipairs(panelIds) do
+			entries[#entries + 1] = {
+				kind = "panel",
+				groupId = groupId,
+				panelId = panelId,
+				panel = root.panels and root.panels[panelId] or nil,
+			}
+		end
+	end
+
+	if showUngroupedBucket then appendBucket(nil, L["CooldownPanelUngrouped"] or "Ungrouped", ungroupedPanelIds) end
+	for _, groupId in ipairs(groupOrder) do
+		local group = groups[groupId]
+		local panelIds = groupedPanelIds[groupId] or {}
+		if group and (not hideEmptyGroups or #panelIds > 0 or editor.draggingPanel == true) then
+			appendBucket(groupId, group.name or ("Group " .. tostring(groupId)), panelIds)
+		end
+	end
+
+	for _, entry in ipairs(entries) do
+		index = index + 1
+		local row = editor.panelRows[index]
+		if not row then
+			row = Helper.CreateRowButton(content, rowHeight)
+			row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+			row.label:SetTextColor(1, 1, 1, 1)
+
+			row.count = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+			row.count:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+
+			row.toggle = row:CreateTexture(nil, "ARTWORK")
+			row.toggle:SetSize(12, 12)
+			row.toggle:Hide()
+
+			row.toggleFrame = CreateFrame("Button", nil, row)
+			row.toggleFrame:SetSize(18, 18)
+			row.toggleFrame:SetPoint("LEFT", row, "LEFT", 4, 0)
+			row.toggleFrame:Hide()
+			row.toggleFrame:SetScript("OnClick", function(self)
+				local parent = self:GetParent()
+				if not (parent and parent._eqolPanelListKind == "bucket") then return end
+				CooldownPanels:ToggleEditorPanelGroupCollapsed(editor, parent.groupId)
+				CooldownPanels:RefreshEditor()
+			end)
+			row.toggleFrame:SetScript("OnEnter", function(self)
+				local parent = self:GetParent()
+				if parent and parent.highlight then parent.highlight:Show() end
+			end)
+			row.toggleFrame:SetScript("OnLeave", function(self)
+				local parent = self:GetParent()
+				if parent and parent.highlight then parent.highlight:Hide() end
+			end)
+
+			row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+			row:RegisterForDrag("LeftButton")
+			row:SetScript("OnDragStart", function(self)
+				if self._eqolPanelListKind ~= "panel" then return end
+				editor.dragPanelId = self.panelId
+				editor.dragTargetPanelId = nil
+				editor.dragTargetHasBucket = nil
+				editor.dragTargetBucketId = nil
+				editor.draggingPanel = true
+				CooldownPanels:RefreshEditor()
+				showEditorDragIcon(editor, Helper.PREVIEW_ICON)
+				self:SetAlpha(0.6)
+			end)
+			row:SetScript("OnDragStop", function(self)
+				self:SetAlpha(1)
+				if not editor.draggingPanel then return end
+				editor.draggingPanel = nil
+				hideEditorDragIcon(editor)
+				local fromId = editor.dragPanelId
+				local targetPanelId = editor.dragTargetPanelId
+				local hasBucketTarget = editor.dragTargetHasBucket == true
+				local targetBucketId = editor.dragTargetBucketId
+				editor.dragPanelId = nil
+				editor.dragTargetPanelId = nil
+				editor.dragTargetHasBucket = nil
+				editor.dragTargetBucketId = nil
+				if not fromId then
+					CooldownPanels:RefreshEditor()
+					return
+				end
+				local sourcePanel = root.panels and root.panels[fromId] or nil
+				if sourcePanel then
+					if targetPanelId and targetPanelId ~= fromId then
+						local targetPanel = root.panels and root.panels[targetPanelId] or nil
+						if targetPanel then
+							sourcePanel.editorGroupId = normalizeId(targetPanel.editorGroupId)
+							movePanelInOrder(root, fromId, targetPanelId)
+						end
+					elseif hasBucketTarget then
+						sourcePanel.editorGroupId = normalizeId(targetBucketId)
+						for _, candidateId in ipairs(root.order or {}) do
+							if candidateId ~= fromId then
+								local candidatePanel = root.panels and root.panels[candidateId] or nil
+								if candidatePanel and normalizeId(candidatePanel.editorGroupId) == normalizeId(targetBucketId) then
+									movePanelInOrder(root, fromId, candidateId)
+									break
+								end
+							end
+						end
+					end
+				end
+				CooldownPanels:RefreshEditor()
+			end)
+			row:SetScript("OnEnter", function(self)
+				if not editor.draggingPanel then return end
+				if self._eqolPanelListKind == "panel" then
+					editor.dragTargetPanelId = self.panelId
+					editor.dragTargetHasBucket = nil
+					editor.dragTargetBucketId = nil
+				else
 					editor.dragTargetPanelId = nil
-					editor.draggingPanel = true
-					showEditorDragIcon(editor, Helper.PREVIEW_ICON)
-					self:SetAlpha(0.6)
-				end)
-				row:SetScript("OnDragStop", function(self)
-					self:SetAlpha(1)
-					if not editor.draggingPanel then return end
-					editor.draggingPanel = nil
-					hideEditorDragIcon(editor)
-					local fromId = editor.dragPanelId
-					local targetId = editor.dragTargetPanelId
-					editor.dragPanelId = nil
-					editor.dragTargetPanelId = nil
-					if not fromId or not targetId or fromId == targetId then
-						CooldownPanels:RefreshEditor()
+					editor.dragTargetHasBucket = true
+					editor.dragTargetBucketId = self.groupId
+				end
+				if self.bg then self.bg:SetColorTexture(0.2, 0.7, 0.2, 0.35) end
+			end)
+			row:SetScript("OnLeave", function(self)
+				if not editor.draggingPanel then return end
+				if self._eqolPanelListKind == "panel" then
+					if editor.dragTargetPanelId == self.panelId then editor.dragTargetPanelId = nil end
+					updateRowVisual(self, self.panelId == editor.selectedPanelId)
+				else
+					editor.dragTargetHasBucket = nil
+					editor.dragTargetBucketId = nil
+					updateRowVisual(self, false)
+				end
+			end)
+			row:SetScript("OnClick", function(self, button)
+				if self._eqolPanelListKind == "bucket" then
+					if button == "RightButton" then
+						if self.groupId then CooldownPanels:ShowEditorGroupMenu(self, self.groupId) end
 						return
 					end
-					if movePanelInOrder(root, fromId, targetId) then
-						CooldownPanels:RefreshEditor()
-					else
-						CooldownPanels:RefreshEditor()
-					end
-				end)
-				row:SetScript("OnEnter", function(self)
-					if editor.draggingPanel then
-						editor.dragTargetPanelId = self.panelId
-						if self.bg then self.bg:SetColorTexture(0.2, 0.7, 0.2, 0.35) end
-					end
-				end)
-				row:SetScript("OnLeave", function(self)
-					if editor.draggingPanel then updateRowVisual(self, self.panelId == editor.selectedPanelId) end
-				end)
-				editor.panelRows[index] = row
-			end
-			row:ClearAllPoints()
-			row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((index - 1) * (rowHeight + spacing)))
-			row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -((index - 1) * (rowHeight + spacing)))
+					CooldownPanels:ToggleEditorPanelGroupCollapsed(editor, self.groupId)
+					CooldownPanels:RefreshEditor()
+					return
+				end
+				if button == "RightButton" then
+					if self.panelId then CooldownPanels:ShowPanelGroupAssignMenu(self, self.panelId) end
+					return
+				end
+				if self.panelId then CooldownPanels:SelectPanel(self.panelId) end
+			end)
+			editor.panelRows[index] = row
+		end
 
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((index - 1) * (rowHeight + spacing)))
+		row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -((index - 1) * (rowHeight + spacing)))
+		row:SetAlpha(1)
+		row:Show()
+
+		if entry.kind == "bucket" then
+			row._eqolPanelListKind = "bucket"
+			row.panelId = nil
+			row.groupId = entry.groupId
+			row.toggle:Show()
+			row.toggleFrame:Show()
+			row.toggle:ClearAllPoints()
+			row.toggle:SetPoint("CENTER", row.toggleFrame, "CENTER", 0, 0)
+			row.toggle:SetAtlas(entry.collapsed and "NPE_ArrowRight" or "NPE_ArrowDown")
+			row.label:ClearAllPoints()
+			row.label:SetPoint("LEFT", row, "LEFT", 24, 0)
+			row.label:SetText(entry.label or (L["CooldownPanelUngrouped"] or "Ungrouped"))
+			row.label:SetTextColor(1, 0.9, 0.6, 1)
+			row.count:SetText(tostring(entry.count or 0))
+			row.count:SetTextColor(0.9, 0.9, 0.9, 1)
+			updateRowVisual(row, false)
+		else
+			local panelId = entry.panelId
+			local panel = entry.panel
+			row._eqolPanelListKind = "panel"
 			row.panelId = panelId
-			row.label:SetText(panel.name or ("Panel " .. tostring(panelId)))
-			local entryCount = panel.order and #panel.order or 0
-			row.count:SetText(entryCount)
-			row:Show()
-
+			row.groupId = entry.groupId
+			row.toggle:Hide()
+			row.toggleFrame:Hide()
+			row.label:ClearAllPoints()
+			row.label:SetPoint("LEFT", row, "LEFT", 22, 0)
+			row.label:SetText((panel and panel.name) or ("Panel " .. tostring(panelId)))
+			row.label:SetTextColor(1, 1, 1, 1)
+			row.count:SetText(tostring(panel and panel.order and #panel.order or 0))
+			row.count:SetTextColor(0.7, 0.7, 0.7, 1)
 			updateRowVisual(row, panelId == editor.selectedPanelId)
-			row:SetScript("OnClick", function() CooldownPanels:SelectPanel(panelId) end)
 		end
 	end
 
@@ -10762,6 +11280,7 @@ function CooldownPanels:RefreshEditor()
 	if panelId and (not root.panels or not root.panels[panelId]) then panelId = root.order and root.order[1] or nil end
 
 	local filterByClass = addon.db and addon.db.cooldownPanelsFilterClass == true
+	local hideEmptyGroups = addon.db and addon.db.cooldownPanelsHideEmptyGroups == true
 	local classSpecs = filterByClass and getPlayerClassSpecMap() or nil
 	if filterByClass and panelId then
 		local selectedPanel = root.panels and root.panels[panelId]
@@ -10774,7 +11293,7 @@ function CooldownPanels:RefreshEditor()
 	if panel then Helper.NormalizePanel(panel, root.defaults) end
 
 	if editor.filterButton and editor.filterButton.icon then
-		if filterByClass then
+		if filterByClass or hideEmptyGroups then
 			editor.filterButton.icon:SetVertexColor(1, 0.82, 0.2, 1)
 		else
 			editor.filterButton.icon:SetVertexColor(1, 1, 1, 0.9)

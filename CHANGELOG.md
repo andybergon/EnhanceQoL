@@ -7,6 +7,7 @@
 - Cooldown Panels (Cooldown text): Added panel-wide static `Cooldown text color` customization (`Edit Mode -> Cooldown text`) with opacity support.
 - Cooldown Panels (Items): Added automatic rank-group support for Health/Combat Potions and Flasks/Fleeting Flasks. Item entries now store the lowest-rank ID as canonical and can still resolve to higher ranks.
 - Cooldown Panels (Layout Edit): Added standalone panel settings access directly from Layout Edit, so advanced panel positioning/settings can be adjusted from the layout workflow without switching back to the right-side editor inspector.
+- Cooldown Panels (Editor): Added collapsible panel grouping with persistent groups, drag-and-drop assignment/removal, panel and group context-menu actions, alphabetical group sorting, and a `Hide empty groups` panel-filter toggle.
 - Cooldown Panels (Overlays): Added panel-wide `Ready glow color` customization (`Edit Mode -> Overlays`). Ready glows now use the configured panel color through the internal glow system.
 - Cooldown Panels (Overlays): Added panel-wide `No desaturation` (`Edit Mode -> Overlays`) to keep icons fully colored while still tracking cooldown state.
 - Cooldown Panels (Radial Layout): Added a configurable `Arc degrees` slider/input for radial panels, so icons can be distributed across custom arcs (for example semicircles) instead of always using a full `360°` circle.
