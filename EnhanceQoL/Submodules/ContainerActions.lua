@@ -1170,7 +1170,7 @@ function ContainerActions:IsTooltipOpenable(bag, slot, info)
 	if not tooltip or not tooltip.lines then return false end
 	for _, line in ipairs(tooltip.lines) do
 		if line and line.leftText then
-			if line.leftText == ITEM_COSMETIC_LEARN or line.leftText == ITEM_OPENABLE then
+			if line.leftText == ITEM_OPENABLE then
 				self.openableCache[itemID] = true
 				return true
 			end

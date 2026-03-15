@@ -1378,8 +1378,11 @@ function Editor:EnsureFrame()
 
 	unitFrame.SampleBars = {}
 	for i = 1, 24 do
-		local bar = unitFrame:CreateTexture(nil, "ARTWORK", nil, 3)
-		bar:SetColorTexture(0, 0, 0, 0)
+		local bar = CreateFrame("StatusBar", nil, unitFrame)
+		bar:EnableMouse(false)
+		bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+		bar:SetMinMaxValues(0, 1)
+		bar:SetValue(1)
 		bar:Hide()
 		unitFrame.SampleBars[i] = bar
 	end
@@ -1529,8 +1532,12 @@ function Editor:EnsureFrame()
 	controls.ColorSwatch = controls.ColorButton.ColorSwatch
 	controls.ColorButton.ColorSwatch = controls.ColorSwatch
 	controls.ColorButton._eqolColorSwatch = controls.ColorSwatch
+	controls.BarDrainAnimation = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorBarDrainAnimation", "Drain Animation (First Match)"))
+	controls.BarDrainAnimation:SetPoint("TOPLEFT", controls.ColorLabel, "BOTTOMLEFT", -4, -8)
+	controls.BarReverseFill = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorBarReverseFill", "Reverse"))
+	controls.BarReverseFill:SetPoint("TOPLEFT", controls.BarDrainAnimation, "BOTTOMLEFT", 0, -4)
 	controls.CooldownSwipe = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorCooldownSwipe", "Cooldown Swipe"))
-	controls.CooldownSwipe:SetPoint("TOPLEFT", controls.ColorLabel, "BOTTOMLEFT", -4, -8)
+	controls.CooldownSwipe:SetPoint("TOPLEFT", controls.BarReverseFill, "BOTTOMLEFT", 0, -4)
 	controls.CooldownEdge = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorCooldownEdge", "Draw Edge"))
 	controls.CooldownEdge:SetPoint("TOPLEFT", controls.CooldownSwipe, "BOTTOMLEFT", 0, -4)
 	controls.CooldownBling = createCheck(groupControlParent, tr("UFGroupHealerBuffEditorCooldownBling", "Draw Bling"))
@@ -1636,30 +1643,36 @@ function Editor:EnsureFrame()
 		placeSlider(controls.IndicatorBorderOffsetLabel, controls.IndicatorBorderOffset, controls.IndicatorBorderOffsetValue)
 		placeColor(controls.IndicatorBorderColorLabel, controls.IndicatorBorderColorButton)
 		placeColor(controls.ColorLabel, controls.ColorButton)
-		local cooldownAnchor = controls.ColorLabel
+		placeCheck(controls.BarDrainAnimation, controls.ColorLabel, -4, -8)
+		placeCheck(controls.BarReverseFill, controls.BarDrainAnimation, 0, -4)
+		local cooldownAnchor = controls.BarReverseFill
 		if not (cooldownAnchor and cooldownAnchor:IsShown()) then
-			if controls.IndicatorBorderColorLabel and controls.IndicatorBorderColorLabel:IsShown() then
-				cooldownAnchor = controls.IndicatorBorderColorLabel
-			elseif controls.IndicatorBorderColorButton and controls.IndicatorBorderColorButton:IsShown() then
-				cooldownAnchor = controls.IndicatorBorderColorButton
-			elseif controls.IndicatorBorderOffsetLabel and controls.IndicatorBorderOffsetLabel:IsShown() then
-				cooldownAnchor = controls.IndicatorBorderOffsetLabel
-			elseif controls.IndicatorBorderOffset and controls.IndicatorBorderOffset:IsShown() then
-				cooldownAnchor = controls.IndicatorBorderOffset
-			elseif controls.IndicatorBorderSizeLabel and controls.IndicatorBorderSizeLabel:IsShown() then
-				cooldownAnchor = controls.IndicatorBorderSizeLabel
-			elseif controls.IndicatorBorderTextureLabel and controls.IndicatorBorderTextureLabel:IsShown() then
-				cooldownAnchor = controls.IndicatorBorderTextureLabel
-			elseif controls.IndicatorBorder and controls.IndicatorBorder:IsShown() then
-				cooldownAnchor = controls.IndicatorBorder
-			elseif controls.YLabel and controls.YLabel:IsShown() then
-				cooldownAnchor = controls.YLabel
-			elseif controls.XLabel and controls.XLabel:IsShown() then
-				cooldownAnchor = controls.XLabel
-			elseif controls.YOffset and controls.YOffset:IsShown() then
-				cooldownAnchor = controls.YOffset
-			elseif controls.XOffset and controls.XOffset:IsShown() then
-				cooldownAnchor = controls.XOffset
+			cooldownAnchor = controls.BarDrainAnimation
+			if not (cooldownAnchor and cooldownAnchor:IsShown()) then
+				cooldownAnchor = controls.ColorLabel
+				if not (cooldownAnchor and cooldownAnchor:IsShown()) and controls.IndicatorBorderColorLabel and controls.IndicatorBorderColorLabel:IsShown() then
+					cooldownAnchor = controls.IndicatorBorderColorLabel
+				elseif controls.IndicatorBorderColorButton and controls.IndicatorBorderColorButton:IsShown() then
+					cooldownAnchor = controls.IndicatorBorderColorButton
+				elseif controls.IndicatorBorderOffsetLabel and controls.IndicatorBorderOffsetLabel:IsShown() then
+					cooldownAnchor = controls.IndicatorBorderOffsetLabel
+				elseif controls.IndicatorBorderOffset and controls.IndicatorBorderOffset:IsShown() then
+					cooldownAnchor = controls.IndicatorBorderOffset
+				elseif controls.IndicatorBorderSizeLabel and controls.IndicatorBorderSizeLabel:IsShown() then
+					cooldownAnchor = controls.IndicatorBorderSizeLabel
+				elseif controls.IndicatorBorderTextureLabel and controls.IndicatorBorderTextureLabel:IsShown() then
+					cooldownAnchor = controls.IndicatorBorderTextureLabel
+				elseif controls.IndicatorBorder and controls.IndicatorBorder:IsShown() then
+					cooldownAnchor = controls.IndicatorBorder
+				elseif controls.YLabel and controls.YLabel:IsShown() then
+					cooldownAnchor = controls.YLabel
+				elseif controls.XLabel and controls.XLabel:IsShown() then
+					cooldownAnchor = controls.XLabel
+				elseif controls.YOffset and controls.YOffset:IsShown() then
+					cooldownAnchor = controls.YOffset
+				elseif controls.XOffset and controls.XOffset:IsShown() then
+					cooldownAnchor = controls.XOffset
+				end
 			end
 		end
 		placeCheck(controls.CooldownSwipe, cooldownAnchor, -4, -8)
@@ -2380,6 +2393,32 @@ function Editor:EnsureFrame()
 		Editor:QueueRuntimeRefresh()
 	end)
 
+	controls.BarDrainAnimation:SetScript("OnClick", function(self)
+		if Editor._controlUpdateLock then return end
+		local group = groupFromSelection()
+		if not group then
+			self:SetChecked(false)
+			return
+		end
+		group.barDrainAnimation = self:GetChecked() == true
+		Editor:RefreshGroupControls()
+		Editor:RefreshRuleControls()
+		Editor:RefreshPreview()
+		Editor:QueueRuntimeRefresh()
+	end)
+
+	controls.BarReverseFill:SetScript("OnClick", function(self)
+		if Editor._controlUpdateLock then return end
+		local group = groupFromSelection()
+		if not group then
+			self:SetChecked(false)
+			return
+		end
+		group.barReverseFill = self:GetChecked() == true
+		Editor:RefreshPreview()
+		Editor:QueueRuntimeRefresh()
+	end)
+
 	controls.CooldownSwipe:SetScript("OnClick", function(self)
 		if Editor._controlUpdateLock then return end
 		local group = groupFromSelection()
@@ -2683,6 +2722,7 @@ function Editor:RefreshRuleControls()
 	local showIconRuleMode = selectedGroupStyle == "ICON" or selectedGroupStyle == "SQUARE"
 	local showTintRuleMatch = selectedGroupStyle == "TINT"
 	local showRuleColor = selectedGroupStyle == "SQUARE"
+	local showBarDrainInfo = selectedGroupStyle == "BAR" and selectedGroup and selectedGroup.barDrainAnimation == true
 	local iconModeOptions = HB.ICON_MODE_OPTIONS
 		or {
 			{ value = "ALL", label = tr("UFGroupHealerBuffIconModeAll", "Show All Active Spells") },
@@ -2768,6 +2808,13 @@ function Editor:RefreshRuleControls()
 			controls.RuleInfo:SetText(
 				string.format(tr("UFGroupHealerBuffEditorRuleInfoIcon", "Showing rules for %s. Scope is set per rule (Party/Raid). Priority follows the rule order in this list."), groupLabel)
 			)
+		elseif showBarDrainInfo then
+			controls.RuleInfo:SetText(
+				string.format(
+					tr("UFGroupHealerBuffEditorRuleInfoBarDrain", "Showing rules for %s. Scope is set per rule (Party/Raid). Drain animation follows the first active timed aura in this list."),
+					groupLabel
+				)
+			)
 		else
 			controls.RuleInfo:SetText(string.format(tr("UFGroupHealerBuffEditorRuleInfoDefault", "Showing rules for %s. Scope is set per rule (Party/Raid). Add via +, remove via x."), groupLabel))
 		end
@@ -2831,6 +2878,8 @@ function Editor:RefreshGroupControls()
 		local showInset = style == "BAR" or style == "BORDER"
 		local showBorder = style == "BORDER"
 		local showColor = style == "SQUARE" or style == "BAR" or style == "BORDER" or style == "TINT"
+		local showBarDrainAnimation = style == "BAR"
+		local showBarReverseFill = style == "BAR" and group.barDrainAnimation == true
 		local showCooldownSwipe = style == "ICON" or style == "SQUARE"
 		local showCooldownDrawOptions = style == "ICON" or style == "SQUARE"
 		local showTextSizeOverrides = style == "ICON" or style == "SQUARE"
@@ -2910,6 +2959,8 @@ function Editor:RefreshGroupControls()
 		setColorPreview(controls.IndicatorBorderColorButton, group.indicatorBorderColor)
 
 		group.color = group.color or { 1, 0.82, 0.1, 0.9 }
+		group.barDrainAnimation = group.barDrainAnimation == true
+		group.barReverseFill = group.barReverseFill == true
 		if group.showCooldownSwipe == nil then group.showCooldownSwipe = true end
 		if group.showCooldownEdge == nil then group.showCooldownEdge = true end
 		if group.showCooldownBling == nil then group.showCooldownBling = true end
@@ -2938,6 +2989,8 @@ function Editor:RefreshGroupControls()
 		setSliderState(controls.IndicatorBorderOffsetLabel, controls.IndicatorBorderOffset, controls.IndicatorBorderOffsetValue, showIndicatorBorder, group.indicatorBorderEnabled == true)
 		setIndicatorBorderColorState(showIndicatorBorder, group.indicatorBorderEnabled == true)
 		setColorState(showColor, true)
+		setCheckState(controls.BarDrainAnimation, showBarDrainAnimation, true, group.barDrainAnimation == true)
+		setCheckState(controls.BarReverseFill, showBarReverseFill, true, group.barReverseFill == true)
 		setCheckState(controls.CooldownSwipe, showCooldownSwipe, true, group.showCooldownSwipe ~= false)
 		setCheckState(controls.CooldownEdge, showCooldownDrawOptions, true, group.showCooldownEdge ~= false)
 		setCheckState(controls.CooldownBling, showCooldownDrawOptions, true, group.showCooldownBling ~= false)
@@ -2966,6 +3019,8 @@ function Editor:RefreshGroupControls()
 		setSliderState(controls.IndicatorBorderOffsetLabel, controls.IndicatorBorderOffset, controls.IndicatorBorderOffsetValue, false, false)
 		setIndicatorBorderColorState(false, false)
 		setColorState(false, false)
+		setCheckState(controls.BarDrainAnimation, false, false, false)
+		setCheckState(controls.BarReverseFill, false, false, false)
 		setCheckState(controls.CooldownSwipe, false, false, false)
 		setCheckState(controls.CooldownEdge, false, false, false)
 		setCheckState(controls.CooldownBling, false, false, false)
@@ -3012,7 +3067,11 @@ local function clearPreview(unitFrame)
 		unitFrame.SampleTints[i]:Hide()
 	end
 	for i = 1, #(unitFrame.SampleBars or {}) do
-		unitFrame.SampleBars[i]:Hide()
+		local bar = unitFrame.SampleBars[i]
+		bar:Hide()
+		bar._eqolPreviewGroup = nil
+		bar._eqolPreviewSampleIndex = nil
+		if bar.SetValue then bar:SetValue(1) end
 	end
 	for i = 1, #(unitFrame.SampleBorders or {}) do
 		unitFrame.SampleBorders[i]:Hide()
@@ -3067,6 +3126,17 @@ local function getPreviewCooldownTiming(sampleIndex, now, loopEnabled, loopOrigi
 	return duration, remaining
 end
 
+local function getPreviewTimedFill(sampleIndex, now, loopEnabled, loopOrigin)
+	local duration, remaining = getPreviewCooldownTiming(sampleIndex, now, loopEnabled, loopOrigin)
+	duration = tonumber(duration)
+	remaining = tonumber(remaining)
+	if not (duration and duration > 0 and remaining) then return 1 end
+	local fill = remaining / duration
+	if fill < 0 then fill = 0 end
+	if fill > 1 then fill = 1 end
+	return fill
+end
+
 local function applyPreviewCooldown(icon, group, ac, sampleIndex, now, loopEnabled, loopOrigin)
 	if not icon then return end
 	ensurePreviewAuraWidgets(icon)
@@ -3095,6 +3165,15 @@ local function applyPreviewCooldown(icon, group, ac, sampleIndex, now, loopEnabl
 		if size == nil and ac then size = ac.cooldownFontSize end
 		setPreviewFont(cooldownText, size or 12, ac and ac.cooldownFontOutline)
 	end
+end
+
+local function applyPreviewBarFill(bar, group, sampleIndex, now, loopEnabled, loopOrigin)
+	if not (bar and bar.SetValue) then return end
+	if not (group and group.barDrainAnimation == true) then
+		bar:SetValue(1)
+		return
+	end
+	bar:SetValue(getPreviewTimedFill(sampleIndex, now, loopEnabled, loopOrigin))
 end
 
 local function applyPreviewCharges(icon, group, ac, sampleIndex)
@@ -3155,6 +3234,10 @@ function Editor:TickPreviewLoop()
 			local group = icon._eqolPreviewGroup
 			if group then applyPreviewCooldown(icon, group, icon._eqolPreviewAC or EMPTY, icon._eqolPreviewSampleIndex or 1, now, true, loopOrigin) end
 		end
+	end
+	for i = 1, #(preview.SampleBars or EMPTY) do
+		local bar = preview.SampleBars[i]
+		if bar and bar:IsShown() and bar._eqolPreviewGroup then applyPreviewBarFill(bar, bar._eqolPreviewGroup, bar._eqolPreviewSampleIndex or 1, now, true, loopOrigin) end
 	end
 end
 
@@ -3430,7 +3513,10 @@ function Editor:RefreshPreview()
 				if bar then
 					local r, g, b, a = resolveColor(group.color)
 					if not selected then a = min(a, 0.45) end
-					bar:SetColorTexture(r, g, b, a)
+					bar:SetStatusBarColor(r, g, b, a)
+					bar:SetMinMaxValues(0, 1)
+					bar:SetOrientation(tostring(group.barOrientation or "HORIZONTAL"):upper())
+					if UFHelper and UFHelper.applyStatusBarReverseFill then UFHelper.applyStatusBarReverseFill(bar, group.barDrainAnimation == true and group.barReverseFill == true) end
 					bar:ClearAllPoints()
 					local inset = max(0, tonumber(group.inset) or 0)
 					local thickness = max(1, tonumber(group.barThickness) or 6)
@@ -3443,6 +3529,9 @@ function Editor:RefreshPreview()
 						bar:SetPoint("RIGHT", preview, "RIGHT", baseX - inset, baseY)
 						bar:SetHeight(thickness)
 					end
+					bar._eqolPreviewGroup = group
+					bar._eqolPreviewSampleIndex = 1
+					applyPreviewBarFill(bar, group, 1, now, loopEnabled, loopOrigin)
 					bar:Show()
 				end
 			elseif style == "BORDER" then

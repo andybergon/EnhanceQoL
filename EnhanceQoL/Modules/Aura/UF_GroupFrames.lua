@@ -580,6 +580,12 @@ local function roundToEvenPixel(value, scale)
 	return roundToPixel(value * 0.5, scale) * 2
 end
 
+GF.GetLayoutAnchorFrame = GF.GetLayoutAnchorFrame or function(st, fallback)
+	if st and st.layoutAnchor then return st.layoutAnchor end
+	if st and st.frame then return st.frame end
+	return fallback
+end
+
 local layoutTexts = GFH.LayoutTexts
 
 local function setFrameLevelAbove(child, parent, offset)
@@ -593,9 +599,10 @@ local function syncTextFrameLevels(st)
 	setFrameLevelAbove(st.healthTextLayer, st.health, 5)
 	setFrameLevelAbove(st.powerTextLayer, st.power, 5)
 	if st.statusIconLayer then
-		local parent = st.healthTextLayer or st.health or st.barGroup or st.frame
+		local parent = st.healthTextLayer or st.health or GF.GetLayoutAnchorFrame(st, st.barGroup) or st.barGroup or st.frame
+		local anchor = GF.GetLayoutAnchorFrame(st, st.barGroup)
 		setFrameLevelAbove(st.statusIconLayer, parent, 6)
-		if st.barGroup and st.statusIconLayer.SetAllPoints then st.statusIconLayer:SetAllPoints(st.barGroup) end
+		if anchor and st.statusIconLayer.SetAllPoints then st.statusIconLayer:SetAllPoints(anchor) end
 	end
 end
 
@@ -609,6 +616,7 @@ local function hookTextFrameLevels(st)
 		if frame.SetFrameStrata then hooksecurefunc(frame, "SetFrameStrata", function() syncTextFrameLevels(st) end) end
 	end
 	hookFrame(st.frame)
+	hookFrame(st.layoutAnchor)
 	hookFrame(st.barGroup)
 	hookFrame(st.health)
 	hookFrame(st.power)
@@ -3120,6 +3128,13 @@ function GF:BuildButton(self)
 	end
 	st.barGroup:SetAllPoints(self)
 
+	if not st.layoutAnchor then
+		st.layoutAnchor = CreateFrame("Frame", nil, self)
+		st.layoutAnchor:EnableMouse(false)
+	end
+	if st.layoutAnchor.GetParent and st.layoutAnchor:GetParent() ~= self then st.layoutAnchor:SetParent(self) end
+	st.layoutAnchor:SetAllPoints(self)
+
 	setBackdrop(st.barGroup, cfg.border)
 	if not st.portraitHolder then
 		st.portraitHolder = CreateFrame("Frame", nil, st.barGroup, "BackdropTemplate")
@@ -3215,11 +3230,11 @@ function GF:BuildButton(self)
 		st.powerTextLayer:SetAllPoints(st.power)
 	end
 	if not st.statusIconLayer then
-		st.statusIconLayer = CreateFrame("Frame", nil, st.barGroup)
-		st.statusIconLayer:SetAllPoints(st.barGroup)
+		st.statusIconLayer = CreateFrame("Frame", nil, st.layoutAnchor or st.barGroup)
+		st.statusIconLayer:SetAllPoints(st.layoutAnchor or st.barGroup)
 		st.statusIconLayer:EnableMouse(false)
 	end
-	if st.statusIconLayer.GetParent and st.statusIconLayer:GetParent() ~= st.barGroup then st.statusIconLayer:SetParent(st.barGroup) end
+	if st.statusIconLayer.GetParent and st.statusIconLayer:GetParent() ~= (st.layoutAnchor or st.barGroup) then st.statusIconLayer:SetParent(st.layoutAnchor or st.barGroup) end
 	if st.dispelTint then
 		if st.dispelTint.GetParent and st.dispelTint:GetParent() ~= st.healthTextLayer then st.dispelTint:SetParent(st.healthTextLayer) end
 		if st.dispelTint.SetFrameLevel and st.healthTextLayer then
@@ -3242,10 +3257,10 @@ function GF:BuildButton(self)
 	if not st.statusText then st.statusText = st.healthTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight") end
 	if not st.groupNumberText then st.groupNumberText = st.healthTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight") end
 	if not st.privateAuras then
-		st.privateAuras = CreateFrame("Frame", nil, st.barGroup or st.health or self)
+		st.privateAuras = CreateFrame("Frame", nil, st.layoutAnchor or st.barGroup or st.health or self)
 		st.privateAuras:EnableMouse(false)
 	end
-	local privateAuraParent = st.barGroup or st.health or self
+	local privateAuraParent = st.layoutAnchor or st.barGroup or st.health or self
 	if st.privateAuras.GetParent and privateAuraParent and st.privateAuras:GetParent() ~= privateAuraParent then st.privateAuras:SetParent(privateAuraParent) end
 
 	local indicatorLayer = st.statusIconLayer or st.healthTextLayer
@@ -3381,8 +3396,6 @@ function GF:LayoutButton(self)
 	if powerH > availH then powerH = availH end
 
 	local portraitEnabled, portraitSide, portraitSquareBackground, portraitBorderWithFrame = GF.ResolveGroupPortraitConfig(cfg, kind)
-	-- Group portraits should read as an external element, not as the dominant frame body.
-	local portraitOutside = true
 	local portraitBaseSize = max(1, availH)
 	local portraitSize = portraitEnabled and roundToEvenPixel(portraitBaseSize, scale) or 0
 	local borderCfg = cfg.border or {}
@@ -3390,6 +3403,10 @@ function GF:LayoutButton(self)
 	local frameBorderEnabled = borderCfg.enabled
 	if frameBorderEnabled == nil then frameBorderEnabled = borderDef.enabled end
 	frameBorderEnabled = frameBorderEnabled == true
+	-- Match the regular unit-frame behavior: when the frame border should include the portrait,
+	-- expand the bordered frame towards the portrait side so the bars keep their width.
+	local portraitInsideFrame = portraitEnabled and portraitBorderWithFrame and frameBorderEnabled
+	local portraitOutside = not portraitInsideFrame
 	local separatorEnabled, separatorSize = GF.ResolveGroupPortraitSeparatorConfig(cfg, kind, portraitEnabled)
 	local separatorSpace = (separatorEnabled and separatorSize > 0) and separatorSize or 0
 	if portraitEnabled then
@@ -3400,27 +3417,9 @@ function GF:LayoutButton(self)
 		end
 	end
 	local portraitSpace = portraitEnabled and (portraitSize + separatorSpace) or 0
-	local portraitBorderCfg = nil
-	if portraitEnabled and portraitBorderWithFrame and frameBorderEnabled then
-		local borderOffset = borderCfg.offset
-		if borderOffset == nil then borderOffset = borderDef.offset end
-		local borderInset = borderCfg.inset
-		if borderInset == nil then borderInset = borderDef.inset end
-		local borderEdgeSize = borderCfg.edgeSize
-		if borderEdgeSize == nil then borderEdgeSize = borderDef.edgeSize end
-		portraitBorderCfg = {
-			enabled = true,
-			texture = borderCfg.texture or borderDef.texture,
-			color = borderCfg.color or borderDef.color,
-			edgeSize = borderEdgeSize,
-			inset = borderInset,
-			offset = borderOffset,
-			strata = borderCfg.strata or borderDef.strata,
-			frameLevelOffset = borderCfg.frameLevelOffset or borderDef.frameLevelOffset,
-		}
-	end
 	local contentOffsetLeft = 0
 	local contentOffsetRight = 0
+	local layoutAnchor = GF.GetLayoutAnchorFrame(st, self) or self
 	if not portraitOutside then
 		contentOffsetLeft = (portraitEnabled and portraitSide == "LEFT") and portraitSpace or 0
 		contentOffsetRight = (portraitEnabled and portraitSide == "RIGHT") and portraitSpace or 0
@@ -3428,7 +3427,24 @@ function GF:LayoutButton(self)
 
 	local healthBottomOffset = roundToPixel(powerH, scale)
 
-	st.barGroup:SetAllPoints(self)
+	st.barGroup:ClearAllPoints()
+	if portraitInsideFrame and portraitSpace > 0 then
+		if portraitSide == "RIGHT" then
+			st.barGroup:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+			st.barGroup:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", portraitSpace, 0)
+		else
+			st.barGroup:SetPoint("TOPLEFT", self, "TOPLEFT", -portraitSpace, 0)
+			st.barGroup:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
+		end
+	else
+		st.barGroup:SetAllPoints(self)
+	end
+	if st.layoutAnchor then
+		st.layoutAnchor:ClearAllPoints()
+		st.layoutAnchor:SetAllPoints(self)
+		if st.layoutAnchor.SetFrameStrata and st.barGroup.GetFrameStrata then st.layoutAnchor:SetFrameStrata(st.barGroup:GetFrameStrata()) end
+		if st.layoutAnchor.SetFrameLevel and st.barGroup.GetFrameLevel then st.layoutAnchor:SetFrameLevel(st.barGroup:GetFrameLevel() or 0) end
+	end
 	setBackdrop(st.barGroup, cfg.border)
 
 	st._highlightHoverCfg = buildHighlightConfig(cfg, def, "highlightHover")
@@ -3455,7 +3471,8 @@ function GF:LayoutButton(self)
 	if st.portraitHolder then
 		if portraitEnabled then
 			local holderParent = st.barGroup or self
-			local holderOffset = (portraitSize / 2) + (portraitOutside and separatorSpace or 0)
+			local holderOffset = portraitSize / 2
+			if portraitOutside then holderOffset = holderOffset + separatorSpace end
 			local holderX = holderOffset
 			if portraitSide == "RIGHT" then
 				holderX = portraitOutside and holderOffset or -holderOffset
@@ -3493,7 +3510,7 @@ function GF:LayoutButton(self)
 			if st.portraitBg then st.portraitBg:Hide() end
 			st.portraitHolder:Hide()
 		end
-		setBackdrop(st.portraitHolder, portraitBorderCfg)
+		setBackdrop(st.portraitHolder, nil)
 	end
 	GF.ApplyGroupPortraitSeparator(cfg, kind, st, portraitEnabled)
 
@@ -3521,18 +3538,18 @@ function GF:LayoutButton(self)
 			UFHelper.applyFont(st.groupNumberText, style.font, style.fontSize or 12, style.fontOutline)
 		end
 	end
-	layoutTexts(st.health, st.healthTextLeft, st.healthTextCenter, st.healthTextRight, cfg.health, scale, st.barGroup or st.health)
+	layoutTexts(st.health, st.healthTextLeft, st.healthTextCenter, st.healthTextRight, cfg.health, scale, layoutAnchor or st.health)
 	layoutTexts(st.power, st.powerTextLeft, st.powerTextCenter, st.powerTextRight, cfg.power, scale)
 	if st.statusText then
 		local scfg = cfg.status or {}
 		local us = scfg.unitStatus or {}
 		local defStatus = def.status or {}
 		local defUS = defStatus.unitStatus or {}
-		applyStatusTextAnchor(st, us.anchor or defUS.anchor or "CENTER", us.offset or defUS.offset or {}, scale, st.barGroup or self)
+		applyStatusTextAnchor(st, us.anchor or defUS.anchor or "CENTER", us.offset or defUS.offset or {}, scale, layoutAnchor)
 	end
 	if st.groupNumberText then
 		local style = resolveGroupNumberStyle(cfg, def, hc)
-		applyStatusTextAnchor(st, style.anchor, style.offset, scale, st.barGroup or self, st.groupNumberText)
+		applyStatusTextAnchor(st, style.anchor, style.offset, scale, layoutAnchor, st.groupNumberText)
 	end
 
 	if st.health.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -3657,7 +3674,7 @@ function GF:LayoutButton(self)
 		local relPoint = rc.relativePoint or "LEFT"
 		local ox = roundToPixel(rc.x or 2, scale)
 		local oy = roundToPixel(rc.y or 0, scale)
-		local roleAnchor = st.barGroup or self or st.health
+		local roleAnchor = layoutAnchor or self or st.health
 		st.roleIcon:ClearAllPoints()
 		st.roleIcon:SetPoint(point, roleAnchor, relPoint, ox, oy)
 		st.roleIcon:SetSize(size, size)
@@ -3685,7 +3702,7 @@ function GF:LayoutButton(self)
 		local namePad = (nameAnchor and nameAnchor:find("LEFT")) and rolePad or 0
 		local nameX = (nameOffset.x ~= nil and nameOffset.x or baseOffset.x or 6) + namePad
 		local nameY = nameOffset.y ~= nil and nameOffset.y or baseOffset.y or 0
-		local nameAnchorFrame = st.barGroup or st.health
+		local nameAnchorFrame = layoutAnchor or st.health
 		if nameAnchor and nameAnchor:find("BOTTOM") then nameAnchorFrame = st.health or nameAnchorFrame end
 		if GFH and GFH.SnapPointOffsets then
 			nameX, nameY = GFH.SnapPointOffsets(nameAnchorFrame, nameAnchor, nameX, nameY, scale)
@@ -3780,7 +3797,7 @@ function GF:LayoutButton(self)
 		if ric.enabled ~= false then
 			local size = ric.size or 18
 			st.raidIcon:ClearAllPoints()
-			st.raidIcon:SetPoint(ric.point or "TOP", st.barGroup, ric.relativePoint or ric.point or "TOP", roundToPixel(ric.x or 0, scale), roundToPixel(ric.y or -2, scale))
+			st.raidIcon:SetPoint(ric.point or "TOP", layoutAnchor, ric.relativePoint or ric.point or "TOP", roundToPixel(ric.x or 0, scale), roundToPixel(ric.y or -2, scale))
 			st.raidIcon:SetSize(size, size)
 		else
 			st.raidIcon:Hide()
@@ -3835,7 +3852,7 @@ function GF:LayoutButton(self)
 		if rcfg.enabled ~= false then
 			local size = rcfg.size or 16
 			st.readyCheckIcon:ClearAllPoints()
-			st.readyCheckIcon:SetPoint(rcfg.point or "CENTER", st.barGroup, rcfg.relativePoint or rcfg.point or "CENTER", roundToPixel(rcfg.x or 0, scale), roundToPixel(rcfg.y or 0, scale))
+			st.readyCheckIcon:SetPoint(rcfg.point or "CENTER", layoutAnchor, rcfg.relativePoint or rcfg.point or "CENTER", roundToPixel(rcfg.x or 0, scale), roundToPixel(rcfg.y or 0, scale))
 			st.readyCheckIcon:SetSize(size, size)
 		else
 			st.readyCheckIcon:Hide()
@@ -3850,7 +3867,7 @@ function GF:LayoutButton(self)
 		if scfg.enabled ~= false then
 			local size = scfg.size or 16
 			st.summonIcon:ClearAllPoints()
-			st.summonIcon:SetPoint(scfg.point or "CENTER", st.barGroup, scfg.relativePoint or scfg.point or "CENTER", roundToPixel(scfg.x or 0, scale), roundToPixel(scfg.y or 0, scale))
+			st.summonIcon:SetPoint(scfg.point or "CENTER", layoutAnchor, scfg.relativePoint or scfg.point or "CENTER", roundToPixel(scfg.x or 0, scale), roundToPixel(scfg.y or 0, scale))
 			st.summonIcon:SetSize(size, size)
 		else
 			st.summonIcon:Hide()
@@ -3865,7 +3882,7 @@ function GF:LayoutButton(self)
 		if rcfg.enabled ~= false then
 			local size = rcfg.size or 16
 			st.resurrectIcon:ClearAllPoints()
-			st.resurrectIcon:SetPoint(rcfg.point or "CENTER", st.barGroup, rcfg.relativePoint or rcfg.point or "CENTER", roundToPixel(rcfg.x or 0, scale), roundToPixel(rcfg.y or 0, scale))
+			st.resurrectIcon:SetPoint(rcfg.point or "CENTER", layoutAnchor, rcfg.relativePoint or rcfg.point or "CENTER", roundToPixel(rcfg.x or 0, scale), roundToPixel(rcfg.y or 0, scale))
 			st.resurrectIcon:SetSize(size, size)
 		else
 			st.resurrectIcon:Hide()
@@ -3880,7 +3897,7 @@ function GF:LayoutButton(self)
 		if pcfg.enabled ~= false then
 			local size = pcfg.size or 14
 			st.phaseIcon:ClearAllPoints()
-			st.phaseIcon:SetPoint(pcfg.point or "TOPLEFT", st.barGroup, pcfg.relativePoint or pcfg.point or "TOPLEFT", roundToPixel(pcfg.x or 0, scale), roundToPixel(pcfg.y or 0, scale))
+			st.phaseIcon:SetPoint(pcfg.point or "TOPLEFT", layoutAnchor, pcfg.relativePoint or pcfg.point or "TOPLEFT", roundToPixel(pcfg.x or 0, scale), roundToPixel(pcfg.y or 0, scale))
 			st.phaseIcon:SetSize(size, size)
 		else
 			st.phaseIcon:Hide()
@@ -3986,11 +4003,13 @@ end
 
 local function ensureAuraContainer(st, key)
 	if not st then return nil end
+	local parent = GF.GetLayoutAnchorFrame(st, st.barGroup or st.frame)
 	if not st[key] then
-		st[key] = CreateFrame("Frame", nil, st.barGroup or st.frame)
+		st[key] = CreateFrame("Frame", nil, parent)
 		st[key]:EnableMouse(false)
 	end
-	local base = st.statusIconLayer or st.healthTextLayer or st.barGroup or st.frame or st[key]:GetParent()
+	if st[key].GetParent and parent and st[key]:GetParent() ~= parent then st[key]:SetParent(parent) end
+	local base = st.statusIconLayer or st.healthTextLayer or parent or st.barGroup or st.frame or st[key]:GetParent()
 	if base then
 		if st[key].SetFrameStrata and base.GetFrameStrata then st[key]:SetFrameStrata(base:GetFrameStrata()) end
 		if st[key].SetFrameLevel and base.GetFrameLevel then st[key]:SetFrameLevel((base:GetFrameLevel() or 0) + 10) end
@@ -4742,7 +4761,7 @@ function GF:LayoutAuras(self)
 	st._auraLayoutKey = st._auraLayoutKey or {}
 	st._auraStyle = st._auraStyle or {}
 
-	local parent = st.barGroup or st.frame
+	local parent = GF.GetLayoutAnchorFrame(st, st.barGroup or st.frame)
 
 	for kindKey, meta in pairs(AURA_TYPE_META) do
 		local typeCfg = ac[kindKey] or {}
@@ -5692,7 +5711,7 @@ function GF:UpdateStatusText(self)
 		if statusTag then
 			local style = resolveStatusTextStyle(cfg, def, hc)
 			if UFHelper and UFHelper.applyFont then UFHelper.applyFont(statusFs, style.font, style.fontSize or 12, style.fontOutline) end
-			applyStatusTextAnchor(st, style.anchor, style.offset, scale, st.barGroup or self, statusFs)
+			applyStatusTextAnchor(st, style.anchor, style.offset, scale, GF.GetLayoutAnchorFrame(st, self) or self, statusFs)
 			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
 			statusFs:SetText(statusTag)
 			statusFs:SetTextColor(r, g, b, a)
@@ -5707,7 +5726,7 @@ function GF:UpdateStatusText(self)
 		if groupTag then
 			local style = resolveGroupNumberStyle(cfg, def, hc)
 			if UFHelper and UFHelper.applyFont then UFHelper.applyFont(groupFs, style.font, style.fontSize or 12, style.fontOutline) end
-			applyStatusTextAnchor(st, style.anchor, style.offset, scale, st.barGroup or self, groupFs)
+			applyStatusTextAnchor(st, style.anchor, style.offset, scale, GF.GetLayoutAnchorFrame(st, self) or self, groupFs)
 			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
 			groupFs:SetText(groupTag)
 			groupFs:SetTextColor(r, g, b, a)
@@ -5768,7 +5787,7 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 	local function pickCandidate(current, frame, key)
 		if not frame then return current end
 		local st = getState(frame)
-		local anchorTarget = (st and st.barGroup) or frame
+		local anchorTarget = GF.GetLayoutAnchorFrame(st, frame) or frame
 		if not anchorTarget then return current end
 
 		local candidate = {
@@ -6138,8 +6157,8 @@ function GF:UpdatePrivateAuras(self)
 	local cfg = self._eqolCfg or getCfg(kind)
 	local def = DEFAULTS[kind] or {}
 	local pcfg = (cfg and cfg.privateAuras) or def.privateAuras
-	local privateAuraParent = st.barGroup or st.health or self
-	local privateAuraLevelParent = st.statusIconLayer or st.healthTextLayer or st.health or st.barGroup or self
+	local privateAuraParent = GF.GetLayoutAnchorFrame(st, st.health or self) or self
+	local privateAuraLevelParent = st.statusIconLayer or st.healthTextLayer or privateAuraParent or st.health or st.barGroup or self
 	if not st.privateAuras then
 		if not (pcfg and pcfg.enabled == true) then return end
 		st.privateAuras = CreateFrame("Frame", nil, privateAuraParent)

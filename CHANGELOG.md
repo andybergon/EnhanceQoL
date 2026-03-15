@@ -1,5 +1,15 @@
 # Changelog
 
+## [9.0.2] - 2026-03-15
+
+### 🐛 Fixed
+
+- Container Actions: Fixed `Automatically open Container items in bag` treating cosmetic appearance-learn items (`Use: Add this appearance to your Warband collection.`) like openable containers.
+- Group Frames (Healer Buff Placement / Bar): Fixed BAR indicators not behaving like proper tracked buff timers. BAR style now supports a real timed drain animation based on the first active timed aura, with an optional `Reverse` toggle on top of the existing `Horizontal` / `Vertical` orientation.
+- Group Frames (Portraits): Fixed `Extend border over portrait` creating a second portrait border on party/MT/MA frames. The portrait now sits inside the shared frame border like the regular Unit Frames, while non-portrait anchor positions stay unchanged.
+
+---
+
 ## [9.0.1] - 2026-03-15
 
 ### 🐛 Fixed

@@ -291,9 +291,7 @@ local function getPlayerSpecId()
 	if sid and sid > 0 then return sid end
 
 	local specIndex = nil
-	if C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then
-		specIndex = C_SpecializationInfo.GetSpecialization()
-	end
+	if C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then specIndex = C_SpecializationInfo.GetSpecialization() end
 	if not specIndex then return nil end
 
 	if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
@@ -440,6 +438,8 @@ local function normalizeOrientation(value)
 	if ORIENTATION_SET[orient] then return orient end
 	return ORIENT_HORIZONTAL
 end
+
+local function normalizeBarReverseFill(value) return value == true end
 
 local function normalizeRuleMatch(value)
 	local mode = tostring(value or RULE_MATCH_ANY):upper()
@@ -671,6 +671,8 @@ function HB.CreateDefaultGroup(id)
 		size = 16,
 		barOrientation = ORIENT_HORIZONTAL,
 		barThickness = 6,
+		barDrainAnimation = false,
+		barReverseFill = false,
 		inset = 0,
 		borderSize = 2,
 		indicatorBorderEnabled = false,
@@ -717,6 +719,8 @@ local function normalizeGroup(group, id)
 	group.size = roundInt(clamp(group.size, 4, 96, 16))
 	group.barOrientation = normalizeOrientation(group.barOrientation)
 	group.barThickness = roundInt(clamp(group.barThickness, 1, 96, 6))
+	group.barDrainAnimation = group.barDrainAnimation == true
+	group.barReverseFill = normalizeBarReverseFill(group.barReverseFill)
 	group.inset = roundInt(clamp(group.inset, 0, 60, 0))
 	group.borderSize = roundInt(clamp(group.borderSize, 1, 24, 2))
 	local indicatorBorderEnabled = group.indicatorBorderEnabled
@@ -1300,12 +1304,21 @@ local function ensureVisualLayers(btn, st, forceLayout)
 	if st.healerBuffTint.SetDrawLayer then st.healerBuffTint:SetDrawLayer("ARTWORK", 2) end
 
 	if not st.healerBuffBar then
-		st.healerBuffBar = root:CreateTexture(nil, "ARTWORK", nil, 3)
-		st.healerBuffBar:SetColorTexture(0, 0, 0, 0)
+		st.healerBuffBar = CreateFrame("StatusBar", nil, root)
+		st.healerBuffBar:EnableMouse(false)
+		st.healerBuffBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+		st.healerBuffBar:SetMinMaxValues(0, 1)
+		st.healerBuffBar:SetValue(1)
 		st.healerBuffBar:Hide()
 	end
-	if st.healerBuffBar.GetParent and st.healerBuffBar:GetParent() ~= root then st.healerBuffBar:SetParent(root) end
-	if st.healerBuffBar.SetDrawLayer then st.healerBuffBar:SetDrawLayer("ARTWORK", 3) end
+	setFrameParentCached(st.healerBuffBar, root)
+	if st.healerBuffBar.SetFrameStrata and root.GetFrameStrata then setFrameStrataCached(st.healerBuffBar, root:GetFrameStrata()) end
+	if st.healerBuffBar.SetFrameLevel and root.GetFrameLevel then setFrameLevelCached(st.healerBuffBar, (root:GetFrameLevel() or 0) + 3) end
+	local barTex = st.healerBuffBar.GetStatusBarTexture and st.healerBuffBar:GetStatusBarTexture()
+	if barTex then
+		barTex:SetHorizTile(false)
+		barTex:SetVertTile(false)
+	end
 
 	if not st.healerBuffBorder then
 		st.healerBuffBorder = CreateFrame("Frame", nil, root, "BackdropTemplate")
@@ -1341,10 +1354,62 @@ local function clearHealthTint(st)
 	return changed
 end
 
+local BAR_UPDATE_INTERVAL = 0.05
+
+local function clearAnimatedBarState(bar)
+	if not bar then return end
+	bar._hbTrackedDuration = nil
+	bar._hbTrackedExpirationTime = nil
+	bar._hbBarUpdateElapsed = nil
+	if bar.SetScript then bar:SetScript("OnUpdate", nil) end
+end
+
+local function getTimedBarFill(duration, expirationTime, now)
+	duration = tonumber(duration)
+	expirationTime = tonumber(expirationTime)
+	if not (duration and duration > 0 and expirationTime and expirationTime > 0) then return nil end
+	now = tonumber(now) or ((GetTime and GetTime()) or 0)
+	return clamp((expirationTime - now) / duration, 0, 1, 0)
+end
+
+local function updateAnimatedBarValue(bar, now)
+	if not (bar and bar.SetValue) then return end
+	local fill = getTimedBarFill(bar._hbTrackedDuration, bar._hbTrackedExpirationTime, now)
+	bar:SetValue(fill ~= nil and fill or 1)
+end
+
+local function setAnimatedBarAura(bar, aura)
+	if not bar then return false end
+	local duration = aura and tonumber(aura.duration) or nil
+	local expirationTime = aura and tonumber(aura.expirationTime) or nil
+	if not (duration and duration > 0 and expirationTime and expirationTime > 0) then
+		clearAnimatedBarState(bar)
+		if bar.SetValue then bar:SetValue(1) end
+		return false
+	end
+	bar._hbTrackedDuration = duration
+	bar._hbTrackedExpirationTime = expirationTime
+	bar._hbBarUpdateElapsed = 0
+	updateAnimatedBarValue(bar)
+	if not bar._hbBarOnUpdate then
+		bar._hbBarOnUpdate = function(self, elapsed)
+			self._hbBarUpdateElapsed = (self._hbBarUpdateElapsed or 0) + (elapsed or 0)
+			if self._hbBarUpdateElapsed < BAR_UPDATE_INTERVAL then return end
+			self._hbBarUpdateElapsed = 0
+			updateAnimatedBarValue(self)
+		end
+	end
+	if bar.SetScript then bar:SetScript("OnUpdate", bar._hbBarOnUpdate) end
+	return true
+end
+
 local function hideAllVisuals(btn, st, state)
 	if not st then return end
 	if st.healerBuffTint then st.healerBuffTint:Hide() end
-	if st.healerBuffBar then st.healerBuffBar:Hide() end
+	if st.healerBuffBar then
+		clearAnimatedBarState(st.healerBuffBar)
+		st.healerBuffBar:Hide()
+	end
 	if st.healerBuffBorder then st.healerBuffBorder:Hide() end
 	local tintChanged = clearHealthTint(st)
 	if state and state.groupContainers then
@@ -1962,7 +2027,7 @@ local function didGroupRenderStateChange(cache, compiled, group, activeRules, fa
 	return changed
 end
 
-local function didBarRenderStateChange(cache, group, groupId, layoutRevision)
+local function didBarRenderStateChange(cache, group, groupId, layoutRevision, trackedAura, trackedRuleId, trackedFamilyId)
 	if not (group and groupId) then
 		local changed = cache.active ~= false
 		wipeTable(cache)
@@ -1970,11 +2035,16 @@ local function didBarRenderStateChange(cache, group, groupId, layoutRevision)
 		return changed
 	end
 	local r, g, b, a = resolveColor(group.color)
+	local trackedAuraInstance = trackedAura and trackedAura.auraInstanceID or nil
+	local trackedDuration = trackedAura and tonumber(trackedAura.duration) or nil
+	local trackedExpirationTime = trackedAura and tonumber(trackedAura.expirationTime) or nil
 	local changed = cache.active ~= true
 		or cache.groupId ~= groupId
 		or cache.layoutRevision ~= layoutRevision
 		or cache.barOrientation ~= group.barOrientation
 		or cache.barThickness ~= group.barThickness
+		or cache.barDrainAnimation ~= group.barDrainAnimation
+		or cache.barReverseFill ~= group.barReverseFill
 		or cache.inset ~= group.inset
 		or cache.anchorPoint ~= group.anchorPoint
 		or cache.x ~= group.x
@@ -1988,6 +2058,8 @@ local function didBarRenderStateChange(cache, group, groupId, layoutRevision)
 	cache.layoutRevision = layoutRevision
 	cache.barOrientation = group.barOrientation
 	cache.barThickness = group.barThickness
+	cache.barDrainAnimation = group.barDrainAnimation
+	cache.barReverseFill = group.barReverseFill
 	cache.inset = group.inset
 	cache.anchorPoint = group.anchorPoint
 	cache.x = group.x
@@ -1996,6 +2068,25 @@ local function didBarRenderStateChange(cache, group, groupId, layoutRevision)
 	cache.g = g
 	cache.b = b
 	cache.a = a
+	if group.barDrainAnimation == true then
+		changed = changed
+			or cache.trackedRuleId ~= trackedRuleId
+			or cache.trackedFamilyId ~= trackedFamilyId
+			or cache.trackedAuraInstance ~= trackedAuraInstance
+			or cache.trackedDuration ~= trackedDuration
+			or cache.trackedExpirationTime ~= trackedExpirationTime
+		cache.trackedRuleId = trackedRuleId
+		cache.trackedFamilyId = trackedFamilyId
+		cache.trackedAuraInstance = trackedAuraInstance
+		cache.trackedDuration = trackedDuration
+		cache.trackedExpirationTime = trackedExpirationTime
+	else
+		cache.trackedRuleId = nil
+		cache.trackedFamilyId = nil
+		cache.trackedAuraInstance = nil
+		cache.trackedDuration = nil
+		cache.trackedExpirationTime = nil
+	end
 	return changed
 end
 
@@ -2180,6 +2271,29 @@ local function winnerForStyle(compiled, groupActive, style)
 	return nil
 end
 
+local function getTrackedAuraForBarGroup(state, compiled, groupId)
+	local ruleIds = compiled and compiled.groupToRuleIds and compiled.groupToRuleIds[groupId]
+	if not ruleIds then return nil, nil, nil end
+	local fallbackAura, fallbackRuleId, fallbackFamilyId
+	for i = 1, #ruleIds do
+		local ruleId = ruleIds[i]
+		if state.ruleActive[ruleId] then
+			local rule = compiled.ruleById[ruleId]
+			local familyId = rule and rule.spellFamilyId
+			if familyId then
+				local aura = state.familyAura[familyId]
+				if fallbackRuleId == nil then
+					fallbackAura = aura
+					fallbackRuleId = ruleId
+					fallbackFamilyId = familyId
+				end
+				if aura and getTimedBarFill(aura.duration, aura.expirationTime) ~= nil then return aura, ruleId, familyId end
+			end
+		end
+	end
+	return fallbackAura, fallbackRuleId, fallbackFamilyId
+end
+
 local function getStyleAnchoredOffsets(root, group, inset)
 	if not (root and group) then return 0, 0 end
 	local rootW = root.GetWidth and root:GetWidth() or 0
@@ -2190,10 +2304,11 @@ local function getStyleAnchoredOffsets(root, group, inset)
 	return roundToPixel(x or 0, scale), roundToPixel(y or 0, scale)
 end
 
-local function renderBar(st, group)
+local function renderBar(st, group, trackedAura)
 	local bar = st.healerBuffBar
 	if not bar then return end
 	if not group then
+		clearAnimatedBarState(bar)
 		bar:Hide()
 		return
 	end
@@ -2201,7 +2316,18 @@ local function renderBar(st, group)
 	local thickness = max(1, group.barThickness or 6)
 	local r, g, b, a = resolveColor(group.color)
 	local ox, oy = getStyleAnchoredOffsets(st.healerBuffRoot, group, inset)
-	bar:SetColorTexture(r, g, b, a)
+	local orientation = group.barOrientation == ORIENT_VERTICAL and ORIENT_VERTICAL or ORIENT_HORIZONTAL
+	local reverseFill = group.barDrainAnimation == true and group.barReverseFill == true
+	if bar._hbOrientation ~= orientation then
+		bar:SetOrientation(orientation)
+		bar._hbOrientation = orientation
+	end
+	if bar._hbReverseFill ~= reverseFill then
+		if UFHelper and UFHelper.applyStatusBarReverseFill then UFHelper.applyStatusBarReverseFill(bar, reverseFill) end
+		bar._hbReverseFill = reverseFill
+	end
+	bar:SetStatusBarColor(r, g, b, a)
+	bar:SetMinMaxValues(0, 1)
 	if group.barOrientation == ORIENT_VERTICAL then
 		setTwoPointsCached(bar, "TOP", st.healerBuffRoot, "TOP", ox, oy - inset, "BOTTOM", st.healerBuffRoot, "BOTTOM", ox, oy + inset)
 		if bar._hbBarWidth ~= thickness then
@@ -2216,6 +2342,12 @@ local function renderBar(st, group)
 			bar._hbBarHeight = thickness
 		end
 		bar._hbBarWidth = nil
+	end
+	if group.barDrainAnimation == true then
+		setAnimatedBarAura(bar, trackedAura)
+	else
+		clearAnimatedBarState(bar)
+		bar:SetValue(1)
 	end
 	bar:Show()
 end
@@ -2308,8 +2440,12 @@ local function renderAll(btn, st, state, compiled, cfg, changedFamilies)
 	local barGroup, barGroupId = winnerForStyle(compiled, state.groupActive, STYLE_BAR)
 	local borderGroup, borderGroupId = winnerForStyle(compiled, state.groupActive, STYLE_BORDER)
 	local tintGroup, tintGroupId = winnerForStyle(compiled, state.groupActive, STYLE_TINT)
+	local barTrackedAura, barTrackedRuleId, barTrackedFamilyId
+	if barGroup and barGroupId and barGroup.barDrainAnimation == true then
+		barTrackedAura, barTrackedRuleId, barTrackedFamilyId = getTrackedAuraForBarGroup(state, compiled, barGroupId)
+	end
 
-	if didBarRenderStateChange(renderHash[STYLE_BAR], barGroup, barGroupId, layoutRevision) then renderBar(st, barGroup) end
+	if didBarRenderStateChange(renderHash[STYLE_BAR], barGroup, barGroupId, layoutRevision, barTrackedAura, barTrackedRuleId, barTrackedFamilyId) then renderBar(st, barGroup, barTrackedAura) end
 
 	if didBorderRenderStateChange(renderHash[STYLE_BORDER], borderGroup, borderGroupId, layoutRevision) then renderBorder(st, borderGroup) end
 
