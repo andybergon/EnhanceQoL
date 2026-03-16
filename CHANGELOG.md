@@ -5,6 +5,7 @@
 ### 🔄 Changed
 
 - Group Frames (Custom Sort): Added a `Player first in role` option for Party/Raid custom sorting, so your own frame stays pinned to the front of its current role bucket instead of shifting positions when the group order refreshes.
+- Group Frames (Raid / Growth): Added `Center vertical` and `Center horizontal` growth modes for raid frames.
 - Character Panel (Gem Tracker): Reworked the socketed gem tracker for Midnight. It now tracks `Eversong Diamond`, `Amethyst`, `Peridot`, `Garnet`, and `Lapis` by item ID, replacing the old `Blasphemite` / `Amber` / `Onyx` / `Sapphire` / `Emerald` / `Ruby` setup.
 - Economy (Craft Shopper): Added a persistent `Reagent Quality` selector (`Lowest quality` / `Highest quality`) in the Craft Shopper window and settings so shopping lists and direct buy can target the desired reagent tier again.
 - Economy (Warband Gold Autosync): Added an `Ignored characters` multi-select to `Auto-sync character gold with Warband bank`, so checked characters are skipped entirely and will not deposit to or withdraw from the Warband bank.
