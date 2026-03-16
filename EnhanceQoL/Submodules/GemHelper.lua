@@ -5,8 +5,8 @@ local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 addon.GemHelper = addon.GemHelper or {}
 local GemHelper = addon.GemHelper
 
-local NumSockets = C_ItemSocketInfo and C_ItemSocketInfo.GetNumSockets or GetNumSockets
-local TypeSockets = C_ItemSocketInfo and C_ItemSocketInfo.GetSocketTypes or GetSocketTypes
+local NumSockets = C_ItemSocketInfo and C_ItemSocketInfo.GetNumSockets
+local TypeSockets = C_ItemSocketInfo and C_ItemSocketInfo.GetSocketTypes
 local wipe = wipe
 local tinsert = table.insert
 local tremove = table.remove

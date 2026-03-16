@@ -68,13 +68,21 @@ end
 local max = math.max
 local min = math.min
 local floor = math.floor
-local ceil = math.ceil
 local hooksecurefunc = hooksecurefunc
 local BAR_TEX_INHERIT = "__PER_BAR__"
 local EDIT_MODE_SAMPLE_MAX = 100
 local AURA_FILTERS = GFH.AuraFilters
 local SECRET_TEXT_UPDATE_INTERVAL = 0.1
 local FONT_DROPDOWN_SCROLL_HEIGHT = 220
+
+GFH.COLOR_INCOMING_HEAL_DEFAULT = GFH.COLOR_INCOMING_HEAL_DEFAULT or { 0.2, 0.85, 0.35, 0.45 }
+
+local function formatSliderDecimal(value)
+	local text = string.format("%.2f", tonumber(value) or 0)
+	text = text:gsub("(%..-)0+$", "%1")
+	text = text:gsub("%.$", "")
+	return text
+end
 
 function GF.NormalizeBuffHelpfulFilterMode(value)
 	value = tostring(value or ""):upper()
@@ -88,10 +96,27 @@ function GF.GetBuffHelpfulFilter(ac)
 	return (AURA_FILTERS and AURA_FILTERS.helpful) or "HELPFUL|INCLUDE_NAME_PLATE_ONLY|RAID_IN_COMBAT|PLAYER"
 end
 
+function GF.CaptureGroupAuraSlotResults(...)
+	GF._groupAuraSlotResultBuffer = GF._groupAuraSlotResultBuffer or {}
+	local buffer = GF._groupAuraSlotResultBuffer
+	local previousCount = GF._groupAuraSlotResultCount or 0
+	local count = select("#", ...)
+	for i = 1, count do
+		buffer[i] = select(i, ...)
+	end
+	if previousCount > count then
+		for i = count + 1, previousCount do
+			buffer[i] = nil
+		end
+	end
+	GF._groupAuraSlotResultCount = count
+	return buffer, count
+end
+
 local function queryAuraSlots(unit, filter, maxCount)
-	if not filter then return nil end
-	if maxCount then return { C_UnitAuras.GetAuraSlots(unit, filter, maxCount) } end
-	return { C_UnitAuras.GetAuraSlots(unit, filter) }
+	if not filter then return nil, 0 end
+	if maxCount then return GF.CaptureGroupAuraSlotResults(C_UnitAuras.GetAuraSlots(unit, filter, maxCount)) end
+	return GF.CaptureGroupAuraSlotResults(C_UnitAuras.GetAuraSlots(unit, filter))
 end
 
 local PREVIEW_SAMPLES = GFH.PREVIEW_SAMPLES or { party = {}, raid = {}, mt = {}, ma = {} }
@@ -548,7 +573,18 @@ end
 
 local roundToPixel = GFH.RoundToPixel
 
-local function roundToEvenPixel(value, scale) return roundToPixel(value, scale) end
+local function roundToEvenPixel(value, scale)
+	value = tonumber(value) or 0
+	if value == 0 then return 0 end
+	-- Snap half-size to pixel grid and double it so final size always lands on an even pixel count.
+	return roundToPixel(value * 0.5, scale) * 2
+end
+
+GF.GetLayoutAnchorFrame = GF.GetLayoutAnchorFrame or function(st, fallback)
+	if st and st.layoutAnchor then return st.layoutAnchor end
+	if st and st.frame then return st.frame end
+	return fallback
+end
 
 local layoutTexts = GFH.LayoutTexts
 
@@ -563,9 +599,10 @@ local function syncTextFrameLevels(st)
 	setFrameLevelAbove(st.healthTextLayer, st.health, 5)
 	setFrameLevelAbove(st.powerTextLayer, st.power, 5)
 	if st.statusIconLayer then
-		local parent = st.healthTextLayer or st.health or st.barGroup or st.frame
+		local parent = st.healthTextLayer or st.health or GF.GetLayoutAnchorFrame(st, st.barGroup) or st.barGroup or st.frame
+		local anchor = GF.GetLayoutAnchorFrame(st, st.barGroup)
 		setFrameLevelAbove(st.statusIconLayer, parent, 6)
-		if st.barGroup and st.statusIconLayer.SetAllPoints then st.statusIconLayer:SetAllPoints(st.barGroup) end
+		if anchor and st.statusIconLayer.SetAllPoints then st.statusIconLayer:SetAllPoints(anchor) end
 	end
 end
 
@@ -579,6 +616,7 @@ local function hookTextFrameLevels(st)
 		if frame.SetFrameStrata then hooksecurefunc(frame, "SetFrameStrata", function() syncTextFrameLevels(st) end) end
 	end
 	hookFrame(st.frame)
+	hookFrame(st.layoutAnchor)
 	hookFrame(st.barGroup)
 	hookFrame(st.health)
 	hookFrame(st.power)
@@ -717,60 +755,58 @@ function GF.IsPartyCenterGrowthMode(cfg)
 end
 
 function GF.BuildPartyCenterGrowthNameList(cfg)
-	local names, seen = {}, {}
-	local function addName(unit)
-		if not (unit and UnitExists and UnitExists(unit)) then return end
-		local name = GFH and GFH.GetUnitFullName and GFH.GetUnitFullName(unit)
-		if not name and UnitName then
-			local rawName, realm = UnitName(unit)
-			if rawName and rawName ~= "" then
-				if realm and realm ~= "" then
-					name = rawName .. "-" .. realm
-				else
-					name = rawName
+	local sortMethod = resolveSortMethod(cfg)
+	local nameList
+
+	if sortMethod == "NAMELIST" and GFH and GFH.BuildCustomSortNameList then
+		nameList = GFH.BuildCustomSortNameList(cfg, "party")
+	else
+		local names, seen = {}, {}
+		local function addName(unit)
+			if not (unit and UnitExists and UnitExists(unit)) then return end
+			local name = GFH and GFH.GetUnitFullName and GFH.GetUnitFullName(unit)
+			if not name and UnitName then
+				local rawName, realm = UnitName(unit)
+				if rawName and rawName ~= "" then
+					if realm and realm ~= "" then
+						name = rawName .. "-" .. realm
+					else
+						name = rawName
+					end
 				end
 			end
+			if not name or seen[name] then return end
+			seen[name] = true
+			names[#names + 1] = name
 		end
-		if not name or seen[name] then return end
-		seen[name] = true
-		names[#names + 1] = name
+
+		local showPlayer = cfg and cfg.showPlayer == true
+		local showSolo = cfg and cfg.showSolo == true
+		if IsInRaid and IsInRaid() then
+			showPlayer = false
+			showSolo = false
+		end
+		if IsInGroup and IsInGroup() then
+			if showPlayer then addName("player") end
+			for i = 1, 4 do
+				addName("party" .. i)
+			end
+		elseif showSolo then
+			addName("player")
+		end
+
+		if sortMethod == "NAME" then table.sort(names) end
+		if #names > 0 then nameList = table.concat(names, ",") end
 	end
 
-	local showSolo = cfg and cfg.showSolo == true
-	if IsInRaid and IsInRaid() then showSolo = false end
-	if IsInGroup and IsInGroup() then
-		addName("player")
-		for i = 1, 4 do
-			addName("party" .. i)
-		end
-	elseif showSolo then
-		addName("player")
+	if type(nameList) ~= "string" or nameList == "" then return nil, 0, 0 end
+	local count = 0
+	for token in nameList:gmatch("[^,]+") do
+		token = tostring(token):gsub("^%s+", ""):gsub("%s+$", "")
+		if token ~= "" then count = count + 1 end
 	end
-
-	local count = #names
 	if count == 0 then return nil, 0, 0 end
-	local leftCount = floor((count - 1) / 2)
-	if count == 1 then return names[1], leftCount, count end
-
-	local left, right = {}, {}
-	for i = 2, count do
-		if i % 2 == 0 then
-			left[#left + 1] = names[i]
-		else
-			right[#right + 1] = names[i]
-		end
-	end
-
-	local ordered = {}
-	for i = #left, 1, -1 do
-		ordered[#ordered + 1] = left[i]
-	end
-	ordered[#ordered + 1] = names[1]
-	for i = 1, #right do
-		ordered[#ordered + 1] = right[i]
-	end
-
-	return table.concat(ordered, ","), leftCount, count
+	return nameList, 0, count
 end
 
 function GF.ComputePartyCenterGrowthAnchorOffset(cfg, growth, scale, countOverride)
@@ -782,23 +818,21 @@ function GF.ComputePartyCenterGrowthAnchorOffset(cfg, growth, scale, countOverri
 		count = dynamicCount or 0
 	end
 	count = max(0, floor(count + 0.5))
-	local leftCount = (count > 0) and floor((count - 1) / 2) or 0
 	scale = scale or (GFH and GFH.GetEffectiveScale and GFH.GetEffectiveScale(UIParent)) or 1
+	if count <= 0 then return 0, 0, 0 end
 
 	local spacing = roundToPixel(clampNumber(tonumber(cfg.spacing) or 0, 0, 40, 0), scale)
 	local w = roundToEvenPixel(clampNumber(tonumber(cfg.width) or 100, 40, 600, 100), scale)
 	local h = roundToEvenPixel(clampNumber(tonumber(cfg.height) or 24, 10, 200, 24), scale)
 
 	if baseGrowth == "RIGHT" or baseGrowth == "LEFT" then
-		local step = roundToPixel(w + spacing, scale)
+		local totalSpan = count * w + spacing * max(0, count - 1)
 		local sign = (baseGrowth == "LEFT") and 1 or -1
-		local half = roundToPixel(w * 0.5, scale)
-		return roundToPixel(sign * leftCount * step + sign * half, scale), 0, count
+		return roundToPixel(sign * (totalSpan * 0.5), scale), 0, count
 	end
-	local step = roundToPixel(h + spacing, scale)
+	local totalSpan = count * h + spacing * max(0, count - 1)
 	local sign = (baseGrowth == "UP") and -1 or 1
-	local half = roundToPixel(h * 0.5, scale)
-	return 0, roundToPixel(sign * leftCount * step + sign * half, scale), count
+	return 0, roundToPixel(sign * (totalSpan * 0.5), scale), count
 end
 
 local function isGroupByGroup(cfg, def) return resolveGroupByValue(cfg, def) == "GROUP" end
@@ -1138,12 +1172,23 @@ local function applyGroupIndicatorAnchor(fs, anchor, offset, scale, parent)
 	if justify and fs.SetJustifyH then fs:SetJustifyH(justify) end
 end
 
-local function stopDispelGlow(frame)
+local function stopDispelGlow(frame, effect, st)
+	if st then
+		if not st._dispelGlowActive then return end
+		effect = effect or st._dispelGlowEffect
+		st._dispelGlowActive = nil
+		st._dispelGlowEffect = nil
+	end
 	if not (LCG and frame) then return end
-	if LCG.PixelGlow_Stop then LCG.PixelGlow_Stop(frame, DISPEL_GLOW_KEY) end
-	if LCG.AutoCastGlow_Stop then LCG.AutoCastGlow_Stop(frame, DISPEL_GLOW_KEY) end
-	if LCG.ProcGlow_Stop then LCG.ProcGlow_Stop(frame, DISPEL_GLOW_KEY) end
-	if LCG.ButtonGlow_Stop then LCG.ButtonGlow_Stop(frame) end
+	if effect == "SHINE" then
+		if LCG.AutoCastGlow_Stop then LCG.AutoCastGlow_Stop(frame, DISPEL_GLOW_KEY) end
+	elseif effect == "PROC" then
+		if LCG.ProcGlow_Stop then LCG.ProcGlow_Stop(frame, DISPEL_GLOW_KEY) end
+	elseif effect == "BLIZZARD" then
+		if LCG.ButtonGlow_Stop then LCG.ButtonGlow_Stop(frame) end
+	else
+		if LCG.PixelGlow_Stop then LCG.PixelGlow_Stop(frame, DISPEL_GLOW_KEY) end
+	end
 end
 
 local function resolveDispelIndicatorEnabled(cfg, kind)
@@ -1275,11 +1320,11 @@ local function getUnitRoleKey(unit)
 end
 
 local function getPlayerSpecId()
-	if not GetSpecialization then return nil end
-	local specIndex = GetSpecialization()
+	if not (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) then return nil end
+	local specIndex = C_SpecializationInfo.GetSpecialization()
 	if not specIndex then return nil end
-	if GetSpecializationInfo then
-		local specId = GetSpecializationInfo(specIndex)
+	if C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
+		local specId = C_SpecializationInfo.GetSpecializationInfo(specIndex)
 		return specId
 	end
 	return nil
@@ -1428,6 +1473,9 @@ local DEFAULTS = {
 			absorbColor = { 0.85, 0.95, 1.0, 0.7 },
 			absorbTexture = "SOLID",
 			absorbReverseFill = false,
+			incomingHealEnabled = false,
+			incomingHealColor = { 0.2, 0.85, 0.35, 0.45 },
+			showSampleIncomingHeal = false,
 			healAbsorbEnabled = true,
 			healAbsorbUseCustomColor = false,
 			showSampleHealAbsorb = false,
@@ -1839,6 +1887,9 @@ local DEFAULTS = {
 			absorbColor = { 1.0, 0.8196, 0.1490, 1.0 },
 			absorbTexture = "EQOL: Absorb",
 			absorbReverseFill = false,
+			incomingHealEnabled = false,
+			incomingHealColor = { 0.2, 0.85, 0.35, 0.45 },
+			showSampleIncomingHeal = false,
 			healAbsorbEnabled = true,
 			healAbsorbUseCustomColor = false,
 			showSampleHealAbsorb = false,
@@ -2664,7 +2715,6 @@ local function ensureDB()
 			-- Legacy party defaults grouped by role; clear persisted values so INDEX uses party unit index order.
 			t.groupBy = nil
 			t.groupingOrder = nil
-			if GF.IsPartyCenterGrowthMode(t) then t.showPlayer = true end
 		end
 	end
 	GF._ensureSharedHealerBuffPlacement(db)
@@ -2909,17 +2959,22 @@ local function shouldShowTooltip(self)
 	return false
 end
 
-function GF:UpdateAbsorbCache(self, which, unit, st)
-	unit = unit or getUnit(self)
-	st = st or getState(self)
-	if not (unit and st) then return end
-	if UnitExists and not UnitExists(unit) then
-		st._absorbAmount = 0
-		st._healAbsorbAmount = 0
-		return
+function GF.EnsureHealPredictionCalculator(st)
+	if not st or st._healPredictionCalcUnsupported then return nil end
+	if st._healPredictionCalc then return st._healPredictionCalc end
+	if not (CreateUnitHealPredictionCalculator and UnitGetDetailedHealPrediction) then
+		st._healPredictionCalcUnsupported = true
+		return nil
 	end
-	if which == nil or which == "absorb" then st._absorbAmount = UnitGetTotalAbsorbs and UnitGetTotalAbsorbs(unit) or 0 end
-	if which == nil or which == "heal" then st._healAbsorbAmount = UnitGetTotalHealAbsorbs and UnitGetTotalHealAbsorbs(unit) or 0 end
+
+	local calc = CreateUnitHealPredictionCalculator()
+	if not calc then
+		st._healPredictionCalcUnsupported = true
+		return nil
+	end
+	if calc.SetIncomingHealOverflowPercent then calc:SetIncomingHealOverflowPercent(1) end
+	st._healPredictionCalc = calc
+	return calc
 end
 
 local function updateButtonConfig(self, cfg)
@@ -2937,6 +2992,7 @@ local function updateButtonConfig(self, cfg)
 
 	st._wantsName = tc.showName ~= false
 	st._wantsLevel = scfg.levelEnabled ~= false
+	st._wantsIncomingHeal = hc.incomingHealEnabled == true
 	st._wantsAbsorb = (hc.absorbEnabled ~= false) or (hc.healAbsorbEnabled ~= false)
 	st._wantsStatusText = scfg and scfg.unitStatus and scfg.unitStatus.enabled ~= false
 	st._wantsRangeFade = scfg and scfg.rangeFade and scfg.rangeFade.enabled ~= false
@@ -3072,6 +3128,13 @@ function GF:BuildButton(self)
 	end
 	st.barGroup:SetAllPoints(self)
 
+	if not st.layoutAnchor then
+		st.layoutAnchor = CreateFrame("Frame", nil, self)
+		st.layoutAnchor:EnableMouse(false)
+	end
+	if st.layoutAnchor.GetParent and st.layoutAnchor:GetParent() ~= self then st.layoutAnchor:SetParent(self) end
+	st.layoutAnchor:SetAllPoints(self)
+
 	setBackdrop(st.barGroup, cfg.border)
 	if not st.portraitHolder then
 		st.portraitHolder = CreateFrame("Frame", nil, st.barGroup, "BackdropTemplate")
@@ -3123,6 +3186,13 @@ function GF:BuildButton(self)
 	if healthBackdropClampToFill == nil then healthBackdropClampToFill = false end
 	applyBarBackdrop(st.health, hc, { clampToFill = healthBackdropClampToFill == true, textureKey = healthTexKey })
 
+	if not st.incomingHeal then
+		st.incomingHeal = CreateFrame("StatusBar", nil, st.health, "BackdropTemplate")
+		st.incomingHeal:SetMinMaxValues(0, 1)
+		st.incomingHeal:SetValue(0)
+		if st.incomingHeal.SetStatusBarDesaturated then st.incomingHeal:SetStatusBarDesaturated(false) end
+		st.incomingHeal:Hide()
+	end
 	if not st.absorb then
 		st.absorb = CreateFrame("StatusBar", nil, st.health, "BackdropTemplate")
 		st.absorb:SetMinMaxValues(0, 1)
@@ -3160,11 +3230,11 @@ function GF:BuildButton(self)
 		st.powerTextLayer:SetAllPoints(st.power)
 	end
 	if not st.statusIconLayer then
-		st.statusIconLayer = CreateFrame("Frame", nil, st.barGroup)
-		st.statusIconLayer:SetAllPoints(st.barGroup)
+		st.statusIconLayer = CreateFrame("Frame", nil, st.layoutAnchor or st.barGroup)
+		st.statusIconLayer:SetAllPoints(st.layoutAnchor or st.barGroup)
 		st.statusIconLayer:EnableMouse(false)
 	end
-	if st.statusIconLayer.GetParent and st.statusIconLayer:GetParent() ~= st.barGroup then st.statusIconLayer:SetParent(st.barGroup) end
+	if st.statusIconLayer.GetParent and st.statusIconLayer:GetParent() ~= (st.layoutAnchor or st.barGroup) then st.statusIconLayer:SetParent(st.layoutAnchor or st.barGroup) end
 	if st.dispelTint then
 		if st.dispelTint.GetParent and st.dispelTint:GetParent() ~= st.healthTextLayer then st.dispelTint:SetParent(st.healthTextLayer) end
 		if st.dispelTint.SetFrameLevel and st.healthTextLayer then
@@ -3187,10 +3257,10 @@ function GF:BuildButton(self)
 	if not st.statusText then st.statusText = st.healthTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight") end
 	if not st.groupNumberText then st.groupNumberText = st.healthTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight") end
 	if not st.privateAuras then
-		st.privateAuras = CreateFrame("Frame", nil, st.barGroup or st.health or self)
+		st.privateAuras = CreateFrame("Frame", nil, st.layoutAnchor or st.barGroup or st.health or self)
 		st.privateAuras:EnableMouse(false)
 	end
-	local privateAuraParent = st.barGroup or st.health or self
+	local privateAuraParent = st.layoutAnchor or st.barGroup or st.health or self
 	if st.privateAuras.GetParent and privateAuraParent and st.privateAuras:GetParent() ~= privateAuraParent then st.privateAuras:SetParent(privateAuraParent) end
 
 	local indicatorLayer = st.statusIconLayer or st.healthTextLayer
@@ -3259,7 +3329,7 @@ function GF:BuildButton(self)
 		self:HookScript("OnHide", function(btn)
 			local s = getState(btn)
 			hideDispelTint(s)
-			stopDispelGlow((s and s.barGroup) or btn)
+			stopDispelGlow((s and s.barGroup) or btn, nil, s)
 		end)
 	end
 
@@ -3326,8 +3396,6 @@ function GF:LayoutButton(self)
 	if powerH > availH then powerH = availH end
 
 	local portraitEnabled, portraitSide, portraitSquareBackground, portraitBorderWithFrame = GF.ResolveGroupPortraitConfig(cfg, kind)
-	-- Group portraits should read as an external element, not as the dominant frame body.
-	local portraitOutside = true
 	local portraitBaseSize = max(1, availH)
 	local portraitSize = portraitEnabled and roundToEvenPixel(portraitBaseSize, scale) or 0
 	local borderCfg = cfg.border or {}
@@ -3335,6 +3403,10 @@ function GF:LayoutButton(self)
 	local frameBorderEnabled = borderCfg.enabled
 	if frameBorderEnabled == nil then frameBorderEnabled = borderDef.enabled end
 	frameBorderEnabled = frameBorderEnabled == true
+	-- Match the regular unit-frame behavior: when the frame border should include the portrait,
+	-- expand the bordered frame towards the portrait side so the bars keep their width.
+	local portraitInsideFrame = portraitEnabled and portraitBorderWithFrame and frameBorderEnabled
+	local portraitOutside = not portraitInsideFrame
 	local separatorEnabled, separatorSize = GF.ResolveGroupPortraitSeparatorConfig(cfg, kind, portraitEnabled)
 	local separatorSpace = (separatorEnabled and separatorSize > 0) and separatorSize or 0
 	if portraitEnabled then
@@ -3345,27 +3417,9 @@ function GF:LayoutButton(self)
 		end
 	end
 	local portraitSpace = portraitEnabled and (portraitSize + separatorSpace) or 0
-	local portraitBorderCfg = nil
-	if portraitEnabled and portraitBorderWithFrame and frameBorderEnabled then
-		local borderOffset = borderCfg.offset
-		if borderOffset == nil then borderOffset = borderDef.offset end
-		local borderInset = borderCfg.inset
-		if borderInset == nil then borderInset = borderDef.inset end
-		local borderEdgeSize = borderCfg.edgeSize
-		if borderEdgeSize == nil then borderEdgeSize = borderDef.edgeSize end
-		portraitBorderCfg = {
-			enabled = true,
-			texture = borderCfg.texture or borderDef.texture,
-			color = borderCfg.color or borderDef.color,
-			edgeSize = borderEdgeSize,
-			inset = borderInset,
-			offset = borderOffset,
-			strata = borderCfg.strata or borderDef.strata,
-			frameLevelOffset = borderCfg.frameLevelOffset or borderDef.frameLevelOffset,
-		}
-	end
 	local contentOffsetLeft = 0
 	local contentOffsetRight = 0
+	local layoutAnchor = GF.GetLayoutAnchorFrame(st, self) or self
 	if not portraitOutside then
 		contentOffsetLeft = (portraitEnabled and portraitSide == "LEFT") and portraitSpace or 0
 		contentOffsetRight = (portraitEnabled and portraitSide == "RIGHT") and portraitSpace or 0
@@ -3373,7 +3427,24 @@ function GF:LayoutButton(self)
 
 	local healthBottomOffset = roundToPixel(powerH, scale)
 
-	st.barGroup:SetAllPoints(self)
+	st.barGroup:ClearAllPoints()
+	if portraitInsideFrame and portraitSpace > 0 then
+		if portraitSide == "RIGHT" then
+			st.barGroup:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+			st.barGroup:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", portraitSpace, 0)
+		else
+			st.barGroup:SetPoint("TOPLEFT", self, "TOPLEFT", -portraitSpace, 0)
+			st.barGroup:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
+		end
+	else
+		st.barGroup:SetAllPoints(self)
+	end
+	if st.layoutAnchor then
+		st.layoutAnchor:ClearAllPoints()
+		st.layoutAnchor:SetAllPoints(self)
+		if st.layoutAnchor.SetFrameStrata and st.barGroup.GetFrameStrata then st.layoutAnchor:SetFrameStrata(st.barGroup:GetFrameStrata()) end
+		if st.layoutAnchor.SetFrameLevel and st.barGroup.GetFrameLevel then st.layoutAnchor:SetFrameLevel(st.barGroup:GetFrameLevel() or 0) end
+	end
 	setBackdrop(st.barGroup, cfg.border)
 
 	st._highlightHoverCfg = buildHighlightConfig(cfg, def, "highlightHover")
@@ -3400,7 +3471,8 @@ function GF:LayoutButton(self)
 	if st.portraitHolder then
 		if portraitEnabled then
 			local holderParent = st.barGroup or self
-			local holderOffset = (portraitSize / 2) + (portraitOutside and separatorSpace or 0)
+			local holderOffset = portraitSize / 2
+			if portraitOutside then holderOffset = holderOffset + separatorSpace end
 			local holderX = holderOffset
 			if portraitSide == "RIGHT" then
 				holderX = portraitOutside and holderOffset or -holderOffset
@@ -3438,7 +3510,7 @@ function GF:LayoutButton(self)
 			if st.portraitBg then st.portraitBg:Hide() end
 			st.portraitHolder:Hide()
 		end
-		setBackdrop(st.portraitHolder, portraitBorderCfg)
+		setBackdrop(st.portraitHolder, nil)
 	end
 	GF.ApplyGroupPortraitSeparator(cfg, kind, st, portraitEnabled)
 
@@ -3466,18 +3538,18 @@ function GF:LayoutButton(self)
 			UFHelper.applyFont(st.groupNumberText, style.font, style.fontSize or 12, style.fontOutline)
 		end
 	end
-	layoutTexts(st.health, st.healthTextLeft, st.healthTextCenter, st.healthTextRight, cfg.health, scale)
+	layoutTexts(st.health, st.healthTextLeft, st.healthTextCenter, st.healthTextRight, cfg.health, scale, layoutAnchor or st.health)
 	layoutTexts(st.power, st.powerTextLeft, st.powerTextCenter, st.powerTextRight, cfg.power, scale)
 	if st.statusText then
 		local scfg = cfg.status or {}
 		local us = scfg.unitStatus or {}
 		local defStatus = def.status or {}
 		local defUS = defStatus.unitStatus or {}
-		applyStatusTextAnchor(st, us.anchor or defUS.anchor or "CENTER", us.offset or defUS.offset or {}, scale, st.barGroup or self)
+		applyStatusTextAnchor(st, us.anchor or defUS.anchor or "CENTER", us.offset or defUS.offset or {}, scale, layoutAnchor)
 	end
 	if st.groupNumberText then
 		local style = resolveGroupNumberStyle(cfg, def, hc)
-		applyStatusTextAnchor(st, style.anchor, style.offset, scale, st.barGroup or self, st.groupNumberText)
+		applyStatusTextAnchor(st, style.anchor, style.offset, scale, layoutAnchor, st.groupNumberText)
 	end
 
 	if st.health.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -3497,6 +3569,32 @@ function GF:LayoutButton(self)
 	end
 
 	local healthHeight = st.health.GetHeight and st.health:GetHeight() or (h - powerH)
+	if st.incomingHeal then
+		local incomingHealTextureKey = hc.incomingHealTexture or healthTexKey
+		if st.incomingHeal.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
+			if st._lastIncomingHealTexture ~= incomingHealTextureKey then
+				st.incomingHeal:SetStatusBarTexture(UFHelper.resolveTexture(incomingHealTextureKey))
+				if UFHelper.configureSpecialTexture then UFHelper.configureSpecialTexture(st.incomingHeal, "HEALTH", incomingHealTextureKey, hc) end
+				st._lastIncomingHealTexture = incomingHealTextureKey
+			end
+		end
+		if st.incomingHeal.SetStatusBarDesaturated then st.incomingHeal:SetStatusBarDesaturated(false) end
+		local reverseHealth = hc.reverseFill
+		if reverseHealth == nil then reverseHealth = defH.reverseFill == true end
+		if UFHelper and UFHelper.setupAbsorbClampReverseAware then
+			UFHelper.setupAbsorbClampReverseAware(st.health, st.incomingHeal)
+		elseif UFHelper and UFHelper.setupAbsorbClamp then
+			UFHelper.setupAbsorbClamp(st.health, st.incomingHeal)
+			if UFHelper.applyStatusBarReverseFill then UFHelper.applyStatusBarReverseFill(st.incomingHeal, reverseHealth) end
+		end
+		if UFHelper and UFHelper.applyAbsorbClampLayout then
+			UFHelper.applyAbsorbClampLayout(st.incomingHeal, st.health, healthHeight, healthHeight, reverseHealth)
+		else
+			GF._applyOverlayHeight(st.incomingHeal, st.health, healthHeight, healthHeight)
+		end
+		stabilizeStatusBarTexture(st.incomingHeal)
+		setFrameLevelAbove(st.incomingHeal, st.health, 1)
+	end
 	if st.absorb then
 		local absorbTextureKey = hc.absorbTexture or healthTexKey
 		if st.absorb.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -3518,7 +3616,7 @@ function GF:LayoutButton(self)
 		local absorbHeight = hc.absorbOverlayHeight
 		if absorbHeight == nil then absorbHeight = defH.absorbOverlayHeight end
 		GF._applyOverlayHeight(st.absorb, st.health, absorbHeight, healthHeight)
-		setFrameLevelAbove(st.absorb, st.health, 1)
+		setFrameLevelAbove(st.absorb, st.incomingHeal or st.health, 1)
 		if reverseAbsorb and st.absorb2 then
 			if st.absorb2.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
 				st.absorb2:SetStatusBarTexture(UFHelper.resolveTexture(absorbTextureKey))
@@ -3539,7 +3637,7 @@ function GF:LayoutButton(self)
 				syncTextFrameLevels(st)
 			end
 			stabilizeStatusBarTexture(st.absorb2)
-			setFrameLevelAbove(st.absorb2, st.health, 1)
+			setFrameLevelAbove(st.absorb2, st.incomingHeal or st.health, 1)
 			st.absorb2:SetMinMaxValues(0, 1)
 			st.absorb2:SetValue(0)
 			st.absorb2:Hide()
@@ -3557,7 +3655,7 @@ function GF:LayoutButton(self)
 		local healAbsorbHeight = hc.healAbsorbOverlayHeight
 		if healAbsorbHeight == nil then healAbsorbHeight = defH.healAbsorbOverlayHeight end
 		GF._applyOverlayHeight(st.healAbsorb, st.health, healAbsorbHeight, healthHeight)
-		setFrameLevelAbove(st.healAbsorb, st.absorb or st.health, 1)
+		setFrameLevelAbove(st.healAbsorb, st.absorb or st.incomingHeal or st.health, 1)
 	end
 
 	local tc = cfg.text or {}
@@ -3576,7 +3674,7 @@ function GF:LayoutButton(self)
 		local relPoint = rc.relativePoint or "LEFT"
 		local ox = roundToPixel(rc.x or 2, scale)
 		local oy = roundToPixel(rc.y or 0, scale)
-		local roleAnchor = st.barGroup or self or st.health
+		local roleAnchor = layoutAnchor or self or st.health
 		st.roleIcon:ClearAllPoints()
 		st.roleIcon:SetPoint(point, roleAnchor, relPoint, ox, oy)
 		st.roleIcon:SetSize(size, size)
@@ -3604,7 +3702,7 @@ function GF:LayoutButton(self)
 		local namePad = (nameAnchor and nameAnchor:find("LEFT")) and rolePad or 0
 		local nameX = (nameOffset.x ~= nil and nameOffset.x or baseOffset.x or 6) + namePad
 		local nameY = nameOffset.y ~= nil and nameOffset.y or baseOffset.y or 0
-		local nameAnchorFrame = st.barGroup or st.health
+		local nameAnchorFrame = layoutAnchor or st.health
 		if nameAnchor and nameAnchor:find("BOTTOM") then nameAnchorFrame = st.health or nameAnchorFrame end
 		if GFH and GFH.SnapPointOffsets then
 			nameX, nameY = GFH.SnapPointOffsets(nameAnchorFrame, nameAnchor, nameX, nameY, scale)
@@ -3699,7 +3797,7 @@ function GF:LayoutButton(self)
 		if ric.enabled ~= false then
 			local size = ric.size or 18
 			st.raidIcon:ClearAllPoints()
-			st.raidIcon:SetPoint(ric.point or "TOP", st.barGroup, ric.relativePoint or ric.point or "TOP", roundToPixel(ric.x or 0, scale), roundToPixel(ric.y or -2, scale))
+			st.raidIcon:SetPoint(ric.point or "TOP", layoutAnchor, ric.relativePoint or ric.point or "TOP", roundToPixel(ric.x or 0, scale), roundToPixel(ric.y or -2, scale))
 			st.raidIcon:SetSize(size, size)
 		else
 			st.raidIcon:Hide()
@@ -3754,7 +3852,7 @@ function GF:LayoutButton(self)
 		if rcfg.enabled ~= false then
 			local size = rcfg.size or 16
 			st.readyCheckIcon:ClearAllPoints()
-			st.readyCheckIcon:SetPoint(rcfg.point or "CENTER", st.barGroup, rcfg.relativePoint or rcfg.point or "CENTER", roundToPixel(rcfg.x or 0, scale), roundToPixel(rcfg.y or 0, scale))
+			st.readyCheckIcon:SetPoint(rcfg.point or "CENTER", layoutAnchor, rcfg.relativePoint or rcfg.point or "CENTER", roundToPixel(rcfg.x or 0, scale), roundToPixel(rcfg.y or 0, scale))
 			st.readyCheckIcon:SetSize(size, size)
 		else
 			st.readyCheckIcon:Hide()
@@ -3769,7 +3867,7 @@ function GF:LayoutButton(self)
 		if scfg.enabled ~= false then
 			local size = scfg.size or 16
 			st.summonIcon:ClearAllPoints()
-			st.summonIcon:SetPoint(scfg.point or "CENTER", st.barGroup, scfg.relativePoint or scfg.point or "CENTER", roundToPixel(scfg.x or 0, scale), roundToPixel(scfg.y or 0, scale))
+			st.summonIcon:SetPoint(scfg.point or "CENTER", layoutAnchor, scfg.relativePoint or scfg.point or "CENTER", roundToPixel(scfg.x or 0, scale), roundToPixel(scfg.y or 0, scale))
 			st.summonIcon:SetSize(size, size)
 		else
 			st.summonIcon:Hide()
@@ -3784,7 +3882,7 @@ function GF:LayoutButton(self)
 		if rcfg.enabled ~= false then
 			local size = rcfg.size or 16
 			st.resurrectIcon:ClearAllPoints()
-			st.resurrectIcon:SetPoint(rcfg.point or "CENTER", st.barGroup, rcfg.relativePoint or rcfg.point or "CENTER", roundToPixel(rcfg.x or 0, scale), roundToPixel(rcfg.y or 0, scale))
+			st.resurrectIcon:SetPoint(rcfg.point or "CENTER", layoutAnchor, rcfg.relativePoint or rcfg.point or "CENTER", roundToPixel(rcfg.x or 0, scale), roundToPixel(rcfg.y or 0, scale))
 			st.resurrectIcon:SetSize(size, size)
 		else
 			st.resurrectIcon:Hide()
@@ -3799,7 +3897,7 @@ function GF:LayoutButton(self)
 		if pcfg.enabled ~= false then
 			local size = pcfg.size or 14
 			st.phaseIcon:ClearAllPoints()
-			st.phaseIcon:SetPoint(pcfg.point or "TOPLEFT", st.barGroup, pcfg.relativePoint or pcfg.point or "TOPLEFT", roundToPixel(pcfg.x or 0, scale), roundToPixel(pcfg.y or 0, scale))
+			st.phaseIcon:SetPoint(pcfg.point or "TOPLEFT", layoutAnchor, pcfg.relativePoint or pcfg.point or "TOPLEFT", roundToPixel(pcfg.x or 0, scale), roundToPixel(pcfg.y or 0, scale))
 			st.phaseIcon:SetSize(size, size)
 		else
 			st.phaseIcon:Hide()
@@ -3905,11 +4003,13 @@ end
 
 local function ensureAuraContainer(st, key)
 	if not st then return nil end
+	local parent = GF.GetLayoutAnchorFrame(st, st.barGroup or st.frame)
 	if not st[key] then
-		st[key] = CreateFrame("Frame", nil, st.barGroup or st.frame)
+		st[key] = CreateFrame("Frame", nil, parent)
 		st[key]:EnableMouse(false)
 	end
-	local base = st.statusIconLayer or st.healthTextLayer or st.barGroup or st.frame or st[key]:GetParent()
+	if st[key].GetParent and parent and st[key]:GetParent() ~= parent then st[key]:SetParent(parent) end
+	local base = st.statusIconLayer or st.healthTextLayer or parent or st.barGroup or st.frame or st[key]:GetParent()
 	if base then
 		if st[key].SetFrameStrata and base.GetFrameStrata then st[key]:SetFrameStrata(base:GetFrameStrata()) end
 		if st[key].SetFrameLevel and base.GetFrameLevel then st[key]:SetFrameLevel((base:GetFrameLevel() or 0) + 10) end
@@ -3923,12 +4023,21 @@ local function hideAuraButtons(buttons, startIndex)
 		local btn = buttons[i]
 		if btn then
 			btn._showTooltip = false
-			if btn.SetMouseClickEnabled then btn:SetMouseClickEnabled(false) end
-			if btn.SetMouseMotionEnabled then btn:SetMouseMotionEnabled(false) end
-			if btn.EnableMouse then
-				btn._eqolAuraMouseEnabled = false
-				btn:EnableMouse(false)
+			btn._tooltipUseEditMode = nil
+			btn._tooltipAnchor = nil
+			if btn.SetMouseClickEnabled and btn._eqolAuraMouseClickEnabled ~= false then
+				btn:SetMouseClickEnabled(false)
+				btn._eqolAuraMouseClickEnabled = false
 			end
+			if btn.SetMouseMotionEnabled and btn._eqolAuraMouseMotionEnabled ~= false then
+				btn:SetMouseMotionEnabled(false)
+				btn._eqolAuraMouseMotionEnabled = false
+			end
+			if btn.EnableMouse then
+				if btn._eqolAuraMouseEnabled ~= false then btn:EnableMouse(false) end
+				btn._eqolAuraMouseEnabled = false
+			end
+			if GameTooltip and GameTooltip.IsOwned and GameTooltip.Hide and GameTooltip:IsOwned(btn) then GameTooltip:Hide() end
 			btn:Hide()
 		end
 	end
@@ -3937,14 +4046,24 @@ end
 local function setAuraTooltipState(btn, style)
 	if not (btn and style) then return end
 	local show = style.showTooltip == true
+	btn._tooltipUseEditMode = style.tooltipUseEditMode == true
+	btn._tooltipAnchor = style.tooltipAnchor or "ANCHOR_BOTTOMRIGHT"
 	if btn._showTooltip ~= show then btn._showTooltip = show end
-	if btn.SetMouseClickEnabled then btn:SetMouseClickEnabled(show) end
-	if btn.SetMouseMotionEnabled then btn:SetMouseMotionEnabled(show) end
-	if btn.EnableMouse then
-		if btn._eqolAuraMouseEnabled ~= show then btn._eqolAuraMouseEnabled = show end
-		btn:EnableMouse(show)
+	if btn.SetMouseClickEnabled and btn._eqolAuraMouseClickEnabled ~= show then
+		btn:SetMouseClickEnabled(show)
+		btn._eqolAuraMouseClickEnabled = show
 	end
-	if not show and GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end
+	if btn.SetMouseMotionEnabled and btn._eqolAuraMouseMotionEnabled ~= show then
+		btn:SetMouseMotionEnabled(show)
+		btn._eqolAuraMouseMotionEnabled = show
+	end
+	if btn.EnableMouse then
+		if btn._eqolAuraMouseEnabled ~= show then
+			btn:EnableMouse(show)
+			btn._eqolAuraMouseEnabled = show
+		end
+	end
+	if not show and GameTooltip and GameTooltip.IsOwned and GameTooltip.Hide and GameTooltip:IsOwned(btn) then GameTooltip:Hide() end
 end
 
 local function calcAuraGridSize(shown, perRow, size, spacing, primary)
@@ -4642,7 +4761,7 @@ function GF:LayoutAuras(self)
 	st._auraLayoutKey = st._auraLayoutKey or {}
 	st._auraStyle = st._auraStyle or {}
 
-	local parent = st.barGroup or st.frame
+	local parent = GF.GetLayoutAnchorFrame(st, st.barGroup or st.frame)
 
 	for kindKey, meta in pairs(AURA_TYPE_META) do
 		local typeCfg = ac[kindKey] or {}
@@ -4732,6 +4851,8 @@ function GF:LayoutAuras(self)
 			style.size = size
 			style.padding = spacing
 			style.showTooltip = typeCfg.showTooltip ~= false
+			style.tooltipUseEditMode = st._tooltipUseEditMode == true
+			style.tooltipAnchor = "ANCHOR_RIGHT"
 			style.showCooldown = typeCfg.showCooldown ~= false
 			style.blizzardDispelBorder = typeCfg.showDispelIcon == true
 			if typeCfg.showCooldownText ~= nil then style.showCooldownText = typeCfg.showCooldownText end
@@ -4802,6 +4923,8 @@ local function updateAuraType(self, unit, st, ac, kindKey, cache, changed, heale
 	end
 	local shown = 0
 	local maxCount = layout.maxCount or 0
+	style.tooltipUseEditMode = st._tooltipUseEditMode == true
+	style.tooltipAnchor = "ANCHOR_RIGHT"
 	for i = 1, #order do
 		if shown >= maxCount then break end
 		local auraId = order[i]
@@ -4862,6 +4985,7 @@ local function fullScanGroupAuras(
 	wantExternals,
 	wantsDispel,
 	wantsHealerBuffPlacement,
+	healerBuffNeedsWideScan,
 	queryMax,
 	contextKind
 )
@@ -4871,7 +4995,13 @@ local function fullScanGroupAuras(
 	local flagsById = st._auraKindById
 	local seen = {}
 	local helpfulScanFilter = helpfulFilter
-	if wantsHealerBuffPlacement then helpfulScanFilter = "HELPFUL|INCLUDE_NAME_PLATE_ONLY" end
+	if wantsHealerBuffPlacement then
+		if healerBuffNeedsWideScan then
+			helpfulScanFilter = "HELPFUL|INCLUDE_NAME_PLATE_ONLY"
+		else
+			helpfulScanFilter = "HELPFUL|INCLUDE_NAME_PLATE_ONLY|PLAYER"
+		end
+	end
 
 	local function storeAura(aura)
 		local auraId = aura and aura.auraInstanceID
@@ -4882,22 +5012,22 @@ local function fullScanGroupAuras(
 	end
 
 	if wantBuff and helpfulScanFilter then
-		local helpfulSlots = queryAuraSlots(unit, helpfulScanFilter, queryMax and queryMax.helpful)
-		for i = 2, (helpfulSlots and #helpfulSlots or 0) do
+		local helpfulSlots, helpfulSlotCount = queryAuraSlots(unit, helpfulScanFilter, queryMax and queryMax.helpful)
+		for i = 2, helpfulSlotCount do
 			local aura = C_UnitAuras.GetAuraDataBySlot(unit, helpfulSlots[i])
 			if aura then storeAura(aura) end
 		end
 	end
 	if (wantDebuff or wantsDispel) and harmfulFilter then
-		local harmfulSlots = queryAuraSlots(unit, harmfulFilter, queryMax and queryMax.harmful)
-		for i = 2, (harmfulSlots and #harmfulSlots or 0) do
+		local harmfulSlots, harmfulSlotCount = queryAuraSlots(unit, harmfulFilter, queryMax and queryMax.harmful)
+		for i = 2, harmfulSlotCount do
 			local aura = C_UnitAuras.GetAuraDataBySlot(unit, harmfulSlots[i])
 			if aura then storeAura(aura) end
 		end
 	end
 	if wantExternals and externalFilter then
-		local externalSlots = queryAuraSlots(unit, externalFilter, queryMax and queryMax.external)
-		for i = 2, (externalSlots and #externalSlots or 0) do
+		local externalSlots, externalSlotCount = queryAuraSlots(unit, externalFilter, queryMax and queryMax.external)
+		for i = 2, externalSlotCount do
 			local aura = C_UnitAuras.GetAuraDataBySlot(unit, externalSlots[i])
 			if aura then storeAura(aura) end
 		end
@@ -5082,8 +5212,10 @@ function GF:UpdateAuras(self, updateInfo)
 	end
 	auraQueryMax.external = wantExternals and externalMax or nil
 	local healerBuffCompiled = nil
+	local healerBuffNeedsWideScan = false
 	if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.GetCompiled then
 		healerBuffCompiled = UF.GroupFramesHealerBuffs.GetCompiled(self._eqolGroupKind or "party", cfg)
+		if healerBuffCompiled and UF.GroupFramesHealerBuffs.CompiledNeedsWideHelpfulScan then healerBuffNeedsWideScan = UF.GroupFramesHealerBuffs.CompiledNeedsWideHelpfulScan(healerBuffCompiled) end
 	end
 	local allCache = getAuraCache(st, "all")
 	st._auraKindById = st._auraKindById or {}
@@ -5101,6 +5233,7 @@ function GF:UpdateAuras(self, updateInfo)
 			wantExternals,
 			wantsDispelTint,
 			wantsHealerBuffPlacement,
+			healerBuffNeedsWideScan,
 			auraQueryMax,
 			auraContextKind
 		)
@@ -5315,6 +5448,8 @@ function GF:UpdateSampleAuras(self)
 		local shown = math.min(maxCount, #iconList)
 		local now = GetTime and GetTime() or 0
 		local sampleStyle = getSampleStyle(st, kindKey, style)
+		sampleStyle.tooltipUseEditMode = st._tooltipUseEditMode == true
+		sampleStyle.tooltipAnchor = "ANCHOR_RIGHT"
 		local unitToken = unit or "player"
 		for i = 1, shown do
 			local aura = getSampleAuraData(kindKey, i, now)
@@ -5576,7 +5711,7 @@ function GF:UpdateStatusText(self)
 		if statusTag then
 			local style = resolveStatusTextStyle(cfg, def, hc)
 			if UFHelper and UFHelper.applyFont then UFHelper.applyFont(statusFs, style.font, style.fontSize or 12, style.fontOutline) end
-			applyStatusTextAnchor(st, style.anchor, style.offset, scale, st.barGroup or self, statusFs)
+			applyStatusTextAnchor(st, style.anchor, style.offset, scale, GF.GetLayoutAnchorFrame(st, self) or self, statusFs)
 			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
 			statusFs:SetText(statusTag)
 			statusFs:SetTextColor(r, g, b, a)
@@ -5591,7 +5726,7 @@ function GF:UpdateStatusText(self)
 		if groupTag then
 			local style = resolveGroupNumberStyle(cfg, def, hc)
 			if UFHelper and UFHelper.applyFont then UFHelper.applyFont(groupFs, style.font, style.fontSize or 12, style.fontOutline) end
-			applyStatusTextAnchor(st, style.anchor, style.offset, scale, st.barGroup or self, groupFs)
+			applyStatusTextAnchor(st, style.anchor, style.offset, scale, GF.GetLayoutAnchorFrame(st, self) or self, groupFs)
 			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
 			groupFs:SetText(groupTag)
 			groupFs:SetTextColor(r, g, b, a)
@@ -5605,6 +5740,8 @@ end
 
 local function hideGroupIndicators(container)
 	if not container then return end
+	local overlay = container._eqolGroupIndicatorOverlay
+	if overlay and overlay.Hide then overlay:Hide() end
 	local indicators = container._eqolGroupIndicators
 	if not indicators then return end
 	for _, fs in pairs(indicators) do
@@ -5613,6 +5750,24 @@ local function hideGroupIndicators(container)
 			fs:Hide()
 		end
 	end
+end
+
+function GF.EnsureGroupIndicatorOverlay(container, target)
+	if not (container and target and CreateFrame) then return container end
+
+	local overlay = container._eqolGroupIndicatorOverlay
+	if not overlay then
+		overlay = CreateFrame("Frame", nil, container)
+		overlay:EnableMouse(false)
+		if overlay.SetAllPoints then overlay:SetAllPoints(container) end
+		container._eqolGroupIndicatorOverlay = overlay
+	end
+
+	if overlay.GetParent and overlay:GetParent() ~= container then overlay:SetParent(container) end
+	if overlay.SetAllPoints then overlay:SetAllPoints(container) end
+	setFrameLevelAbove(overlay, target, 10)
+	if overlay.Show then overlay:Show() end
+	return overlay
 end
 
 local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPreview, fixedSubgroup)
@@ -5626,15 +5781,63 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 		return
 	end
 
+	local style = resolveGroupIndicatorStyle(cfg, def, (cfg and cfg.health) or {})
+	local anchorMode = tostring(style.anchor or "TOPLEFT"):upper()
 	local candidates = {}
+	local function pickCandidate(current, frame, key)
+		if not frame then return current end
+		local st = getState(frame)
+		local anchorTarget = GF.GetLayoutAnchorFrame(st, frame) or frame
+		if not anchorTarget then return current end
+
+		local candidate = {
+			frame = frame,
+			key = key,
+			anchorTarget = anchorTarget,
+			left = anchorTarget.GetLeft and anchorTarget:GetLeft() or nil,
+			right = anchorTarget.GetRight and anchorTarget:GetRight() or nil,
+			top = anchorTarget.GetTop and anchorTarget:GetTop() or nil,
+			bottom = anchorTarget.GetBottom and anchorTarget:GetBottom() or nil,
+		}
+		if not current then return candidate end
+		if not (candidate.left and candidate.right and candidate.top and candidate.bottom and current.left and current.right and current.top and current.bottom) then
+			if (key or math.huge) < (current.key or math.huge) then return candidate end
+			return current
+		end
+
+		local epsilon = 0.5
+		if anchorMode == "TOPRIGHT" then
+			if candidate.right > current.right + epsilon then return candidate end
+			if abs(candidate.right - current.right) <= epsilon and candidate.top > current.top + epsilon then return candidate end
+		elseif anchorMode == "BOTTOMLEFT" then
+			if candidate.left < current.left - epsilon then return candidate end
+			if abs(candidate.left - current.left) <= epsilon and candidate.bottom < current.bottom - epsilon then return candidate end
+		elseif anchorMode == "BOTTOMRIGHT" then
+			if candidate.right > current.right + epsilon then return candidate end
+			if abs(candidate.right - current.right) <= epsilon and candidate.bottom < current.bottom - epsilon then return candidate end
+		elseif anchorMode == "TOP" then
+			if candidate.top > current.top + epsilon then return candidate end
+			if abs(candidate.top - current.top) <= epsilon and candidate.left < current.left - epsilon then return candidate end
+		elseif anchorMode == "BOTTOM" then
+			if candidate.bottom < current.bottom - epsilon then return candidate end
+			if abs(candidate.bottom - current.bottom) <= epsilon and candidate.left < current.left - epsilon then return candidate end
+		elseif anchorMode == "RIGHT" then
+			if candidate.right > current.right + epsilon then return candidate end
+			if abs(candidate.right - current.right) <= epsilon and candidate.top > current.top + epsilon then return candidate end
+		elseif anchorMode == "CENTER" then
+			if (key or math.huge) < (current.key or math.huge) then return candidate end
+		else
+			if candidate.left < current.left - epsilon then return candidate end
+			if abs(candidate.left - current.left) <= epsilon and candidate.top > current.top + epsilon then return candidate end
+		end
+
+		return current
+	end
 
 	local fixedGroup = tonumber(fixedSubgroup)
 	if fixedGroup and fixedGroup >= 1 and fixedGroup <= 8 then
 		for visualIndex, frame in ipairs(frames) do
-			if frame and frame.IsShown and frame:IsShown() then
-				candidates[fixedGroup] = { frame = frame, key = visualIndex }
-				break
-			end
+			if frame and frame.IsShown and frame:IsShown() then candidates[fixedGroup] = pickCandidate(candidates[fixedGroup], frame, visualIndex) end
 		end
 	else
 		for visualIndex, frame in ipairs(frames) do
@@ -5650,8 +5853,7 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 
 				if subgroup then
 					subgroup = tonumber(subgroup) or subgroup
-					local current = candidates[subgroup]
-					if not current or visualIndex < current.key then candidates[subgroup] = { frame = frame, key = visualIndex } end
+					candidates[subgroup] = pickCandidate(candidates[subgroup], frame, visualIndex)
 				end
 			end
 		end
@@ -5667,24 +5869,39 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 		indicators = {}
 		container._eqolGroupIndicators = indicators
 	end
-	local style = resolveGroupIndicatorStyle(cfg, def, (cfg and cfg.health) or {})
 	local format = resolveGroupIndicatorFormat(cfg, def)
 	local scale = GFH.GetEffectiveScale(container)
 	if not scale or scale <= 0 then scale = (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1 end
 	local used = {}
+	local overlayTarget
+
+	for subgroup, entry in pairs(candidates) do
+		local target = entry and entry.frame
+		local anchorTarget = entry and entry.anchorTarget
+		if anchorTarget then
+			if not overlayTarget then
+				overlayTarget = anchorTarget
+			else
+				local currentLevel = overlayTarget.GetFrameLevel and overlayTarget:GetFrameLevel() or 0
+				local candidateLevel = anchorTarget.GetFrameLevel and anchorTarget:GetFrameLevel() or 0
+				if candidateLevel > currentLevel then overlayTarget = anchorTarget end
+			end
+		end
+	end
+
+	local overlayParent = GF.EnsureGroupIndicatorOverlay(container, overlayTarget)
 
 	for subgroup, entry in pairs(candidates) do
 		local fs = indicators[subgroup]
-		if not fs and container.CreateFontString then
-			fs = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		if not fs and overlayParent and overlayParent.CreateFontString then
+			fs = overlayParent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 			indicators[subgroup] = fs
 		end
 		if fs and entry and entry.frame then
 			local target = entry.frame
-			local st = target and getState(target)
-			local anchorTarget = (st and st.barGroup) or target
+			local anchorTarget = entry.anchorTarget or target
 			if anchorTarget then
-				if fs.GetParent and fs:GetParent() ~= container then fs:SetParent(container) end
+				if fs.GetParent and fs:GetParent() ~= overlayParent then fs:SetParent(overlayParent) end
 				if fs.SetDrawLayer then fs:SetDrawLayer("OVERLAY", 7) end
 				if UFHelper and UFHelper.applyFont then UFHelper.applyFont(fs, style.font, style.fontSize or 12, style.fontOutline) end
 				applyGroupIndicatorAnchor(fs, style.anchor, style.offset, scale, anchorTarget)
@@ -5722,7 +5939,7 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 	if glowEnabled == nil then glowEnabled = defDispel.glowEnabled == true end
 	if not overlayEnabled and not glowEnabled then
 		hideDispelTint(st)
-		stopDispelGlow(st.barGroup or self)
+		stopDispelGlow(st.barGroup or self, nil, st)
 		return
 	end
 	if allowSample then
@@ -5730,7 +5947,7 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 		if showSample == nil then showSample = defDispel.showSample == true end
 		if not showSample then
 			hideDispelTint(st)
-			stopDispelGlow(st.barGroup or self)
+			stopDispelGlow(st.barGroup or self, nil, st)
 			return
 		end
 	end
@@ -5820,7 +6037,7 @@ function GF:UpdateDispelTint(self, cache, dispelFilter, allowSample, requiredFla
 	if glowEnabled then
 		GF:UpdateDispelGlow(self, r, g, b)
 	else
-		stopDispelGlow(st.barGroup or self)
+		stopDispelGlow(st.barGroup or self, nil, st)
 	end
 end
 
@@ -5836,11 +6053,11 @@ function GF:UpdateDispelGlow(self, r, g, b)
 	local glowEnabled = dcfg.glowEnabled
 	if glowEnabled == nil then glowEnabled = defDispel.glowEnabled == true end
 	if not glowEnabled then
-		stopDispelGlow(st.barGroup or self)
+		stopDispelGlow(st.barGroup or self, nil, st)
 		return
 	end
 	if not (r and g and b) then
-		stopDispelGlow(st.barGroup or self)
+		stopDispelGlow(st.barGroup or self, nil, st)
 		return
 	end
 
@@ -5865,15 +6082,23 @@ function GF:UpdateDispelGlow(self, r, g, b)
 	end
 
 	local target = st.barGroup or self
-	stopDispelGlow(target)
+	local appliedEffect = effect
+	if appliedEffect == "SHINE" and not LCG.AutoCastGlow_Start then
+		appliedEffect = "PIXEL"
+	elseif appliedEffect == "BLIZZARD" and not LCG.ButtonGlow_Start then
+		appliedEffect = "PIXEL"
+	end
+	if st._dispelGlowActive and st._dispelGlowEffect ~= appliedEffect then stopDispelGlow(target, nil, st) end
 	local glowColor = { cr, cg, cb, 1 }
-	if effect == "SHINE" and LCG.AutoCastGlow_Start then
+	if appliedEffect == "SHINE" and LCG.AutoCastGlow_Start then
 		LCG.AutoCastGlow_Start(target, glowColor, lines, freq, scale, xoff, yoff, DISPEL_GLOW_KEY)
-	elseif effect == "BLIZZARD" and LCG.ButtonGlow_Start then
+	elseif appliedEffect == "BLIZZARD" and LCG.ButtonGlow_Start then
 		LCG.ButtonGlow_Start(target, glowColor, freq)
 	else
 		LCG.PixelGlow_Start(target, glowColor, lines, freq, nil, thickness, xoff, yoff, nil, DISPEL_GLOW_KEY)
 	end
+	st._dispelGlowActive = true
+	st._dispelGlowEffect = appliedEffect
 end
 
 function GF:UpdateRange(self, inRange)
@@ -5882,9 +6107,25 @@ function GF:UpdateRange(self, inRange)
 	local cfg = self._eqolCfg or getCfg(self._eqolGroupKind or "party")
 	local scfg = cfg and cfg.status or {}
 	local rcfg = scfg.rangeFade or {}
+	local fadeAlpha = rcfg.alpha
+	if fadeAlpha == nil then fadeAlpha = 0.55 end
 	if rcfg.enabled == false then
 		if st.frame and st.frame.SetAlpha then st.frame:SetAlpha(1) end
 		return
+	end
+	if isEditModeActive() and self._eqolPreview then
+		local previewIndex = st._previewIndex or self._eqolPreviewIndex or 0
+		if previewIndex > 0 then
+			local sampleMode = (previewIndex - 1) % 3
+			if sampleMode == 2 then
+				local offA = rcfg.offlineAlpha
+				if offA == nil then offA = fadeAlpha end
+				if st.frame and st.frame.SetAlpha then st.frame:SetAlpha(offA) end
+			elseif st.frame and st.frame.SetAlphaFromBoolean then
+				st.frame:SetAlphaFromBoolean(sampleMode == 0, 1, fadeAlpha)
+			end
+			return
+		end
 	end
 	if IsInGroup and IsInRaid then
 		local inGroup = IsInGroup()
@@ -5897,13 +6138,14 @@ function GF:UpdateRange(self, inRange)
 	local unit = getUnit(self)
 	local connected = unit and UnitIsConnected and GFH.UnsecretBool(UnitIsConnected(unit)) or nil
 	if connected == false then
-		local offA = rcfg.offlineAlpha or rcfg.alpha or 0.55
+		local offA = rcfg.offlineAlpha
+		if offA == nil then offA = fadeAlpha end
 		if st.frame and st.frame.SetAlpha then st.frame:SetAlpha(offA) end
 		return
 	end
 	if inRange == nil and unit and UnitInRange then inRange = UnitInRange(unit) end
 	if type(inRange) ~= "nil" then
-		if st.frame and st.frame.SetAlphaFromBoolean then st.frame:SetAlphaFromBoolean(inRange, 1, rcfg.alpha or 0.55) end
+		if st.frame and st.frame.SetAlphaFromBoolean then st.frame:SetAlphaFromBoolean(inRange, 1, fadeAlpha) end
 	end
 end
 
@@ -5915,8 +6157,8 @@ function GF:UpdatePrivateAuras(self)
 	local cfg = self._eqolCfg or getCfg(kind)
 	local def = DEFAULTS[kind] or {}
 	local pcfg = (cfg and cfg.privateAuras) or def.privateAuras
-	local privateAuraParent = st.barGroup or st.health or self
-	local privateAuraLevelParent = st.statusIconLayer or st.healthTextLayer or st.health or st.barGroup or self
+	local privateAuraParent = GF.GetLayoutAnchorFrame(st, st.health or self) or self
+	local privateAuraLevelParent = st.statusIconLayer or st.healthTextLayer or privateAuraParent or st.health or st.barGroup or self
 	if not st.privateAuras then
 		if not (pcfg and pcfg.enabled == true) then return end
 		st.privateAuras = CreateFrame("Frame", nil, privateAuraParent)
@@ -5947,14 +6189,19 @@ function GF:UpdateHealthValue(self, unit, st)
 	if UnitExists and not UnitExists(unit) then
 		st.health:SetMinMaxValues(0, 1)
 		st.health:SetValue(0)
+		if st.incomingHeal then st.incomingHeal:Hide() end
 		if st.absorb then st.absorb:Hide() end
 		if st.absorb2 then st.absorb2:Hide() end
 		if st.healAbsorb then st.healAbsorb:Hide() end
 		return
 	end
-	local cur = UnitHealth and UnitHealth(unit)
+
+	local calc = GF.EnsureHealPredictionCalculator(st)
+	if calc and UnitGetDetailedHealPrediction then UnitGetDetailedHealPrediction(unit, "player", calc) end
+
+	local cur = calc and calc.GetCurrentHealth and calc:GetCurrentHealth() or (UnitHealth and UnitHealth(unit))
 	if cur == nil then cur = 0 end
-	local maxv = UnitHealthMax and UnitHealthMax(unit)
+	local maxv = calc and calc.GetMaximumHealth and calc:GetMaximumHealth() or (UnitHealthMax and UnitHealthMax(unit))
 	if maxv == nil then maxv = 1 end
 	local maxForValue = 1
 	if issecretvalue and issecretvalue(maxv) then
@@ -5963,49 +6210,84 @@ function GF:UpdateHealthValue(self, unit, st)
 		maxForValue = maxv
 	end
 	local secretHealth = issecretvalue and (issecretvalue(cur) or issecretvalue(maxv))
-	if secretHealth then
-		st.health:SetMinMaxValues(0, maxForValue)
+	st.health:SetMinMaxValues(0, maxForValue)
+	if UnitIsConnected and UnitIsConnected(unit) == false then
+		st.health:SetValue(maxForValue)
+	elseif secretHealth then
 		st.health:SetValue(cur or 0)
 	else
-		if st._lastHealthMax ~= maxForValue then
-			st.health:SetMinMaxValues(0, maxForValue)
-			st._lastHealthMax = maxForValue
-			st._lastHealthPx = nil
-			st._lastHealthBarW = nil
-		end
-		local w = st.health:GetWidth()
-		if w and w > 0 and maxForValue > 0 then
-			local px = floor((cur * w) / maxForValue + 0.5)
-			if st._lastHealthPx ~= px or st._lastHealthBarW ~= w then
-				st._lastHealthPx = px
-				st._lastHealthBarW = w
-				st.health:SetValue((px / w) * maxForValue)
-				st._lastHealthCur = cur
-			end
-		else
-			if st._lastHealthCur ~= cur then
-				st.health:SetValue(cur)
-				st._lastHealthCur = cur
-			end
-		end
+		st.health:SetValue(cur or 0)
 	end
 
 	local cfg = self._eqolCfg or getCfg(self._eqolGroupKind or "party")
 	local hc = cfg and cfg.health or {}
 	local kind = self._eqolGroupKind or "party"
 	local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
+	local incomingHealEnabled = hc.incomingHealEnabled == true
 	local absorbEnabled = hc.absorbEnabled ~= false
 	local healAbsorbEnabled = hc.healAbsorbEnabled ~= false
 	local curSecret = issecretvalue and issecretvalue(cur)
 	local inEditMode = isEditModeActive()
+	local sampleIncomingHeal = inEditMode and hc.showSampleIncomingHeal == true
 	local sampleAbsorb = inEditMode and hc.showSampleAbsorb == true
 	local sampleHealAbsorb = inEditMode and hc.showSampleHealAbsorb == true
 	local maxIsSecret = issecretvalue and issecretvalue(maxForValue)
 	local sampleMax = maxForValue
-	if (sampleAbsorb or sampleHealAbsorb) and maxIsSecret then sampleMax = EDIT_MODE_SAMPLE_MAX end
+	if (sampleIncomingHeal or sampleAbsorb or sampleHealAbsorb) and maxIsSecret then sampleMax = EDIT_MODE_SAMPLE_MAX end
+	if incomingHealEnabled and st.incomingHeal then
+		local incomingHeal = 0
+		if calc and calc.GetIncomingHeals then
+			incomingHeal = calc:GetIncomingHeals() or 0
+		elseif UnitGetIncomingHeals then
+			incomingHeal = UnitGetIncomingHeals(unit) or 0
+		end
+		if incomingHeal == nil then incomingHeal = 0 end
+		local incomingHealSecret = issecretvalue and issecretvalue(incomingHeal)
+		local incomingHealValue = incomingHeal
+		if sampleIncomingHeal then
+			local useSample = false
+			if incomingHealSecret then
+				useSample = true
+			else
+				incomingHealValue = tonumber(incomingHeal) or 0
+				if incomingHealValue <= 0 then useSample = true end
+			end
+			if useSample then
+				incomingHealValue = (sampleMax or 1) * 0.25
+				incomingHealSecret = false
+			end
+		elseif not incomingHealSecret then
+			incomingHealValue = tonumber(incomingHeal) or 0
+		end
+		if not incomingHealSecret and not curSecret then
+			local missingHealth = (tonumber(maxForValue) or 0) - (tonumber(cur) or 0)
+			if missingHealth < 0 then missingHealth = 0 end
+			if incomingHealValue > missingHealth then incomingHealValue = missingHealth end
+		end
+		st.incomingHeal:SetMinMaxValues(0, maxForValue or 1)
+		st.incomingHeal:SetValue(incomingHealValue or 0)
+		if incomingHealSecret then
+			st.incomingHeal:Show()
+		elseif incomingHealValue and incomingHealValue > 0 then
+			st.incomingHeal:Show()
+		else
+			st.incomingHeal:Hide()
+		end
+		local incomingHealR, incomingHealG, incomingHealB, incomingHealA = unpackColor(hc.incomingHealColor, defH.incomingHealColor or GFH.COLOR_INCOMING_HEAL_DEFAULT)
+		if st._lastIncomingHealR ~= incomingHealR or st._lastIncomingHealG ~= incomingHealG or st._lastIncomingHealB ~= incomingHealB or st._lastIncomingHealA ~= incomingHealA then
+			st._lastIncomingHealR, st._lastIncomingHealG, st._lastIncomingHealB, st._lastIncomingHealA = incomingHealR, incomingHealG, incomingHealB, incomingHealA
+			st.incomingHeal:SetStatusBarColor(incomingHealR, incomingHealG, incomingHealB, incomingHealA)
+		end
+	elseif st.incomingHeal then
+		st.incomingHeal:Hide()
+	end
 	if absorbEnabled and st.absorb then
-		local abs = st._absorbAmount
-		if abs == nil then abs = 0 end
+		local abs = 0
+		if calc and calc.GetDamageAbsorbs then
+			abs = calc:GetDamageAbsorbs() or 0
+		elseif UnitGetTotalAbsorbs then
+			abs = UnitGetTotalAbsorbs(unit) or 0
+		end
 		local absSecret = issecretvalue and issecretvalue(abs)
 		local absValue = abs
 		if sampleAbsorb then
@@ -6063,8 +6345,12 @@ function GF:UpdateHealthValue(self, unit, st)
 	end
 
 	if healAbsorbEnabled and st.healAbsorb then
-		local healAbs = st._healAbsorbAmount
-		if healAbs == nil then healAbs = 0 end
+		local healAbs = 0
+		if calc and calc.GetHealAbsorbs then
+			healAbs = calc:GetHealAbsorbs() or 0
+		elseif UnitGetTotalHealAbsorbs then
+			healAbs = UnitGetTotalHealAbsorbs(unit) or 0
+		end
 		local healSecret = issecretvalue and issecretvalue(healAbs)
 		local healValue = healAbs
 		if sampleHealAbsorb then
@@ -6610,7 +6896,6 @@ function GF:UnitButton_SetUnit(self, unit)
 	GF:CacheUnitStatic(self)
 
 	GF:UnitButton_RegisterUnitEvents(self, unit)
-	if self._eqolUFState and self._eqolUFState._wantsAbsorb then GF:UpdateAbsorbCache(self) end
 	GF:UpdatePrivateAuras(self)
 
 	GF:UpdateAll(self)
@@ -6629,15 +6914,14 @@ function GF:UnitButton_ClearUnit(self)
 	if st then
 		GFH.CancelReadyCheckIconTimer(st)
 		hideDispelTint(st)
-		stopDispelGlow(st.barGroup or self)
+		stopDispelGlow(st.barGroup or self, nil, st)
 		st._guid = nil
 		st._unitToken = nil
 		st._class = nil
 		st._powerType = nil
 		st._powerToken = nil
 		st._classR, st._classG, st._classB, st._classA = nil, nil, nil, nil
-		st._absorbAmount = nil
-		st._healAbsorbAmount = nil
+		if st._healPredictionCalc and st._healPredictionCalc.ResetPredictedValues then st._healPredictionCalc:ResetPredictedValues() end
 		st._auraCache = nil
 		st._auraCacheByKey = nil
 		st._auraQueryMax = nil
@@ -6645,6 +6929,7 @@ function GF:UnitButton_ClearUnit(self)
 		st._summonActiveReal = false
 		st._phaseReason = nil
 		clearDispelAuraState(st)
+		if st.incomingHeal then st.incomingHeal:Hide() end
 		if st.portrait then
 			st.portrait:SetTexture(nil)
 			st.portrait:Hide()
@@ -6680,6 +6965,10 @@ function GF:UnitButton_RegisterUnitEvents(self, unit)
 	reg("UNIT_CONNECTION")
 	reg("UNIT_HEALTH")
 	reg("UNIT_MAXHEALTH")
+	if self._eqolUFState and self._eqolUFState._wantsIncomingHeal then
+		reg("UNIT_HEAL_PREDICTION")
+		reg("UNIT_MAX_HEALTH_MODIFIERS_CHANGED")
+	end
 	if self._eqolUFState and self._eqolUFState._wantsAbsorb then
 		reg("UNIT_ABSORB_AMOUNT_CHANGED")
 		reg("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
@@ -6740,12 +7029,10 @@ local function dispatchUnitHealth(btn, unit)
 end
 local function dispatchUnitAbsorb(btn, unit)
 	local st = getState(btn)
-	GF:UpdateAbsorbCache(btn, "absorb", unit, st)
 	GF:UpdateHealthValue(btn, unit, st)
 end
 local function dispatchUnitHealAbsorb(btn, unit)
 	local st = getState(btn)
-	GF:UpdateAbsorbCache(btn, "heal", unit, st)
 	GF:UpdateHealthValue(btn, unit, st)
 end
 local function dispatchUnitPower(btn, unit)
@@ -6788,8 +7075,13 @@ end
 local UNIT_DISPATCH = {
 	UNIT_HEALTH = dispatchUnitHealth,
 	UNIT_MAXHEALTH = dispatchUnitHealth,
+	UNIT_HEAL_PREDICTION = function(btn, unit)
+		local st = getState(btn)
+		GF:UpdateHealthValue(btn, unit, st)
+	end,
 	UNIT_ABSORB_AMOUNT_CHANGED = dispatchUnitAbsorb,
 	UNIT_HEAL_ABSORB_AMOUNT_CHANGED = dispatchUnitHealAbsorb,
+	UNIT_MAX_HEALTH_MODIFIERS_CHANGED = dispatchUnitHealth,
 	UNIT_POWER_UPDATE = dispatchUnitPower,
 	UNIT_MAXPOWER = dispatchUnitPower,
 	UNIT_DISPLAYPOWER = dispatchUnitDisplayPower,
@@ -7005,6 +7297,14 @@ local function applyVisibility(header, kind, cfg)
 	local def = DEFAULTS[kind]
 	local hideInClientScene = GFH and GFH.ShouldHideInClientScene and GFH.ShouldHideInClientScene(cfg, def)
 	local inEdit = isEditModeActive and isEditModeActive()
+	local arenaPartyActive = false
+	if not inEdit then
+		if type(ShouldShowArenaParty) == "function" then
+			arenaPartyActive = ShouldShowArenaParty() == true
+		else
+			arenaPartyActive = (IsActiveBattlefieldArena and IsActiveBattlefieldArena()) and not (C_PvP and C_PvP.IsInBrawl and C_PvP.IsInBrawl())
+		end
+	end
 	local forceClientSceneHide = not inEdit and hideInClientScene and GF._clientSceneActive == true
 	if GFH and GFH.ApplyClientSceneAlphaToFrame then GFH.ApplyClientSceneAlphaToFrame(header, forceClientSceneHide) end
 	if not RegisterStateDriver then return end
@@ -7023,6 +7323,12 @@ local function applyVisibility(header, kind, cfg)
 		cond = "hide"
 	elseif header._eqolForceShow then
 		cond = "show"
+	elseif arenaPartyActive then
+		if kind == "party" then
+			cond = "show"
+		else
+			cond = "hide"
+		end
 	elseif kind == "party" then
 		if cfg.showSolo then
 			cond = "[group:raid] hide; show"
@@ -7120,25 +7426,6 @@ function GF:UpdatePreviewLayout(kind)
 	local samples = (GFH.BuildPreviewSampleList and GFH.BuildPreviewSampleList(kind, cfg, PREVIEW_SAMPLES[kind], sampleLimit, 2, 3)) or (PREVIEW_SAMPLES[kind] or {})
 	local growthMode, growth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
 	local centerGrowthActive = (kind == "party") and (growthMode == "CENTER_HORIZONTAL" or growthMode == "CENTER_VERTICAL")
-	if centerGrowthActive and #samples > 1 then
-		local left, right = {}, {}
-		for i = 2, #samples do
-			if i % 2 == 0 then
-				left[#left + 1] = samples[i]
-			else
-				right[#right + 1] = samples[i]
-			end
-		end
-		local ordered = {}
-		for i = #left, 1, -1 do
-			ordered[#ordered + 1] = left[i]
-		end
-		ordered[#ordered + 1] = samples[1]
-		for i = 1, #right do
-			ordered[#ordered + 1] = right[i]
-		end
-		samples = ordered
-	end
 	GF._previewSampleCount = GF._previewSampleCount or {}
 	GF._previewSampleCount[kind] = #samples
 
@@ -7261,7 +7548,7 @@ function GF:UpdatePreviewLayout(kind)
 		local limit = #samples
 		if kind == "raid" then limit = tonumber(GF._previewSampleSize and GF._previewSampleSize[kind]) or 10 end
 		maxShown = min(#frames, limit, #samples)
-		local requiredColumns = max(1, ceil(maxShown / max(1, unitsPerColumn)))
+		local requiredColumns = max(1, math.ceil(maxShown / max(1, unitsPerColumn)))
 		previewScale = (GFH.GetRaidViewportScaleForColumns and GFH.GetRaidViewportScaleForColumns(growth, w, h, spacing, columnSpacing, viewportColumns, requiredColumns)) or 1
 	else
 		maxShown = min(#frames, #samples)
@@ -7287,17 +7574,14 @@ function GF:UpdatePreviewLayout(kind)
 	if centerGrowthActive then previewAnchorPoint = GF.GetPartyCenterGrowthRelativePoint(growth) end
 	local previewCenterOffsetX, previewCenterOffsetY = 0, 0
 	if centerGrowthActive and maxShown and maxShown > 0 then
-		local leftCount = floor((maxShown - 1) / 2)
 		if isHorizontal then
 			local sign = (growth == "LEFT") and 1 or -1
-			local step = roundToPixel(visualW + visualSpacing, scale)
-			local half = roundToPixel(visualW * 0.5, scale)
-			previewCenterOffsetX = roundToPixel(sign * leftCount * step + sign * half, scale)
+			local totalSpan = maxShown * visualW + visualSpacing * max(0, maxShown - 1)
+			previewCenterOffsetX = roundToPixel(sign * (totalSpan * 0.5), scale)
 		else
 			local sign = (growth == "UP") and -1 or 1
-			local step = roundToPixel(visualH + visualSpacing, scale)
-			local half = roundToPixel(visualH * 0.5, scale)
-			previewCenterOffsetY = roundToPixel(sign * leftCount * step + sign * half, scale)
+			local totalSpan = maxShown * visualH + visualSpacing * max(0, maxShown - 1)
+			previewCenterOffsetY = roundToPixel(sign * (totalSpan * 0.5), scale)
 		end
 	end
 	for i, btn in ipairs(frames) do
@@ -7807,6 +8091,22 @@ function GF:RefreshConnectionState(unit)
 	return refreshed
 end
 
+function GF:RefreshRangeFade()
+	if not isFeatureEnabled() then return end
+	for _, header in pairs(GF.headers or {}) do
+		forEachChild(header, function(child)
+			if child then GF:UpdateRange(child) end
+		end)
+	end
+	if GF._previewFrames then
+		for _, frames in pairs(GF._previewFrames) do
+			for _, btn in ipairs(frames) do
+				if btn then GF:UpdateRange(btn) end
+			end
+		end
+	end
+end
+
 function GF:RefreshGroupIndicators()
 	if not isFeatureEnabled() then return end
 	local cfg = getCfg("raid")
@@ -8261,7 +8561,7 @@ function GF:ApplyHeaderAttributes(kind)
 		cfg.groupingOrder = nil
 		setAttr("showParty", true)
 		setAttr("showRaid", false)
-		setAttr("showPlayer", centerGrowthActive or (cfg.showPlayer and true or false))
+		setAttr("showPlayer", cfg.showPlayer and true or false)
 		setAttr("showSolo", cfg.showSolo and true or false)
 		setAttr("groupBy", nil)
 		setAttr("groupingOrder", nil)
@@ -8269,7 +8569,7 @@ function GF:ApplyHeaderAttributes(kind)
 		setAttr("roleFilter", nil)
 		setAttr("strictFiltering", false)
 		sortMethod = centerGrowthActive and "NAMELIST" or resolveSortMethod(cfg)
-		local sortDir = centerGrowthActive and "ASC" or ((GFH and GFH.NormalizeSortDir and GFH.NormalizeSortDir(cfg.sortDir)) or "ASC")
+		local sortDir = (GFH and GFH.NormalizeSortDir and GFH.NormalizeSortDir(cfg.sortDir)) or "ASC"
 		setAttr("sortMethod", sortMethod)
 		setAttr("sortDir", sortDir)
 		if sortMethod == "NAMELIST" then
@@ -8409,7 +8709,7 @@ function GF:ApplyHeaderAttributes(kind)
 		else
 			local raidCount = (GFH.GetCurrentRaidUnitCount and GFH.GetCurrentRaidUnitCount()) or 0
 			local requiredColumns = raidMaxColumns or 1
-			if raidCount > 0 then requiredColumns = max(requiredColumns, ceil(raidCount / max(1, raidUnitsPerColumn or 1))) end
+			if raidCount > 0 then requiredColumns = max(requiredColumns, math.ceil(raidCount / max(1, raidUnitsPerColumn or 1))) end
 			raidRuntimeMaxColumns = requiredColumns
 			raidViewportScale = (
 				GFH.GetRaidViewportScaleForColumns and GFH.GetRaidViewportScaleForColumns(growth, w, h, spacing, layoutColumnSpacing or spacing, raidMaxColumns or 1, raidRuntimeMaxColumns)
@@ -8858,7 +9158,6 @@ function GF:RefreshChangedUnitButtons()
 		clearDispelAuraState(st)
 		GF:CacheUnitStatic(child)
 		GF:UnitButton_RegisterUnitEvents(child, unit)
-		if st._wantsAbsorb then GF:UpdateAbsorbCache(child, nil, unit, st) end
 		GF:UpdatePrivateAuras(child)
 		GF:UpdateAll(child)
 		updated = updated + 1
@@ -8925,10 +9224,12 @@ GF._groupCopySectionOrder = {
 	"portrait",
 	"text",
 	"health",
+	"incomingheal",
 	"absorb",
 	"healabsorb",
 	"level",
 	"statustext",
+	"rangefade",
 	"dispeltint",
 	"groupicons",
 	"raidmarker",
@@ -8945,25 +9246,27 @@ GF._groupCopySectionOrder = {
 }
 
 GF._groupCopySectionLabels = {
-	frame = "Frame",
-	layout = "Layout",
-	border = "Border",
-	hoverHighlight = "Hover highlight",
-	targetHighlight = "Target highlight",
+	frame = L["Frame"] or "Frame",
+	layout = L["Layout"] or "Layout",
+	border = L["Border"] or "Border",
+	hoverHighlight = L["Hover highlight"] or "Hover highlight",
+	targetHighlight = L["Target highlight"] or "Target highlight",
 	portrait = "Portrait",
-	text = "Name",
-	health = "Health",
-	absorb = "Absorb",
-	healabsorb = "Heal absorb",
-	level = "Level",
-	statustext = "Status line",
-	dispeltint = "Dispel tint",
-	groupicons = "Group icons",
-	raidmarker = "Raid marker",
+	text = L["Name"] or "Name",
+	health = L["Health"] or "Health",
+	incomingheal = L["Incoming heals"] or "Incoming heals",
+	absorb = L["Absorb"] or "Absorb",
+	healabsorb = L["Heal absorb"] or "Heal absorb",
+	level = L["Level"] or "Level",
+	statustext = L["Status text"] or "Status text",
+	rangefade = L["UFRangeFade"] or "Range fade",
+	dispeltint = L["UFDispelIndicator"] or "Dispel indicator",
+	groupicons = L["Group icons"] or "Group icons",
+	raidmarker = L["Raid marker"] or "Raid marker",
 	statusicons = "Status icons",
-	roleicons = "Role icons",
-	power = "Power",
-	buffs = "Buffs",
+	roleicons = L["Role icons"] or "Role icons",
+	power = L["Power"] or "Power",
+	buffs = L["Buffs"] or "Buffs",
 	debuffs = "Debuffs",
 	externals = "Externals",
 	healerBuffPlacement = "Healer buff placement",
@@ -9014,6 +9317,12 @@ GF._groupCopySectionRules = {
 	health = {
 		{ "health" },
 	},
+	incomingheal = {
+		{ "health", "incomingHealEnabled" },
+		{ "health", "showSampleIncomingHeal" },
+		{ "health", "incomingHealTexture" },
+		{ "health", "incomingHealColor" },
+	},
 	absorb = {
 		{ "health", "absorbEnabled" },
 		{ "health", "showSampleAbsorb" },
@@ -9046,6 +9355,9 @@ GF._groupCopySectionRules = {
 	statustext = {
 		{ "status", "unitStatus" },
 		{ "status", "groupNumber" },
+	},
+	rangefade = {
+		{ "status", "rangeFade" },
 	},
 	dispeltint = {
 		{ "status", "dispelTint" },
@@ -9113,6 +9425,7 @@ GF._groupCopyUnitSections = {
 	text = true,
 	portrait = true,
 	health = true,
+	incomingheal = true,
 	absorb = true,
 	healabsorb = true,
 	level = true,
@@ -9231,10 +9544,12 @@ function GF._buildGroupCopySectionSetForGroupKind(kind)
 		portrait = kind ~= "raid",
 		text = true,
 		health = true,
+		incomingheal = true,
 		absorb = true,
 		healabsorb = true,
 		level = true,
 		statustext = true,
+		rangefade = true,
 		dispeltint = true,
 		groupicons = true,
 		raidmarker = true,
@@ -9422,73 +9737,81 @@ function GF._copyUnitAuraIconsToGroup(sectionId, srcAuras, dest)
 	if type(srcAuras) ~= "table" or type(dest) ~= "table" then return false end
 	local ac = ensureAuraConfig(dest)
 	local copied = false
+	local resolved = UF and UF.ResolveSingleAuraConfig and UF.ResolveSingleAuraConfig(srcAuras) or nil
+	local srcBuff = resolved and resolved.buff or nil
+	local srcDebuff = resolved and resolved.debuff or nil
 
 	if sectionId == "buffs" then
 		local buff = ac.buff or {}
 		ac.buff = buff
-		local enabled = srcAuras.showBuffs
-		if enabled == nil then enabled = srcAuras.enabled end
+		local source = srcBuff or {}
+		local enabled = source.enabled
 		if enabled ~= nil then
 			buff.enabled = enabled and true or false
 			copied = true
 		end
-		if srcAuras.size ~= nil then
-			buff.size = srcAuras.size
+		if source.size ~= nil then
+			buff.size = source.size
 			copied = true
 		end
-		local perRow = tonumber(srcAuras.perRow)
+		local perRow = tonumber(source.perRow)
 		if perRow and perRow > 0 then
 			buff.perRow = perRow
 			copied = true
 		end
-		if srcAuras.max ~= nil then
-			buff.max = srcAuras.max
+		if source.max ~= nil then
+			buff.max = source.max
 			copied = true
 		end
-		if srcAuras.padding ~= nil then
-			buff.spacing = srcAuras.padding
+		local spacing = source.spacing
+		if spacing == nil then spacing = source.padding end
+		if spacing ~= nil then
+			buff.spacing = spacing
 			copied = true
 		end
-		if srcAuras.anchor ~= nil then
-			buff.anchorPoint = srcAuras.anchor
+		local anchor = source.anchor
+		if anchor == nil then anchor = source.anchorPoint end
+		if anchor ~= nil then
+			buff.anchorPoint = anchor
 			copied = true
 		end
-		local offset = srcAuras.offset
+		local offset = source.offset
 		if type(offset) == "table" then
 			buff.x = offset.x or 0
 			buff.y = offset.y or 0
 			copied = true
 		end
-		if srcAuras.showTooltip ~= nil then
-			buff.showTooltip = srcAuras.showTooltip == true
+		if source.showTooltip ~= nil then
+			buff.showTooltip = source.showTooltip == true
 			copied = true
 		end
-		local showCooldown = srcAuras.showCooldownBuffs
-		if showCooldown == nil then showCooldown = srcAuras.showCooldown end
+		local showCooldown = source.showCooldown
 		if showCooldown ~= nil then
 			buff.showCooldown = showCooldown and true or false
 			copied = true
 		end
-		if srcAuras.countAnchor ~= nil then
-			buff.countAnchor = srcAuras.countAnchor
+		if source.showCooldownText ~= nil then
+			buff.showCooldownText = source.showCooldownText == true
 			copied = true
 		end
-		if type(srcAuras.countOffset) == "table" then
-			buff.countOffset = GF._groupCopyCloneValue(srcAuras.countOffset)
+		if source.countAnchor ~= nil then
+			buff.countAnchor = source.countAnchor
 			copied = true
 		end
-		local countSize = srcAuras.countFontSizeBuff
-		if countSize == nil then countSize = srcAuras.countFontSize end
+		if type(source.countOffset) == "table" then
+			buff.countOffset = GF._groupCopyCloneValue(source.countOffset)
+			copied = true
+		end
+		local countSize = source.countFontSize
 		if countSize ~= nil then
 			buff.countFontSize = countSize
 			copied = true
 		end
-		if srcAuras.countFontOutline ~= nil then
-			buff.countFontOutline = srcAuras.countFontOutline
+		if source.countFontOutline ~= nil then
+			buff.countFontOutline = source.countFontOutline
 			copied = true
 		end
-		local cooldownSize = srcAuras.cooldownFontSizeBuff
-		if cooldownSize == nil then cooldownSize = srcAuras.cooldownFontSize end
+		local cooldownSize = source.cooldownFontSize
 		if cooldownSize ~= nil then
 			buff.cooldownFontSize = cooldownSize
 			copied = true
@@ -9496,37 +9819,35 @@ function GF._copyUnitAuraIconsToGroup(sectionId, srcAuras, dest)
 	elseif sectionId == "debuffs" then
 		local debuff = ac.debuff or {}
 		ac.debuff = debuff
-		local enabled = srcAuras.showDebuffs
-		if enabled == nil then enabled = srcAuras.enabled end
+		local source = srcDebuff or {}
+		local enabled = source.enabled
 		if enabled ~= nil then
 			debuff.enabled = enabled and true or false
 			copied = true
 		end
-		local debuffSize = srcAuras.debuffSize
-		if debuffSize == nil then debuffSize = srcAuras.size end
+		local debuffSize = source.size
 		if debuffSize ~= nil then
 			debuff.size = debuffSize
 			copied = true
 		end
-		local perRow = tonumber(srcAuras.perRow)
+		local perRow = tonumber(source.perRow)
 		if perRow and perRow > 0 then
 			debuff.perRow = perRow
 			copied = true
 		end
-		if srcAuras.max ~= nil then
-			debuff.max = srcAuras.max
+		if source.max ~= nil then
+			debuff.max = source.max
 			copied = true
 		end
-		if srcAuras.padding ~= nil then
-			debuff.spacing = srcAuras.padding
+		local spacing = source.spacing
+		if spacing == nil then spacing = source.padding end
+		if spacing ~= nil then
+			debuff.spacing = spacing
 			copied = true
 		end
-		local anchor = srcAuras.anchor
-		local offset = srcAuras.offset
-		if srcAuras.separateDebuffAnchor == true then
-			if srcAuras.debuffAnchor ~= nil then anchor = srcAuras.debuffAnchor end
-			if type(srcAuras.debuffOffset) == "table" then offset = srcAuras.debuffOffset end
-		end
+		local anchor = source.anchor
+		if anchor == nil then anchor = source.anchorPoint end
+		local offset = source.offset
 		if anchor ~= nil then
 			debuff.anchorPoint = anchor
 			copied = true
@@ -9536,40 +9857,41 @@ function GF._copyUnitAuraIconsToGroup(sectionId, srcAuras, dest)
 			debuff.y = offset.y or 0
 			copied = true
 		end
-		if srcAuras.showTooltip ~= nil then
-			debuff.showTooltip = srcAuras.showTooltip == true
+		if source.showTooltip ~= nil then
+			debuff.showTooltip = source.showTooltip == true
 			copied = true
 		end
-		local showCooldown = srcAuras.showCooldownDebuffs
-		if showCooldown == nil then showCooldown = srcAuras.showCooldown end
+		local showCooldown = source.showCooldown
 		if showCooldown ~= nil then
 			debuff.showCooldown = showCooldown and true or false
 			copied = true
 		end
-		if srcAuras.blizzardDispelBorder ~= nil then
-			debuff.showDispelIcon = srcAuras.blizzardDispelBorder == true
+		if source.showCooldownText ~= nil then
+			debuff.showCooldownText = source.showCooldownText == true
 			copied = true
 		end
-		if srcAuras.countAnchor ~= nil then
-			debuff.countAnchor = srcAuras.countAnchor
+		if source.blizzardDispelBorder ~= nil then
+			debuff.showDispelIcon = source.blizzardDispelBorder == true
 			copied = true
 		end
-		if type(srcAuras.countOffset) == "table" then
-			debuff.countOffset = GF._groupCopyCloneValue(srcAuras.countOffset)
+		if source.countAnchor ~= nil then
+			debuff.countAnchor = source.countAnchor
 			copied = true
 		end
-		local countSize = srcAuras.countFontSizeDebuff
-		if countSize == nil then countSize = srcAuras.countFontSize end
+		if type(source.countOffset) == "table" then
+			debuff.countOffset = GF._groupCopyCloneValue(source.countOffset)
+			copied = true
+		end
+		local countSize = source.countFontSize
 		if countSize ~= nil then
 			debuff.countFontSize = countSize
 			copied = true
 		end
-		if srcAuras.countFontOutline ~= nil then
-			debuff.countFontOutline = srcAuras.countFontOutline
+		if source.countFontOutline ~= nil then
+			debuff.countFontOutline = source.countFontOutline
 			copied = true
 		end
-		local cooldownSize = srcAuras.cooldownFontSizeDebuff
-		if cooldownSize == nil then cooldownSize = srcAuras.cooldownFontSize end
+		local cooldownSize = source.cooldownFontSize
 		if cooldownSize ~= nil then
 			debuff.cooldownFontSize = cooldownSize
 			copied = true
@@ -9651,6 +9973,18 @@ function GF._copyUnitSourceSectionToGroup(sectionId, src, dest)
 		if type(src.health) ~= "table" then return false end
 		dest.health = GF._groupCopyCloneValue(src.health)
 		return true
+	elseif sectionId == "incomingheal" then
+		local hc = src.health
+		if type(hc) ~= "table" then return false end
+		dest.health = dest.health or {}
+		local copied = false
+		for _, field in ipairs({ "incomingHealEnabled", "showSampleIncomingHeal", "incomingHealTexture", "incomingHealColor" }) do
+			if hc[field] ~= nil then
+				dest.health[field] = GF._groupCopyCloneValue(hc[field])
+				copied = true
+			end
+		end
+		return copied
 	elseif sectionId == "absorb" then
 		local hc = src.health
 		if type(hc) ~= "table" then return false end
@@ -10376,6 +10710,19 @@ local function buildEditModeSettings(kind, editModeId)
 		return groupNumberFormatLabelByValue[fmt] or tostring(fmt)
 	end
 	local function isGroupIndicatorSettingsEnabled() return isGroupIndicatorShown() and getGroupIndicatorEnabledValue() end
+	local function getRangeFadeConfig()
+		local cfg = getCfg(kind)
+		local sc = cfg and cfg.status or {}
+		local rf = sc.rangeFade or {}
+		local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.rangeFade) or {}
+		return rf, def
+	end
+	local function isRangeFadeEnabled()
+		local rf, def = getRangeFadeConfig()
+		if rf.enabled == nil then return def.enabled ~= false end
+		return rf.enabled == true
+	end
+	local rangeFadeOfflineOpacityLabel = (PLAYER_OFFLINE or "Offline") .. " " .. (OPACITY or "Opacity")
 	local function getHealthTextMode(key, fallback)
 		local cfg = getCfg(kind)
 		local hc = cfg and cfg.health or {}
@@ -10493,7 +10840,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Frame",
+			name = L["Frame"] or "Frame",
 			kind = SettingType.Collapsible,
 			id = "frame",
 			defaultCollapsed = true,
@@ -10847,7 +11194,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Layout",
+			name = L["Layout"] or "Layout",
 			kind = SettingType.Collapsible,
 			id = "layout",
 			defaultCollapsed = true,
@@ -10893,11 +11240,7 @@ local function buildEditModeSettings(kind, editModeId)
 				local mode, baseGrowth = GF.ResolveUnitGrowthDirection(value, cfg.growth or "DOWN")
 				if kind ~= "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then mode = baseGrowth end
 				cfg.growth = mode
-				if kind == "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then cfg.showPlayer = true end
-				if EditMode and EditMode.SetValue then
-					EditMode:SetValue(editModeId, "growth", cfg.growth, nil, true)
-					if kind == "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then EditMode:SetValue(editModeId, "showPlayer", true, nil, true) end
-				end
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "growth", cfg.growth, nil, true) end
 				if raidKind then
 					local defaultGroupGrowth = DEFAULTS and DEFAULTS.raid and DEFAULTS.raid.groupGrowth
 					if GFH.ResolveGroupGrowthDirection then
@@ -10934,11 +11277,7 @@ local function buildEditModeSettings(kind, editModeId)
 						local mode, baseGrowth = GF.ResolveUnitGrowthDirection(option.value, cfg.growth or "DOWN")
 						if kind ~= "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then mode = baseGrowth end
 						cfg.growth = mode
-						if kind == "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then cfg.showPlayer = true end
-						if EditMode and EditMode.SetValue then
-							EditMode:SetValue(editModeId, "growth", cfg.growth, nil, true)
-							if kind == "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then EditMode:SetValue(editModeId, "showPlayer", true, nil, true) end
-						end
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "growth", cfg.growth, nil, true) end
 						if raidKind then
 							local defaultGroupGrowth = DEFAULTS and DEFAULTS.raid and DEFAULTS.raid.groupGrowth
 							if GFH.ResolveGroupGrowthDirection then
@@ -11092,7 +11431,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Border",
+			name = L["Border"] or "Border",
 			kind = SettingType.Collapsible,
 			id = "border",
 			defaultCollapsed = true,
@@ -11391,13 +11730,13 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Hover highlight",
+			name = L["Hover highlight"] or "Hover highlight",
 			kind = SettingType.Collapsible,
 			id = "hoverHighlight",
 			defaultCollapsed = true,
 		},
 		{
-			name = "Enable hover highlight",
+			name = L["Enable hover highlight"] or "Enable hover highlight",
 			kind = SettingType.Checkbox,
 			field = "hoverHighlightEnabled",
 			parentId = "hoverHighlight",
@@ -11416,7 +11755,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Color",
+			name = L["Color"] or "Color",
 			kind = SettingType.Color,
 			field = "hoverHighlightColor",
 			parentId = "hoverHighlight",
@@ -11438,7 +11777,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = function() return isHighlightEnabled("highlightHover") end,
 		},
 		{
-			name = "Texture",
+			name = L["Texture"] or "Texture",
 			kind = SettingType.Dropdown,
 			field = "hoverHighlightTexture",
 			parentId = "hoverHighlight",
@@ -11473,7 +11812,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = function() return isHighlightEnabled("highlightHover") end,
 		},
 		{
-			name = "Size",
+			name = L["Size"] or "Size",
 			kind = SettingType.Slider,
 			allowInput = true,
 			field = "hoverHighlightSize",
@@ -11496,7 +11835,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = function() return isHighlightEnabled("highlightHover") end,
 		},
 		{
-			name = "Offset",
+			name = L["Offset"] or "Offset",
 			kind = SettingType.Slider,
 			allowInput = true,
 			field = "hoverHighlightOffset",
@@ -11519,13 +11858,13 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = function() return isHighlightEnabled("highlightHover") end,
 		},
 		{
-			name = "Target highlight",
+			name = L["Target highlight"] or "Target highlight",
 			kind = SettingType.Collapsible,
 			id = "targetHighlight",
 			defaultCollapsed = true,
 		},
 		{
-			name = "Enable target highlight",
+			name = L["Enable target highlight"] or "Enable target highlight",
 			kind = SettingType.Checkbox,
 			field = "targetHighlightEnabled",
 			parentId = "targetHighlight",
@@ -11544,7 +11883,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Color",
+			name = L["Color"] or "Color",
 			kind = SettingType.Color,
 			field = "targetHighlightColor",
 			parentId = "targetHighlight",
@@ -11566,7 +11905,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = function() return isHighlightEnabled("highlightTarget") end,
 		},
 		{
-			name = "Texture",
+			name = L["Texture"] or "Texture",
 			kind = SettingType.Dropdown,
 			field = "targetHighlightTexture",
 			parentId = "targetHighlight",
@@ -11622,7 +11961,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = function() return isHighlightEnabled("highlightTarget") end,
 		},
 		{
-			name = "Size",
+			name = L["Size"] or "Size",
 			kind = SettingType.Slider,
 			allowInput = true,
 			field = "targetHighlightSize",
@@ -11645,7 +11984,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = function() return isHighlightEnabled("highlightTarget") end,
 		},
 		{
-			name = "Offset",
+			name = L["Offset"] or "Offset",
 			kind = SettingType.Slider,
 			allowInput = true,
 			field = "targetHighlightOffset",
@@ -11931,7 +12270,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Name",
+			name = L["Name"] or "Name",
 			kind = SettingType.Collapsible,
 			id = "text",
 			defaultCollapsed = true,
@@ -12276,7 +12615,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Health",
+			name = L["Health"] or "Health",
 			kind = SettingType.Collapsible,
 			id = "health",
 			defaultCollapsed = true,
@@ -13058,7 +13397,124 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Absorb",
+			name = L["Incoming heals"] or "Incoming heals",
+			kind = SettingType.Collapsible,
+			id = "incomingheal",
+			defaultCollapsed = true,
+		},
+		{
+			name = L["Show incoming heal bar"] or "Show incoming heal bar",
+			kind = SettingType.Checkbox,
+			field = "incomingHealEnabled",
+			parentId = "incomingheal",
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.incomingHealEnabled == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.incomingHealEnabled = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "incomingHealEnabled", cfg.health.incomingHealEnabled, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+		},
+		{
+			name = L["Show sample incoming heals"] or "Show sample incoming heals",
+			kind = SettingType.Checkbox,
+			field = "incomingHealSample",
+			parentId = "incomingheal",
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.showSampleIncomingHeal == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.showSampleIncomingHeal = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "incomingHealSample", cfg.health.showSampleIncomingHeal, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.incomingHealEnabled == true
+			end,
+		},
+		{
+			name = L["Incoming heal texture"] or "Incoming heal texture",
+			kind = SettingType.Dropdown,
+			field = "incomingHealTexture",
+			parentId = "incomingheal",
+			height = 180,
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
+				return hc.incomingHealTexture or hc.texture or def.incomingHealTexture or def.texture or "DEFAULT"
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.incomingHealTexture = value or "DEFAULT"
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			generator = function(_, root)
+				for _, option in ipairs(textureOptions()) do
+					root:CreateRadio(option.label, function()
+						local cfg = getCfg(kind)
+						local hc = cfg and cfg.health or {}
+						local def = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
+						return (hc.incomingHealTexture or hc.texture or def.incomingHealTexture or def.texture or "DEFAULT") == option.value
+					end, function()
+						local cfg = getCfg(kind)
+						if not cfg then return end
+						cfg.health = cfg.health or {}
+						cfg.health.incomingHealTexture = option.value
+						GF:ApplyHeaderAttributes(kind)
+					end)
+				end
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.incomingHealEnabled == true
+			end,
+		},
+		{
+			name = L["Incoming heal color"] or "Incoming heal color",
+			kind = SettingType.Color,
+			field = "incomingHealColor",
+			parentId = "incomingheal",
+			hasOpacity = true,
+			default = (DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.incomingHealColor) or { 0.2, 0.85, 0.35, 0.45 },
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.incomingHealColor) or { 0.2, 0.85, 0.35, 0.45 }
+				local r, g, b, a = unpackColor(hc.incomingHealColor, def)
+				return { r = r, g = g, b = b, a = a }
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not (cfg and value) then return end
+				cfg.health = cfg.health or {}
+				cfg.health.incomingHealColor = { value.r or 0.2, value.g or 0.85, value.b or 0.35, value.a or 0.45 }
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.incomingHealEnabled == true
+			end,
+		},
+		{
+			name = L["Absorb"] or "Absorb",
 			kind = SettingType.Collapsible,
 			id = "absorb",
 			defaultCollapsed = true,
@@ -13264,7 +13720,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Heal absorb",
+			name = L["Heal absorb"] or "Heal absorb",
 			kind = SettingType.Collapsible,
 			id = "healabsorb",
 			defaultCollapsed = true,
@@ -13470,7 +13926,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Level",
+			name = L["Level"] or "Level",
 			kind = SettingType.Collapsible,
 			id = "level",
 			defaultCollapsed = true,
@@ -13776,7 +14232,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Status text",
+			name = L["Status text"] or "Status text",
 			kind = SettingType.Collapsible,
 			id = "statustext",
 			defaultCollapsed = true,
@@ -13919,7 +14375,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Color",
+			name = L["Color"] or "Color",
 			kind = SettingType.Color,
 			field = "statusTextColor",
 			parentId = "statustext",
@@ -14243,7 +14699,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isShown = function() return kind == "raid" end,
 		},
 		{
-			name = "Color",
+			name = L["Color"] or "Color",
 			kind = SettingType.Color,
 			field = "groupNumberColor",
 			parentId = "statustext",
@@ -14462,7 +14918,104 @@ local function buildEditModeSettings(kind, editModeId)
 			isShown = function() return kind == "raid" end,
 		},
 		{
-			name = "Dispel indicator",
+			name = L["UFRangeFade"] or "Range fade",
+			kind = SettingType.Collapsible,
+			id = "rangeFade",
+			defaultCollapsed = true,
+		},
+		{
+			name = L["UFRangeFadeEnable"] or "Enable range fade",
+			kind = SettingType.Checkbox,
+			field = "rangeFadeEnabled",
+			parentId = "rangeFade",
+			get = function() return isRangeFadeEnabled() end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.status = cfg.status or {}
+				cfg.status.rangeFade = cfg.status.rangeFade or {}
+				cfg.status.rangeFade.enabled = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "rangeFadeEnabled", cfg.status.rangeFade.enabled, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+				GF:RefreshRangeFade()
+			end,
+		},
+		{
+			name = L["UFRangeFadeAlpha"] or "Out of range opacity",
+			kind = SettingType.Slider,
+			allowInput = true,
+			field = "rangeFadeAlpha",
+			parentId = "rangeFade",
+			minValue = 0,
+			maxValue = 1,
+			valueStep = 0.01,
+			formatter = formatSliderDecimal,
+			get = function()
+				local rf, def = getRangeFadeConfig()
+				local value = rf.alpha
+				if value == nil then value = def.alpha end
+				if value == nil then value = 0.55 end
+				return value
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.status = cfg.status or {}
+				cfg.status.rangeFade = cfg.status.rangeFade or {}
+				local current = cfg.status.rangeFade.alpha
+				if current == nil then
+					local _, def = getRangeFadeConfig()
+					current = def.alpha
+				end
+				if current == nil then current = 0.55 end
+				cfg.status.rangeFade.alpha = clampNumber(value, 0, 1, current)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "rangeFadeAlpha", cfg.status.rangeFade.alpha, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+				GF:RefreshRangeFade()
+			end,
+			isEnabled = function() return isRangeFadeEnabled() end,
+		},
+		{
+			name = rangeFadeOfflineOpacityLabel,
+			kind = SettingType.Slider,
+			allowInput = true,
+			field = "rangeFadeOfflineAlpha",
+			parentId = "rangeFade",
+			minValue = 0,
+			maxValue = 1,
+			valueStep = 0.01,
+			formatter = formatSliderDecimal,
+			get = function()
+				local rf, def = getRangeFadeConfig()
+				local value = rf.offlineAlpha
+				if value == nil then value = def.offlineAlpha end
+				if value == nil then value = rf.alpha end
+				if value == nil then value = def.alpha end
+				if value == nil then value = 0.4 end
+				return value
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.status = cfg.status or {}
+				cfg.status.rangeFade = cfg.status.rangeFade or {}
+				local current = cfg.status.rangeFade.offlineAlpha
+				if current == nil then
+					local rf, def = getRangeFadeConfig()
+					current = rf.alpha
+					if current == nil then current = def.offlineAlpha end
+					if current == nil then current = def.alpha end
+				end
+				if current == nil then current = 0.4 end
+				cfg.status.rangeFade.offlineAlpha = clampNumber(value, 0, 1, current)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "rangeFadeOfflineAlpha", cfg.status.rangeFade.offlineAlpha, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+				GF:RefreshRangeFade()
+			end,
+			isEnabled = function() return isRangeFadeEnabled() end,
+		},
+		{
+			name = L["UFDispelIndicator"] or "Dispel indicator",
 			kind = SettingType.Collapsible,
 			id = "dispeltint",
 			defaultCollapsed = true,
@@ -14569,6 +15122,7 @@ local function buildEditModeSettings(kind, editModeId)
 			minValue = 0,
 			maxValue = 1,
 			valueStep = 0.01,
+			formatter = formatSliderDecimal,
 			get = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}
@@ -14607,6 +15161,7 @@ local function buildEditModeSettings(kind, editModeId)
 			minValue = 0,
 			maxValue = 1,
 			valueStep = 0.01,
+			formatter = formatSliderDecimal,
 			get = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}
@@ -14991,7 +15546,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Group icons",
+			name = L["Group icons"] or "Group icons",
 			kind = SettingType.Collapsible,
 			id = "groupicons",
 			defaultCollapsed = true,
@@ -15290,7 +15845,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isShown = function() return kind == "raid" end,
 		},
 		{
-			name = "Raid marker",
+			name = L["Raid marker"] or "Raid marker",
 			kind = SettingType.Collapsible,
 			id = "raidmarker",
 			defaultCollapsed = true,
@@ -15445,7 +16000,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Role icons",
+			name = L["Role icons"] or "Role icons",
 			kind = SettingType.Collapsible,
 			id = "roleicons",
 			defaultCollapsed = true,
@@ -15666,7 +16221,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Power",
+			name = L["Power"] or "Power",
 			kind = SettingType.Collapsible,
 			id = "power",
 			defaultCollapsed = true,
@@ -16403,7 +16958,7 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
-			name = "Buffs",
+			name = L["Buffs"] or "Buffs",
 			kind = SettingType.Collapsible,
 			id = "buffs",
 			defaultCollapsed = true,
@@ -18771,14 +19326,9 @@ local function buildEditModeSettings(kind, editModeId)
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
-				if GF.IsPartyCenterGrowthMode(cfg) and value ~= true then value = true end
 				cfg.showPlayer = value and true or false
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "showPlayer", cfg.showPlayer, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
-			end,
-			isEnabled = function()
-				local cfg = getCfg(kind)
-				return not GF.IsPartyCenterGrowthMode(cfg)
 			end,
 		}
 		settings[#settings + 1] = {
@@ -18862,10 +19412,6 @@ local function buildEditModeSettings(kind, editModeId)
 					end)
 				end
 			end,
-			isEnabled = function()
-				local cfg = getCfg(kind)
-				return not GF.IsPartyCenterGrowthMode(cfg)
-			end,
 		}
 		settings[#settings + 1] = {
 			name = "Sort direction",
@@ -18896,10 +19442,6 @@ local function buildEditModeSettings(kind, editModeId)
 						if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
 					end)
 				end
-			end,
-			isEnabled = function()
-				local cfg = getCfg(kind)
-				return not GF.IsPartyCenterGrowthMode(cfg)
 			end,
 		}
 	elseif raidLikeKind then
@@ -19232,7 +19774,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isShown = function() return isGroupIndicatorShown() end,
 		}
 		settings[#settings + 1] = {
-			name = "Color",
+			name = L["Color"] or "Color",
 			kind = SettingType.Color,
 			field = "groupIndicatorColor",
 			parentId = "raid",
@@ -19538,7 +20080,6 @@ local function applyEditModeData(kind, data)
 		local mode, baseGrowth = GF.ResolveUnitGrowthDirection(data.growth, cfg.growth or "DOWN")
 		if kind ~= "party" and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then mode = baseGrowth end
 		cfg.growth = mode or "DOWN"
-		if kind == "party" and (cfg.growth == "CENTER_HORIZONTAL" or cfg.growth == "CENTER_VERTICAL") then cfg.showPlayer = true end
 	end
 	if kind == "raid" and data.groupGrowth then
 		local _, growth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
@@ -19773,6 +20314,14 @@ local function applyEditModeData(kind, data)
 		cfg.health = cfg.health or {}
 		cfg.health.absorbEnabled = data.absorbEnabled and true or false
 	end
+	if data.incomingHealEnabled ~= nil then
+		cfg.health = cfg.health or {}
+		cfg.health.incomingHealEnabled = data.incomingHealEnabled and true or false
+	end
+	if data.incomingHealSample ~= nil then
+		cfg.health = cfg.health or {}
+		cfg.health.showSampleIncomingHeal = data.incomingHealSample and true or false
+	end
 	if data.absorbSample ~= nil then
 		cfg.health = cfg.health or {}
 		cfg.health.showSampleAbsorb = data.absorbSample and true or false
@@ -19850,6 +20399,9 @@ local function applyEditModeData(kind, data)
 		or data.groupNumberAnchor ~= nil
 		or data.groupNumberOffsetX ~= nil
 		or data.groupNumberOffsetY ~= nil
+		or data.rangeFadeEnabled ~= nil
+		or data.rangeFadeAlpha ~= nil
+		or data.rangeFadeOfflineAlpha ~= nil
 		or data.dispelTintEnabled ~= nil
 		or data.dispelTintAlpha ~= nil
 		or data.dispelTintFillEnabled ~= nil
@@ -19947,6 +20499,13 @@ local function applyEditModeData(kind, data)
 			if data.groupNumberOffsetX ~= nil then cfg.status.groupNumber.offset.x = data.groupNumberOffsetX end
 			if data.groupNumberOffsetY ~= nil then cfg.status.groupNumber.offset.y = data.groupNumberOffsetY end
 		end
+	end
+	if data.rangeFadeEnabled ~= nil or data.rangeFadeAlpha ~= nil or data.rangeFadeOfflineAlpha ~= nil then
+		cfg.status = cfg.status or {}
+		cfg.status.rangeFade = cfg.status.rangeFade or {}
+		if data.rangeFadeEnabled ~= nil then cfg.status.rangeFade.enabled = data.rangeFadeEnabled and true or false end
+		if data.rangeFadeAlpha ~= nil then cfg.status.rangeFade.alpha = clampNumber(data.rangeFadeAlpha, 0, 1, cfg.status.rangeFade.alpha or 0.55) end
+		if data.rangeFadeOfflineAlpha ~= nil then cfg.status.rangeFade.offlineAlpha = clampNumber(data.rangeFadeOfflineAlpha, 0, 1, cfg.status.rangeFade.offlineAlpha or 0.4) end
 	end
 	if
 		data.groupIndicatorEnabled ~= nil
@@ -20346,7 +20905,6 @@ local function applyEditModeData(kind, data)
 	if kind == "party" then
 		if data.showPlayer ~= nil then cfg.showPlayer = data.showPlayer and true or false end
 		if data.showSolo ~= nil then cfg.showSolo = data.showSolo and true or false end
-		if GF.IsPartyCenterGrowthMode(cfg) then cfg.showPlayer = true end
 		local custom = GFH.EnsureCustomSortConfig(cfg)
 		local incomingSortMethod
 		if data.sortMethod ~= nil then
@@ -20424,11 +20982,13 @@ local function applyEditModeData(kind, data)
 		or data.nameFontOutline ~= nil
 		or data.nameClassColor ~= nil
 		or data.nameColor ~= nil
+	local refreshRangeFade = data.rangeFadeEnabled ~= nil or data.rangeFadeAlpha ~= nil or data.rangeFadeOfflineAlpha ~= nil
 
 	GF:ApplyHeaderAttributes(kind)
 	if data.hideInClientScene ~= nil then GF:RefreshClientSceneVisibility() end
 	if refreshNames then GF:RefreshNames() end
 	if refreshAuras then refreshAllAuras() end
+	if refreshRangeFade then GF:RefreshRangeFade() end
 	if positionChanged and addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then addon.EditModeLib.internal:RefreshSettingValues() end
 	if positionChanged and EditMode and EditMode.RefreshFrame and not GF._syncingGroupFrameEditModePosition then
 		local editModeId = EDITMODE_IDS and EDITMODE_IDS[kind]
@@ -20482,6 +21042,7 @@ function GF:EnsureEditMode()
 			local defPrivateIcon = defPrivate.icon or {}
 			local defPrivateParent = defPrivate.parent or {}
 			local defPrivateDuration = defPrivate.duration or {}
+			local defRangeFade = def.status and def.status.rangeFade or {}
 			local defDispel = def.status and def.status.dispelTint or {}
 			local hcBackdrop = hc.backdrop or {}
 			local defHBackdrop = defH.backdrop or {}
@@ -20623,6 +21184,8 @@ function GF:EnsureEditMode()
 				healthCenterY = (cfg.health and cfg.health.offsetCenter and cfg.health.offsetCenter.y) or 0,
 				healthRightX = (cfg.health and cfg.health.offsetRight and cfg.health.offsetRight.x) or 0,
 				healthRightY = (cfg.health and cfg.health.offsetRight and cfg.health.offsetRight.y) or 0,
+				incomingHealEnabled = (cfg.health and cfg.health.incomingHealEnabled) == true,
+				incomingHealSample = hc.showSampleIncomingHeal == true,
 				absorbEnabled = (cfg.health and cfg.health.absorbEnabled) ~= false,
 				absorbSample = hc.showSampleAbsorb == true,
 				absorbTexture = (cfg.health and cfg.health.absorbTexture) or "SOLID",
@@ -20703,6 +21266,22 @@ function GF:EnsureEditMode()
 				statusTextHideHealthTextOffline = (sc.unitStatus and sc.unitStatus.hideHealthTextWhenOffline)
 					or (def.status and def.status.unitStatus and def.status.unitStatus.hideHealthTextWhenOffline)
 					or false,
+				rangeFadeEnabled = (sc.rangeFade and sc.rangeFade.enabled ~= nil) and (sc.rangeFade.enabled ~= false)
+					or ((sc.rangeFade == nil or sc.rangeFade.enabled == nil) and defRangeFade.enabled ~= false),
+				rangeFadeAlpha = (function()
+					local value = sc.rangeFade and sc.rangeFade.alpha
+					if value == nil then value = defRangeFade.alpha end
+					if value == nil then value = 0.55 end
+					return value
+				end)(),
+				rangeFadeOfflineAlpha = (function()
+					local value = sc.rangeFade and sc.rangeFade.offlineAlpha
+					if value == nil then value = defRangeFade.offlineAlpha end
+					if value == nil then value = sc.rangeFade and sc.rangeFade.alpha end
+					if value == nil then value = defRangeFade.alpha end
+					if value == nil then value = 0.4 end
+					return value
+				end)(),
 				dispelTintEnabled = (sc.dispelTint and sc.dispelTint.enabled ~= nil) and (sc.dispelTint.enabled ~= false)
 					or ((sc.dispelTint == nil or sc.dispelTint.enabled == nil) and defDispel.enabled ~= false),
 				dispelTintAlpha = (sc.dispelTint and sc.dispelTint.alpha) or defDispel.alpha or 0.25,
@@ -20976,22 +21555,24 @@ function GF:EnsureEditMode()
 			if EditMode and EditMode.RegisterButtons then
 				local buttons = {
 					{
-						text = "Toggle sample frames",
+						text = L["Toggle sample frames"] or "Toggle sample frames",
 						click = function() GF:ToggleEditModeSampleFrames(kind) end,
 					},
 					{
-						text = "Toggle sample auras",
+						text = L["Toggle sample auras"] or "Toggle sample auras",
 						click = function() GF:ToggleEditModeSampleAuras() end,
 					},
 					{
-						text = "Toggle status text",
+						text = L["Toggle status text"] or "Toggle status text",
 						click = function() GF:ToggleEditModeStatusText() end,
 					},
 				}
-				if kind == "raid" or kind == "party" then table.insert(buttons, 1, {
-					text = "Edit custom sort order",
-					click = function() GF:ToggleCustomSortEditor(kind) end,
-				}) end
+				if kind == "raid" or kind == "party" then
+					table.insert(buttons, 1, {
+						text = L["Edit custom sort order"] or "Edit custom sort order",
+						click = function() GF:ToggleCustomSortEditor(kind) end,
+					})
+				end
 				if kind == "raid" or kind == "party" then
 					table.insert(buttons, 2, {
 						text = L["UFGroupHealerBuffEditModeButton"] or "Edit healer buff placement",
