@@ -5,6 +5,7 @@
 ### 🔄 Changed
 
 - Character Panel (Gem Tracker): Reworked the socketed gem tracker for Midnight. It now tracks `Eversong Diamond`, `Amethyst`, `Peridot`, `Garnet`, and `Lapis` by item ID, replacing the old `Blasphemite` / `Amber` / `Onyx` / `Sapphire` / `Emerald` / `Ruby` setup.
+- Settings (Root Category): Added a slash-command overview to the main EnhanceQoL settings page. Feature-specific entries such as `/eim`, `/eil`, `/way`, `/cdm`, `/pull`, `/em`, `/kb`, and `/rl` now only appear when their corresponding setting is enabled.
 
 ---
 
