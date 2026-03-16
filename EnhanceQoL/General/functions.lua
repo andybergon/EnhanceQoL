@@ -953,6 +953,10 @@ local function isBagItemUpgrade(itemLink, itemEquipLoc, itemLevel)
 	return numericLevel > baseline
 end
 
+function addon.functions.IsBagItemUpgrade(itemLink, itemEquipLoc, itemLevel)
+	return isBagItemUpgrade(itemLink, itemEquipLoc, itemLevel)
+end
+
 local function updateBagRarityGlow(itemButton, itemQuality, dimmed)
 	if not itemButton then return end
 	if not addon.db or addon.db["enhancedRarityGlow"] ~= true then

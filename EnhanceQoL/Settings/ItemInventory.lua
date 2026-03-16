@@ -1872,6 +1872,10 @@ local function refreshMerchantButtons()
 	end
 end
 
+local function refreshBaganatorCornerWidgets()
+	if addon.Vendor and addon.Vendor.functions and addon.Vendor.functions.refreshBaganatorWidgets then addon.Vendor.functions.refreshBaganatorWidgets() end
+end
+
 local function refreshItemLevelDisplays()
 	if addon.functions and addon.functions.setCharFrame then addon.functions.setCharFrame() end
 	refreshBagFrames(true)
@@ -1882,6 +1886,7 @@ local function refreshItemLevelDisplays()
 		local guid = UnitGUID(InspectFrame.unit)
 		if guid then onInspect(guid) end
 	end
+	refreshBaganatorCornerWidgets()
 end
 
 addon.functions.refreshItemLevelDisplays = refreshItemLevelDisplays
@@ -1901,6 +1906,7 @@ local function setBagDisplayOption(key, value)
 	elseif key == "upgrade" then
 		addon.db["showUpgradeArrowOnBagItems"] = enabled
 		refreshBagFrames(true)
+		refreshBaganatorCornerWidgets()
 	elseif key == "bind" then
 		addon.db["showBindOnBagItems"] = enabled
 		refreshBagFrames(false)
@@ -1913,6 +1919,7 @@ local function applyBagDisplaySelection(selection)
 	addon.db["showUpgradeArrowOnBagItems"] = selection.upgrade == true
 	addon.db["showBindOnBagItems"] = selection.bind == true
 	refreshBagFrames(true)
+	refreshBaganatorCornerWidgets()
 end
 
 local bindDesc = L["showBindOnBagItemsDesc"]

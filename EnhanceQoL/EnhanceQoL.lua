@@ -6080,12 +6080,13 @@ local eventHandlers = {
 			addon.variables.unitSpecId = specId
 		end
 
-		if addon.db["showIlvlOnBagItems"] then
+		if addon.db["showIlvlOnBagItems"] or addon.db["showUpgradeArrowOnBagItems"] then
 			addon.functions.updateBags(ContainerFrameCombinedBags)
 			for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
 				addon.functions.updateBags(frame)
 			end
 			if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			if addon.Vendor and addon.Vendor.functions and addon.Vendor.functions.refreshBaganatorWidgets then addon.Vendor.functions.refreshBaganatorWidgets() end
 		end
 	end,
 	["ACTIVE_TALENT_GROUP_CHANGED"] = function(arg1)
@@ -6096,6 +6097,14 @@ local eventHandlers = {
 			addon.variables.unitSpecName = specName
 			addon.variables.unitRole = GetSpecializationRole(addon.variables.unitSpec)
 			addon.variables.unitSpecId = specId
+		end
+		if addon.db["showIlvlOnBagItems"] or addon.db["showUpgradeArrowOnBagItems"] then
+			addon.functions.updateBags(ContainerFrameCombinedBags)
+			for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
+				addon.functions.updateBags(frame)
+			end
+			if _G.BankPanel and _G.BankPanel:IsShown() then addon.functions.updateBags(_G.BankPanel) end
+			if addon.Vendor and addon.Vendor.functions and addon.Vendor.functions.refreshBaganatorWidgets then addon.Vendor.functions.refreshBaganatorWidgets() end
 		end
 	end,
 	["ADDON_LOADED"] = function(arg1)

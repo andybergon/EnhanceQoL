@@ -340,9 +340,30 @@ addon.functions.SettingsCreateCheckboxes(cVendorEconomy, data)
 local craftTitle = (LVendor and LVendor["vendorCraftShopperTitle"]) or "Craft Shopper"
 local craftEnableText = (LVendor and LVendor["vendorCraftShopperEnable"]) or "Enable Craft Shopper"
 local craftEnableDesc = LVendor and LVendor["vendorCraftShopperEnableDesc"] or nil
+local craftQualityText = (LVendor and LVendor["vendorCraftShopperReagentQuality"]) or (_G["PROFESSIONS_QUALITY_DIALOG_TITLE"] or "Reagent Quality")
+local craftQualityDesc = LVendor and LVendor["vendorCraftShopperReagentQualityDesc"] or nil
+local craftQualityList = {
+	lowest = (LVendor and LVendor["vendorCraftShopperReagentQualityLowest"]) or "Lowest quality",
+	highest = (LVendor and LVendor["vendorCraftShopperReagentQualityHighest"]) or "Highest quality",
+}
+local craftQualityOrder = { "lowest", "highest" }
+
+local function getCraftShopperQualityValue()
+	if addon.db["vendorCraftShopperReagentQuality"] == "lowest" then return "lowest" end
+	return "highest"
+end
+
+local function setCraftShopperQualityValue(value)
+	local quality = value == "lowest" and "lowest" or "highest"
+	if addon.Vendor and addon.Vendor.CraftShopper and addon.Vendor.CraftShopper.SetReagentQualityMode then
+		addon.Vendor.CraftShopper.SetReagentQualityMode(quality)
+	else
+		addon.db["vendorCraftShopperReagentQuality"] = quality
+	end
+end
 
 addon.functions.SettingsCreateHeadline(cVendorEconomy, craftTitle, { parentSection = auctionHouseExpandable })
-addon.functions.SettingsCreateCheckbox(cVendorEconomy, {
+local craftEnable = addon.functions.SettingsCreateCheckbox(cVendorEconomy, {
 	var = "vendorCraftShopperEnable",
 	text = craftEnableText,
 	desc = craftEnableDesc,
@@ -357,6 +378,25 @@ addon.functions.SettingsCreateCheckbox(cVendorEconomy, {
 		end
 	end,
 	default = false,
+	parentSection = auctionHouseExpandable,
+})
+
+local function craftShopperParentCheck()
+	return craftEnable and craftEnable.setting and craftEnable.setting:GetValue() == true
+end
+
+addon.functions.SettingsCreateDropdown(cVendorEconomy, {
+	var = "vendorCraftShopperReagentQuality",
+	text = craftQualityText,
+	desc = craftQualityDesc,
+	list = craftQualityList,
+	order = craftQualityOrder,
+	default = "highest",
+	get = function() return getCraftShopperQualityValue() end,
+	set = function(key, maybeValue) setCraftShopperQualityValue(maybeValue or key) end,
+	parent = true,
+	element = craftEnable.element,
+	parentCheck = craftShopperParentCheck,
 	parentSection = auctionHouseExpandable,
 })
 
