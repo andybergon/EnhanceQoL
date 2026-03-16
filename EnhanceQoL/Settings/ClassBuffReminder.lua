@@ -29,6 +29,7 @@ local DB_XY_TEXT_OUTLINE = "classBuffReminderXYTextOutline"
 local DB_XY_TEXT_COLOR = "classBuffReminderXYTextColor"
 local DB_XY_TEXT_OFFSET_X = "classBuffReminderXYTextOffsetX"
 local DB_XY_TEXT_OFFSET_Y = "classBuffReminderXYTextOffsetY"
+local LEGACY_DB_SOUND_DEBUG_TRACE = "classBuffReminderSoundDebugTrace"
 
 local defaults = (Reminder and Reminder.defaults)
 	or {
@@ -115,6 +116,7 @@ function addon.functions.initClassBuffReminder()
 	init(DB_XY_TEXT_COLOR, defaults.xyTextColor)
 	init(DB_XY_TEXT_OFFSET_X, defaults.xyTextOffsetX)
 	init(DB_XY_TEXT_OFFSET_Y, defaults.xyTextOffsetY)
+	if addon.db then addon.db[LEGACY_DB_SOUND_DEBUG_TRACE] = nil end
 
 	refreshReminder()
 end

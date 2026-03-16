@@ -60,8 +60,6 @@ local DB_XY_TEXT_OUTLINE = "classBuffReminderXYTextOutline"
 local DB_XY_TEXT_COLOR = "classBuffReminderXYTextColor"
 local DB_XY_TEXT_OFFSET_X = "classBuffReminderXYTextOffsetX"
 local DB_XY_TEXT_OFFSET_Y = "classBuffReminderXYTextOffsetY"
-local DB_SOUND_DEBUG_TRACE = "classBuffReminderSoundDebugTrace"
-local SOUND_DEBUG_TRACE_MAX = 200
 
 Reminder.defaults = Reminder.defaults
 	or {
@@ -489,9 +487,7 @@ local function safeIsPlayerSpell(spellId)
 	spellId = normalizeSpellId(spellId)
 	if not spellId then return false end
 
-	if C_SpellBook and C_SpellBook.IsSpellInSpellBook then
-		return C_SpellBook.IsSpellInSpellBook(spellId, Enum.SpellBookSpellBank.Player, true) == true
-	end
+	if C_SpellBook and C_SpellBook.IsSpellInSpellBook then return C_SpellBook.IsSpellInSpellBook(spellId, Enum.SpellBookSpellBank.Player, true) == true end
 
 	return false
 end
@@ -846,8 +842,8 @@ function Reminder:GetFlaskMissingEntry()
 	local displaySpellId
 	local displayLabel
 	for i = 1, #candidates do
-			local itemId = tonumber(candidates[i] and candidates[i].id)
-			if itemId and itemId > 0 then
+		local itemId = tonumber(candidates[i] and candidates[i].id)
+		if itemId and itemId > 0 then
 			local spellName, spellId
 			if C_Item and C_Item.GetItemSpell then
 				spellName, spellId = C_Item.GetItemSpell(itemId)
@@ -1508,52 +1504,6 @@ function Reminder:GetIconCountTextStyle()
 	return size, outline, r, g, b, a, offsetX, offsetY
 end
 
-local function soundDebugTimestamp()
-	if date then
-		local stamp = date("%H:%M:%S")
-		if type(stamp) == "string" and stamp ~= "" then return stamp end
-	end
-	local timeValue = 0
-	if GetTimePreciseSec then
-		timeValue = GetTimePreciseSec() or 0
-	elseif GetTime then
-		timeValue = GetTime() or 0
-	end
-	return string.format("%.3f", tonumber(timeValue) or 0)
-end
-
-function Reminder:WriteSoundDebug(eventName, payload)
-	if not addon.db then return end
-	local trace = addon.db[DB_SOUND_DEBUG_TRACE]
-	if type(trace) ~= "table" then
-		trace = {}
-		addon.db[DB_SOUND_DEBUG_TRACE] = trace
-	end
-
-	local entry = {
-		t = soundDebugTimestamp(),
-		e = tostring(eventName or "unknown"),
-	}
-	if type(payload) == "table" then
-		for key, value in pairs(payload) do
-			local tv = type(value)
-			if tv == "string" or tv == "number" or tv == "boolean" then
-				entry[key] = value
-			elseif value ~= nil then
-				entry[key] = "<" .. tv .. ">"
-			end
-		end
-	end
-
-	trace[#trace + 1] = entry
-	if #trace > SOUND_DEBUG_TRACE_MAX then
-		local overflow = #trace - SOUND_DEBUG_TRACE_MAX
-		for i = 1, overflow do
-			table.remove(trace, 1)
-		end
-	end
-end
-
 function Reminder:BuildMissingSoundOptions()
 	local version = (addon.functions and addon.functions.GetLSMMediaVersion and addon.functions.GetLSMMediaVersion("sound")) or 0
 	if self.missingSoundCacheVersion == version and self.missingSoundKeys and self.missingSoundMap and self.missingSoundPathToKey then
@@ -1604,7 +1554,7 @@ function Reminder:ResolveMissingSound()
 	return rawKey, resolvedKey, soundFile, #keys
 end
 
-function Reminder:NormalizeMissingSoundSelection(source)
+function Reminder:NormalizeMissingSoundSelection()
 	if not addon.db then return end
 
 	local _, map, pathToKey = self:GetMissingSoundOptions()
@@ -1615,47 +1565,19 @@ function Reminder:NormalizeMissingSoundSelection(source)
 	if normalized ~= "" and type(pathToKey) == "table" and pathToKey[normalized] and type(map) == "table" and map[pathToKey[normalized]] then normalized = pathToKey[normalized] end
 
 	if normalized ~= current then addon.db[DB_MISSING_SOUND] = normalized end
-
-	local _, resolvedKey, soundFile, optionCount = self:ResolveMissingSound()
-	self:WriteSoundDebug("normalize", {
-		source = source or "",
-		current = current,
-		normalized = normalized,
-		resolved = resolvedKey or "",
-		hasFile = soundFile and true or false,
-		options = optionCount or 0,
-	})
 end
 
-function Reminder:ScheduleInitialSoundSync(reason)
+function Reminder:ScheduleInitialSoundSync()
 	if self.initialSoundSyncDone == true or self.initialSoundSyncPending == true then return end
 	if not (C_Timer and C_Timer.After) then return end
 
 	self.initialSoundSyncPending = true
-	self:WriteSoundDebug("schedule-sync", {
-		reason = reason or "unknown",
-	})
-
 	C_Timer.After(1, function()
 		Reminder.initialSoundSyncPending = false
-		if not Reminder:ShouldRegisterRuntimeEvents() then
-			Reminder:WriteSoundDebug("run-sync-skipped", {
-				reason = reason or "unknown",
-				runtime = false,
-			})
-			return
-		end
+		if not Reminder:ShouldRegisterRuntimeEvents() then return end
 
 		Reminder.initialSoundSyncDone = true
-		Reminder:NormalizeMissingSoundSelection("initial-sync")
-		local rawKey, resolvedKey, soundFile, optionCount = Reminder:ResolveMissingSound()
-		Reminder:WriteSoundDebug("run-sync", {
-			reason = reason or "unknown",
-			raw = rawKey or "",
-			resolved = resolvedKey or "",
-			hasFile = soundFile and true or false,
-			options = optionCount or 0,
-		})
+		Reminder:NormalizeMissingSoundSelection()
 	end)
 end
 
@@ -1672,29 +1594,10 @@ function Reminder:GetMissingSoundFile()
 end
 
 function Reminder:PlayMissingSound(force)
-	if not force and getValue(DB_SOUND_ON_MISSING, defaults.soundOnMissing) ~= true then
-		self:WriteSoundDebug("play-skip-disabled", { force = force == true })
-		return
-	end
+	if not force and getValue(DB_SOUND_ON_MISSING, defaults.soundOnMissing) ~= true then return end
 
-	local rawKey, resolvedKey, soundFile, optionCount = self:ResolveMissingSound()
-	if soundFile and PlaySoundFile then
-		PlaySoundFile(soundFile, "Master")
-		self:WriteSoundDebug("play", {
-			force = force == true,
-			raw = rawKey or "",
-			resolved = resolvedKey or "",
-			options = optionCount or 0,
-		})
-		return
-	end
-
-	self:WriteSoundDebug("play-missing-file", {
-		force = force == true,
-		raw = rawKey or "",
-		resolved = resolvedKey or "",
-		options = optionCount or 0,
-	})
+	local _, _, soundFile = self:ResolveMissingSound()
+	if soundFile and PlaySoundFile then PlaySoundFile(soundFile, "Master") end
 end
 
 function Reminder:UpdateMissingStateAndSound(missing)
@@ -1703,10 +1606,6 @@ function Reminder:UpdateMissingStateAndSound(missing)
 	if isMissing and not wasMissing then
 		if self.suppressNextMissingSound == true then
 			self.suppressNextMissingSound = false
-			self:WriteSoundDebug("play-suppressed", {
-				reason = "initial-login",
-				missing = tonumber(missing) or 0,
-			})
 		else
 			self:PlayMissingSound()
 		end
@@ -2764,13 +2663,7 @@ function Reminder:UpdateDisplay()
 
 	local effectiveMissing = (tonumber(missing) or 0) + supplementalMissing
 
-	if self.suppressNextMissingSound == true and effectiveMissing <= 0 then
-		self.suppressNextMissingSound = false
-		self:WriteSoundDebug("play-suppress-cleared", {
-			reason = "no-missing-on-initial-check",
-			total = tonumber(total) or 0,
-		})
-	end
+	if self.suppressNextMissingSound == true and effectiveMissing <= 0 then self.suppressNextMissingSound = false end
 
 	if effectiveMissing <= 0 then
 		self:SetGlowShown(false)
@@ -2802,7 +2695,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	if not self:ShouldRegisterRuntimeEvents() then return end
 
 	if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
-		self:ScheduleInitialSoundSync(event)
+		self:ScheduleInitialSoundSync()
 		self:InvalidateProviderAvailabilityCache()
 		self:InvalidateRosterCache()
 		self:MarkAuraStatesDirty()
@@ -2925,7 +2818,7 @@ function Reminder:RegisterEvents()
 	self.eventFrame:SetScript("OnEvent", function(_, event, ...) Reminder:HandleEvent(event, ...) end)
 
 	self.eventsRegistered = true
-	self:ScheduleInitialSoundSync("RegisterEvents")
+	self:ScheduleInitialSoundSync()
 end
 
 function Reminder:UnregisterEvents()
@@ -3017,14 +2910,10 @@ function Reminder:RegisterEditMode()
 				chosen = ""
 			end
 			addon.db[DB_MISSING_SOUND] = chosen or ""
-			Reminder:WriteSoundDebug("set-sound", {
-				input = type(value) == "string" and value or "",
-				stored = addon.db[DB_MISSING_SOUND] or "",
-			})
 		end
 		Reminder.initialSoundSyncDone = false
-		Reminder:NormalizeMissingSoundSelection("set-missing-sound")
-		Reminder:ScheduleInitialSoundSync("set-missing-sound")
+		Reminder:NormalizeMissingSoundSelection()
+		Reminder:ScheduleInitialSoundSync()
 		Reminder:RequestUpdate(true)
 	end
 
@@ -3408,19 +3297,10 @@ end
 function Reminder:OnSettingChanged()
 	local enabled = getValue(DB_ENABLED, defaults.enabled) == true
 	local runtimeActive = self:ShouldRegisterRuntimeEvents()
-	if runtimeActive and not self.eventsRegistered then
-		self.suppressNextMissingSound = true
-		self:WriteSoundDebug("play-suppress-armed", {
-			reason = "runtime-start",
-		})
-	end
-	self:WriteSoundDebug("setting-changed", {
-		enabled = enabled,
-		runtime = runtimeActive,
-	})
+	if runtimeActive and not self.eventsRegistered then self.suppressNextMissingSound = true end
 	if runtimeActive then
-		self:NormalizeMissingSoundSelection("OnSettingChanged")
-		self:ScheduleInitialSoundSync("OnSettingChanged")
+		self:NormalizeMissingSoundSelection()
+		self:ScheduleInitialSoundSync()
 	end
 
 	if enabled then
