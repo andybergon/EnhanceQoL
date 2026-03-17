@@ -2915,10 +2915,32 @@ function CooldownPanels.HideIconTooltip()
 	if GameTooltip then GameTooltip:Hide() end
 end
 
+function CooldownPanels.SetIconTooltipMouseState(icon, enabled)
+	if not icon then return end
+	local mouseEnabled = enabled == true
+	if icon.SetMouseClickEnabled then
+		if icon._eqolTooltipMouseClickEnabled ~= mouseEnabled then
+			icon:SetMouseClickEnabled(mouseEnabled)
+			icon._eqolTooltipMouseClickEnabled = mouseEnabled
+		end
+	end
+	if icon.SetMouseMotionEnabled and icon._eqolTooltipMouseMotionEnabled ~= mouseEnabled then
+		icon:SetMouseMotionEnabled(mouseEnabled)
+		icon._eqolTooltipMouseMotionEnabled = mouseEnabled
+	end
+	if icon.EnableMouse and icon._eqolTooltipMouseEnabled ~= mouseEnabled then
+		icon:EnableMouse(mouseEnabled)
+		icon._eqolTooltipMouseEnabled = mouseEnabled
+	end
+	if not mouseEnabled and GameTooltip and GameTooltip.IsOwned and GameTooltip.Hide and GameTooltip:IsOwned(icon) then GameTooltip:Hide() end
+end
+
 function CooldownPanels.ApplyIconTooltip(icon, entry, enabled)
 	if not icon then return end
+	local tooltipEnabled = enabled == true and entry ~= nil
 	icon._eqolTooltipEntry = entry
-	icon._eqolTooltipEnabled = enabled and entry ~= nil
+	icon._eqolTooltipEnabled = tooltipEnabled
+	CooldownPanels.SetIconTooltipMouseState(icon, tooltipEnabled)
 end
 
 function CooldownPanels:GetCooldownFontDefaults(frame)
@@ -11289,12 +11311,12 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 	local handle = icon.layoutHandle
 	icon._eqolLayoutSlotColumn = nil
 	icon._eqolLayoutSlotRow = nil
-	if icon.EnableMouse then icon:EnableMouse(false) end
+	local active = self:IsPanelLayoutEditActive(panelId)
+	CooldownPanels.SetIconTooltipMouseState(icon, icon._eqolTooltipEnabled == true and not active)
 	icon:SetScript("OnDragStart", nil)
 	icon:SetScript("OnDragStop", nil)
 	icon:SetScript("OnReceiveDrag", nil)
 	icon:SetScript("OnMouseUp", nil)
-	local active = self:IsPanelLayoutEditActive(panelId)
 	if not handle then return end
 	if not active then
 		if handle._eqolLayoutConfigured ~= true then return end
@@ -12849,12 +12871,15 @@ function CooldownPanels:UpdatePanelMouseState(panelId)
 	if not frame then return end
 	local inEditMode = self:IsInEditMode() == true
 	local layoutEditActive = self:IsPanelLayoutEditActive(panelId)
+	local panel = self:GetPanel(panelId)
+	local layout = panel and panel.layout or nil
+	local tooltipMouseActive = not layoutEditActive and layout and layout.showTooltips == true
 	if frame._mouseEnabled ~= false then
 		frame._mouseEnabled = false
 		frame:EnableMouse(false)
 	end
 	if frame.Selection and frame.Selection.EnableMouse then
-		local enableSelection = inEditMode and not layoutEditActive
+		local enableSelection = inEditMode and not layoutEditActive and not tooltipMouseActive
 		if frame._eqolSelectionMouseEnabled ~= enableSelection then
 			frame._eqolSelectionMouseEnabled = enableSelection
 			frame.Selection:EnableMouse(enableSelection)
