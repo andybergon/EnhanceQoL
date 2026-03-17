@@ -5,6 +5,7 @@
 ### ✨ Added
 
 - Class Buff Reminder (Evoker / Augmentation): Added `Blistering Scales` to the reminder. It now also shows correctly while solo.
+- Group Frames (Healer Buff Placement / Spell Color): Added per-rule `Spell Color` overrides for `Border`, `Bar`, and `Tint` indicators. Preview and live rendering now follow the first active matching rule color, matching existing `Square` behavior.
 
 ### 🐛 Fixed
 

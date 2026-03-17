@@ -1215,8 +1215,12 @@ L["UFGroupHealerBuffEditorScopeMarkerParty"] = " [P]"
 L["UFGroupHealerBuffEditorScopeMarkerRaid"] = " [R]"
 L["UFGroupHealerBuffEditorSelectedIndicator"] = "selected indicator"
 L["UFGroupHealerBuffEditorRuleInfoTint"] = "Showing rules for %s. Scope is set per rule (Party/Raid). Tint can require any or all active spells."
+L["UFGroupHealerBuffEditorRuleInfoTintColor"] =
+	"Showing rules for %s. Scope is set per rule (Party/Raid). Tint can require any or all active spells. When multiple rules are active, color follows the first matching rule in this list. Spell Color overrides are per rule (right click to reset)."
 L["UFGroupHealerBuffEditorRuleInfoIcon"] = "Showing rules for %s. Scope is set per rule (Party/Raid). Priority follows the rule order in this list."
 L["UFGroupHealerBuffEditorRuleInfoBarDrain"] = "Showing rules for %s. Scope is set per rule (Party/Raid). Drain animation follows the first active timed aura in this list."
+L["UFGroupHealerBuffEditorRuleInfoBarDrainColor"] =
+	"Showing rules for %s. Scope is set per rule (Party/Raid). Color follows the first active rule in this list. Drain animation follows the first active timed aura in this list. Spell Color overrides are per rule (right click to reset)."
 L["UFGroupHealerBuffEditorRuleInfoSquare"] =
 	"Showing rules for %s. Scope is set per rule (Party/Raid). Priority follows the rule order in this list. Spell Color overrides are per rule (right click to reset)."
 L["UFGroupHealerBuffEditorRuleInfoDefault"] = "Showing rules for %s. Scope is set per rule (Party/Raid). Add via +, remove via x."
