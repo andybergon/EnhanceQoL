@@ -27,8 +27,6 @@ local CombatFeedback_OnCombatEvent = _G.CombatFeedback_OnCombatEvent
 local CombatFeedback_OnUpdate = _G.CombatFeedback_OnUpdate
 local NewTicker = C_Timer and C_Timer.NewTicker
 local GetTime = _G.GetTime
-local Font = _G.Font
-local UNIT_NAME_FONT_CYRILLIC = _G.UNIT_NAME_FONT_CYRILLIC
 local COMBAT_FEEDBACK_THROTTLE = 0.1
 local abs = math.abs
 local floor = math.floor
@@ -242,7 +240,7 @@ function H._looksLikeFontFile(path)
 end
 
 function H.getAlphabetAwareFontFamily(fontFile, size, flags)
-	if not (Font and Font.CreateFontFamily and H._looksLikeFontFile(fontFile)) then return nil end
+	if not (_G.Font and _G.Font.CreateFontFamily and H._looksLikeFontFile(fontFile)) then return nil end
 	size = tonumber(size) or 14
 	if size <= 0 then size = 1 end
 	flags = flags or ""
@@ -258,12 +256,12 @@ function H.getAlphabetAwareFontFamily(fontFile, size, flags)
 
 	H._fontFamilyCounter = (H._fontFamilyCounter or 0) + 1
 	local familyName = ("EQOLUFFontFamily%d"):format(H._fontFamilyCounter)
-	local ok, family = pcall(Font.CreateFontFamily, familyName, {
+	local ok, family = pcall(_G.Font.CreateFontFamily, familyName, {
 		{ alphabet = "roman", file = fontFile, height = size, flags = flags },
 		{ alphabet = "korean", file = "Fonts\\2002.TTF", height = size, flags = flags },
 		{ alphabet = "simplifiedchinese", file = "Fonts\\ARKai_T.ttf", height = size, flags = flags },
 		{ alphabet = "traditionalchinese", file = "Fonts\\bLEI00D.TTF", height = size, flags = flags },
-		{ alphabet = "russian", file = UNIT_NAME_FONT_CYRILLIC or "Fonts\\FRIZQT___CYR.TTF", height = size, flags = flags },
+		{ alphabet = "russian", file = _G.UNIT_NAME_FONT_CYRILLIC or "Fonts\\FRIZQT___CYR.TTF", height = size, flags = flags },
 	})
 	if not ok or not family then return nil end
 	fontFamilyCache[key] = family
@@ -3302,7 +3300,6 @@ function H._getStaggerStateColorForUnit(unitTokenValue, cfg)
 end
 
 function H.getPowerColor(powerEnum, powerToken, colorCfg, unitToken)
-
 	if powerToken == nil and type(powerEnum) == "string" then
 		powerToken = powerEnum
 		powerEnum = nil
