@@ -5812,6 +5812,7 @@ local function setAllHooks()
 			if addon.Aura.UF and addon.Aura.UF.Refresh then addon.Aura.UF.Refresh() end
 			if addon.Aura.UF and addon.Aura.UF.GroupFrames and addon.Aura.UF.GroupFrames.RefreshTextStyles then addon.Aura.UF.GroupFrames:RefreshTextStyles() end
 		end
+		if addon.functions and addon.functions.applySquareMinimapStats then addon.functions.applySquareMinimapStats(true) end
 	end
 
 	addon.functions.RefreshGlobalFontConsumers = refreshGlobalFontConsumers

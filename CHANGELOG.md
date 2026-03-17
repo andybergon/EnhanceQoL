@@ -6,6 +6,7 @@
 
 - Health Macro: Fixed `Potent Healing Potion` not being picked correctly in Midnight.
 - Cooldown Panels: Opening Edit Mode in Combat had stale panels showing
+- Square Minimap Stats / SharedMedia: Fixed minimap stat texts (`Time`, `FPS`, `Latency`, `Location`, `Coordinates`) not using the configured Global Font on login/reload when SharedMedia fonts were registered after the stats initialized.
 ---
 
 ## [9.1.2] - 2026-03-16
