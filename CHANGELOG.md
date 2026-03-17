@@ -6,6 +6,7 @@
 
 - Cooldown Panels (Editor): Added panel duplication from the panel-list right-click context menu. Duplicates keep their entries, layout, and group assignment.
 - Cooldown Panels (Editor): Added nested groups in the left panel list. Groups can now contain subgroups, and group context menus support creating subgroups and moving groups between parent groups.
+- Cooldown Panels (Glow): Added a `Hide glow out of combat` option, so glow can stay hidden outside combat while the icon remains visible between pulls.
 - Settings (Slash Commands): Added an optional Click Cast Bindings toggle that registers `/ccb` and `/clickcast` to open the Blizzard Click Cast Bindings UI when those aliases are not already claimed.
 
 ### 🔄 Changed
