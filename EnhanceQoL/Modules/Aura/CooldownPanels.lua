@@ -231,12 +231,24 @@ local function getClassSpecMenuData()
 			if specCount > 0 then
 				local specs = {}
 				for specIndex = 1, specCount do
-					local specID, specName = GetSpecializationInfoForClassID(classID, specIndex, sex)
-					if specID then specs[#specs + 1] = { id = specID, name = specName or ("Spec " .. tostring(specID)) } end
+					local specID, specName, _, _, role = GetSpecializationInfoForClassID(classID, specIndex, sex)
+					if specID then
+						local isMelee = CooldownPanels and CooldownPanels.IsSpecQuickFilterMelee and CooldownPanels:IsSpecQuickFilterMelee(specID) or false
+						local isCaster = role == "DAMAGER" and isMelee ~= true and classTag ~= "HUNTER"
+						specs[#specs + 1] = {
+							id = specID,
+							name = specName or ("Spec " .. tostring(specID)),
+							role = role,
+							classTag = classTag,
+							isMelee = isMelee,
+							isCaster = isCaster,
+						}
+					end
 				end
 				if #specs > 0 then classes[#classes + 1] = {
 					id = classID,
 					name = className or classTag or tostring(classID),
+					classTag = classTag,
 					specs = specs,
 				} end
 			end
@@ -259,6 +271,74 @@ local function getSpecNameById(specId)
 		if specName and specName ~= "" then return specName end
 	end
 	return tostring(specId or "")
+end
+
+function CooldownPanels:IsSpecQuickFilterMelee(specId)
+	specId = tonumber(specId)
+	if not specId then return false end
+	if specId == 70 or specId == 71 or specId == 72 or specId == 103 or specId == 251 or specId == 252 or specId == 255 then return true end
+	if specId == 259 or specId == 260 or specId == 261 or specId == 263 or specId == 269 or specId == 577 then return true end
+	return false
+end
+
+function CooldownPanels:GetSpecQuickFilterDefinitions(classMenuData)
+	local definitions = {
+		{ id = "HEALER", label = L["CooldownPanelSpecAllHealers"] or "All healers", specIds = {} },
+		{ id = "TANK", label = L["CooldownPanelSpecAllTanks"] or "All tanks", specIds = {} },
+		{ id = "MELEE", label = L["CooldownPanelSpecAllMelee"] or "All melee", specIds = {} },
+		{ id = "CASTER", label = L["CooldownPanelSpecAllCasters"] or "All casters", specIds = {} },
+	}
+
+	for _, classData in ipairs(classMenuData or getClassSpecMenuData()) do
+		for _, specData in ipairs(classData.specs or {}) do
+			local specId = tonumber(specData.id)
+			if specId and specId > 0 then
+				if specData.role == "HEALER" then definitions[1].specIds[#definitions[1].specIds + 1] = specId end
+				if specData.role == "TANK" then definitions[2].specIds[#definitions[2].specIds + 1] = specId end
+				if specData.role == "DAMAGER" and specData.isMelee == true then definitions[3].specIds[#definitions[3].specIds + 1] = specId end
+				if specData.isCaster == true then definitions[4].specIds[#definitions[4].specIds + 1] = specId end
+			end
+		end
+	end
+
+	return definitions
+end
+
+function CooldownPanels:HasAllPanelSpecFilterEntries(panel, specIds)
+	if not panel or type(specIds) ~= "table" or #specIds == 0 then return false end
+	local filter = panel.specFilter
+	if type(filter) ~= "table" then return false end
+	for _, specId in ipairs(specIds) do
+		if filter[specId] ~= true then return false end
+	end
+	return true
+end
+
+function CooldownPanels:SetPanelSpecFilterEntries(panel, specIds, enabled)
+	if not panel or type(specIds) ~= "table" then return false end
+	panel.specFilter = panel.specFilter or {}
+	local changed = false
+	for _, specId in ipairs(specIds) do
+		specId = tonumber(specId)
+		if specId and specId > 0 then
+			if enabled then
+				if panel.specFilter[specId] ~= true then
+					panel.specFilter[specId] = true
+					changed = true
+				end
+			elseif panel.specFilter[specId] ~= nil then
+				panel.specFilter[specId] = nil
+				changed = true
+			end
+		end
+	end
+	return changed
+end
+
+function CooldownPanels:CommitPanelSpecFilter(panelId)
+	self:RebuildSpellIndex()
+	self:RefreshPanel(panelId)
+	self:RefreshEditor()
 end
 
 local function getEffectiveSpellId(spellId)
@@ -5593,16 +5673,38 @@ local function showSpecMenu(owner, panelId)
 	if not panelId or not Api.MenuUtil or not Api.MenuUtil.CreateContextMenu then return end
 	local panel = CooldownPanels:GetPanel(panelId)
 	if not panel then return end
+	local classMenuData = getClassSpecMenuData()
+	local quickFilterDefinitions = CooldownPanels:GetSpecQuickFilterDefinitions(classMenuData)
 	Api.MenuUtil.CreateContextMenu(owner, function(_, rootDescription)
 		rootDescription:SetTag("MENU_EQOL_COOLDOWN_PANEL_SPECS")
 		rootDescription:CreateTitle(L["CooldownPanelSpecFilter"] or "Show only for spec")
 		rootDescription:CreateCheckbox(L["CooldownPanelSpecAny"] or "All specs", function() return not panelHasSpecFilter(panel) end, function()
 			panel.specFilter = {}
-			CooldownPanels:RebuildSpellIndex()
-			CooldownPanels:RefreshPanel(panelId)
-			CooldownPanels:RefreshEditor()
+			CooldownPanels:CommitPanelSpecFilter(panelId)
 		end)
-		for _, classData in ipairs(getClassSpecMenuData()) do
+
+		local hasQuickFilters = false
+		for _, quickFilter in ipairs(quickFilterDefinitions or {}) do
+			if type(quickFilter.specIds) == "table" and #quickFilter.specIds > 0 then
+				hasQuickFilters = true
+				break
+			end
+		end
+		if hasQuickFilters then
+			rootDescription:CreateDivider()
+			rootDescription:CreateTitle(L["CooldownPanelSpecQuickSelect"] or "Quick select")
+			for _, quickFilter in ipairs(quickFilterDefinitions or {}) do
+				if type(quickFilter.specIds) == "table" and #quickFilter.specIds > 0 then
+					rootDescription:CreateCheckbox(quickFilter.label, function() return CooldownPanels:HasAllPanelSpecFilterEntries(panel, quickFilter.specIds) end, function()
+						local enable = not CooldownPanels:HasAllPanelSpecFilterEntries(panel, quickFilter.specIds)
+						if CooldownPanels:SetPanelSpecFilterEntries(panel, quickFilter.specIds, enable) then CooldownPanels:CommitPanelSpecFilter(panelId) end
+					end)
+				end
+			end
+			rootDescription:CreateDivider()
+		end
+
+		for _, classData in ipairs(classMenuData) do
 			local classMenu = rootDescription:CreateButton(classData.name)
 			for _, specData in ipairs(classData.specs or {}) do
 				classMenu:CreateCheckbox(specData.name, function() return panel.specFilter and panel.specFilter[specData.id] == true end, function()
@@ -5612,9 +5714,7 @@ local function showSpecMenu(owner, panelId)
 					else
 						panel.specFilter[specData.id] = true
 					end
-					CooldownPanels:RebuildSpellIndex()
-					CooldownPanels:RefreshPanel(panelId)
-					CooldownPanels:RefreshEditor()
+					CooldownPanels:CommitPanelSpecFilter(panelId)
 				end)
 			end
 		end

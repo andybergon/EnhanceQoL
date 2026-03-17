@@ -3932,6 +3932,8 @@ local function initMap()
 	if addon.db["enableEditModeSlashCommand"] then addon.functions.registerEditModeSlashCommand() end
 	addon.functions.InitDBValue("enableQuickKeybindSlashCommand", false)
 	if addon.db["enableQuickKeybindSlashCommand"] then addon.functions.registerQuickKeybindSlashCommand() end
+	addon.functions.InitDBValue("enableClickCastSlashCommand", false)
+	if addon.db["enableClickCastSlashCommand"] then addon.functions.registerClickCastSlashCommand() end
 	addon.functions.InitDBValue("enableReloadUISlashCommand", false)
 	if addon.db["enableReloadUISlashCommand"] then addon.functions.registerReloadUISlashCommand() end
 end

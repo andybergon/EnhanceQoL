@@ -6,10 +6,12 @@
 
 - Cooldown Panels (Editor): Added panel duplication from the panel-list right-click context menu. Duplicates keep their entries, layout, and group assignment.
 - Cooldown Panels (Editor): Added nested groups in the left panel list. Groups can now contain subgroups, and group context menus support creating subgroups and moving groups between parent groups.
+- Settings (Slash Commands): Added an optional Click Cast Bindings toggle that registers `/ccb` and `/clickcast` to open the Blizzard Click Cast Bindings UI when those aliases are not already claimed.
 
 ### 🔄 Changed
 
 - Cooldown Panels (Charges): Added a panel-wide `Hide when 0` option for spell charge text. Charge numbers now fade out automatically when the current charge count reaches `0`.
+- Cooldown Panels (Spec Filter): Improved the panel spec selection menu with quick-select toggles for `All healers`, `All tanks`, `All melee`, and `All casters`.
 
 ### 🐛 Fixed
 
