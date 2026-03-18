@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.6.1] - 2026-03-18
+
+### 🐛 Fixed
+
+- Unit Frames: Aura cooldown was missing when Cooldowntext was hidden
+
+---
+
 ## [9.6.0] - 2026-03-18
 
 ### ✨ Added
