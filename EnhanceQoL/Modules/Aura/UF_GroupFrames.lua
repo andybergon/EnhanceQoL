@@ -788,7 +788,8 @@ function GF.BuildPartyCenterGrowthNameList(cfg)
 
 		local showPlayer = cfg and cfg.showPlayer == true
 		local showSolo = cfg and cfg.showSolo == true
-		if IsInRaid and IsInRaid() then
+		local arenaPartyActive = GFH and GFH.IsArenaPartyActive and GFH.IsArenaPartyActive()
+		if IsInRaid and IsInRaid() and not arenaPartyActive then
 			showPlayer = false
 			showSolo = false
 		end
