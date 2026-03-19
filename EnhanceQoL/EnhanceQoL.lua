@@ -5776,6 +5776,7 @@ local function setAllHooks()
 			if ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
 		end
 		if addon.functions and addon.functions.refreshItemLevelDisplays then addon.functions.refreshItemLevelDisplays() end
+		if addon.functions and addon.functions.refreshCharacterFrameElementFonts then addon.functions.refreshCharacterFrameElementFonts() end
 		if addon.CombatText then
 			if addon.CombatText.ApplyStyle then addon.CombatText:ApplyStyle() end
 			if addon.CombatText.UpdateFrameSize then addon.CombatText:UpdateFrameSize() end

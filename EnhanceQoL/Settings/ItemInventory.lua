@@ -208,6 +208,23 @@ local function applyEnchantTextStyle(fontString)
 	if ok == false then fontString:SetFont(defaultFace, 12, outline) end
 end
 
+local function applyCharacterFrameElementTextStyle(fontString, size)
+	if not fontString or not fontString.SetFont then return end
+	local globalFace = (addon.functions and addon.functions.GetGlobalDefaultFontFace and addon.functions.GetGlobalDefaultFontFace())
+		or (addon.variables and addon.variables.defaultFont)
+		or STANDARD_TEXT_FONT
+	local fallbackFace = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	local ok = fontString:SetFont(globalFace, size, "OUTLINE")
+	if ok == false then fontString:SetFont(fallbackFace, size, "OUTLINE") end
+end
+
+local function refreshCharacterFrameElementFonts()
+	if addon.general and addon.general.iconFrame and addon.general.iconFrame.count then applyCharacterFrameElementTextStyle(addon.general.iconFrame.count, 14) end
+	if addon.general and addon.general.durabilityIconFrame and addon.general.durabilityIconFrame.count then applyCharacterFrameElementTextStyle(addon.general.durabilityIconFrame.count, 12) end
+end
+
+addon.functions.refreshCharacterFrameElementFonts = refreshCharacterFrameElementFonts
+
 local ENCHANT_DISPLAY_MODE_FULL = "FULL"
 local ENCHANT_DISPLAY_MODE_BADGE = "BADGE"
 local ENCHANT_DISPLAY_MODE_WARNING = "WARNING"
@@ -934,6 +951,7 @@ end
 hooksecurefunc("PaperDollFrame_SetItemLevel", function(statFrame, unit) UpdateItemLevel() end)
 
 local function setCharFrame()
+	if addon.functions and addon.functions.refreshCharacterFrameElementFonts then addon.functions.refreshCharacterFrameElementFonts() end
 	if InCombatLockdown and InCombatLockdown() then
 		addon.variables = addon.variables or {}
 		addon.variables.pendingCharFrameUpdate = true
@@ -970,7 +988,7 @@ function addon.functions.createCatalystFrame()
 
 			addon.general.iconFrame.count = addon.general.iconFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 			addon.general.iconFrame.count:SetPoint("BOTTOMRIGHT", addon.general.iconFrame, "BOTTOMRIGHT", 1, 2)
-			addon.general.iconFrame.count:SetFont(addon.variables.defaultFont, 14, "OUTLINE")
+			applyCharacterFrameElementTextStyle(addon.general.iconFrame.count, 14)
 			addon.general.iconFrame.count:SetText(cataclystInfo.quantity)
 			addon.general.iconFrame.count:SetTextColor(1, 0.82, 0)
 			if addon.db["showCatalystChargesOnCharframe"] == false then addon.general.iconFrame:Hide() end
@@ -1776,7 +1794,7 @@ function addon.functions.initItemInventory()
 
 	addon.general.durabilityIconFrame.count = addon.general.durabilityIconFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 	addon.general.durabilityIconFrame.count:SetPoint("BOTTOMRIGHT", addon.general.durabilityIconFrame, "BOTTOMRIGHT", 1, 2)
-	addon.general.durabilityIconFrame.count:SetFont(addon.variables.defaultFont, 12, "OUTLINE")
+	applyCharacterFrameElementTextStyle(addon.general.durabilityIconFrame.count, 12)
 
 	if addon.db["showDurabilityOnCharframe"] == false or (addon.functions and addon.functions.IsTimerunner and addon.functions.IsTimerunner()) then addon.general.durabilityIconFrame:Hide() end
 
