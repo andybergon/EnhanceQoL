@@ -1,13 +1,14 @@
 local addonName, addon = ...
 
 addon.variables.NewVersionTableEQOL = {
-	EQOL_UI = true,
+
 	EQOL_GAMEPLAY = true,
-	EQOL_QuestAutoAccept = true,
-	EQOL_QuestAutoTurnIn = true,
-	EQOL_QuestAutoGossip = true,
+	EQOL_Questing = true,
+	EQOL_autoTurnInQuest = true,
+	EQOL_autoGossip = true,
+
+	EQOL_UI = true,
 	EQOL_ufStandalonePrivateAurasSection = true,
 	EQOL_ufStandalonePrivateAurasExpandable = true,
 	EQOL_ufStandalonePrivateAurasEnabled = true,
-	EQOL_ufStandalonePrivateAurasEditMode = true,
 }

@@ -328,7 +328,6 @@ local questingData = {
 	},
 	{
 		var = "autoTurnInQuest",
-		newTagID = "QuestAutoTurnIn",
 		text = L["autoTurnInQuest"] or "Automatically turn in quests",
 		desc = L["autoTurnInQuestDesc"] or L["interruptWithShift"],
 		func = function(key) addon.db["autoTurnInQuest"] = key end,
