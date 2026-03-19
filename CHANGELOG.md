@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.8.0] - 2026-03-19
+
+### ✨ Added
+
+- Private Auras (Standalone): Added a new standalone private aura anchor that can be enabled independently from unit and group frames.
+
+---
+
 ## [9.7.0] - 2026-03-19
 
 ### 🔄 Changed

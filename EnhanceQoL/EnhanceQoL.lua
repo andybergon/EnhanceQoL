@@ -5855,6 +5855,7 @@ local function setAllHooks()
 		if addon.Aura.functions.InitDB then addon.Aura.functions.InitDB() end
 		if addon.Aura.functions.InitResourceBars then addon.Aura.functions.InitResourceBars() end
 		if addon.Aura.functions.InitUnitFrames then addon.Aura.functions.InitUnitFrames() end
+		if addon.Aura.functions.InitStandalonePrivateAuras then addon.Aura.functions.InitStandalonePrivateAuras() end
 	end
 	if addon.Drinks and addon.Drinks.functions then
 		if addon.Drinks.functions.InitDrinkMacro then addon.Drinks.functions.InitDrinkMacro() end

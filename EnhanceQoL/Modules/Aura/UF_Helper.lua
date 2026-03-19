@@ -609,6 +609,33 @@ local function resolvePrivateAuraOffset(point, offset)
 	return off, 0
 end
 
+function H.PrivateAuraNormalizeDirection(direction, fallback)
+	local value = tostring(direction or fallback or "RIGHT"):upper()
+	if value == "LEFT" or value == "RIGHT" or value == "UP" or value == "DOWN" then return value end
+	value = tostring(fallback or "RIGHT"):upper()
+	if value == "LEFT" or value == "RIGHT" or value == "UP" or value == "DOWN" then return value end
+	return "RIGHT"
+end
+
+function H.PrivateAuraGetGridDimensions(count, wrapCount, primaryHorizontal)
+	count = floor(tonumber(count) or 1)
+	if count < 1 then count = 1 end
+	wrapCount = floor(tonumber(wrapCount) or 0)
+	if wrapCount < 0 then wrapCount = 0 end
+	if wrapCount > 0 then
+		if primaryHorizontal then
+			local cols = math.min(count, wrapCount)
+			local rows = math.floor((count + wrapCount - 1) / wrapCount)
+			return cols, rows
+		end
+		local rows = math.min(count, wrapCount)
+		local cols = math.floor((count + wrapCount - 1) / wrapCount)
+		return cols, rows
+	end
+	if primaryHorizontal then return count, 1 end
+	return 1, count
+end
+
 local function resolvePrivateAuraUnitToken(unit)
 	if type(unit) ~= "string" then return unit end
 	if unit ~= "player" and UnitIsUnit then
@@ -805,16 +832,33 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 	local iconCfg = cfg.icon or {}
 	local parentCfg = cfg.parent or {}
 	local durationCfg = cfg.duration or {}
+	local layoutCfg = cfg.layout or {}
 
 	local amount = floor(tonumber(iconCfg.amount) or 1)
 	if amount < 1 then amount = 1 end
+	local minSize = floor(tonumber(iconCfg.minSize) or 4)
+	if minSize < 4 then minSize = 4 end
+	local maxSize = floor(tonumber(iconCfg.maxSize) or 60)
+	if maxSize < minSize then maxSize = minSize end
+	if maxSize > 256 then maxSize = 256 end
 	local size = floor(tonumber(iconCfg.size) or 24)
-	if size > 60 then size = 60 end
-	if size < 4 then size = 4 end
+	if size > maxSize then size = maxSize end
+	if size < minSize then size = minSize end
 	local iconPoint = tostring(iconCfg.point or "RIGHT"):upper()
 	local iconOffset = tonumber(iconCfg.offset or iconCfg.spacing or 2) or 0
 	local borderScale = tonumber(iconCfg.borderScale)
 	if borderScale == nil then borderScale = (size / 32) * 2 end
+	local layoutEnabled = layoutCfg.enabled == true or layoutCfg.wrapCount ~= nil or layoutCfg.direction ~= nil or layoutCfg.wrapDirection ~= nil
+	local layoutDirection = H.PrivateAuraNormalizeDirection(layoutCfg.direction or iconCfg.direction or iconPoint, iconPoint)
+	local primaryHorizontal = layoutDirection == "LEFT" or layoutDirection == "RIGHT"
+	local wrapCount = floor(tonumber(layoutCfg.wrapCount) or 0)
+	if wrapCount < 0 then wrapCount = 0 end
+	local wrapDirection = H.PrivateAuraNormalizeDirection(layoutCfg.wrapDirection, primaryHorizontal and "DOWN" or "RIGHT")
+	if primaryHorizontal then
+		if wrapDirection ~= "UP" and wrapDirection ~= "DOWN" then wrapDirection = "DOWN" end
+	else
+		if wrapDirection ~= "LEFT" and wrapDirection ~= "RIGHT" then wrapDirection = "RIGHT" end
+	end
 
 	local showFrame = cfg.countdownFrame ~= false
 	local showNumbers = cfg.countdownNumbers ~= false
@@ -874,6 +918,20 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 	local anchors = container._eqolPrivateAuraFrames
 	local attachPoint = inversePoint(iconPoint)
 	local ox, oy = resolvePrivateAuraOffset(iconPoint, iconOffset)
+	local cols, rows = 1, 1
+	local layoutWidth, layoutHeight = size, size
+	if layoutEnabled then
+		cols, rows = H.PrivateAuraGetGridDimensions(amount, wrapCount, primaryHorizontal)
+		layoutWidth = (cols * size) + ((cols - 1) * iconOffset)
+		layoutHeight = (rows * size) + ((rows - 1) * iconOffset)
+		if layoutWidth < size then layoutWidth = size end
+		if layoutHeight < size then layoutHeight = size end
+		container:SetSize(layoutWidth, layoutHeight)
+	else
+		container:SetSize(size, size)
+	end
+	container._eqolPrivateAuraLayoutWidth = layoutWidth
+	container._eqolPrivateAuraLayoutHeight = layoutHeight
 
 	for i = 1, amount do
 		local anchor = anchors[i]
@@ -891,7 +949,31 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 			layout:SetParent(container)
 		end
 		layout:ClearAllPoints()
-		if i == 1 then
+		if layoutEnabled then
+			local col = 0
+			local row = 0
+			local primaryIndex = i - 1
+			local secondaryIndex = 0
+			if wrapCount > 0 then
+				primaryIndex = (i - 1) % wrapCount
+				secondaryIndex = math.floor((i - 1) / wrapCount)
+			end
+			if primaryHorizontal then
+				col = primaryIndex
+				row = secondaryIndex
+				if layoutDirection == "LEFT" then col = (cols - 1) - col end
+				if wrapDirection == "UP" then row = (rows - 1) - row end
+			else
+				row = primaryIndex
+				col = secondaryIndex
+				if layoutDirection == "UP" then row = (rows - 1) - row end
+				if wrapDirection == "LEFT" then col = (cols - 1) - col end
+			end
+			local step = size + iconOffset
+			local x = (-layoutWidth / 2) + (size / 2) + (col * step)
+			local y = (layoutHeight / 2) - (size / 2) - (row * step)
+			layout:SetPoint("CENTER", container, "CENTER", x, y)
+		elseif i == 1 then
 			layout:SetPoint("CENTER", container, "CENTER", 0, 0)
 		else
 			local prevLayout = (anchors[i - 1] and anchors[i - 1]._eqolPrivateAuraLayout) or anchors[i - 1]
