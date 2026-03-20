@@ -7,6 +7,7 @@
 - Shared Media: 6 new border assets in midnight style
 - Unit Frames (Player / Target / Focus): Added incoming heal bars to the regular unit frames. The feature can now be adjusted there just like on the group frames.
 - Group Frames (Party / Raid): Added an optional `Aggro highlight` border in Edit Mode with `All` / `Only non-tanks` mode, sample preview, configurable texture/layer/size/offset, and adjustable color (default orange).
+- Cooldown Panels (Spells): Added an optional `Hide when no resource` setting, so spells can stay hidden until you have enough resource again. This can be set for a whole panel or adjusted per entry.
 
 ### 🐛 Fixed
 
