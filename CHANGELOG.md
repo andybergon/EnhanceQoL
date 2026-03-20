@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.8.1] - 2026-03-20
+
+### 🐛 Fixed
+
+- Group Frames (Raid / Dynamic Scaling): Fixed `Level` text and `Group <number>` indicators growing with `Preserve content size`. Those two labels now keep their normal size while the slider still compensates the rest of the raid-frame content.
+
+---
+
 ## [9.8.0] - 2026-03-19
 
 ### ✨ Added

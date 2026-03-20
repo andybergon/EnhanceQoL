@@ -3712,7 +3712,7 @@ function GF:LayoutButton(self)
 		end
 		if st.groupNumberText then
 			local style = resolveGroupNumberStyle(cfg, def, hc)
-			GF.ApplyScaledFont(self, st.groupNumberText, style.font, style.fontSize or 12, style.fontOutline, cfg)
+			UFHelper.applyFont(st.groupNumberText, style.font, style.fontSize or 12, style.fontOutline)
 		end
 	end
 	layoutTexts(st.health, st.healthTextLeft, st.healthTextCenter, st.healthTextRight, GF.GetScaledBarTextConfig(cfg.health, contentScale), scale, layoutAnchor or st.health)
@@ -3726,7 +3726,7 @@ function GF:LayoutButton(self)
 	end
 	if st.groupNumberText then
 		local style = resolveGroupNumberStyle(cfg, def, hc)
-		applyStatusTextAnchor(st, style.anchor, GF.ScaleOffset(style.offset, contentScale), scale, layoutAnchor, st.groupNumberText)
+		applyStatusTextAnchor(st, style.anchor, style.offset, scale, layoutAnchor, st.groupNumberText)
 	end
 
 	if st.health.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -3937,17 +3937,17 @@ function GF:LayoutButton(self)
 		if st.levelText.SetNonSpaceWrap then st.levelText:SetNonSpaceWrap(false) end
 		if st.levelText.SetMaxLines then st.levelText:SetMaxLines(1) end
 		local levelFont = sc.levelFont or tc.font or hc.font
-		local levelFontSize = GF.ScaleContentValue(self, sc.levelFontSize or tc.fontSize or hc.fontSize or 12, cfg, 1)
+		local levelFontSize = sc.levelFontSize or tc.fontSize or hc.fontSize or 12
 		local levelOutline = sc.levelFontOutline or tc.fontOutline or hc.fontOutline
-		GF.ApplyScaledFont(self, st.levelText, levelFont, levelFontSize, levelOutline, cfg)
+		if UFHelper and UFHelper.applyFont then UFHelper.applyFont(st.levelText, levelFont, levelFontSize, levelOutline) end
 		local anchor = sc.levelAnchor or "RIGHT"
 		local levelOffset = sc.levelOffset or {}
-		if st.levelText.SetWidth then st.levelText:SetWidth(roundToPixel((sc.levelWidth or 26) * contentScale, scale)) end
+		if st.levelText.SetWidth then st.levelText:SetWidth(roundToPixel((sc.levelWidth or 26), scale)) end
 		local levelX, levelY
 		if GFH and GFH.SnapPointOffsets then
-			levelX, levelY = GFH.SnapPointOffsets(st.health, anchor, (levelOffset.x or 0) * contentScale, (levelOffset.y or 0) * contentScale, scale)
+			levelX, levelY = GFH.SnapPointOffsets(st.health, anchor, levelOffset.x or 0, levelOffset.y or 0, scale)
 		else
-			levelX, levelY = roundToPixel((levelOffset.x or 0) * contentScale, scale), roundToPixel((levelOffset.y or 0) * contentScale, scale)
+			levelX, levelY = roundToPixel(levelOffset.x or 0, scale), roundToPixel(levelOffset.y or 0, scale)
 		end
 		st.levelText:ClearAllPoints()
 		st.levelText:SetPoint(anchor, st.health, anchor, levelX, levelY)
@@ -5934,8 +5934,8 @@ function GF:UpdateStatusText(self)
 	if groupFs then
 		if groupTag then
 			local style = resolveGroupNumberStyle(cfg, def, hc)
-			GF.ApplyScaledFont(self, groupFs, style.font, style.fontSize or 12, style.fontOutline, cfg)
-			applyStatusTextAnchor(st, style.anchor, GF.ScaleOffset(style.offset, contentScale), scale, GF.GetLayoutAnchorFrame(st, self) or self, groupFs)
+			if UFHelper and UFHelper.applyFont then UFHelper.applyFont(groupFs, style.font, style.fontSize or 12, style.fontOutline) end
+			applyStatusTextAnchor(st, style.anchor, style.offset, scale, GF.GetLayoutAnchorFrame(st, self) or self, groupFs)
 			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
 			groupFs:SetText(groupTag)
 			groupFs:SetTextColor(r, g, b, a)
@@ -6110,12 +6110,10 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 			local target = entry.frame
 			local anchorTarget = entry.anchorTarget or target
 			if anchorTarget then
-				local targetCfg = target._eqolCfg or getCfg(target._eqolGroupKind or "party")
-				local contentScale = GF.GetDynamicContentScale(target, targetCfg)
 				if fs.GetParent and fs:GetParent() ~= overlayParent then fs:SetParent(overlayParent) end
 				if fs.SetDrawLayer then fs:SetDrawLayer("OVERLAY", 7) end
-				GF.ApplyScaledFont(target, fs, style.font, style.fontSize or 12, style.fontOutline, targetCfg)
-				applyGroupIndicatorAnchor(fs, style.anchor, GF.ScaleOffset(style.offset, contentScale), scale, anchorTarget)
+				if UFHelper and UFHelper.applyFont then UFHelper.applyFont(fs, style.font, style.fontSize or 12, style.fontOutline) end
+				applyGroupIndicatorAnchor(fs, style.anchor, style.offset, scale, anchorTarget)
 				local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
 				fs:SetText(formatGroupNumber(subgroup, format))
 				fs:SetTextColor(r, g, b, a)
