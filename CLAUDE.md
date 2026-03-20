@@ -46,6 +46,14 @@ git push origin main
 
 All fork changes are tracked in [`FORK_CHANGES.md`](FORK_CHANGES.md). Update it after committing new features or when syncing with upstream (features brought upstream, status changes, etc.).
 
+## Cooldown Panels Gotchas
+
+- **Don't add new fields to `PANEL_LAYOUT_DEFAULTS` or `ENTRY_DEFAULTS`** in `CooldownPanels_Helper.lua`. `NormalizePanel` iterates over these defaults and sets them on every panel layout during initialization, which can interfere with panel rendering and the `enabledPanels` rebuild timing. Instead, let new boolean fields default to `nil` (which evaluates as `false` via `field == true` checks).
+- **Don't add settings to `RegisterEditModePanel`** settings list without careful testing. The Edit Mode save/restore cycle can cause panels to get disabled. Prefer adding settings only to the standalone EQoL editor (`OpenLayoutPanelStandaloneMenu` / `OpenLayoutEntryStandaloneMenu`).
+- **`itemHasUseSpell` caches negative results permanently.** If `GetItemSpell()` returns nil during early init (item data not ready), the result is cached as `false` and items never show. We fixed this to only cache positive results.
+- **Edit Mode inspector uses `getEditor()` not `editor` directly.** The `editor` variable is local to `ensureEditor()`. Use `getEditor()` to access `selectedPanelId`/`selectedEntryId` from button handlers.
+- **Standalone entry editor (`OpenLayoutEntryStandaloneMenu`)** opens when clicking icons directly on-screen during layout edit, not from the Cooldown Panel Editor window. The editor window uses `RegisterEditModePanel` settings.
+
 ## PR Conventions
 
 This is an external repo — always preview PR title/body for user review before submitting. Keep tone casual and human.

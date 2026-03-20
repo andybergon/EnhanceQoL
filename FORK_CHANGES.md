@@ -11,5 +11,9 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | Absorb fill dropdown | Pending upstream | PR [#984](https://github.com/R41z0r/EnhanceQoL/pull/984) (open) | [`170238ba`](https://github.com/andybergon/EnhanceQoL/commit/170238ba) | Replaces mutually-exclusive checkboxes with a dropdown |
 | `/vault`, `/greatvault`, `/weeklyvault` slash commands | Fork-only | — | [`581af1cc`](https://github.com/andybergon/EnhanceQoL/commit/581af1cc) | Blocked on collaborator access to open PR upstream |
 | Out-of-combat-only class buff reminder | Fork-only | — | [`ef73fb86`](https://github.com/andybergon/EnhanceQoL/commit/ef73fb86) | Hides reminder during combat |
+| Cooldown panel "Only glow in combat" | Fork-only | — | — | Sub-option under Glow; suppresses ready glow out of combat |
+| Lightfused Mana Potion rank group | Fork-only | — | — | 241300/241301 grouped for "use highest rank" |
+| Cooldown panel item init fix | Fork-only | — | — | Fix `itemUseSpellCache` caching nil as false + `RebuildSpellIndex` in Init |
+| Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
 This file and `CLAUDE.md` are also fork-only (project docs for Claude Code).
