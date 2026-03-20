@@ -41,6 +41,10 @@ git push origin main
 - `EnhanceQoL/Modules/Aura/ResourceBars.lua` — Resource bar rendering (health, power, stagger, stacks)
 - `EnhanceQoL/Modules/Aura/Settings_Ressourcebars.lua` — Resource bar settings/dropdowns
 
+## Fork Changes Tracking
+
+All fork changes are tracked in [`FORK_CHANGES.md`](FORK_CHANGES.md). Update it after committing new features or when syncing with upstream (features brought upstream, status changes, etc.).
+
 ## PR Conventions
 
 This is an external repo — always preview PR title/body for user review before submitting. Keep tone casual and human.
