@@ -34,6 +34,7 @@ git push origin main
 - NTFS junction: `AddOns/EnhanceQoL` → `C:\Users\andyb\repos\EnhanceQoL\EnhanceQoL`
 - Code changes → `/reload` in-game to test
 - Use `/wow-addon-dev` skill for linking guidance
+- **Error logs (BugGrabber):** `/mnt/c/Program Files (x86)/World of Warcraft/_retail_/WTF/Account/ANDYBERGON/SavedVariables/!BugGrabber.lua` — Lua table (`BugGrabberDB.errors`), each entry has `message`, `stack`, `locals`, `time`, `session`, `counter`
 
 ## Key Files
 
