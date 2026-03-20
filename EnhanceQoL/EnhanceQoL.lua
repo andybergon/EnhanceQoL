@@ -6035,6 +6035,22 @@ end
 
 -- Erstelle ein Frame f��r Events
 local frameLoad = CreateFrame("Frame")
+
+local function findGossipSkipOption(options)
+	if not options then return nil end
+	for _, v in pairs(options) do
+		if v.name then
+			local stripped = v.name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+			local hasRedBrackets = v.name:lower():match("|cffff0000<.+>|r") ~= nil
+			local hasSkipText = stripped:match("<Skip") ~= nil
+			if hasRedBrackets and hasSkipText then
+				return v.gossipOptionID
+			end
+		end
+	end
+	return nil
+end
+
 local COPPER_PER_GOLD = 10000
 
 function addon.functions.AutoSyncWarbandGold()
@@ -6254,6 +6270,17 @@ local eventHandlers = {
 	end,
 	["GOSSIP_SHOW"] = function()
 		if addon.functions.isQuestAutomationIgnoredNpc() then return end
+
+		local options = C_GossipInfo.GetOptions()
+		local skipOptionID = findGossipSkipOption(options)
+		if skipOptionID then
+			local behavior = addon.db and addon.db["gossipSkipBehavior"] or "PAUSE"
+			if behavior == "PAUSE" then return end
+			if behavior == "SKIP" then
+				C_GossipInfo.SelectOption(skipOptionID)
+				return
+			end
+		end
 
 		if addon.functions.shouldAutoTurnInQuest() then
 			local activeQuests = C_GossipInfo.GetActiveQuests()
