@@ -311,6 +311,30 @@ local questingData = {
 				sType = "dropdown",
 			},
 			{
+				var = "gossipSkipBehavior",
+				text = L["gossipSkipBehavior"] or "Gossip skip option",
+				desc = L["gossipSkipBehaviorDesc"],
+				listFunc = function()
+					return {
+						PAUSE = L["gossipSkipPause"] or "Don't auto-accept",
+						SKIP = L["gossipSkipAutoSkip"] or "Auto-skip",
+						ACCEPT = L["gossipSkipAccept"] or "Accept normally",
+					}
+				end,
+				get = function() return addon.db and addon.db.gossipSkipBehavior or "PAUSE" end,
+				set = function(key)
+					if not key or key == "" then key = "ACCEPT" end
+					addon.db["gossipSkipBehavior"] = key
+				end,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["autoChooseQuest"]
+						and addon.SettingsLayout.elements["autoChooseQuest"].setting
+						and addon.SettingsLayout.elements["autoChooseQuest"].setting:GetValue() == true
+				end,
+				parent = true,
+				sType = "dropdown",
+			},
+			{
 				var = "ignoreDailyQuests",
 				text = L["ignoreDailyQuests"]:format(QUESTS_LABEL),
 				func = function(key) addon.db["ignoreDailyQuests"] = key end,
@@ -598,6 +622,7 @@ function addon.functions.initQuest()
 	addon.functions.InitDBValue("ignoreTrivialQuests", false)
 	addon.functions.InitDBValue("ignoreDailyQuests", false)
 	addon.functions.InitDBValue("ignoreWarbandCompleted", false)
+	addon.functions.InitDBValue("gossipSkipBehavior", "PAUSE")
 	addon.functions.InitDBValue("questTrackerShowQuestCount", false)
 	addon.functions.InitDBValue("questTrackerQuestCountOffsetX", 0)
 	addon.functions.InitDBValue("questTrackerQuestCountOffsetY", 0)
