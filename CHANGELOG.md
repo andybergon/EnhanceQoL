@@ -1,6 +1,10 @@
 # Changelog
 
-## [9.8.1] - 2026-03-20
+## [9.9.0] - 2026-03-20
+
+### ✨ Added
+
+- Shared Media: 6 new border assets in midnight style
 
 ### 🐛 Fixed
 
