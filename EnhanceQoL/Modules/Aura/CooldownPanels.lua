@@ -94,6 +94,7 @@ CooldownPanels.staticSpellVariantGroups = CooldownPanels.staticSpellVariantGroup
 		{ 20572, 33697, 33702 },
 		-- Draenei racial with class-specific spellIDs.
 		{ 59545, 59543, 59548, 121093, 59542, 59544, 59547, 28880, 370626, 416250 },
+	}
 
 function CooldownPanels:RegisterItemRankGroup(rankList)
 	if type(rankList) ~= "table" then return false end
