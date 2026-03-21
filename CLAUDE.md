@@ -32,6 +32,18 @@ Use `/sync-fork` skill. Rebase rewrites fork commit hashes, so push requires `--
 - Use `/wow-addon-dev` skill for linking guidance
 - **Error logs (BugGrabber):** `/mnt/c/Program Files (x86)/World of Warcraft/_retail_/WTF/Account/ANDYBERGON/SavedVariables/!BugGrabber.lua` — Lua table (`BugGrabberDB.errors`), each entry has `message`, `stack`, `locals`, `time`, `session`, `counter`
 
+## Testing Against Upstream
+
+The WoW addon symlink points to `repos/EnhanceQoL/EnhanceQoL/`, so switching branches in git changes what WoW loads on `/reload`.
+
+To test upstream code (e.g. verify a bug exists there before opening a PR):
+1. `git stash` (save current changes)
+2. `git checkout -b test/upstream upstream/main` (temp branch from upstream)
+3. `/reload` in WoW — now running upstream code
+4. Test the bug
+5. `git checkout main && git stash pop` (restore our code)
+6. `git branch -D test/upstream` (cleanup)
+
 ## Key Files
 
 - `EnhanceQoL/Locales/enUS.lua` — English locale strings
