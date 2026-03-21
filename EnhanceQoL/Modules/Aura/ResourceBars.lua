@@ -2978,7 +2978,11 @@ function updateHealthBar(evt)
 			end
 		else
 			local lc = healthBar._lastColor or {}
-			if lc[1] ~= baseR or lc[2] ~= baseG or lc[3] ~= baseB or lc[4] ~= baseA then
+			local colorChanged = lc[1] ~= baseR or lc[2] ~= baseG or lc[3] ~= baseB or lc[4] ~= baseA
+			-- Force update when _lastColor is uninitialized (e.g. after reload) so the
+			-- Midnight color curve is applied even when baseR/G/B/A are all nil.
+			if not healthBar._lastColor then colorChanged = true end
+			if colorChanged then
 				if (settings.useBarColor or settings.useClassColor) and not settings.useMaxColor then
 					healthBar._lastColor = lc
 					healthBar:GetStatusBarTexture():SetVertexColor(1, 1, 1, 1)
