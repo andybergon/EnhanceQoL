@@ -7787,6 +7787,38 @@ function GF:UpdatePreviewLayout(kind)
 			useGroupedPreview = GF:IsRaidGroupedLayout(cfg) and (sortMethod ~= "NAMELIST" or useGroupedCustomSort)
 			if useGroupedPreview then
 				previewGroupSpecs = GF:BuildRaidGroupHeaderSpecs(cfg, sortMethod, useGroupedCustomSort)
+				if previewGroupSpecs and #previewGroupSpecs > 0 then
+					local fallbackToSampleGroups = false
+					if useGroupedCustomSort then
+						local neededBlocks = math.max(1, math.ceil(#samples / math.max(1, unitsPerColumn)))
+						-- Preview mode should reflect the requested sample size, not the currently populated live raid groups.
+						fallbackToSampleGroups = #previewGroupSpecs ~= neededBlocks
+					else
+						local sampleGroups = {}
+						local sampleGroupSeen = {}
+						for _, sample in ipairs(samples) do
+							local group = tonumber(sample and sample.group)
+							if group and group >= 1 and group <= 8 and not sampleGroupSeen[group] then
+								sampleGroupSeen[group] = true
+								sampleGroups[#sampleGroups + 1] = group
+							end
+						end
+						if #sampleGroups > 0 then
+							if #previewGroupSpecs ~= #sampleGroups then
+								fallbackToSampleGroups = true
+							else
+								for idx = 1, #sampleGroups do
+									local specGroup = tonumber(previewGroupSpecs[idx] and previewGroupSpecs[idx].group)
+									if specGroup ~= sampleGroups[idx] then
+										fallbackToSampleGroups = true
+										break
+									end
+								end
+							end
+						end
+					end
+					if fallbackToSampleGroups then previewGroupSpecs = nil end
+				end
 				local defaultGroupGrowth = DEFAULTS and DEFAULTS.raid and DEFAULTS.raid.groupGrowth
 				if GFH.ResolveGroupGrowthDirection then
 					groupGrowth = GFH.ResolveGroupGrowthDirection(cfg and cfg.groupGrowth, growth, defaultGroupGrowth)
