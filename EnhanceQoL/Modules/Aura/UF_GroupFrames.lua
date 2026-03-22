@@ -1015,6 +1015,13 @@ local function isGroupByGroup(cfg, def) return resolveGroupByValue(cfg, def) == 
 
 local EMPTY_NAMELIST_TOKEN = "__EQOL_EMPTY__"
 
+function GF.GetSafeFallbackSortMethod(value)
+	local method = tostring(value or "INDEX"):upper()
+	if method == "CUSTOM" or method == "NAMELIST" or method == "" then method = "INDEX" end
+	if method ~= "NAME" and method ~= "INDEX" then method = "INDEX" end
+	return method
+end
+
 local function isGroupCustomLayout(cfg)
 	if not cfg then return false end
 	if resolveSortMethod(cfg) ~= "NAMELIST" then return false end
@@ -3080,6 +3087,7 @@ GF.headers = GF.headers or {}
 GF.anchors = GF.anchors or {}
 GF._pendingRefresh = GF._pendingRefresh or false
 GF._pendingHeaderKinds = GF._pendingHeaderKinds or {}
+GF._pendingSortKinds = GF._pendingSortKinds or {}
 GF._pendingDisable = GF._pendingDisable or false
 GF._clientSceneActive = GF._clientSceneActive or false
 
@@ -3090,6 +3098,11 @@ function GF:MarkPendingHeaderRefresh(kind)
 	GF._pendingRefresh = true
 	GF._pendingHeaderKinds = GF._pendingHeaderKinds or {}
 	if kind then GF._pendingHeaderKinds[kind] = true end
+end
+
+function GF:MarkPendingSortRefresh(kind)
+	GF._pendingSortKinds = GF._pendingSortKinds or {}
+	if kind then GF._pendingSortKinds[kind] = true end
 end
 
 function GF:SetHeaderAttributeIfChanged(header, key, value)
@@ -3136,6 +3149,22 @@ function GF:ApplyPendingHeaderKinds()
 	for kind in pairs(pending) do
 		if kind ~= "party" and kind ~= "raid" and kind ~= "mt" and kind ~= "ma" then
 			GF:ApplyHeaderAttributes(kind)
+			applied = true
+		end
+	end
+
+	return applied
+end
+
+function GF:ApplyPendingSortKinds()
+	local pending = GF._pendingSortKinds
+	if not pending or not next(pending) then return false end
+	GF._pendingSortKinds = {}
+	local applied = false
+
+	for kind in pairs(pending) do
+		if kind == "party" or kind == "raid" then
+			GF:RefreshCustomSortNameList(kind)
 			applied = true
 		end
 	end
@@ -8163,7 +8192,6 @@ local function getCustomSortEditor()
 			else
 				custom.classOrder = order
 			end
-			GF:ApplyHeaderAttributes(kind)
 			GF:RefreshCustomSortNameList(kind)
 			if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 		end,
@@ -8190,7 +8218,6 @@ function GF:ToggleCustomSortEditor(kind)
 			end
 		end
 		GF:ApplyHeaderAttributes(kind)
-		GF:RefreshCustomSortNameList(kind)
 		if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 		if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
 	end
@@ -8786,6 +8813,68 @@ function GF:UpdateHealthColorMode(kind)
 	end
 end
 
+function GF.NormalizeRuntimeSortDir(value)
+	return (GFH and GFH.NormalizeSortDir and GFH.NormalizeSortDir(value)) or ((tostring(value or ""):upper() == "DESC") and "DESC" or "ASC")
+end
+
+function GF.BuildPartyRuntimeSortState(cfg)
+	local centerGrowthActive = GF.IsPartyCenterGrowthMode(cfg)
+	local runtimeSortMethod = centerGrowthActive and "NAMELIST" or resolveSortMethod(cfg)
+	local runtimeSortDir = GF.NormalizeRuntimeSortDir(cfg and cfg.sortDir)
+	local nameList
+
+	if runtimeSortMethod == "NAMELIST" then
+		if centerGrowthActive then
+			nameList = GF.BuildPartyCenterGrowthNameList(cfg)
+		else
+			nameList = GFH.BuildCustomSortNameList(cfg, "party")
+			if nameList == "" then nameList = nil end
+			if not nameList then runtimeSortMethod = GF.GetSafeFallbackSortMethod(DEFAULTS.party and DEFAULTS.party.sortMethod) end
+		end
+	end
+
+	return {
+		centerGrowthActive = centerGrowthActive,
+		sortMethod = runtimeSortMethod,
+		sortDir = runtimeSortDir,
+		nameList = nameList,
+	}
+end
+
+function GF.BuildRaidRuntimeSortState(cfg)
+	local configuredSortMethod = resolveSortMethod(cfg)
+	local runtimeSortMethod = configuredSortMethod
+	local runtimeSortDir = GF.NormalizeRuntimeSortDir(cfg and cfg.sortDir)
+	local customSort = GFH and GFH.EnsureCustomSortConfig and GFH.EnsureCustomSortConfig(cfg)
+	local useGroupedCustom = isGroupCustomLayout(cfg) and customSort and customSort.enabled == true
+	local nameList
+	local visibleCount = (GFH.GetCurrentRaidUnitCount and GFH.GetCurrentRaidUnitCount()) or 0
+	local groupedSpecs
+
+	if useGroupedCustom then
+		groupedSpecs = GF:BuildDenseCustomGroupSpecs(cfg)
+		runtimeSortMethod = GF.GetSafeFallbackSortMethod(DEFAULTS.raid and DEFAULTS.raid.sortMethod)
+	elseif configuredSortMethod == "NAMELIST" then
+		nameList = GFH.BuildCustomSortNameList(cfg, "raid")
+		if nameList == "" then nameList = nil end
+		if nameList then
+			visibleCount = GF.CountCsvTokens(nameList)
+		else
+			runtimeSortMethod = GF.GetSafeFallbackSortMethod(DEFAULTS.raid and DEFAULTS.raid.sortMethod)
+		end
+	end
+
+	return {
+		configuredSortMethod = configuredSortMethod,
+		sortMethod = runtimeSortMethod,
+		sortDir = runtimeSortDir,
+		nameList = nameList,
+		useGroupedCustom = useGroupedCustom,
+		groupedSpecs = groupedSpecs,
+		visibleCount = visibleCount,
+	}
+end
+
 function GF:RefreshCustomSortNameList(kind)
 	if not isFeatureEnabled() then return end
 	kind = kind or "raid"
@@ -8794,30 +8883,15 @@ function GF:RefreshCustomSortNameList(kind)
 	local header = GF.headers and GF.headers[kind]
 	if not header then return end
 	if InCombatLockdown and InCombatLockdown() then
-		GF:MarkPendingHeaderRefresh(kind)
-		return
-	end
-	local sortMethod = resolveSortMethod(cfg)
-	local centerGrowthActive = (kind == "party") and GF.IsPartyCenterGrowthMode(cfg)
-	if sortMethod ~= "NAMELIST" and not centerGrowthActive then
-		GF:SetHeaderAttributeIfChanged(header, "nameList", nil)
-		if kind == "raid" and GF._raidGroupHeaders then
-			for _, gh in ipairs(GF._raidGroupHeaders) do
-				if gh then GF:SetHeaderAttributeIfChanged(gh, "nameList", nil) end
-			end
-		end
+		GF:MarkPendingSortRefresh(kind)
 		return
 	end
 	if kind == "party" then
-		local nameList
-		if centerGrowthActive then
-			nameList = GF.BuildPartyCenterGrowthNameList(cfg)
-		else
-			nameList = GFH.BuildCustomSortNameList(cfg, "party")
-		end
-		if nameList == "" then nameList = nil end
-		GF:SetHeaderAttributeIfChanged(header, "nameList", nameList)
-		if centerGrowthActive and GF.anchors and GF.anchors.party then
+		local state = GF.BuildPartyRuntimeSortState(cfg)
+		GF:SetHeaderAttributeIfChanged(header, "sortMethod", state.sortMethod)
+		GF:SetHeaderAttributeIfChanged(header, "sortDir", state.sortDir)
+		GF:SetHeaderAttributeIfChanged(header, "nameList", state.nameList)
+		if state.centerGrowthActive and GF.anchors and GF.anchors.party then
 			local _, growthDir = GF.ResolveUnitGrowthDirection(cfg and cfg.growth, "DOWN")
 			local p = getGrowthStartPoint(growthDir)
 			local rp = GF.GetPartyCenterGrowthRelativePoint(growthDir)
@@ -8832,26 +8906,44 @@ function GF:RefreshCustomSortNameList(kind)
 		end
 		return
 	end
-	local customSort = GFH and GFH.EnsureCustomSortConfig and GFH.EnsureCustomSortConfig(cfg)
-	local useGroupedCustom = isGroupCustomLayout(cfg) and customSort and customSort.enabled == true
-	if useGroupedCustom then
-		local specs = GF:BuildDenseCustomGroupSpecs(cfg)
+	local state = GF.BuildRaidRuntimeSortState(cfg)
+	GF:SetHeaderAttributeIfChanged(header, "sortMethod", state.sortMethod)
+	GF:SetHeaderAttributeIfChanged(header, "sortDir", state.sortDir)
+	if state.useGroupedCustom then
 		if not GF._raidGroupHeaders then GF:EnsureRaidGroupHeaders() end
 		if GF._raidGroupHeaders then
 			for i, gh in ipairs(GF._raidGroupHeaders) do
 				if gh then
-					local spec = specs[i]
+					local spec = state.groupedSpecs and state.groupedSpecs[i]
+					local specSortMethod = spec and tostring(spec.sortMethod or "INDEX"):upper() or "INDEX"
 					local nameList = spec and spec.nameList
-					if not nameList or nameList == "" then nameList = EMPTY_NAMELIST_TOKEN end
+					if specSortMethod == "NAMELIST" then
+						if not nameList or nameList == "" then nameList = EMPTY_NAMELIST_TOKEN end
+					else
+						nameList = nil
+					end
+					GF:SetHeaderAttributeIfChanged(gh, "sortMethod", specSortMethod)
+					GF:SetHeaderAttributeIfChanged(gh, "sortDir", state.sortDir)
 					GF:SetHeaderAttributeIfChanged(gh, "nameList", nameList)
 				end
 			end
 		end
 		GF:SetHeaderAttributeIfChanged(header, "nameList", nil)
 	else
-		local nameList = GFH.BuildCustomSortNameList(cfg, "raid")
-		if nameList == "" then nameList = nil end
-		GF:SetHeaderAttributeIfChanged(header, "nameList", nameList)
+		GF:SetHeaderAttributeIfChanged(header, "nameList", state.nameList)
+		if GF._raidGroupHeaders then
+			local groupHeaderSortMethod = state.sortMethod
+			if groupHeaderSortMethod == "NAMELIST" then
+				groupHeaderSortMethod = GF.GetSafeFallbackSortMethod(DEFAULTS.raid and DEFAULTS.raid.sortMethod)
+			end
+			for _, gh in ipairs(GF._raidGroupHeaders) do
+				if gh then
+					GF:SetHeaderAttributeIfChanged(gh, "sortMethod", groupHeaderSortMethod)
+					GF:SetHeaderAttributeIfChanged(gh, "sortDir", state.sortDir)
+					GF:SetHeaderAttributeIfChanged(gh, "nameList", nil)
+				end
+			end
+		end
 	end
 end
 
@@ -9009,6 +9101,7 @@ function GF:ApplyHeaderAttributes(kind)
 	local function setAttr(key, value) GF:SetHeaderAttributeIfChanged(header, key, value) end
 
 	if kind == "party" then
+		local partySortState = GF.BuildPartyRuntimeSortState(cfg)
 		cfg.groupBy = nil
 		cfg.groupingOrder = nil
 		setAttr("showParty", true)
@@ -9020,26 +9113,16 @@ function GF:ApplyHeaderAttributes(kind)
 		setAttr("groupFilter", nil)
 		setAttr("roleFilter", nil)
 		setAttr("strictFiltering", false)
-		sortMethod = centerGrowthActive and "NAMELIST" or resolveSortMethod(cfg)
-		local sortDir = (GFH and GFH.NormalizeSortDir and GFH.NormalizeSortDir(cfg.sortDir)) or "ASC"
+		sortMethod = partySortState.sortMethod
+		local sortDir = partySortState.sortDir
 		setAttr("sortMethod", sortMethod)
 		setAttr("sortDir", sortDir)
-		if sortMethod == "NAMELIST" then
-			local nameList
-			if centerGrowthActive then
-				nameList = GF.BuildPartyCenterGrowthNameList(cfg)
-			else
-				nameList = GFH.BuildCustomSortNameList(cfg, "party")
-			end
-			if nameList == "" then nameList = nil end
-			setAttr("nameList", nameList)
-		else
-			setAttr("nameList", nil)
-		end
+		setAttr("nameList", partySortState.nameList)
 		setAttr("maxColumns", 1)
 		setAttr("unitsPerColumn", 5)
 	elseif kind == "raid" then
-		raidVisibleCount = (GFH.GetCurrentRaidUnitCount and GFH.GetCurrentRaidUnitCount()) or 0
+		local raidSortState = GF.BuildRaidRuntimeSortState(cfg)
+		raidVisibleCount = raidSortState.visibleCount
 		setAttr("showParty", false)
 		setAttr("showRaid", true)
 		setAttr("showPlayer", true)
@@ -9058,19 +9141,12 @@ function GF:ApplyHeaderAttributes(kind)
 		if roleFilter == "" then roleFilter = nil end
 		setAttr("roleFilter", roleFilter)
 		setAttr("strictFiltering", cfg.strictFiltering == true)
-		sortMethod = resolveSortMethod(cfg)
+		sortMethod = raidSortState.sortMethod
 		local customSort = GFH and GFH.EnsureCustomSortConfig and GFH.EnsureCustomSortConfig(cfg)
-		useGroupedCustomSort = (sortMethod == "NAMELIST") and (customSort and customSort.enabled == true)
+		useGroupedCustomSort = raidSortState.useGroupedCustom and (customSort and customSort.enabled == true)
 		setAttr("sortMethod", sortMethod)
-		setAttr("sortDir", cfg.sortDir or "ASC")
-		if sortMethod == "NAMELIST" then
-			local nameList = GFH.BuildCustomSortNameList(cfg, "raid")
-			if nameList == "" then nameList = nil end
-			raidVisibleCount = GF.CountCsvTokens(nameList)
-			setAttr("nameList", nameList)
-		else
-			setAttr("nameList", nil)
-		end
+		setAttr("sortDir", raidSortState.sortDir)
+		setAttr("nameList", raidSortState.nameList)
 		setAttr("groupBy", normalizedGroupBy)
 		raidUnitsPerColumn = clampNumber(tonumber(cfg.unitsPerColumn) or 5, 1, 10, 5)
 		raidMaxColumns = clampNumber(tonumber(cfg.maxColumns) or 8, 1, 10, 8)
@@ -9078,6 +9154,7 @@ function GF:ApplyHeaderAttributes(kind)
 		raidRuntimeMaxColumns = raidMaxColumns
 		setAttr("maxColumns", raidRuntimeMaxColumns)
 		useGroupHeaders = GF:IsRaidGroupedLayout(cfg) and (sortMethod ~= "NAMELIST" or useGroupedCustomSort)
+		raidGroupSpecs = raidSortState.groupedSpecs
 		local defaultGroupGrowth = DEFAULTS and DEFAULTS.raid and DEFAULTS.raid.groupGrowth
 		if GFH.ResolveGroupGrowthDirection then
 			cfg.groupGrowth = GFH.ResolveGroupGrowthDirection(cfg.groupGrowth, growth, defaultGroupGrowth)
@@ -20150,7 +20227,6 @@ local function buildEditModeSettings(kind, editModeId)
 					end
 				end
 				GF:ApplyHeaderAttributes(kind)
-				GF:RefreshCustomSortNameList(kind)
 				if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 				if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
 			end,
@@ -20177,7 +20253,6 @@ local function buildEditModeSettings(kind, editModeId)
 							end
 						end
 						GF:ApplyHeaderAttributes(kind)
-						GF:RefreshCustomSortNameList(kind)
 						if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 						data.customDefaultText = option.label
 						if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
@@ -20198,7 +20273,7 @@ local function buildEditModeSettings(kind, editModeId)
 				if not cfg or not value then return end
 				cfg.sortDir = tostring(value):upper()
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "sortDir", cfg.sortDir, nil, true) end
-				GF:ApplyHeaderAttributes(kind)
+				GF:RefreshCustomSortNameList(kind)
 				if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 			end,
 			generator = function(_, root, data)
@@ -20208,7 +20283,7 @@ local function buildEditModeSettings(kind, editModeId)
 						if not cfg then return end
 						cfg.sortDir = option.value
 						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "sortDir", cfg.sortDir, nil, true) end
-						GF:ApplyHeaderAttributes(kind)
+						GF:RefreshCustomSortNameList(kind)
 						if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 						data.customDefaultText = option.label
 						if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
@@ -20233,7 +20308,6 @@ local function buildEditModeSettings(kind, editModeId)
 				local custom = GFH.EnsureCustomSortConfig(cfg)
 				custom.playerFirstInRole = value and true or false
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "customSortPlayerFirstInRole", custom.playerFirstInRole, nil, true) end
-				GF:ApplyHeaderAttributes(kind)
 				GF:RefreshCustomSortNameList(kind)
 				if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 			end,
@@ -20469,7 +20543,7 @@ local function buildEditModeSettings(kind, editModeId)
 				if not cfg or not value then return end
 				cfg.sortDir = tostring(value):upper()
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "sortDir", cfg.sortDir, nil, true) end
-				GF:ApplyHeaderAttributes(kind)
+				GF:RefreshCustomSortNameList(kind)
 			end,
 			isShown = function() return raidKind end,
 			generator = function(_, root, data)
@@ -20479,7 +20553,7 @@ local function buildEditModeSettings(kind, editModeId)
 						if not cfg then return end
 						cfg.sortDir = option.value
 						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "sortDir", cfg.sortDir, nil, true) end
-						GF:ApplyHeaderAttributes(kind)
+						GF:RefreshCustomSortNameList(kind)
 						data.customDefaultText = option.label
 						if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
 					end)
@@ -20503,7 +20577,6 @@ local function buildEditModeSettings(kind, editModeId)
 				local custom = GFH.EnsureCustomSortConfig(cfg)
 				custom.playerFirstInRole = value and true or false
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "customSortPlayerFirstInRole", custom.playerFirstInRole, nil, true) end
-				GF:ApplyHeaderAttributes(kind)
 				GF:RefreshCustomSortNameList(kind)
 				if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 			end,
@@ -20532,7 +20605,6 @@ local function buildEditModeSettings(kind, editModeId)
 					custom.roleOrder = GFH.CollapseRoleOrder(custom.roleOrder)
 				end
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "customSortSeparateMeleeRanged", custom.separateMeleeRanged, nil, true) end
-				GF:ApplyHeaderAttributes(kind)
 				GF:RefreshCustomSortNameList(kind)
 				if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 				if GF._customSortEditor and GF._customSortEditor.Refresh then GF._customSortEditor:Refresh() end
@@ -22654,10 +22726,11 @@ do
 				GF:DisableFeature()
 			elseif GF._pendingBlizzardDisable then
 				GF:DisableBlizzardFrames()
-			elseif GF._pendingRefresh then
+			elseif GF._pendingRefresh or (GF._pendingSortKinds and next(GF._pendingSortKinds)) then
 				GF._pendingRefresh = false
 				local applied = GF:ApplyPendingHeaderKinds()
-				if not applied then GF.Refresh() end
+				local appliedSort = GF:ApplyPendingSortKinds()
+				if not applied and not appliedSort then GF.Refresh() end
 			end
 		elseif event == "CLIENT_SCENE_OPENED" then
 			local sceneType = ...

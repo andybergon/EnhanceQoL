@@ -819,7 +819,13 @@ local function refreshEditModePanelFrame(panelId, editModeId)
 end
 
 local function refreshEditModeSettingValues()
-	if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then addon.EditModeLib.internal:RefreshSettingValues() end
+	local internal = addon.EditModeLib and addon.EditModeLib.internal
+	if not internal then return end
+	if internal.RequestRefreshSettingValues then
+		internal:RequestRefreshSettingValues()
+	elseif internal.RefreshSettingValues then
+		internal:RefreshSettingValues()
+	end
 end
 
 local function refreshEditModeSettings()
@@ -13390,13 +13396,13 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 		panel.y = a.y or panel.y or 0
 	end
 	local function syncEditModeLayoutFromAnchor() CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId) end
-	local function applyAnchorPosition()
+	local function applyAnchorPosition(skipFrameRefresh, skipSettingValuesRefresh)
 		syncPanelPositionFromAnchor()
 		syncEditModeLayoutFromAnchor()
 		CooldownPanels:ApplyPanelPosition(panelId)
 		CooldownPanels:UpdateVisibility(panelId)
-		refreshEditModePanelFrame(panelId, editModeId)
-		refreshEditModeSettingValues()
+		if skipFrameRefresh ~= true then refreshEditModePanelFrame(panelId, editModeId) end
+		if skipSettingValuesRefresh ~= true then refreshEditModeSettingValues() end
 	end
 	local function applyAnchorDefaults(a, target)
 		if not a then return end
@@ -13481,7 +13487,6 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 					if not (cache.valid and cache.valid[target]) then target = "UIParent" end
 					if target == FAKE_CURSOR_FRAME_NAME then
 						CooldownPanels:AttachFakeCursor(panelId)
-						applyAnchorPosition()
 						return
 					end
 					if a.relativeFrame ~= target then CooldownPanels.MarkRelativeFrameEntriesDirty() end
@@ -13501,12 +13506,11 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 							if not a then return end
 							local target = entry.key
 							local cache = CooldownPanels.GetRelativeFrameCache(runtime, panel, panelKey)
-							if not (cache.valid and cache.valid[target]) then target = "UIParent" end
-							if target == FAKE_CURSOR_FRAME_NAME then
-								CooldownPanels:AttachFakeCursor(panelId)
-								applyAnchorPosition()
-								return
-							end
+								if not (cache.valid and cache.valid[target]) then target = "UIParent" end
+								if target == FAKE_CURSOR_FRAME_NAME then
+									CooldownPanels:AttachFakeCursor(panelId)
+									return
+								end
 							if a.relativeFrame ~= target then CooldownPanels.MarkRelativeFrameEntriesDirty() end
 							a.relativeFrame = target
 							applyAnchorDefaults(a, target)
@@ -13534,7 +13538,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 					if not a then return end
 					a.point = Helper.NormalizeAnchor(value, a.point or "CENTER")
 					if not a.relativePoint then a.relativePoint = a.point end
-					applyAnchorPosition()
+					applyAnchorPosition(true, true)
 				end,
 				generator = function(_, root)
 					for _, option in ipairs(Helper.AnchorOptions) do
@@ -13546,7 +13550,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 							if not a then return end
 							a.point = option.value
 							if not a.relativePoint then a.relativePoint = option.value end
-							applyAnchorPosition()
+							applyAnchorPosition(true, true)
 						end)
 					end
 				end,
@@ -13565,7 +13569,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 					local a = ensureAnchorTable()
 					if not a then return end
 					a.relativePoint = Helper.NormalizeAnchor(value, a.relativePoint or "CENTER")
-					applyAnchorPosition()
+					applyAnchorPosition(true, true)
 				end,
 				generator = function(_, root)
 					for _, option in ipairs(Helper.AnchorOptions) do
@@ -13576,7 +13580,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 							local a = ensureAnchorTable()
 							if not a then return end
 							a.relativePoint = option.value
-							applyAnchorPosition()
+							applyAnchorPosition(true, true)
 						end)
 					end
 				end,
@@ -13600,7 +13604,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 					local new = tonumber(value) or 0
 					if a.x == new then return end
 					a.x = new
-					applyAnchorPosition()
+					applyAnchorPosition(true, true)
 				end,
 				default = 0,
 			},
@@ -13623,7 +13627,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 					local new = tonumber(value) or 0
 					if a.y == new then return end
 					a.y = new
-					applyAnchorPosition()
+					applyAnchorPosition(true, true)
 				end,
 				default = 0,
 			},
