@@ -32,6 +32,28 @@ Use `/sync-fork` skill. Rebase rewrites fork commit hashes, so push requires `--
 - Use `/wow-addon-dev` skill for linking guidance
 - **Error logs (BugGrabber):** `/mnt/c/Program Files (x86)/World of Warcraft/_retail_/WTF/Account/ANDYBERGON/SavedVariables/!BugGrabber.lua` — Lua table (`BugGrabberDB.errors`), each entry has `message`, `stack`, `locals`, `time`, `session`, `counter`
 
+## Parallel Feature Development (Worktrees)
+
+Multiple features can be developed in parallel using `claude -w <branch>`. Each session gets its own worktree and works independently without interfering with other sessions.
+
+**Am I on `main` or in a worktree?** Check the current working directory — worktrees live under `.claude/worktrees/` inside the repo. If you're in the primary repo root (`repos/EnhanceQoL/`), you're on `main`.
+
+**WoW can only test one branch at a time** — the NTFS junction points to the primary repo by default. To test a worktree's code in WoW, re-point the junction:
+
+```powershell
+# PowerShell (admin) — swap junction to a worktree
+cmd /c rmdir "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns\EnhanceQoL"
+cmd /c mklink /J "C:\Program Files (x86)\World of Warcraft\_retail_\Interface\AddOns\EnhanceQoL" "C:\Users\andyb\repos\EnhanceQoL\.claude\worktrees\<my-feature>\EnhanceQoL"
+```
+
+Then `/reload` in WoW. When done testing, point it back to the primary repo.
+
+**Workflow summary:**
+1. `claude -w feat/A` — start a session on a feature branch (creates worktree automatically)
+2. Develop independently in each session
+3. Re-point NTFS junction to whichever worktree you want to test in WoW
+4. When done, merge to `main` and clean up the worktree
+
 ## Testing Against Upstream
 
 The WoW addon symlink points to `repos/EnhanceQoL/EnhanceQoL/`, so switching branches in git changes what WoW loads on `/reload`.
