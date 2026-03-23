@@ -1293,31 +1293,18 @@ function H.BuildRaidPreviewSamples(count)
 		}
 	end
 
-	local tanks = { "WARRIOR", "PALADIN" }
-	local healers = { "PRIEST", "DRUID", "SHAMAN", "MONK", "EVOKER", "PALADIN" }
+	local tankClass = "WARRIOR"
+	local healerClass = "PRIEST"
 	local dpsClasses = H.CLASS_TOKENS
 	local target = tonumber(count) or 0
-	local tankIdx = 1
-	local healerIdx = 1
 	local dpsIdx = 1
 
+	if target >= 1 then addSample(tankClass, "TANK") end
+	if target >= 2 then addSample(healerClass, "HEALER") end
 	while #samples < target do
-		local class = tanks[((tankIdx - 1) % #tanks) + 1]
-		addSample(class, "TANK")
-		tankIdx = tankIdx + 1
-		if #samples >= target then break end
-
-		class = healers[((healerIdx - 1) % #healers) + 1]
-		addSample(class, "HEALER")
-		healerIdx = healerIdx + 1
-		if #samples >= target then break end
-
-		for _ = 1, 3 do
-			if #samples >= target then break end
-			class = dpsClasses[((dpsIdx - 1) % #dpsClasses) + 1]
-			addSample(class, "DAMAGER")
-			dpsIdx = dpsIdx + 1
-		end
+		local class = dpsClasses[((dpsIdx - 1) % #dpsClasses) + 1]
+		addSample(class, "DAMAGER")
+		dpsIdx = dpsIdx + 1
 	end
 
 	return samples
