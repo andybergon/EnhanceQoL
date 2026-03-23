@@ -59,6 +59,8 @@ local DB_GROWTH_DIRECTION = "classBuffReminderGrowthDirection"
 local DB_GROWTH_FROM_CENTER = "classBuffReminderGrowthFromCenter"
 local DB_TRACK_FLASKS = "classBuffReminderTrackFlasks"
 local DB_TRACK_FLASKS_INSTANCE_ONLY = "classBuffReminderTrackFlasksInstanceOnly"
+local DB_TRACK_TRINKETS = "classBuffReminderTrackTrinkets"
+local DB_TRACK_TRINKETS_INSTANCE_ONLY = "classBuffReminderTrackTrinketsInstanceOnly"
 local DB_SCALE = "classBuffReminderScale"
 local DB_ICON_SIZE = "classBuffReminderIconSize"
 local DB_FONT_SIZE = "classBuffReminderFontSize"
@@ -93,6 +95,8 @@ Reminder.defaults = Reminder.defaults
 		growthFromCenter = false,
 		trackFlasks = false,
 		trackFlasksInstanceOnly = false,
+		trackTrinkets = false,
+		trackTrinketsInstanceOnly = false,
 		scale = 1,
 		iconSize = 64,
 		fontSize = 13,
@@ -144,12 +148,20 @@ local EVOKER_BLESSING_OF_BRONZE_IDS = {
 	381758,
 }
 
+local DRUID_SYMBIOTIC_RELATIONSHIP_CAST_ID = 474750
+local DRUID_SYMBIOTIC_RELATIONSHIP_BUFF_IDS = { 474754 }
+
 local EVOKER_SOURCE_OF_MAGIC_IDS = {
 	369459, -- Source of Magic
 }
 
 local EVOKER_BLISTERING_SCALES_IDS = {
 	360827, -- Blistering Scales
+}
+
+-- Trinkets with 1-hour targeted buffs. Each entry: { itemId, buffSpellId, displaySpellId, label }
+local TRINKET_BUFF_ITEMS = {
+	{ itemId = 193718, buffSpellId = 389581, displaySpellId = 398396, label = "Emerald Coach's Whistle" },
 }
 
 -- Shared flask auras (TWW + Midnight). Used for reminder presence checks.
@@ -829,6 +841,31 @@ function Reminder:CanEvaluateFlaskReminderNow()
 	return true
 end
 
+function Reminder:IsTrinketTrackingEnabled() return getValue(DB_TRACK_TRINKETS, defaults.trackTrinkets) == true end
+
+function Reminder:HasRealPlayerInGroup()
+	if not (IsInGroup and IsInGroup()) then return false end
+	if IsInRaid and IsInRaid() then
+		local total = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+		for i = 1, total do
+			local unit = "raid" .. i
+			if UnitExists(unit) and not UnitIsUnit(unit, "player") and not isAIFollowerUnit(unit) then return true end
+		end
+	else
+		local total = (GetNumSubgroupMembers and GetNumSubgroupMembers()) or math.max(0, ((GetNumGroupMembers and GetNumGroupMembers()) or 1) - 1)
+		for i = 1, total do
+			if not isAIFollowerUnit("party" .. i) then return true end
+		end
+	end
+	return false
+end
+
+function Reminder:CanCheckTrinketReminder()
+	if not self:IsTrinketTrackingEnabled() then return false end
+	if getValue(DB_TRACK_TRINKETS_INSTANCE_ONLY, defaults.trackTrinketsInstanceOnly) ~= true then return self:HasRealPlayerInGroup() end
+	return self:IsDungeonOrRaidInstance() and self:HasRealPlayerInGroup()
+end
+
 function Reminder:GetGroupContext()
 	if IsInRaid and IsInRaid() then return GROUP_CONTEXT_RAID end
 	if IsInGroup and IsInGroup() then return GROUP_CONTEXT_PARTY end
@@ -1019,12 +1056,48 @@ function Reminder:GetFlaskMissingEntry()
 	return makeSelfMissingEntry(displaySpellId, displayLabel)
 end
 
-function Reminder:GetSupplementalMissingEntries()
-	if not self:CanEvaluateFlaskReminderNow() then return nil end
+function Reminder:GetTrinketMissingEntries()
+	if not self:CanCheckTrinketReminder() then return nil end
 	if not canEvaluateUnit("player") then return nil end
-	local flaskEntry = self:GetFlaskMissingEntry()
-	if not flaskEntry then return nil end
-	return { flaskEntry }
+	local entries
+	for i = 1, #TRINKET_BUFF_ITEMS do
+		local trinket = TRINKET_BUFF_ITEMS[i]
+		local equipped = false
+		if GetInventoryItemID then
+			local slot13 = GetInventoryItemID("player", 13)
+			local slot14 = GetInventoryItemID("player", 14)
+			equipped = (slot13 == trinket.itemId) or (slot14 == trinket.itemId)
+		end
+		if equipped then
+			local hasBuff = self:UnitHasAnyAuraSpellId("player", { trinket.buffSpellId })
+			if not hasBuff then
+				if not entries then entries = {} end
+				entries[#entries + 1] = makeSelfMissingEntry(normalizeSpellId(trinket.displaySpellId) or trinket.buffSpellId, trinket.label)
+			end
+		end
+	end
+	return entries
+end
+
+function Reminder:GetSupplementalMissingEntries()
+	if not canEvaluateUnit("player") then return nil end
+	local entries
+
+	if self:CanEvaluateFlaskReminderNow() then
+		local flaskEntry = self:GetFlaskMissingEntry()
+		if flaskEntry then
+			entries = entries or {}
+			entries[#entries + 1] = flaskEntry
+		end
+	end
+
+	local trinketEntries = self:GetTrinketMissingEntries()
+	if trinketEntries then
+		entries = entries or {}
+		for i = 1, #trinketEntries do entries[#entries + 1] = trinketEntries[i] end
+	end
+
+	return entries
 end
 
 function Reminder:UnitHasAnyAuraSpellId(unit, spellIds)
@@ -1198,6 +1271,39 @@ end
 local function roguePoisonsHasUnitBuff(provider, unit, reminder)
 	if unit ~= "player" then return false end
 	local status = roguePoisonsGetSelfStatus(provider, reminder)
+	return status and status.missing <= 0
+end
+
+local function druidSymbioticGetSelfStatus(provider, reminder)
+	if type(provider) ~= "table" or type(reminder) ~= "table" then return buildSelfStatus(1, {}) end
+
+	local totalRequirements = 0
+	local missingEntries = {}
+
+	local shouldEvaluateGroupResponsibilities = reminder:ShouldEvaluateGroupResponsibilities(provider)
+	local motwDisplayId = normalizeSpellId(provider.motwDisplaySpellId)
+	local motwMissingCount, motwTotal = 0, 0
+	if shouldEvaluateGroupResponsibilities then motwMissingCount, motwTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.motwSpellIds) end
+	if shouldEvaluateGroupResponsibilities and motwTotal > 0 then
+		totalRequirements = totalRequirements + 1
+		if motwMissingCount > 0 then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(motwDisplayId, provider.motwLabel or "Mark of the Wild", motwMissingCount, motwTotal) end
+	end
+
+	local shouldTrackSymbiotic = hasKnownSpellInList(provider.symbioticKnownSpellIds) and reminder:HasRealPlayerInGroup()
+	if shouldTrackSymbiotic then
+		totalRequirements = totalRequirements + 1
+		local symbioticDisplayId = normalizeSpellId(provider.symbioticDisplaySpellId)
+		local hasSymbiotic = reminder:UnitHasAnyAuraSpellId("player", provider.symbioticBuffIds)
+		if not hasSymbiotic then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(symbioticDisplayId, provider.symbioticLabel or "Symbiotic Relationship") end
+	end
+
+	setProviderDisplaySpellId(provider, missingEntries[1] and missingEntries[1].spellId or motwDisplayId or provider.displaySpellId)
+	return buildSelfStatus(totalRequirements, missingEntries)
+end
+
+local function druidSymbioticHasUnitBuff(provider, unit, reminder)
+	if unit ~= "player" then return false end
+	local status = druidSymbioticGetSelfStatus(provider, reminder)
 	return status and status.missing <= 0
 end
 
@@ -1619,6 +1725,32 @@ function Reminder:GetShamanProvider()
 	return PROVIDER_BY_CLASS.SHAMAN
 end
 
+function Reminder:GetDruidSymbioticProvider()
+	self.druidSymbioticProvider = self.druidSymbioticProvider
+		or {
+			scope = PROVIDER_SCOPE_SELF,
+			spellIds = { 1126, DRUID_SYMBIOTIC_RELATIONSHIP_CAST_ID },
+			motwSpellIds = { 1126 },
+			motwDisplaySpellId = 1126,
+			motwLabel = "Mark of the Wild",
+			symbioticKnownSpellIds = { DRUID_SYMBIOTIC_RELATIONSHIP_CAST_ID },
+			symbioticBuffIds = DRUID_SYMBIOTIC_RELATIONSHIP_BUFF_IDS,
+			symbioticDisplaySpellId = DRUID_SYMBIOTIC_RELATIONSHIP_CAST_ID,
+			symbioticLabel = "Symbiotic Relationship",
+			fallbackName = "Mark of the Wild",
+			hasUnitBuffFunc = druidSymbioticHasUnitBuff,
+			getSelfStatusFunc = druidSymbioticGetSelfStatus,
+		}
+	return self.druidSymbioticProvider
+end
+
+function Reminder:GetDruidProvider()
+	if safeIsPlayerSpell(DRUID_SYMBIOTIC_RELATIONSHIP_CAST_ID) then
+		return self:GetDruidSymbioticProvider()
+	end
+	return PROVIDER_BY_CLASS.DRUID
+end
+
 function Reminder:GetFlaskOnlyProvider()
 	self.flaskOnlyProvider = self.flaskOnlyProvider
 		or {
@@ -1661,6 +1793,8 @@ function Reminder:RefreshProviderCache(force)
 		provider = self:GetEvokerSupportProvider()
 	elseif classToken == "SHAMAN" then
 		provider = self:GetShamanProvider()
+	elseif classToken == "DRUID" then
+		provider = self:GetDruidProvider()
 	else
 		provider = classToken and PROVIDER_BY_CLASS[classToken] or nil
 	end
@@ -2760,7 +2894,7 @@ function Reminder:ShouldRegisterRuntimeEvents()
 	if getValue(DB_ENABLED, defaults.enabled) ~= true then return false end
 	if self.runtimeProviderValid ~= true then self:RefreshProviderCache(false) end
 	if self.hasProviderCached == true then return true end
-	return self:IsFlaskTrackingEnabled()
+	return self:IsFlaskTrackingEnabled() or self:CanCheckTrinketReminder()
 end
 
 function Reminder:Render(provider, missing, total, supplementalEntries, effectiveMissing)
@@ -2914,7 +3048,7 @@ function Reminder:UpdateDisplay()
 
 	local provider = classProvider
 	if not provider then
-		if self:CanCheckFlaskReminder() then
+		if self:CanCheckFlaskReminder() or self:CanCheckTrinketReminder() then
 			provider = self:GetFlaskOnlyProvider()
 		else
 			self:SetGlowShown(false)
@@ -2932,7 +3066,7 @@ function Reminder:UpdateDisplay()
 		provider = self:GetFlaskOnlyProvider() or provider
 		provider.displaySpellId = normalizeSpellId(supplementalEntries[1].spellId) or provider.displaySpellId
 		provider.cachedIcon = nil
-		provider.cachedName = provider.fallbackName or "Flask"
+		provider.cachedName = supplementalEntries[1].label or provider.fallbackName or "Flask"
 		provider._presentationReady = false
 	end
 	if total <= 0 and supplementalMissing <= 0 then
@@ -3397,6 +3531,29 @@ function Reminder:RegisterEditMode()
 				get = function() return getValue(DB_TRACK_FLASKS_INSTANCE_ONLY, defaults.trackFlasksInstanceOnly) == true end,
 				set = function(_, value) setTrackFlasksInstanceOnly(value) end,
 				isShown = function() return getValue(DB_TRACK_FLASKS, defaults.trackFlasks) == true end,
+			},
+			{
+				name = "Trinket Buffs",
+				kind = SettingType.Collapsible,
+				id = "trinkets",
+				defaultCollapsed = false,
+			},
+			{
+				name = "Track missing trinket buffs",
+				kind = SettingType.Checkbox,
+				parentId = "trinkets",
+				default = defaults.trackTrinkets == true,
+				get = function() return getValue("classBuffReminderTrackTrinkets", defaults.trackTrinkets) == true end,
+				set = function(_, value) setBool("classBuffReminderTrackTrinkets", value) end,
+			},
+			{
+				name = "Only in dungeons/raids",
+				kind = SettingType.Checkbox,
+				parentId = "trinkets",
+				default = defaults.trackTrinketsInstanceOnly == true,
+				get = function() return getValue("classBuffReminderTrackTrinketsInstanceOnly", defaults.trackTrinketsInstanceOnly) == true end,
+				set = function(_, value) setBool("classBuffReminderTrackTrinketsInstanceOnly", value) end,
+				isShown = function() return getValue("classBuffReminderTrackTrinkets", defaults.trackTrinkets) == true end,
 			},
 			{
 				name = L["ClassBuffReminderSectionSound"] or "Sound",
