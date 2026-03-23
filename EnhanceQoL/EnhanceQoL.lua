@@ -5682,39 +5682,6 @@ local function setAllHooks()
 
 	local function SortApplicants(applicants)
 		if addon.functions.isRestrictedContent() then return end
-		if addon.db.lfgSortByRio then
-			local order = {}
-			local scores = {}
-			local hasSortableScore = false
-			local hasSecretApplicant = false
-
-			for index, applicantID in ipairs(applicants) do
-				if isSecret(applicantID) then
-					hasSecretApplicant = true
-				else
-					order[applicantID] = index
-					local dungeonScore = getApplicantDungeonScore(applicantID)
-					if dungeonScore ~= nil then
-						scores[applicantID] = dungeonScore
-						hasSortableScore = true
-					end
-				end
-			end
-
-			if not hasSecretApplicant and hasSortableScore then
-				table.sort(applicants, function(applicantID1, applicantID2)
-					local dungeonScore1 = scores[applicantID1]
-					local dungeonScore2 = scores[applicantID2]
-
-					if dungeonScore1 ~= nil and dungeonScore2 ~= nil and dungeonScore1 ~= dungeonScore2 then return dungeonScore1 > dungeonScore2 end
-					if dungeonScore1 ~= nil and dungeonScore2 == nil then return true end
-					if dungeonScore1 == nil and dungeonScore2 ~= nil then return false end
-
-					return (order[applicantID1] or 0) < (order[applicantID2] or 0)
-				end)
-			end
-		end
-
 		FlagIgnoredApplicants(applicants)
 	end
 
@@ -5727,10 +5694,23 @@ local function setAllHooks()
 		if addon.db.enableIgnore then ApplyIgnoreHighlight(memberFrame, appID) end
 	end)
 
-	hooksecurefunc("LFGListApplicationViewer_UpdateResults", function()
-		if not addon.db.enableIgnore or addon.db.lfgSortByRio then return end
-		local applicants = C_LFGList.GetApplicants() or {}
-		FlagIgnoredApplicants(applicants)
+	hooksecurefunc("LFGListApplicationViewer_UpdateResults", function(self)
+		if addon.db.enableIgnore and not addon.db.lfgSortByRio then
+			local applicants = C_LFGList.GetApplicants() or {}
+			FlagIgnoredApplicants(applicants)
+		end
+
+		if not addon.db.lfgSortByRio or addon.functions.isRestrictedContent() then return end
+
+		local dataProvider = self.ScrollBox and self.ScrollBox:GetDataProvider()
+		if not dataProvider or not dataProvider.SetSortComparator then return end
+
+		dataProvider:SetSortComparator(function(a, b)
+			local _, _, _, _, _, _, _, _, _, _, _, score1 = C_LFGList.GetApplicantMemberInfo(a.id, 1)
+			local _, _, _, _, _, _, _, _, _, _, _, score2 = C_LFGList.GetApplicantMemberInfo(b.id, 1)
+			if issecretvalue and (issecretvalue(score1) or issecretvalue(score2)) then return false end
+			return (score1 or 0) > (score2 or 0)
+		end)
 	end)
 
 	-- Highlight group listings where the leader is on the ignore list
