@@ -1766,6 +1766,84 @@ function CooldownPanels.GetFixedGroupDisplayLabel(group)
 	return string.format("%s [%s]", tostring(name or "Group"), CooldownPanels.GetFixedGroupModeLabel(group))
 end
 
+function CooldownPanels:ClearFixedGroupEffectiveLayoutCache(panelId, groupId)
+	panelId = normalizeId(panelId)
+	if not panelId then return end
+	local runtime = getRuntime(panelId)
+	local cache = runtime and runtime._eqolFixedGroupEffectiveLayouts or nil
+	if not cache then return end
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if groupId then
+		cache[groupId] = nil
+	else
+		for key in pairs(cache) do
+			cache[key] = nil
+		end
+	end
+end
+
+function CooldownPanels:GetFixedGroupLayoutOverrides(panel, groupOrId, create)
+	local group = type(groupOrId) == "table" and groupOrId or (panel and CooldownPanels.GetFixedGroupById(panel, groupOrId) or nil)
+	if not group then return nil end
+	local overrides = Helper.NormalizeFixedGroupLayoutOverrides(group.layoutOverrides)
+	if overrides then
+		group.layoutOverrides = overrides
+	elseif create == true then
+		overrides = {}
+		group.layoutOverrides = overrides
+	else
+		group.layoutOverrides = nil
+	end
+	return overrides
+end
+
+function CooldownPanels:GetFixedGroupEffectiveLayout(panelId, groupId, buildCache)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local layout = panel and panel.layout or nil
+	local group = panel and groupId and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	if not (panelId and panel and layout and group) then return layout end
+	if buildCache and buildCache[group.id] then return buildCache[group.id] end
+	local overrides = self:GetFixedGroupLayoutOverrides(panel, group, false)
+	if not overrides then
+		self:ClearFixedGroupEffectiveLayoutCache(panelId, group.id)
+		if buildCache then buildCache[group.id] = layout end
+		return layout
+	end
+	local runtime = getRuntime(panelId)
+	runtime._eqolFixedGroupEffectiveLayouts = runtime._eqolFixedGroupEffectiveLayouts or {}
+	local effective = runtime._eqolFixedGroupEffectiveLayouts[group.id]
+	if not effective then
+		effective = {}
+		runtime._eqolFixedGroupEffectiveLayouts[group.id] = effective
+	end
+	for key in pairs(effective) do
+		effective[key] = nil
+	end
+	for key, value in pairs(layout) do
+		effective[key] = value
+	end
+	for key, value in pairs(overrides) do
+		effective[key] = value
+	end
+	if buildCache then buildCache[group.id] = effective end
+	return effective
+end
+
+function CooldownPanels:GetEntryEffectiveLayout(panelId, entry, buildCache, panel)
+	local layout = panel and panel.layout or nil
+	if not layout then
+		panelId = normalizeId(panelId)
+		panel = panelId and self:GetPanel(panelId) or nil
+		layout = panel and panel.layout or nil
+	end
+	if not entry then return layout end
+	local groupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
+	if not groupId then return layout end
+	return self:GetFixedGroupEffectiveLayout(panelId, groupId, buildCache) or layout
+end
+
 function CooldownPanels:IsFixedCellWithinBounds(panel, column, row)
 	column = Helper.NormalizeSlotCoordinate(column)
 	row = Helper.NormalizeSlotCoordinate(row)
@@ -1889,25 +1967,54 @@ function CooldownPanels:FindFirstFreeStaticGroupCell(panel, groupId, skipEntryId
 	return nil
 end
 
-function CooldownPanels:GetFixedEntryAddError(panel, overrides)
-	if not (panel and Helper.IsFixedLayout(panel.layout)) then return nil end
-	local slotColumn = Helper.NormalizeSlotCoordinate(overrides and overrides.slotColumn)
-	local slotRow = Helper.NormalizeSlotCoordinate(overrides and overrides.slotRow)
-	local targetGroup = overrides and CooldownPanels.GetFixedGroupById(panel, overrides.fixedGroupId) or nil
+function CooldownPanels:ResolveFixedEntryAddOverrides(panel, overrides)
+	if not (panel and Helper.IsFixedLayout(panel.layout)) then return overrides, nil end
+	local resolved = {}
+	if type(overrides) == "table" then
+		for key, value in pairs(overrides) do
+			resolved[key] = value
+		end
+	end
+	local slotColumn = Helper.NormalizeSlotCoordinate(resolved.slotColumn)
+	local slotRow = Helper.NormalizeSlotCoordinate(resolved.slotRow)
+	local targetGroup = resolved.fixedGroupId and CooldownPanels.GetFixedGroupById(panel, resolved.fixedGroupId) or nil
 	if targetGroup then
+		resolved.fixedGroupId = targetGroup.id
 		if CooldownPanels.IsFixedGroupStatic(targetGroup) then
 			if slotColumn and slotRow and not CooldownPanels.RectContainsCell(targetGroup.column, targetGroup.row, targetGroup.columns, targetGroup.rows, slotColumn, slotRow) then
-				return L["CooldownPanelFixedTargetInvalid"] or "Target slot is outside the selected group."
+				return nil, L["CooldownPanelFixedTargetInvalid"] or "Target slot is outside the selected group."
 			end
-			local freeColumn, freeRow = self:FindFirstFreeStaticGroupCell(panel, targetGroup.id)
-			if not (freeColumn and freeRow) then return L["CooldownPanelFixedGroupFull"] or "Fixed group is full." end
+			if not (slotColumn and slotRow) or self:GetEntryAtStaticGroupCell(panel, targetGroup.id, slotColumn, slotRow) then
+				slotColumn, slotRow = self:FindFirstFreeStaticGroupCell(panel, targetGroup.id)
+			end
+			if not (slotColumn and slotRow) then return nil, L["CooldownPanelFixedGroupFull"] or "Fixed group is full." end
+			resolved.slotColumn = slotColumn
+			resolved.slotRow = slotRow
+			resolved.slotIndex = nil
+		else
+			resolved.slotColumn = nil
+			resolved.slotRow = nil
+			resolved.slotIndex = nil
 		end
-		return nil
+		return resolved, nil
 	end
-	if slotColumn and slotRow and not self:IsFixedCellWithinBounds(panel, slotColumn, slotRow) then return L["CooldownPanelFixedTargetInvalid"] or "Target slot is outside the panel bounds." end
-	local freeColumn, freeRow = self:FindFirstFreeUngroupedFixedCell(panel)
-	if freeColumn and freeRow then return nil end
-	return L["CooldownPanelFixedPanelFull"] or "Fixed panel is full."
+	if slotColumn and slotRow and not self:IsFixedCellWithinBounds(panel, slotColumn, slotRow) then
+		return nil, L["CooldownPanelFixedTargetInvalid"] or "Target slot is outside the panel bounds."
+	end
+	if not (slotColumn and slotRow) or CooldownPanels.GetFixedGroupAtCell(panel, slotColumn, slotRow) or self:GetEntryAtUngroupedFixedCell(panel, slotColumn, slotRow) then
+		slotColumn, slotRow = self:FindFirstFreeUngroupedFixedCell(panel)
+	end
+	if not (slotColumn and slotRow) then return nil, L["CooldownPanelFixedPanelFull"] or "Fixed panel is full." end
+	resolved.fixedGroupId = nil
+	resolved.slotColumn = slotColumn
+	resolved.slotRow = slotRow
+	resolved.slotIndex = nil
+	return resolved, nil
+end
+
+function CooldownPanels:GetFixedEntryAddError(panel, overrides)
+	local _, fixedError = self:ResolveFixedEntryAddOverrides(panel, overrides)
+	return fixedError
 end
 
 function CooldownPanels:GetFixedDropEntryOverrides(panelId, targetSlot)
@@ -2076,6 +2183,7 @@ function CooldownPanels:CreateFixedGroup(panelId, column, row, columns, rows, na
 		rows = rows,
 		mode = "DYNAMIC",
 		iconSize = nil,
+		layoutOverrides = nil,
 	}
 	layout.fixedGroups[#layout.fixedGroups + 1] = group
 	Helper.NormalizeFixedGroups(layout)
@@ -2135,6 +2243,7 @@ function CooldownPanels:DeleteFixedGroup(panelId, groupId)
 	end
 	table.remove(layout.fixedGroups, groupIndex)
 	Helper.NormalizeFixedGroups(layout)
+	self:ClearFixedGroupEffectiveLayoutCache(panelId, group.id)
 	Helper.EnsureFixedSlotAssignments(panel)
 	return true
 end
@@ -2173,6 +2282,97 @@ function CooldownPanels:SetFixedGroupIconSize(panelId, groupId, iconSize)
 		if entry and Helper.NormalizeFixedGroupId(entry.fixedGroupId) == group.id then self:SyncEntryFixedGroupState(panel, entry) end
 	end
 	Helper.NormalizeFixedGroups(panel.layout)
+	return true
+end
+
+function CooldownPanels:SetFixedGroupLayoutOverride(panelId, groupId, field, value)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if type(field) ~= "string" then return false end
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	if not (panel and group) then return false end
+	local layout = panel.layout or Helper.PANEL_LAYOUT_DEFAULTS
+	local currentLayout = self:GetFixedGroupEffectiveLayout(panelId, group.id)
+	local overrides = self:GetFixedGroupLayoutOverrides(panel, group, true)
+	local currentValue
+	local baseValue
+	local nextValue
+
+	if field == "iconOffsetX" then
+		baseValue = 0
+		currentValue = Helper.ClampInt(currentLayout and currentLayout.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+		nextValue = Helper.ClampInt(value, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+	elseif field == "iconOffsetY" then
+		baseValue = 0
+		currentValue = Helper.ClampInt(currentLayout and currentLayout.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+		nextValue = Helper.ClampInt(value, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+	elseif field == "procGlowEnabled" then
+		baseValue = self:ResolveEntryProcGlowEnabled(layout, nil)
+		currentValue = self:ResolveEntryProcGlowEnabled(currentLayout, nil)
+		nextValue = value ~= false
+	elseif field == "hideGlowOutOfCombat" then
+		baseValue = layout.hideGlowOutOfCombat == true
+		currentValue = currentLayout and currentLayout.hideGlowOutOfCombat == true or false
+		nextValue = value == true
+	elseif field == "procGlowStyle" then
+		baseValue = select(1, self:ResolveEntryProcGlowVisual(layout, nil))
+		currentValue = select(1, self:ResolveEntryProcGlowVisual(currentLayout, nil))
+		nextValue = Helper.NormalizeGlowStyle(value, baseValue)
+	elseif field == "procGlowInset" then
+		baseValue = select(2, self:ResolveEntryProcGlowVisual(layout, nil))
+		currentValue = select(2, self:ResolveEntryProcGlowVisual(currentLayout, nil))
+		nextValue = Helper.NormalizeGlowInset(value, baseValue)
+	elseif field == "readyGlowCheckPower" then
+		baseValue = self:ResolveEntryReadyGlowCheckPower(layout, nil)
+		currentValue = self:ResolveEntryReadyGlowCheckPower(currentLayout, nil)
+		nextValue = value == true
+	elseif field == "readyGlowStyle" then
+		baseValue = select(3, self:ResolveEntryGlowStyle(layout, nil))
+		currentValue = select(3, self:ResolveEntryGlowStyle(currentLayout, nil))
+		nextValue = Helper.NormalizeGlowStyle(value, baseValue)
+	elseif field == "readyGlowInset" then
+		baseValue = select(4, self:ResolveEntryGlowStyle(layout, nil))
+		currentValue = select(4, self:ResolveEntryGlowStyle(currentLayout, nil))
+		nextValue = Helper.NormalizeGlowInset(value, baseValue)
+	elseif field == "readyGlowColor" then
+		baseValue = select(2, self:ResolveEntryGlowStyle(layout, nil))
+		currentValue = select(2, self:ResolveEntryGlowStyle(currentLayout, nil))
+		nextValue = Helper.NormalizeColor(value, baseValue)
+	elseif field == "pandemicGlowStyle" then
+		baseValue = select(2, self:ResolveEntryPandemicGlowVisual(layout, nil))
+		currentValue = select(2, self:ResolveEntryPandemicGlowVisual(currentLayout, nil))
+		nextValue = Helper.NormalizeGlowStyle(value, baseValue)
+	elseif field == "pandemicGlowInset" then
+		baseValue = select(3, self:ResolveEntryPandemicGlowVisual(layout, nil))
+		currentValue = select(3, self:ResolveEntryPandemicGlowVisual(currentLayout, nil))
+		nextValue = Helper.NormalizeGlowInset(value, baseValue)
+	elseif field == "pandemicGlowColor" then
+		baseValue = select(1, self:ResolveEntryPandemicGlowVisual(layout, nil))
+		currentValue = select(1, self:ResolveEntryPandemicGlowVisual(currentLayout, nil))
+		nextValue = Helper.NormalizeColor(value, baseValue)
+	else
+		return false
+	end
+
+	local function valuesEqual(left, right)
+		if type(left) == "table" or type(right) == "table" then
+			local l = Helper.NormalizeColor(left, { 0, 0, 0, 0 })
+			local r = Helper.NormalizeColor(right, { 0, 0, 0, 0 })
+			return l[1] == r[1] and l[2] == r[2] and l[3] == r[3] and l[4] == r[4]
+		end
+		return left == right
+	end
+
+	if valuesEqual(currentValue, nextValue) then return false end
+	if valuesEqual(nextValue, baseValue) then
+		overrides[field] = nil
+	else
+		overrides[field] = nextValue
+	end
+	group.layoutOverrides = Helper.NormalizeFixedGroupLayoutOverrides(overrides)
+	self:ClearFixedGroupEffectiveLayoutCache(panelId, group.id)
+	if field == "readyGlowCheckPower" then self:RebuildPowerIndex() end
 	return true
 end
 
@@ -3181,6 +3381,7 @@ function CooldownPanels:DeletePanel(panelId)
 	if not root or not root.panels or not root.panels[panelId] then return end
 	self:HideLayoutEntryStandaloneMenu(panelId)
 	self:HideLayoutPanelStandaloneMenu(panelId)
+	self:HideLayoutFixedGroupStandaloneMenu(panelId)
 	root.panels[panelId] = nil
 	markRootOrderDirty(root)
 	syncRootOrderIfDirty(root, true)
@@ -3237,7 +3438,11 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 	elseif typeKey == "CDM_AURA" then
 		entryValue = idValue
 	end
-	if Helper.IsFixedLayout(panel.layout) and self:GetFixedEntryAddError(panel, overrides) then return nil end
+	if Helper.IsFixedLayout(panel.layout) then
+		local resolvedOverrides, fixedError = self:ResolveFixedEntryAddOverrides(panel, overrides)
+		if fixedError then return nil end
+		overrides = resolvedOverrides
+	end
 	local entryId = Helper.GetNextNumericId(panel.entries)
 	local entry = Helper.CreateEntry(typeKey, entryValue, root.defaults)
 	if typeKey == "CDM_AURA" and not (entry and entry.cooldownID) then return nil end
@@ -3461,12 +3666,14 @@ function CooldownPanels:RebuildPowerIndex()
 				local panel = root.panels[panelId]
 				local layout = panel and panel.layout or {}
 				if panel and (not enabledPanels or enabledPanels[panelId]) then
+					local effectiveLayoutCache = {}
 					for _, entry in pairs(panel.entries or {}) do
 						local trackEntryPower = false
 						if entry then
-							trackEntryPower = self:ResolveEntryCheckPower(layout, entry)
-								or self:ResolveEntryHideWhenNoResource(layout, entry)
-								or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(layout, entry))
+							local entryLayout = self:GetEntryEffectiveLayout(panelId, entry, effectiveLayoutCache, panel) or layout
+							trackEntryPower = self:ResolveEntryCheckPower(entryLayout, entry)
+								or self:ResolveEntryHideWhenNoResource(entryLayout, entry)
+								or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(entryLayout, entry))
 						end
 						if entry and trackEntryPower then
 							local baseId
@@ -3502,15 +3709,18 @@ function CooldownPanels:RebuildPowerIndex()
 				end
 			end
 		else
-			for _, panel in pairs(root.panels) do
+			for panelId, panel in pairs(root.panels) do
 				local layout = panel.layout or {}
 				if panel.enabled ~= false and panelAllowsSpec(panel) then
+					local normalizedPanelId = normalizeId(panelId)
+					local effectiveLayoutCache = {}
 					for _, entry in pairs(panel.entries or {}) do
 						local trackEntryPower = false
 						if entry then
-							trackEntryPower = self:ResolveEntryCheckPower(layout, entry)
-								or self:ResolveEntryHideWhenNoResource(layout, entry)
-								or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(layout, entry))
+							local entryLayout = self:GetEntryEffectiveLayout(normalizedPanelId, entry, effectiveLayoutCache, panel) or layout
+							trackEntryPower = self:ResolveEntryCheckPower(entryLayout, entry)
+								or self:ResolveEntryHideWhenNoResource(entryLayout, entry)
+								or (entry.type == "SPELL" and entry.glowReady == true and self:ResolveEntryReadyGlowCheckPower(entryLayout, entry))
 						end
 						if entry and trackEntryPower then
 							local baseId
@@ -3712,12 +3922,16 @@ function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
 	local typeKey = entryType and tostring(entryType):upper() or nil
 	local function addWithFixedChecks(finalType, finalValue, finalOverrides)
 		local panel = self:GetPanel(panelId)
-		local fixedError = panel and self:GetFixedEntryAddError(panel, finalOverrides)
+		local resolvedOverrides = finalOverrides
+		local fixedError = nil
+		if panel and Helper.IsFixedLayout(panel.layout) then
+			resolvedOverrides, fixedError = self:ResolveFixedEntryAddOverrides(panel, finalOverrides)
+		end
 		if fixedError then
 			showErrorMessage(fixedError)
 			return nil
 		end
-		return self:AddEntry(panelId, finalType, finalValue, finalOverrides)
+		return self:AddEntry(panelId, finalType, finalValue, resolvedOverrides)
 	end
 	if typeKey == "CDM_AURA" then
 		local cdmAuras = CooldownPanels.CDMAuras
@@ -3822,6 +4036,12 @@ function CooldownPanels:HandleCursorDrop(panelId, targetSlot)
 	local cursorType, cursorId, _, cursorSpellId = Api.GetCursorInfo()
 	if not cursorType then return false end
 	local dropOverrides = targetSlot and self:GetFixedDropEntryOverrides(panelId, targetSlot) or nil
+	local requiresPostAddMove = false
+	if dropOverrides and dropOverrides.fixedGroupId then
+		local panel = self:GetPanel(panelId)
+		local targetGroup = panel and CooldownPanels.GetFixedGroupById(panel, dropOverrides.fixedGroupId) or nil
+		requiresPostAddMove = targetGroup and not CooldownPanels.IsFixedGroupStatic(targetGroup) or false
+	end
 	local function mergeDropOverrides(baseOverrides)
 		if not dropOverrides then return baseOverrides end
 		local merged = {}
@@ -3867,7 +4087,7 @@ function CooldownPanels:HandleCursorDrop(panelId, targetSlot)
 	end
 
 	added = addedEntryId ~= nil
-	if added and targetSlot then self:MoveEntryToFixedSlot(panelId, addedEntryId, targetSlot) end
+	if added and targetSlot and requiresPostAddMove then self:MoveEntryToFixedSlot(panelId, addedEntryId, targetSlot) end
 	if added then Api.ClearCursor() end
 	return added
 end
@@ -3880,6 +4100,7 @@ function CooldownPanels:SelectPanel(panelId)
 	local previousPanelId = root.selectedPanel
 	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutEntryStandaloneMenu(previousPanelId) end
 	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutPanelStandaloneMenu(previousPanelId) end
+	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutFixedGroupStandaloneMenu(previousPanelId) end
 	root.selectedPanel = panelId
 	local editor = getEditor()
 	if editor then
@@ -3950,6 +4171,7 @@ function CooldownPanels:SetEditorLayoutEditEnabled(enabled)
 	editor._eqolLayoutPanelId = nextPanelId
 	if not enabled then self:HideLayoutEntryStandaloneMenu(previousPanelId or editor.selectedPanelId) end
 	if not enabled then self:HideLayoutPanelStandaloneMenu(previousPanelId or editor.selectedPanelId) end
+	if not enabled then self:HideLayoutFixedGroupStandaloneMenu(previousPanelId or editor.selectedPanelId) end
 	if previousPanelId and self:GetPanel(previousPanelId) then self:RefreshPanel(previousPanelId) end
 	if nextPanelId and self:GetPanel(nextPanelId) then self:RefreshPanel(nextPanelId) end
 	self:UpdateCursorAnchorState()
@@ -4786,10 +5008,13 @@ function CooldownPanels:ResolveEntryShowIconTexture(layout, entry)
 	return panelValue
 end
 
-function CooldownPanels:ShouldShowEditorGhostIcon(entry, showIconTexture, editorContext)
+function CooldownPanels:ShouldShowEditorGhostIcon(layout, entry, showIconTexture, editorContext)
 	if editorContext ~= true or not entry then return false end
 	if showIconTexture == false then return true end
-	return Helper.ClampInt(entry.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) ~= 0 or Helper.ClampInt(entry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) ~= 0
+	return Helper.ClampInt(layout and layout.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) ~= 0
+		or Helper.ClampInt(layout and layout.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) ~= 0
+		or Helper.ClampInt(entry.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) ~= 0
+		or Helper.ClampInt(entry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) ~= 0
 end
 
 function CooldownPanels:ResolveEntryCooldownVisuals(layout, entry)
@@ -4812,13 +5037,22 @@ function CooldownPanels:ResolveEntryCooldownVisuals(layout, entry)
 		entry.cooldownGcdDrawSwipe == true
 end
 
-function CooldownPanels:ResolveEntryIconVisualLayout(entry, baseSize)
+function CooldownPanels:ResolveEntryIconVisualLayout(layout, entry, baseSize)
+	if type(entry) == "number" and baseSize == nil and type(layout) == "table" and layout.id ~= nil and layout.type ~= nil then
+		baseSize = entry
+		entry = layout
+		layout = nil
+	end
 	local fallbackSize = Helper.ClampInt(baseSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
-	if not entry then return fallbackSize, 0, 0 end
+	local layoutOffsetX = Helper.ClampInt(layout and layout.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+	local layoutOffsetY = Helper.ClampInt(layout and layout.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+	if not entry then return fallbackSize, layoutOffsetX, layoutOffsetY end
 	local cache = CooldownPanels._styleCacheRoots.iconLayoutEntry[entry]
 	if
 		not cache
 		or cache.baseSize ~= fallbackSize
+		or cache.layoutOffsetX ~= layoutOffsetX
+		or cache.layoutOffsetY ~= layoutOffsetY
 		or cache.iconSizeUseGlobal ~= entry.iconSizeUseGlobal
 		or cache.iconSize ~= entry.iconSize
 		or cache.iconOffsetX ~= entry.iconOffsetX
@@ -4826,23 +5060,25 @@ function CooldownPanels:ResolveEntryIconVisualLayout(entry, baseSize)
 	then
 		cache = cache or {}
 		cache.baseSize = fallbackSize
+		cache.layoutOffsetX = layoutOffsetX
+		cache.layoutOffsetY = layoutOffsetY
 		cache.iconSizeUseGlobal = entry.iconSizeUseGlobal
 		cache.iconSize = entry.iconSize
 		cache.iconOffsetX = entry.iconOffsetX
 		cache.iconOffsetY = entry.iconOffsetY
 		cache.size = entry.iconSizeUseGlobal == false and Helper.ClampInt(entry.iconSize, 12, 128, fallbackSize) or fallbackSize
-		cache.offsetX = Helper.ClampInt(entry.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
-		cache.offsetY = Helper.ClampInt(entry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+		cache.offsetX = layoutOffsetX + Helper.ClampInt(entry.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+		cache.offsetY = layoutOffsetY + Helper.ClampInt(entry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
 		CooldownPanels._styleCacheRoots.iconLayoutEntry[entry] = cache
 	end
 	return cache.size, cache.offsetX, cache.offsetY
 end
 
-function CooldownPanels:ApplyEntryIconVisualLayout(icon, entry)
+function CooldownPanels:ApplyEntryIconVisualLayout(icon, layout, entry)
 	if not icon then return end
 	local slotAnchor = icon.slotAnchor
 	local baseSize = Helper.ClampInt(icon._eqolBaseSlotSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
-	local size, offsetX, offsetY = self:ResolveEntryIconVisualLayout(entry, baseSize)
+	local size, offsetX, offsetY = self:ResolveEntryIconVisualLayout(layout, entry, baseSize)
 	local currentWidth, currentHeight = icon:GetSize()
 	if icon._eqolVisualSize ~= size or currentWidth ~= size or currentHeight ~= size then
 		icon:SetSize(size, size)
@@ -7139,6 +7375,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 	if not (panelId and entryId) then return end
 	if not self:IsPanelLayoutEditActive(panelId) then return end
 	self:HideLayoutPanelStandaloneMenu(panelId)
+	self:HideLayoutFixedGroupStandaloneMenu(panelId)
 
 	local panel, entry = self:GetLayoutEntryStandaloneDialogEntry(panelId, entryId)
 	local runtime = getRuntime(panelId)
@@ -7716,7 +7953,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local currentIcon = runtimeState and runtimeState.entryToIcon and runtimeState.entryToIcon[entryId] or nil
 		local baseSize = currentIcon and currentIcon._eqolBaseSlotSize or Helper.ClampInt(layout and layout.iconSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
 		local _, currentEntry = getEntry()
-		local size = CooldownPanels:ResolveEntryIconVisualLayout(currentEntry, baseSize)
+		local size = CooldownPanels:ResolveEntryIconVisualLayout(layout, currentEntry, baseSize)
 		return size
 	end
 
@@ -9373,6 +9610,7 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 	panelId = normalizeId(panelId)
 	if not (panelId and self:IsLayoutPanelStandaloneMenuAvailable(panelId)) then return end
 	self:HideLayoutEntryStandaloneMenu(panelId)
+	self:HideLayoutFixedGroupStandaloneMenu(panelId)
 
 	self:RegisterEditModePanel(panelId)
 	local registeredRuntime = getRuntime(panelId)
@@ -9399,6 +9637,419 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 		local state = self:GetLayoutPanelStandaloneMenuState()
 		state.panelId = panelId
 		state.hostFrame = registeredHostFrame
+		state.dialog = dialog
+	end
+end
+
+function CooldownPanels:GetLayoutFixedGroupStandaloneMenuState(create)
+	CooldownPanels.runtime = CooldownPanels.runtime or {}
+	local state = CooldownPanels.runtime.layoutFixedGroupStandaloneMenu
+	if state == nil and create ~= false then
+		state = {}
+		CooldownPanels.runtime.layoutFixedGroupStandaloneMenu = state
+	end
+	return state
+end
+
+function CooldownPanels:ClearLayoutFixedGroupStandaloneMenuState()
+	local state = self:GetLayoutFixedGroupStandaloneMenuState(false)
+	if not state then return end
+	for key in pairs(state) do
+		state[key] = nil
+	end
+end
+
+function CooldownPanels:IsLayoutFixedGroupStandaloneMenuAvailable(panelId, groupId)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if not (panelId and groupId and self:IsPanelLayoutEditActive(panelId)) then return false end
+	local panel = self:GetPanel(panelId)
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	return group ~= nil
+end
+
+function CooldownPanels:HideLayoutFixedGroupStandaloneMenu(panelId)
+	local lib = addon.EditModeLib
+	local state = self:GetLayoutFixedGroupStandaloneMenuState(false)
+	local trackedPanelId = normalizeId(state and state.panelId)
+	if panelId and trackedPanelId and trackedPanelId ~= normalizeId(panelId) then return false end
+	local hostFrame = state and state.hostFrame or (trackedPanelId and getRuntime(trackedPanelId).frame) or nil
+	local hidden = false
+	if lib and lib.HideStandaloneSettingsDialog then hidden = lib:HideStandaloneSettingsDialog(hostFrame) end
+	self:ClearLayoutFixedGroupStandaloneMenuState()
+	return hidden
+end
+
+function CooldownPanels:RefreshLayoutFixedGroupStandaloneMenu()
+	local lib = addon.EditModeLib
+	local state = self:GetLayoutFixedGroupStandaloneMenuState(false)
+	if not state or not state.hostFrame then return end
+	if not (lib and lib.IsStandaloneSettingsDialogShown and lib:IsStandaloneSettingsDialogShown(state.hostFrame)) then
+		self:ClearLayoutFixedGroupStandaloneMenuState()
+		return
+	end
+	local panelId = normalizeId(state.panelId)
+	local groupId = Helper.NormalizeFixedGroupId(state.groupId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local group = panel and groupId and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	local editor = getEditor()
+	local selectedPanelId = normalizeId(editor and editor.selectedPanelId)
+	if not group or not self:IsPanelLayoutEditActive(panelId) or selectedPanelId ~= panelId then self:HideLayoutFixedGroupStandaloneMenu(panelId) end
+end
+
+function CooldownPanels:BuildLayoutFixedGroupStandaloneSettings(panelId, groupId)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if not (panelId and groupId and SettingType) then return nil end
+
+	local function getPanelAndGroup()
+		local panel = CooldownPanels:GetPanel(panelId)
+		local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+		return panel, group
+	end
+	local function getLayout()
+		local panel = CooldownPanels:GetPanel(panelId)
+		if not panel then return Helper.PANEL_LAYOUT_DEFAULTS end
+		return CooldownPanels:GetFixedGroupEffectiveLayout(panelId, groupId) or panel.layout or Helper.PANEL_LAYOUT_DEFAULTS
+	end
+	local function refresh()
+		CooldownPanels:RefreshPanelForCurrentEditContext(panelId, true)
+		CooldownPanels:RefreshLayoutFixedGroupStandaloneMenu()
+	end
+	local function setMode(mode)
+		local changed, reason = CooldownPanels:SetFixedGroupMode(panelId, groupId, mode)
+		if changed then
+			refresh()
+		elseif reason == "GROUP_FULL" then
+			showErrorMessage(L["CooldownPanelFixedGroupFull"] or "Fixed group is full.")
+		end
+	end
+	local function setOverride(field, value)
+		if CooldownPanels:SetFixedGroupLayoutOverride(panelId, groupId, field, value) then refresh() end
+	end
+
+	return {
+		{
+			name = L["CooldownPanelFixedGroupHeader"] or "Group",
+			kind = SettingType.Collapsible,
+			id = "cooldownPanelStandaloneFixedGroupGeneral",
+			defaultCollapsed = false,
+		},
+		{
+			name = L["CooldownPanelRename"] or "Name",
+			kind = SettingType.Input,
+			parentId = "cooldownPanelStandaloneFixedGroupGeneral",
+			inputWidth = 220,
+			get = function()
+				local _, group = getPanelAndGroup()
+				return group and CooldownPanels.GetFixedGroupName(group) or ""
+			end,
+			set = function(_, value)
+				local normalized = CooldownPanels.NormalizePanelGroupName(value)
+				if normalized and CooldownPanels:RenameFixedGroup(panelId, groupId, normalized) then refresh() end
+			end,
+			default = "",
+			maxChars = 32,
+		},
+		{
+			name = L["CooldownPanelMode"] or "Mode",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneFixedGroupGeneral",
+			height = 80,
+			get = function()
+				local _, group = getPanelAndGroup()
+				return group and CooldownPanels.GetFixedGroupMode(group) or "DYNAMIC"
+			end,
+			set = function(_, value) setMode(value) end,
+			generator = function(_, root)
+				root:CreateRadio(L["CooldownPanelDynamic"] or "Dynamic", function()
+					local _, group = getPanelAndGroup()
+					return not CooldownPanels.IsFixedGroupStatic(group)
+				end, function() setMode("DYNAMIC") end)
+				root:CreateRadio(L["CooldownPanelStatic"] or "Static", function()
+					local _, group = getPanelAndGroup()
+					return CooldownPanels.IsFixedGroupStatic(group)
+				end, function() setMode("STATIC") end)
+			end,
+		},
+		{
+			name = L["CooldownPanelUseCustomIconSize"] or "Use custom icon size",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneFixedGroupGeneral",
+			get = function()
+				local _, group = getPanelAndGroup()
+				return group and Helper.NormalizeFixedGroupIconSize(group.iconSize) ~= nil or false
+			end,
+			set = function(_, value)
+				local panel, group = getPanelAndGroup()
+				if not (panel and group) then return end
+				local nextSize = nil
+				if value == true then nextSize = Helper.NormalizeFixedGroupIconSize(group.iconSize) or Helper.ClampInt(panel.layout and panel.layout.iconSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize) end
+				if CooldownPanels:SetFixedGroupIconSize(panelId, groupId, nextSize) then refresh() end
+			end,
+		},
+		{
+			name = L["CooldownPanelIconSize"] or "Icon size",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneFixedGroupGeneral",
+			minValue = 12,
+			maxValue = 128,
+			valueStep = 1,
+			allowInput = true,
+			disabled = function()
+				local _, group = getPanelAndGroup()
+				return not (group and Helper.NormalizeFixedGroupIconSize(group.iconSize) ~= nil)
+			end,
+			get = function()
+				local panel, group = getPanelAndGroup()
+				local fallback = Helper.ClampInt(panel and panel.layout and panel.layout.iconSize, 12, 128, Helper.PANEL_LAYOUT_DEFAULTS.iconSize)
+				return group and (Helper.NormalizeFixedGroupIconSize(group.iconSize) or fallback) or fallback
+			end,
+			set = function(_, value)
+				if CooldownPanels:SetFixedGroupIconSize(panelId, groupId, value) then refresh() end
+			end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelIconHeader"] or "Icon",
+			kind = SettingType.Collapsible,
+			id = "cooldownPanelStandaloneFixedGroupIcon",
+			defaultCollapsed = true,
+		},
+		{
+			name = L["CooldownPanelIconOffsetX"] or "Icon X",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneFixedGroupIcon",
+			minValue = -Helper.OFFSET_RANGE,
+			maxValue = Helper.OFFSET_RANGE,
+			valueStep = 1,
+			allowInput = true,
+			get = function()
+				local layout = getLayout()
+				return Helper.ClampInt(layout and layout.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+			end,
+			set = function(_, value) setOverride("iconOffsetX", value) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelIconOffsetY"] or "Icon Y",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneFixedGroupIcon",
+			minValue = -Helper.OFFSET_RANGE,
+			maxValue = Helper.OFFSET_RANGE,
+			valueStep = 1,
+			allowInput = true,
+			get = function()
+				local layout = getLayout()
+				return Helper.ClampInt(layout and layout.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+			end,
+			set = function(_, value) setOverride("iconOffsetY", value) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = _G.GLOW or "Glow",
+			kind = SettingType.Collapsible,
+			id = "cooldownPanelStandaloneFixedGroupGlow",
+			defaultCollapsed = false,
+		},
+		{
+			name = L["CooldownPanelProcGlow"] or "Proc glow",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			get = function()
+				local layout = getLayout()
+				return CooldownPanels:ResolveEntryProcGlowEnabled(layout, nil)
+			end,
+			set = function(_, value) setOverride("procGlowEnabled", value) end,
+		},
+		{
+			name = L["CooldownPanelHideGlowOutOfCombat"] or "Hide glow out of combat",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			get = function()
+				local layout = getLayout()
+				return layout and layout.hideGlowOutOfCombat == true or false
+			end,
+			set = function(_, value) setOverride("hideGlowOutOfCombat", value) end,
+		},
+		{
+			name = L["CooldownPanelProcGlowStyle"] or "Proc glow style",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			height = 180,
+			get = function()
+				local layout = getLayout()
+				return select(1, CooldownPanels:ResolveEntryProcGlowVisual(layout, nil))
+			end,
+			set = function(_, value) setOverride("procGlowStyle", value) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.GLOW_STYLE_OPTIONS or {}) do
+					local label = L[option.labelKey] or option.fallback
+					root:CreateRadio(label, function()
+						local layout = getLayout()
+						return select(1, CooldownPanels:ResolveEntryProcGlowVisual(layout, nil)) == option.value
+					end, function() setOverride("procGlowStyle", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["CooldownPanelProcGlowInset"] or "Proc glow inset",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			minValue = -(Helper.GLOW_INSET_RANGE or 20),
+			maxValue = Helper.GLOW_INSET_RANGE or 20,
+			valueStep = 1,
+			allowInput = true,
+			get = function()
+				local layout = getLayout()
+				return select(2, CooldownPanels:ResolveEntryProcGlowVisual(layout, nil))
+			end,
+			set = function(_, value) setOverride("procGlowInset", value) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelReadyGlowCheckPower"] or "Require resource for ready glow",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			get = function()
+				local layout = getLayout()
+				return CooldownPanels:ResolveEntryReadyGlowCheckPower(layout, nil)
+			end,
+			set = function(_, value) setOverride("readyGlowCheckPower", value) end,
+		},
+		{
+			name = L["CooldownPanelGlowStyle"] or "Glow style",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			height = 180,
+			get = function()
+				local layout = getLayout()
+				return select(3, CooldownPanels:ResolveEntryGlowStyle(layout, nil))
+			end,
+			set = function(_, value) setOverride("readyGlowStyle", value) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.GLOW_STYLE_OPTIONS or {}) do
+					local label = L[option.labelKey] or option.fallback
+					root:CreateRadio(label, function()
+						local layout = getLayout()
+						return select(3, CooldownPanels:ResolveEntryGlowStyle(layout, nil)) == option.value
+					end, function() setOverride("readyGlowStyle", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["CooldownPanelGlowInset"] or "Glow inset",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			minValue = -(Helper.GLOW_INSET_RANGE or 20),
+			maxValue = Helper.GLOW_INSET_RANGE or 20,
+			valueStep = 1,
+			allowInput = true,
+			get = function()
+				local layout = getLayout()
+				return select(4, CooldownPanels:ResolveEntryGlowStyle(layout, nil))
+			end,
+			set = function(_, value) setOverride("readyGlowInset", value) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelGlowColor"] or "Ready glow color",
+			kind = SettingType.Color,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			hasOpacity = true,
+			get = function()
+				local layout = getLayout()
+				local color = select(2, CooldownPanels:ResolveEntryGlowStyle(layout, nil))
+				return { r = color[1], g = color[2], b = color[3], a = color[4] }
+			end,
+			set = function(_, value) setOverride("readyGlowColor", value) end,
+		},
+		{
+			name = L["CooldownPanelGlowStylePandemic"] or "Pandemic glow style",
+			kind = SettingType.Dropdown,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			height = 180,
+			get = function()
+				local layout = getLayout()
+				return select(2, CooldownPanels:ResolveEntryPandemicGlowVisual(layout, nil))
+			end,
+			set = function(_, value) setOverride("pandemicGlowStyle", value) end,
+			generator = function(_, root)
+				for _, option in ipairs(Helper.GLOW_STYLE_OPTIONS or {}) do
+					local label = L[option.labelKey] or option.fallback
+					root:CreateRadio(label, function()
+						local layout = getLayout()
+						return select(2, CooldownPanels:ResolveEntryPandemicGlowVisual(layout, nil)) == option.value
+					end, function() setOverride("pandemicGlowStyle", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["CooldownPanelGlowInsetPandemic"] or "Pandemic glow inset",
+			kind = SettingType.Slider,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			minValue = -(Helper.GLOW_INSET_RANGE or 20),
+			maxValue = Helper.GLOW_INSET_RANGE or 20,
+			valueStep = 1,
+			allowInput = true,
+			get = function()
+				local layout = getLayout()
+				return select(3, CooldownPanels:ResolveEntryPandemicGlowVisual(layout, nil))
+			end,
+			set = function(_, value) setOverride("pandemicGlowInset", value) end,
+			formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+		},
+		{
+			name = L["CooldownPanelGlowColorPandemic"] or "Pandemic glow color",
+			kind = SettingType.Color,
+			parentId = "cooldownPanelStandaloneFixedGroupGlow",
+			hasOpacity = true,
+			get = function()
+				local layout = getLayout()
+				local color = select(1, CooldownPanels:ResolveEntryPandemicGlowVisual(layout, nil))
+				return { r = color[1], g = color[2], b = color[3], a = color[4] }
+			end,
+			set = function(_, value) setOverride("pandemicGlowColor", value) end,
+		},
+	}
+end
+
+function CooldownPanels:OpenLayoutFixedGroupStandaloneMenu(panelId, groupId, anchorFrame)
+	local lib = addon.EditModeLib
+	if not (lib and lib.ShowStandaloneSettingsDialog and SettingType) then return end
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if not self:IsLayoutFixedGroupStandaloneMenuAvailable(panelId, groupId) then return end
+	self:HideLayoutEntryStandaloneMenu(panelId)
+	self:HideLayoutPanelStandaloneMenu(panelId)
+	self:HideLayoutFixedGroupStandaloneMenu(panelId)
+
+	local panel = self:GetPanel(panelId)
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	local runtime = getRuntime(panelId)
+	local hostFrame = runtime and runtime.frame or nil
+	local settings = self:BuildLayoutFixedGroupStandaloneSettings(panelId, groupId)
+	if not (group and hostFrame and settings) then return end
+
+	local spawnPosition = self:GetStandaloneDialogSpawnPosition(anchorFrame, hostFrame, 12, 0)
+	local dialog = lib:ShowStandaloneSettingsDialog(hostFrame, {
+		title = CooldownPanels.GetFixedGroupDisplayLabel(group),
+		settings = settings,
+		showReset = false,
+		showSettingsReset = false,
+		settingsMaxHeight = 560,
+		point = spawnPosition.point,
+		relativePoint = spawnPosition.relativePoint,
+		relativeTo = spawnPosition.relativeTo,
+		x = spawnPosition.x,
+		y = spawnPosition.y,
+		onHide = function() CooldownPanels:ClearLayoutFixedGroupStandaloneMenuState() end,
+	})
+	if dialog then
+		local state = self:GetLayoutFixedGroupStandaloneMenuState()
+		state.panelId = panelId
+		state.groupId = groupId
+		state.hostFrame = hostFrame
 		state.dialog = dialog
 	end
 end
@@ -9984,6 +10635,7 @@ local function ensureEditor()
 		saveEditorPosition(frame)
 		CooldownPanels:HideLayoutEntryStandaloneMenu()
 		CooldownPanels:HideLayoutPanelStandaloneMenu()
+		CooldownPanels:HideLayoutFixedGroupStandaloneMenu()
 		if runtime and runtime.editor then
 			local previousLayoutPanelId = normalizeId(runtime.editor._eqolLayoutPanelId or runtime.editor.selectedPanelId)
 			hideEditorDragIcon(runtime.editor)
@@ -11555,6 +12207,7 @@ local function refreshPreview(editor, panel)
 	local staticFontPath, staticFontSize, staticFontStyle = Helper.GetCountFontDefaults(canvas)
 	local defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle = staticFontPath, staticFontSize, staticFontStyle
 	local defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle = Helper.GetChargesFontDefaults(canvas)
+	local effectiveLayoutCache = {}
 
 	preview.entryByIndex = preview.entryByIndex or {}
 	for i = 1, count do
@@ -11570,11 +12223,12 @@ local function refreshPreview(editor, panel)
 			local macro = CooldownPanels.ResolveMacroEntry(entry)
 			effectiveType = (macro and macro.kind) or "MACRO"
 		end
+		local entryLayout = entry and CooldownPanels:GetEntryEffectiveLayout(panelId, entry, effectiveLayoutCache, panel) or baseLayout
 		local icon = canvas.icons[i]
 		local showCooldown = entry and entry.showCooldown ~= false
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
-		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(baseLayout, entry) or true
-		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, true) or false
+		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(entryLayout, entry) or true
+		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, true) or false
 		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY
 		if entry then
 			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
@@ -11586,6 +12240,7 @@ local function refreshPreview(editor, panel)
 		icon._eqolPreviewCellRow = 1
 		icon._eqolTooltipEntry = entry
 		icon._eqolTooltipEnabled = entry ~= nil
+		CooldownPanels:ApplyEntryIconVisualLayout(icon, entryLayout, entry)
 		CooldownPanels:HideEditorGhostIcon(icon)
 		icon.texture:SetTexture(entry and getEntryIcon(entry) or Helper.PREVIEW_ICON)
 		icon.texture:SetShown(showEntryIconTexture)
@@ -11642,10 +12297,10 @@ local function refreshPreview(editor, panel)
 			CooldownPanels.ApplyIconTooltip(icon, nil, false)
 			preview.entryByIndex[i] = nil
 		else
-			CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
-			CooldownPanels:ApplyEntryStackTextStyle(icon, layout, entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
-			CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
-			applyStaticText(icon, layout, entry, staticFontPath, staticFontSize, staticFontStyle, staticCooldown)
+			CooldownPanels:ApplyEntryCooldownTextStyle(icon, entryLayout, entry)
+			CooldownPanels:ApplyEntryStackTextStyle(icon, entryLayout, entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+			CooldownPanels:ApplyEntryChargesTextStyle(icon, entryLayout, entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+			applyStaticText(icon, entryLayout, entry, staticFontPath, staticFontSize, staticFontStyle, staticCooldown)
 			icon.texture:SetShown(showEntryIconTexture)
 			if showGhostIcon then CooldownPanels:ApplyEditorGhostIcon(icon) end
 			preview.entryByIndex[i] = entryId
@@ -11674,8 +12329,8 @@ local function refreshPreview(editor, panel)
 					icon.count:Show()
 				end
 			end
-			if showKeybinds and icon.keybind then
-				local keyText = Keybinds.GetEntryKeybindText(entry, layout)
+			if entryLayout.keybindsEnabled == true and icon.keybind then
+				local keyText = Keybinds.GetEntryKeybindText(entry, entryLayout)
 				if not keyText and entry and entry.type == "SPELL" then keyText = "K" end
 				if keyText then
 					icon.keybind:SetText(keyText)
@@ -11687,8 +12342,8 @@ local function refreshPreview(editor, panel)
 				icon.keybind:Hide()
 			end
 			if entry.type ~= "MACRO" and (entry.glowReady or entry.pandemicGlow) and icon.previewGlowBorder then
-				local previewEntryGlowColor = (entry.type == "CDM_AURA" and entry.pandemicGlow == true and entry.glowReady ~= true and CooldownPanels:ResolveEntryPandemicGlowColor(baseLayout, entry))
-					or select(2, CooldownPanels:ResolveEntryGlowStyle(baseLayout, entry))
+				local previewEntryGlowColor = (entry.type == "CDM_AURA" and entry.pandemicGlow == true and entry.glowReady ~= true and CooldownPanels:ResolveEntryPandemicGlowColor(entryLayout, entry))
+					or select(2, CooldownPanels:ResolveEntryGlowStyle(entryLayout, entry))
 				CooldownPanels.ShowPreviewGlowBorder(icon, previewEntryGlowColor)
 			end
 			do
@@ -12143,6 +12798,7 @@ function CooldownPanels:RefreshEditor()
 	end
 	self:RefreshLayoutEntryStandaloneMenu()
 	self:RefreshLayoutPanelStandaloneMenu()
+	self:RefreshLayoutFixedGroupStandaloneMenu()
 end
 
 function CooldownPanels:OpenEditor()
@@ -12158,6 +12814,7 @@ function CooldownPanels:CloseEditor()
 	local panelId = normalizeId(editor._eqolLayoutPanelId or editor.selectedPanelId)
 	self:HideLayoutEntryStandaloneMenu(panelId)
 	self:HideLayoutPanelStandaloneMenu(panelId)
+	self:HideLayoutFixedGroupStandaloneMenu(panelId)
 	editor.frame:Hide()
 	editor.layoutEditActive = nil
 	editor._eqolLayoutPanelId = nil
@@ -12375,7 +13032,11 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 			local currentPanel = CooldownPanels:GetPanel(panelId)
 			local group = currentPanel and CooldownPanels.GetFixedGroupAtCell(currentPanel, currentColumn, currentRow) or nil
 			if group then
-				CooldownPanels:ShowFixedGroupMenu(handle or icon, panelId, group.id)
+				if IsControlKeyDown and IsControlKeyDown() then
+					CooldownPanels:ShowFixedGroupMenu(handle or icon, panelId, group.id)
+				else
+					CooldownPanels:OpenLayoutFixedGroupStandaloneMenu(panelId, group.id, handle or icon)
+				end
 				return
 			end
 			return
@@ -12438,6 +13099,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		if editGridColumns <= 0 then editGridColumns = math.min(math.max(type(panel.order) == "table" and #panel.order or 0, 4), 12) end
 	end
 	ensureIconCount(frame, count)
+	local effectiveLayoutCache = {}
 
 	for i = 1, count do
 		local entryId
@@ -12447,6 +13109,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 			entryId = (previewEntryIds and previewEntryIds[i]) or (panel.order and panel.order[i])
 		end
 		local entry = entryId and panel.entries and panel.entries[entryId] or nil
+		local entryLayout = entry and CooldownPanels:GetEntryEffectiveLayout(panelId, entry, effectiveLayoutCache, panel) or layout
 		local macro = entry and entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
 		local resolvedType = entry and ((macro and macro.kind) or entry.type) or nil
 		local previewBaseItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
@@ -12459,8 +13122,8 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		local showStacks = entry and (resolvedType == "SPELL" or resolvedType == "CDM_AURA") and entry.showStacks == true
 		local showItemCount = entry and resolvedType == "ITEM" and entry.showItemCount ~= false
 		local showItemUses = entry and resolvedType == "ITEM" and entry.showItemUses == true
-		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(layout, entry) or showIconTexture
-		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, true) or false
+		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(entryLayout, entry) or showIconTexture
+		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, true) or false
 		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY
 		if entry then
 			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
@@ -12471,7 +13134,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		icon:Show()
 		icon._eqolPreviewCellColumn = slotColumn
 		icon._eqolPreviewCellRow = slotRow
-		CooldownPanels:ApplyEntryIconVisualLayout(icon, entry)
+		CooldownPanels:ApplyEntryIconVisualLayout(icon, entryLayout, entry)
 		CooldownPanels:HideEditorGhostIcon(icon)
 		icon.texture:SetTexture(entry and getEntryIcon(entry) or Helper.PREVIEW_ICON)
 		icon.texture:SetVertexColor(1, 1, 1)
@@ -12479,9 +13142,9 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		if icon.cooldown.SetReverse then icon.cooldown:SetReverse(resolvedType == "CDM_AURA") end
 		if icon.cooldown.SetUseAuraDisplayTime then icon.cooldown:SetUseAuraDisplayTime(resolvedType == "CDM_AURA") end
 		icon.cooldown:SetHideCountdownNumbers(not showCooldownText)
-		CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
-		CooldownPanels:ApplyEntryStackTextStyle(icon, layout, entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
-		CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+		CooldownPanels:ApplyEntryCooldownTextStyle(icon, entryLayout, entry)
+		CooldownPanels:ApplyEntryStackTextStyle(icon, entryLayout, entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+		CooldownPanels:ApplyEntryChargesTextStyle(icon, entryLayout, entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
 		icon.cooldown:Clear()
 		if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
 		icon.count:Hide()
@@ -12517,7 +13180,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 			CooldownPanels:HideEditorGhostIcon(icon)
 			CooldownPanels.ApplyIconTooltip(icon, nil, false)
 		else
-			applyStaticText(icon, layout, entry, staticFontPath, staticFontSize, staticFontStyle, staticCooldown)
+			applyStaticText(icon, entryLayout, entry, staticFontPath, staticFontSize, staticFontStyle, staticCooldown)
 			icon.texture:SetShown(showEntryIconTexture)
 			icon.texture:SetDesaturated(false)
 			icon.texture:SetAlpha(1)
@@ -12537,8 +13200,8 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 					icon.count:Show()
 				end
 			end
-			if showKeybinds and entry and icon.keybind then
-				local keyText = Keybinds.GetEntryKeybindText(entry, layout)
+			if entryLayout.keybindsEnabled == true and entry and icon.keybind then
+				local keyText = Keybinds.GetEntryKeybindText(entry, entryLayout)
 				if keyText then
 					icon.keybind:SetText(keyText)
 					icon.keybind:Show()
@@ -12742,6 +13405,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local fixedGridRows = 0
 	local fixedGroups = fixedLayout and CooldownPanels.GetFixedGroups(panel) or nil
 	local fixedGroupVisibleEntries = fixedLayout and {} or nil
+	local effectiveLayoutCache = {}
 	if fixedLayout then
 		_, fixedSlotCount, fixedGridColumns, fixedGridRows = Helper.BuildFixedSlotEntryIds(panel, nil, false)
 	end
@@ -12761,10 +13425,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local powerCheckSpells = shared and shared.powerCheckSpells or nil
 	local cdmAuras = CooldownPanels.CDMAuras
 	local playerInCombat = (InCombatLockdown and InCombatLockdown()) or (UnitAffectingCombat and UnitAffectingCombat("player")) or false
-	local liveGlowAllowed = layout.hideGlowOutOfCombat ~= true or playerInCombat == true
 	for _, entryId in ipairs(order) do
 		local entry = panel.entries and panel.entries[entryId]
 		if entry then
+			local entryLayout = self:GetEntryEffectiveLayout(panelId, entry, effectiveLayoutCache, panel) or layout
 			local macro = entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
 			local resolvedType = (macro and macro.kind) or entry.type
 			local resolvedBaseItemId = resolvedType == "ITEM" and ((macro and macro.itemID) or entry.itemID) or nil
@@ -12782,23 +13446,24 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local showWhenNoCooldown = resolvedType == "SLOT" and entry.showWhenNoCooldown == true
 			local showWhenMissing = resolvedType == "STANCE" and entry.showWhenMissing == true
 			local alwaysShow = entry.alwaysShow ~= false
-			local cdmAuraAlwaysShowMode = resolvedType == "CDM_AURA" and CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, entry) or nil
+			local cdmAuraAlwaysShowMode = resolvedType == "CDM_AURA" and CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(entryLayout, entry) or nil
 			local entryHideOnCooldown = hideOnCooldown and resolvedType ~= "CDM_AURA"
 			local entryShowOnCooldown = showOnCooldown and resolvedType ~= "CDM_AURA"
-			local showEntryIconTexture = self:ResolveEntryShowIconTexture(layout, entry)
-			local showGhostIcon = self:ShouldShowEditorGhostIcon(entry, showEntryIconTexture, layoutEditActive)
-			local entryNoDesaturation = self:ResolveEntryNoDesaturation(layout, entry)
-			local entryShowChargesCooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe, entryGcdDrawEdge, entryGcdDrawBling, entryGcdDrawSwipe = self:ResolveEntryCooldownVisuals(layout, entry)
+			local showEntryIconTexture = self:ResolveEntryShowIconTexture(entryLayout, entry)
+			local showGhostIcon = self:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, layoutEditActive)
+			local entryNoDesaturation = self:ResolveEntryNoDesaturation(entryLayout, entry)
+			local entryShowChargesCooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe, entryGcdDrawEdge, entryGcdDrawBling, entryGcdDrawSwipe =
+				self:ResolveEntryCooldownVisuals(entryLayout, entry)
 			local cdmAuraActiveGlow = entry.type == "CDM_AURA" and entry.glowReady == true
 			local cdmAuraPandemicGlow = entry.type == "CDM_AURA" and entry.pandemicGlow == true
 			local glowReady = entry.type ~= "MACRO" and entry.type ~= "CDM_AURA" and entry.glowReady ~= false
-			local glowDuration, glowColor, glowStyle, glowInset = CooldownPanels:ResolveEntryGlowStyle(layout, entry)
-			local procGlowStyle, procGlowInset = CooldownPanels:ResolveEntryProcGlowVisual(layout, entry)
+			local glowDuration, glowColor, glowStyle, glowInset = CooldownPanels:ResolveEntryGlowStyle(entryLayout, entry)
+			local procGlowStyle, procGlowInset = CooldownPanels:ResolveEntryProcGlowVisual(entryLayout, entry)
 			local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
 				CooldownPanels:ResolveEntryStateTexture(entry)
 			local pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = glowColor, glowStyle, glowInset
 			if resolvedType == "CDM_AURA" then
-				pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = CooldownPanels:ResolveEntryPandemicGlowVisual(layout, entry)
+				pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = CooldownPanels:ResolveEntryPandemicGlowVisual(entryLayout, entry)
 			end
 			local soundReady = false
 			local soundName = normalizeSoundName(nil)
@@ -12824,10 +13489,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			-- 	return false
 			-- end
 
-			local entryCheckPower = resolvedType == "SPELL" and self:ResolveEntryCheckPower(layout, entry)
-			local hideWhenNoResource = self:ResolveEntryHideWhenNoResource(layout, entry)
-			local readyGlowCheckPower = resolvedType == "SPELL" and glowReady and self:ResolveEntryReadyGlowCheckPower(layout, entry)
-			local procGlowEnabled = resolvedType == "SPELL" and CooldownPanels:ResolveEntryProcGlowEnabled(layout, entry)
+			local entryCheckPower = resolvedType == "SPELL" and self:ResolveEntryCheckPower(entryLayout, entry)
+			local hideWhenNoResource = self:ResolveEntryHideWhenNoResource(entryLayout, entry)
+			local readyGlowCheckPower = resolvedType == "SPELL" and glowReady and self:ResolveEntryReadyGlowCheckPower(entryLayout, entry)
+			local procGlowEnabled = resolvedType == "SPELL" and CooldownPanels:ResolveEntryProcGlowEnabled(entryLayout, entry)
 			local procActive = resolvedType == "SPELL" and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
 			local overlayGlow = procActive and procGlowEnabled
 			local resourceInsufficient = resolvedType == "SPELL" and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
@@ -13077,9 +13742,11 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.showStacks = showStacks
 				data.showItemCount = showItemCount
 				data.showItemUses = showItemUses
-				data.chargesHideWhenZero = layout.chargesHideWhenZero == true
-				data.showKeybinds = showKeybinds
-				data.keybindText = showKeybinds and Keybinds.GetEntryKeybindText(entry, layout) or nil
+				data.chargesHideWhenZero = entryLayout.chargesHideWhenZero == true
+				data.showKeybinds = entryLayout.keybindsEnabled == true
+				data.keybindText = data.showKeybinds and Keybinds.GetEntryKeybindText(entry, entryLayout) or nil
+				data.layout = entryLayout
+				data.liveGlowAllowed = entryLayout.hideGlowOutOfCombat ~= true or playerInCombat == true
 				data.entry = entry
 				data.entryId = entryId
 				data.hideOnCooldown = entryHideOnCooldown == true
@@ -13240,7 +13907,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		self:ConfigureEditModePanelIcon(panelId, icon, data and data.entryId or nil, slotColumn, slotRow)
 		if not data then
 			icon.entryId = nil
-			CooldownPanels:ApplyEntryIconVisualLayout(icon, nil)
+			CooldownPanels:ApplyEntryIconVisualLayout(icon, nil, nil)
 			CooldownPanels:HideEditorGhostIcon(icon)
 			clearPreviewCooldown(icon.cooldown)
 			icon.cooldown:Clear()
@@ -13292,7 +13959,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local showGhostIcon = layoutEditActive and data.showGhostIcon == true
 			local hideOnCooldown = data.hideOnCooldown == true
 			local showOnCooldown = data.showOnCooldown == true
-			CooldownPanels:ApplyEntryIconVisualLayout(icon, data.entry)
+			CooldownPanels:ApplyEntryIconVisualLayout(icon, data.layout, data.entry)
 			CooldownPanels:HideEditorGhostIcon(icon)
 			if showOnCooldown then
 				icon:SetAlpha(0)
@@ -13306,8 +13973,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			icon.texture:SetShown(data.showIconTexture ~= false)
 			CooldownPanels.ApplyIconTooltip(icon, data.entry, showTooltips)
 			icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
-			CooldownPanels:ApplyEntryStackTextStyle(icon, layout, data.entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
-			CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, data.entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+			CooldownPanels:ApplyEntryStackTextStyle(icon, data.layout, data.entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+			CooldownPanels:ApplyEntryChargesTextStyle(icon, data.layout, data.entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
 			if icon.cooldown.SetReverse then icon.cooldown:SetReverse(data.resolvedType == "CDM_AURA") end
 			if icon.cooldown.SetUseAuraDisplayTime then icon.cooldown:SetUseAuraDisplayTime(data.resolvedType == "CDM_AURA") end
 
@@ -13596,7 +14263,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				setExampleCooldown(icon.cooldown)
 				icon:SetAlpha(1)
 			end
-			CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, data.entry)
+			CooldownPanels:ApplyEntryCooldownTextStyle(icon, data.layout, data.entry)
 			if data.spellUnusable then
 				icon.texture:SetVertexColor(unusableTintR or 0.6, unusableTintG or 0.6, unusableTintB or 0.6)
 			elseif data.powerInsufficient then
@@ -13637,7 +14304,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			if data.entry and data.entry.staticTextShowOnCooldown == true then
 				staticTextCooldown = data.stanceActive == true or cdmAuraActive or durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
 			end
-			applyStaticText(icon, layout, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
+			applyStaticText(icon, data.layout, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
 			if durationActive and showOnCooldown and data.entry.staticTextShowOnCooldown == true and staticTextCooldown then
 				if data.entry.spellID then
 					icon.staticText:SetAlpha(cooldownDurationObject:EvaluateRemainingDuration(Helper.FakeCurve))
@@ -13703,7 +14370,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					data.entry.type == "CDM_AURA"
 					and data.entry.pandemicGlow == true
 					and data.entry.glowReady ~= true
-					and CooldownPanels:ResolveEntryPandemicGlowColor(layout, data.entry)
+					and CooldownPanels:ResolveEntryPandemicGlowColor(data.layout, data.entry)
 				)
 					or data.readyGlowColor
 					or overlayGlowColor
@@ -13711,13 +14378,13 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					data.entry.type == "CDM_AURA"
 					and data.entry.pandemicGlow == true
 					and data.entry.glowReady ~= true
-					and select(2, CooldownPanels:ResolveEntryPandemicGlowVisual(layout, data.entry))
+					and select(2, CooldownPanels:ResolveEntryPandemicGlowVisual(data.layout, data.entry))
 				) or data.readyGlowStyle
 				simpleGlowInset = (
 					data.entry.type == "CDM_AURA"
 					and data.entry.pandemicGlow == true
 					and data.entry.glowReady ~= true
-					and select(3, CooldownPanels:ResolveEntryPandemicGlowVisual(layout, data.entry))
+					and select(3, CooldownPanels:ResolveEntryPandemicGlowVisual(data.layout, data.entry))
 				) or data.readyGlowInset
 			end
 			if layoutEditActive then
@@ -13729,7 +14396,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				end
 			else
 				CooldownPanels.HidePreviewGlowBorder(icon)
-				if not liveGlowAllowed then
+				if data.liveGlowAllowed == false then
 					setGlow(icon, false, nil, "EQOL_SIMPLE")
 					setGlow(icon, false, nil, "EQOL_OVERLAY")
 					setGlow(icon, false, nil, "EQOL_READY")

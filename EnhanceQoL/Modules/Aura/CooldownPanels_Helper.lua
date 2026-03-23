@@ -518,6 +518,33 @@ function Helper.NormalizeFixedGroupIconSize(value)
 	return size
 end
 
+function Helper.NormalizeFixedGroupLayoutOverrides(value)
+	if type(value) ~= "table" then return nil end
+	local normalized = {}
+	local iconOffsetX = Helper.ClampInt(value.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+	local iconOffsetY = Helper.ClampInt(value.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0)
+	if iconOffsetX ~= 0 then normalized.iconOffsetX = iconOffsetX end
+	if iconOffsetY ~= 0 then normalized.iconOffsetY = iconOffsetY end
+	if type(value.procGlowEnabled) == "boolean" then normalized.procGlowEnabled = value.procGlowEnabled == true end
+	if type(value.hideGlowOutOfCombat) == "boolean" then normalized.hideGlowOutOfCombat = value.hideGlowOutOfCombat == true end
+	if value.procGlowStyle ~= nil then normalized.procGlowStyle = Helper.NormalizeGlowStyle(value.procGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) end
+	if value.procGlowInset ~= nil then normalized.procGlowInset = Helper.NormalizeGlowInset(value.procGlowInset, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowInset or 0) end
+	if type(value.readyGlowCheckPower) == "boolean" then normalized.readyGlowCheckPower = value.readyGlowCheckPower == true end
+	if value.readyGlowStyle ~= nil then normalized.readyGlowStyle = Helper.NormalizeGlowStyle(value.readyGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) end
+	if value.readyGlowInset ~= nil then normalized.readyGlowInset = Helper.NormalizeGlowInset(value.readyGlowInset, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowInset or 0) end
+	if value.readyGlowColor ~= nil then normalized.readyGlowColor = Helper.NormalizeColor(value.readyGlowColor, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor) end
+	if value.pandemicGlowStyle ~= nil then normalized.pandemicGlowStyle = Helper.NormalizeGlowStyle(value.pandemicGlowStyle, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) end
+	if value.pandemicGlowInset ~= nil then normalized.pandemicGlowInset = Helper.NormalizeGlowInset(value.pandemicGlowInset, Helper.PANEL_LAYOUT_DEFAULTS.readyGlowInset or 0) end
+	if value.pandemicGlowColor ~= nil then
+		normalized.pandemicGlowColor = Helper.NormalizeColor(
+			value.pandemicGlowColor,
+			Helper.PANEL_LAYOUT_DEFAULTS.pandemicGlowColor or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowColor
+		)
+	end
+	if not next(normalized) then return nil end
+	return normalized
+end
+
 local function getFixedGridDefaultColumns(panel)
 	if type(panel) ~= "table" then return 4 end
 	local layout = type(panel.layout) == "table" and panel.layout or nil
@@ -579,6 +606,7 @@ function Helper.NormalizeFixedGroups(layout)
 					rows = rows,
 					mode = Helper.NormalizeFixedGroupMode(group.mode, "DYNAMIC"),
 					iconSize = Helper.NormalizeFixedGroupIconSize(group.iconSize),
+					layoutOverrides = Helper.NormalizeFixedGroupLayoutOverrides(group.layoutOverrides),
 				}
 				seen[id] = true
 			end
@@ -1652,6 +1680,12 @@ function Helper.CreatePanel(name, defaults)
 	defaults = defaults or {}
 	local layoutDefaults = defaults.layout or Helper.PANEL_LAYOUT_DEFAULTS
 	local layout = Helper.CopyTableShallow(layoutDefaults)
+	local globalFontKey = addon.functions and addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"
+	if layout.stackFont == nil or layout.stackFont == "" then layout.stackFont = globalFontKey end
+	if layout.chargesFont == nil or layout.chargesFont == "" then layout.chargesFont = globalFontKey end
+	if layout.keybindFont == nil or layout.keybindFont == "" then layout.keybindFont = globalFontKey end
+	if layout.cooldownTextFont == nil or layout.cooldownTextFont == "" then layout.cooldownTextFont = globalFontKey end
+	if layout.staticTextFont == nil or layout.staticTextFont == "" then layout.staticTextFont = globalFontKey end
 	layout.fixedGroups = {}
 	return {
 		name = (type(name) == "string" and name ~= "" and name) or "Cooldown Panel",
