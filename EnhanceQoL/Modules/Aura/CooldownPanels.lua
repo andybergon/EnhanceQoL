@@ -1731,6 +1731,503 @@ function CooldownPanels.NormalizePanelGroupName(name)
 	return name
 end
 
+function CooldownPanels.GetFixedGroups(panel)
+	if not panel then return {} end
+	panel.layout = panel.layout or {}
+	return Helper.NormalizeFixedGroups(panel.layout)
+end
+
+function CooldownPanels.GetFixedGroupName(group)
+	if type(group) ~= "table" then return nil end
+	local name = type(group.name) == "string" and group.name or nil
+	if name and strtrim then name = strtrim(name) end
+	if name == "" then name = nil end
+	return name or ("Group " .. tostring(group.id or "?"))
+end
+
+function CooldownPanels.GetFixedGroupById(panel, groupId)
+	if not panel then return nil end
+	return Helper.GetFixedGroupById(panel, groupId)
+end
+
+function CooldownPanels.GetFixedGroupAtCell(panel, column, row, ignoreGroupId)
+	if not panel then return nil end
+	return Helper.GetFixedGroupAtCell(panel, column, row, ignoreGroupId)
+end
+
+function CooldownPanels.GetFixedGroupMode(group) return Helper.GetFixedGroupMode(group) end
+
+function CooldownPanels.IsFixedGroupStatic(group) return Helper.FixedGroupUsesStaticSlots(group) end
+
+function CooldownPanels.GetFixedGroupModeLabel(group) return CooldownPanels.IsFixedGroupStatic(group) and (L["CooldownPanelStatic"] or "Static") or (L["CooldownPanelDynamic"] or "Dynamic") end
+
+function CooldownPanels.GetFixedGroupDisplayLabel(group)
+	local name = CooldownPanels.GetFixedGroupName(group)
+	return string.format("%s [%s]", tostring(name or "Group"), CooldownPanels.GetFixedGroupModeLabel(group))
+end
+
+function CooldownPanels:IsFixedCellWithinBounds(panel, column, row)
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (panel and column and row) then return false end
+	local columns, rows = Helper.GetFixedGridBounds(panel, false)
+	if columns <= 0 or rows <= 0 then return false end
+	return column >= 1 and column <= columns and row >= 1 and row <= rows
+end
+
+function CooldownPanels.GetEntryFixedPlacement(panel, entryOrId)
+	local entry = entryOrId
+	if type(entryOrId) ~= "table" then entry = panel and panel.entries and panel.entries[entryOrId] or nil end
+	if not entry then return nil end
+	local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+	local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+	if not (column and row) then return nil end
+	local group = CooldownPanels.GetFixedGroupById(panel, entry.fixedGroupId)
+	if group then
+		if not CooldownPanels.IsFixedGroupStatic(group) then return nil end
+		if column < group.column or column > (group.column + group.columns - 1) or row < group.row or row > (group.row + group.rows - 1) then return nil end
+		return {
+			groupId = group.id,
+			column = column,
+			row = row,
+		}
+	end
+	return {
+		groupId = nil,
+		column = column,
+		row = row,
+	}
+end
+
+function CooldownPanels.AssignEntryFixedPlacement(entry, placement)
+	if not entry then return end
+	entry.fixedGroupId = placement and Helper.NormalizeFixedGroupId(placement.groupId) or nil
+	entry.slotColumn = placement and Helper.NormalizeSlotCoordinate(placement.column) or nil
+	entry.slotRow = placement and Helper.NormalizeSlotCoordinate(placement.row) or nil
+	entry.slotIndex = nil
+end
+
+function CooldownPanels:SyncEntryFixedGroupState(panel, entry)
+	if not (panel and entry) then return end
+	local group = CooldownPanels.GetFixedGroupById(panel, entry.fixedGroupId)
+	if group then
+		entry.fixedGroupId = group.id
+	else
+		entry.fixedGroupId = nil
+	end
+	Helper.SyncEntryFixedGroupIconState(panel, entry)
+end
+
+function CooldownPanels:GetEntryAtUngroupedFixedCell(panel, column, row, skipEntryId)
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (panel and column and row) then return nil end
+	for _, entryId in ipairs(panel.order or {}) do
+		if entryId ~= skipEntryId then
+			local entry = panel.entries and panel.entries[entryId]
+			if
+				entry
+				and Helper.NormalizeFixedGroupId(entry.fixedGroupId) == nil
+				and Helper.NormalizeSlotCoordinate(entry.slotColumn) == column
+				and Helper.NormalizeSlotCoordinate(entry.slotRow) == row
+			then
+				return entryId, entry
+			end
+		end
+	end
+	return nil
+end
+
+function CooldownPanels:GetEntryAtStaticGroupCell(panel, groupId, column, row, skipEntryId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (panel and groupId and column and row) then return nil end
+	for _, entryId in ipairs(panel.order or {}) do
+		if entryId ~= skipEntryId then
+			local entry = panel.entries and panel.entries[entryId]
+			if
+				entry
+				and Helper.NormalizeFixedGroupId(entry.fixedGroupId) == groupId
+				and Helper.NormalizeSlotCoordinate(entry.slotColumn) == column
+				and Helper.NormalizeSlotCoordinate(entry.slotRow) == row
+			then
+				return entryId, entry
+			end
+		end
+	end
+	return nil
+end
+
+function CooldownPanels:FindFirstFreeUngroupedFixedCell(panel, skipEntryId, skipEntryId2)
+	if not panel then return nil end
+	local columns, rows = Helper.GetFixedGridBounds(panel, false)
+	if columns <= 0 or rows <= 0 then return nil end
+	for row = 1, rows do
+		for column = 1, columns do
+			if not CooldownPanels.GetFixedGroupAtCell(panel, column, row) then
+				local occupantId = self:GetEntryAtUngroupedFixedCell(panel, column, row, skipEntryId)
+				if not occupantId or occupantId == skipEntryId2 then return column, row end
+			end
+		end
+	end
+	return nil
+end
+
+function CooldownPanels:FindFirstFreeStaticGroupCell(panel, groupId, skipEntryId, skipEntryId2)
+	if not panel then return nil end
+	local group = CooldownPanels.GetFixedGroupById(panel, groupId)
+	if not (group and CooldownPanels.IsFixedGroupStatic(group)) then return nil end
+	for row = group.row, group.row + group.rows - 1 do
+		for column = group.column, group.column + group.columns - 1 do
+			if CooldownPanels:IsFixedCellWithinBounds(panel, column, row) then
+				local occupantId = self:GetEntryAtStaticGroupCell(panel, group.id, column, row, skipEntryId)
+				if not occupantId or occupantId == skipEntryId2 then return column, row end
+			end
+		end
+	end
+	return nil
+end
+
+function CooldownPanels:GetFixedEntryAddError(panel, overrides)
+	if not (panel and Helper.IsFixedLayout(panel.layout)) then return nil end
+	local slotColumn = Helper.NormalizeSlotCoordinate(overrides and overrides.slotColumn)
+	local slotRow = Helper.NormalizeSlotCoordinate(overrides and overrides.slotRow)
+	local targetGroup = overrides and CooldownPanels.GetFixedGroupById(panel, overrides.fixedGroupId) or nil
+	if targetGroup then
+		if CooldownPanels.IsFixedGroupStatic(targetGroup) then
+			if slotColumn and slotRow and not CooldownPanels.RectContainsCell(targetGroup.column, targetGroup.row, targetGroup.columns, targetGroup.rows, slotColumn, slotRow) then
+				return L["CooldownPanelFixedTargetInvalid"] or "Target slot is outside the selected group."
+			end
+			local freeColumn, freeRow = self:FindFirstFreeStaticGroupCell(panel, targetGroup.id)
+			if not (freeColumn and freeRow) then return L["CooldownPanelFixedGroupFull"] or "Fixed group is full." end
+		end
+		return nil
+	end
+	if slotColumn and slotRow and not self:IsFixedCellWithinBounds(panel, slotColumn, slotRow) then return L["CooldownPanelFixedTargetInvalid"] or "Target slot is outside the panel bounds." end
+	local freeColumn, freeRow = self:FindFirstFreeUngroupedFixedCell(panel)
+	if freeColumn and freeRow then return nil end
+	return L["CooldownPanelFixedPanelFull"] or "Fixed panel is full."
+end
+
+function CooldownPanels:GetFixedDropEntryOverrides(panelId, targetSlot)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	if not (panel and targetSlot and Helper.IsFixedLayout(panel.layout)) then return nil end
+	local column = Helper.NormalizeSlotCoordinate(targetSlot.column or targetSlot.slotColumn or targetSlot.x)
+	local row = Helper.NormalizeSlotCoordinate(targetSlot.row or targetSlot.slotRow or targetSlot.y)
+	if not (column and row) then return nil end
+	local overrides = {
+		slotColumn = column,
+		slotRow = row,
+		slotIndex = nil,
+	}
+	local group = CooldownPanels.GetFixedGroupAtCell(panel, column, row)
+	if group then
+		overrides.fixedGroupId = group.id
+		if not CooldownPanels.IsFixedGroupStatic(group) then
+			overrides.slotColumn = nil
+			overrides.slotRow = nil
+		end
+	end
+	return overrides
+end
+
+function CooldownPanels.GetFixedGridColumnCount(panel)
+	if not panel then return 0 end
+	local columns = Helper.NormalizeFixedGridSize(panel.layout and panel.layout.fixedGridColumns, 0)
+	if columns <= 0 then
+		local _, _, builtColumns = Helper.BuildFixedSlotEntryIds(panel, nil, false)
+		columns = builtColumns or 0
+	end
+	return columns
+end
+
+function CooldownPanels.GetFixedGridCellIndex(panel, column, row)
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (panel and column and row) then return nil, 0 end
+	local columns = CooldownPanels.GetFixedGridColumnCount(panel)
+	if columns <= 0 then return nil, columns end
+	return ((row - 1) * columns) + column, columns
+end
+
+function CooldownPanels.GetFixedGroupCells(group)
+	local cells = {}
+	if type(group) ~= "table" then return cells end
+	for row = 0, (group.rows or 0) - 1 do
+		for column = 0, (group.columns or 0) - 1 do
+			cells[#cells + 1] = {
+				column = group.column + column,
+				row = group.row + row,
+			}
+		end
+	end
+	return cells
+end
+
+function CooldownPanels.GetFixedGroupEntriesInOrder(panel, groupId, skipEntryId)
+	local entries = {}
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if not (panel and groupId) then return entries end
+	for _, candidateId in ipairs(panel.order or {}) do
+		if candidateId ~= skipEntryId then
+			local entry = panel.entries and panel.entries[candidateId]
+			if entry and Helper.NormalizeFixedGroupId(entry.fixedGroupId) == groupId then entries[#entries + 1] = candidateId end
+		end
+	end
+	return entries
+end
+
+function CooldownPanels:GetFixedGroupLabel(panelId, groupId)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	return group and CooldownPanels.GetFixedGroupName(group) or nil
+end
+
+function CooldownPanels:FindNextFixedGroupId(panel)
+	if not panel then return nil end
+	local groups = CooldownPanels.GetFixedGroups(panel)
+	local used = {}
+	for i = 1, #groups do
+		local group = groups[i]
+		if group and group.id then used[group.id] = true end
+	end
+	local nextIndex = 1
+	while used["group" .. tostring(nextIndex)] do
+		nextIndex = nextIndex + 1
+	end
+	return "group" .. tostring(nextIndex), nextIndex
+end
+
+function CooldownPanels:DoesFixedGroupRectOverlap(panel, column, row, columns, rows, ignoreGroupId)
+	if not panel then return true end
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	columns = Helper.NormalizeFixedGridSize(columns, 0)
+	rows = Helper.NormalizeFixedGridSize(rows, 0)
+	if not (column and row) or columns <= 0 or rows <= 0 then return true end
+	local targetRight = column + columns - 1
+	local targetBottom = row + rows - 1
+	for _, group in ipairs(CooldownPanels.GetFixedGroups(panel)) do
+		if group and group.id ~= Helper.NormalizeFixedGroupId(ignoreGroupId) then
+			local groupRight = group.column + group.columns - 1
+			local groupBottom = group.row + group.rows - 1
+			local overlaps = not (targetRight < group.column or groupRight < column or targetBottom < group.row or groupBottom < row)
+			if overlaps then return true end
+		end
+	end
+	return false
+end
+
+function CooldownPanels.RectContainsCell(column, row, columns, rows, targetColumn, targetRow)
+	if not (column and row and columns and rows and targetColumn and targetRow) then return false end
+	return targetColumn >= column and targetColumn <= (column + columns - 1) and targetRow >= row and targetRow <= (row + rows - 1)
+end
+
+function CooldownPanels:CanCreateFixedGroup(panelId, column, row, columns, rows)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	if not panel then return false end
+	panel.layout = panel.layout or Helper.CopyTableShallow(Helper.PANEL_LAYOUT_DEFAULTS)
+	if not Helper.IsFixedLayout(panel.layout) then return false end
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	columns = Helper.NormalizeFixedGridSize(columns, 0)
+	rows = Helper.NormalizeFixedGridSize(rows, 0)
+	if not (column and row) or columns <= 0 or rows <= 0 then return false end
+	local gridColumns, gridRows = Helper.GetFixedGridBounds(panel, false)
+	if gridColumns <= 0 or gridRows <= 0 then return false end
+	if (column + columns - 1) > gridColumns or (row + rows - 1) > gridRows then return false end
+	if self:DoesFixedGroupRectOverlap(panel, column, row, columns, rows, nil) then return false end
+	for _, entry in pairs(panel.entries or {}) do
+		if entry and Helper.NormalizeFixedGroupId(entry.fixedGroupId) ~= nil then
+			local entryGroup = CooldownPanels.GetFixedGroupById(panel, entry.fixedGroupId)
+			if entryGroup and CooldownPanels.RectContainsCell(column, row, columns, rows, entryGroup.column, entryGroup.row) then return false end
+		end
+	end
+	return true
+end
+
+function CooldownPanels:CreateFixedGroup(panelId, column, row, columns, rows, name)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	if not panel then return nil end
+	panel.layout = panel.layout or Helper.CopyTableShallow(Helper.PANEL_LAYOUT_DEFAULTS)
+	local layout = panel.layout
+	if not Helper.IsFixedLayout(layout) then return nil end
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	columns = Helper.NormalizeFixedGridSize(columns, 0)
+	rows = Helper.NormalizeFixedGridSize(rows, 0)
+	if not (column and row) or columns <= 0 or rows <= 0 then return nil end
+	if self:DoesFixedGroupRectOverlap(panel, column, row, columns, rows, nil) then return nil end
+	layout.fixedGroups = layout.fixedGroups or {}
+	local groupId, nextIndex = self:FindNextFixedGroupId(panel)
+	if not groupId then return nil end
+	local groupName = CooldownPanels.NormalizePanelGroupName(name) or ("Group " .. tostring(nextIndex or #layout.fixedGroups + 1))
+	local group = {
+		id = groupId,
+		name = groupName,
+		column = column,
+		row = row,
+		columns = columns,
+		rows = rows,
+		mode = "DYNAMIC",
+		iconSize = nil,
+	}
+	layout.fixedGroups[#layout.fixedGroups + 1] = group
+	Helper.NormalizeFixedGroups(layout)
+
+	for _, entryId in ipairs(panel.order or {}) do
+		local entry = panel.entries and panel.entries[entryId]
+		if entry then
+			local currentGroupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
+			if currentGroupId == nil then
+				local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+				local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
+				if CooldownPanels.RectContainsCell(column, row, columns, rows, slotColumn, slotRow) then entry.fixedGroupId = groupId end
+			end
+		end
+	end
+
+	Helper.EnsureFixedSlotAssignments(panel)
+	return groupId
+end
+
+function CooldownPanels:RenameFixedGroup(panelId, groupId, name)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	local normalizedName = CooldownPanels.NormalizePanelGroupName(name)
+	if not (group and normalizedName) then return false end
+	if group.name == normalizedName then return false end
+	group.name = normalizedName
+	return true
+end
+
+function CooldownPanels:DeleteFixedGroup(panelId, groupId)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	if not panel then return false end
+	local layout = panel.layout or {}
+	local groups = CooldownPanels.GetFixedGroups(panel)
+	local group, groupIndex = CooldownPanels.GetFixedGroupById(panel, groupId)
+	if not (group and groupIndex) then return false end
+	local memberIds = CooldownPanels.GetFixedGroupEntriesInOrder(panel, group.id)
+	local cells = CooldownPanels.GetFixedGroupCells(group)
+	for i = 1, #memberIds do
+		local entry = panel.entries and panel.entries[memberIds[i]]
+		if entry then
+			entry.fixedGroupId = nil
+			local cell = cells[i]
+			if cell then
+				entry.slotColumn = cell.column
+				entry.slotRow = cell.row
+				entry.slotIndex = nil
+			else
+				entry.slotColumn = nil
+				entry.slotRow = nil
+				entry.slotIndex = nil
+			end
+		end
+	end
+	table.remove(layout.fixedGroups, groupIndex)
+	Helper.NormalizeFixedGroups(layout)
+	Helper.EnsureFixedSlotAssignments(panel)
+	return true
+end
+
+function CooldownPanels:SetFixedGroupMode(panelId, groupId, mode)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	mode = Helper.NormalizeFixedGroupMode(mode, "DYNAMIC")
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	if not (panel and group) then return false, "GROUP_NOT_FOUND" end
+	if CooldownPanels.GetFixedGroupMode(group) == mode then return false, "UNCHANGED" end
+	if mode == "STATIC" then
+		local members = CooldownPanels.GetFixedGroupEntriesInOrder(panel, group.id)
+		local capacity = Helper.GetFixedGroupCapacity(group)
+		if #members > capacity then return false, "GROUP_FULL" end
+	end
+	group.mode = mode
+	Helper.NormalizeFixedGroups(panel.layout)
+	Helper.EnsureFixedSlotAssignments(panel)
+	return true
+end
+
+function CooldownPanels:SetFixedGroupIconSize(panelId, groupId, iconSize)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	if not (panel and group) then return false end
+	local normalizedSize = Helper.NormalizeFixedGroupIconSize(iconSize)
+	local currentSize = Helper.NormalizeFixedGroupIconSize(group.iconSize)
+	if currentSize == normalizedSize then return false end
+	group.iconSize = normalizedSize
+	for _, entryId in ipairs(panel.order or {}) do
+		local entry = panel.entries and panel.entries[entryId]
+		if entry and Helper.NormalizeFixedGroupId(entry.fixedGroupId) == group.id then self:SyncEntryFixedGroupState(panel, entry) end
+	end
+	Helper.NormalizeFixedGroups(panel.layout)
+	return true
+end
+
+function CooldownPanels:MoveFixedGroup(panelId, groupId, column, row)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	if not panel then return false, "PANEL_NOT_FOUND" end
+	local group = CooldownPanels.GetFixedGroupById(panel, groupId)
+	if not group then return false, "GROUP_NOT_FOUND" end
+	local sourceColumn = group.column
+	local sourceRow = group.row
+	local groupColumns = group.columns
+	local groupRows = group.rows
+	local staticGroup = CooldownPanels.IsFixedGroupStatic(group)
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (column and row) then return false, "INVALID_TARGET" end
+	if column == sourceColumn and row == sourceRow then return false, "NO_CHANGE" end
+	local gridColumns, gridRows = Helper.GetFixedGridBounds(panel, false)
+	if gridColumns <= 0 or gridRows <= 0 then return false, "GRID_BOUNDS_INVALID" end
+	if (column + groupColumns - 1) > gridColumns or (row + groupRows - 1) > gridRows then return false, "OUT_OF_BOUNDS" end
+	if self:DoesFixedGroupRectOverlap(panel, column, row, groupColumns, groupRows, groupId) then return false, "OVERLAP" end
+	for _, entryId in ipairs(panel.order or {}) do
+		local entry = panel.entries and panel.entries[entryId]
+		if entry and Helper.NormalizeFixedGroupId(entry.fixedGroupId) == nil then
+			local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+			local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
+			if CooldownPanels.RectContainsCell(column, row, groupColumns, groupRows, slotColumn, slotRow) then return false, "UNGROUPED_OCCUPIED" end
+		end
+	end
+	local deltaColumn = column - sourceColumn
+	local deltaRow = row - sourceRow
+	if staticGroup and (deltaColumn ~= 0 or deltaRow ~= 0) then
+		for _, entryId in ipairs(panel.order or {}) do
+			local entry = panel.entries and panel.entries[entryId]
+			if entry and Helper.NormalizeFixedGroupId(entry.fixedGroupId) == groupId then
+				local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+				local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
+				if slotColumn and slotRow then
+					entry.slotColumn = slotColumn + deltaColumn
+					entry.slotRow = slotRow + deltaRow
+					entry.slotIndex = nil
+				end
+			end
+		end
+	end
+	group = CooldownPanels.GetFixedGroupById(panel, groupId)
+	if not group then return false, "GROUP_NOT_FOUND_REFETCH" end
+	group.column = column
+	group.row = row
+	Helper.NormalizeFixedGroups(panel.layout)
+	Helper.EnsureFixedSlotAssignments(panel)
+	return true, nil
+end
+
 function CooldownPanels.ResolveMacroEntry(entry)
 	if not entry or entry.type ~= "MACRO" then return nil end
 	local function resolveMacroSpellId(token)
@@ -2740,6 +3237,7 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 	elseif typeKey == "CDM_AURA" then
 		entryValue = idValue
 	end
+	if Helper.IsFixedLayout(panel.layout) and self:GetFixedEntryAddError(panel, overrides) then return nil end
 	local entryId = Helper.GetNextNumericId(panel.entries)
 	local entry = Helper.CreateEntry(typeKey, entryValue, root.defaults)
 	if typeKey == "CDM_AURA" and not (entry and entry.cooldownID) then return nil end
@@ -3203,6 +3701,7 @@ function CooldownPanels:NormalizeAll()
 			end
 		end
 		if removedDuplicateVariantEntry then Helper.SyncOrder(panel.order, panel.entries) end
+		if Helper.IsFixedLayout(panel.layout) then Helper.EnsureFixedSlotAssignments(panel) end
 	end
 	self:RebuildSpellIndex()
 	local cdmAuras = CooldownPanels.CDMAuras
@@ -3211,6 +3710,15 @@ end
 
 function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
 	local typeKey = entryType and tostring(entryType):upper() or nil
+	local function addWithFixedChecks(finalType, finalValue, finalOverrides)
+		local panel = self:GetPanel(panelId)
+		local fixedError = panel and self:GetFixedEntryAddError(panel, finalOverrides)
+		if fixedError then
+			showErrorMessage(fixedError)
+			return nil
+		end
+		return self:AddEntry(panelId, finalType, finalValue, finalOverrides)
+	end
 	if typeKey == "CDM_AURA" then
 		local cdmAuras = CooldownPanels.CDMAuras
 		if cdmAuras and cdmAuras.AddEntrySafe then return cdmAuras:AddEntrySafe(panelId, idValue, overrides) end
@@ -3249,7 +3757,7 @@ function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
 				if finalOverrides[key] == nil then finalOverrides[key] = value end
 			end
 		end
-		return self:AddEntry(panelId, typeKey, stanceDef.id, finalOverrides)
+		return addWithFixedChecks(typeKey, stanceDef.id, finalOverrides)
 	end
 	if typeKey == "MACRO" then
 		local macroName = nil
@@ -3285,7 +3793,7 @@ function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
 			end
 		end
 		finalOverrides.macroName = macroName
-		return self:AddEntry(panelId, typeKey, numericValue or idValue, finalOverrides)
+		return addWithFixedChecks(typeKey, numericValue or idValue, finalOverrides)
 	end
 	local finalOverrides = overrides
 	if typeKey == "ITEM" and numericValue then
@@ -3305,7 +3813,7 @@ function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
 		showErrorMessage(L["CooldownPanelEntry"] and (L["CooldownPanelEntry"] .. " already exists.") or "Entry already exists.")
 		return nil
 	end
-	return self:AddEntry(panelId, typeKey, baseValue, finalOverrides)
+	return addWithFixedChecks(typeKey, baseValue, finalOverrides)
 end
 
 function CooldownPanels:HandleCursorDrop(panelId, targetSlot)
@@ -3313,25 +3821,39 @@ function CooldownPanels:HandleCursorDrop(panelId, targetSlot)
 	if not panelId then return false end
 	local cursorType, cursorId, _, cursorSpellId = Api.GetCursorInfo()
 	if not cursorType then return false end
+	local dropOverrides = targetSlot and self:GetFixedDropEntryOverrides(panelId, targetSlot) or nil
+	local function mergeDropOverrides(baseOverrides)
+		if not dropOverrides then return baseOverrides end
+		local merged = {}
+		if type(baseOverrides) == "table" then
+			for key, value in pairs(baseOverrides) do
+				merged[key] = value
+			end
+		end
+		for key, value in pairs(dropOverrides) do
+			merged[key] = value
+		end
+		return merged
+	end
 
 	local added = false
 	local addedEntryId
 	if cursorType == "spell" then
 		local spellId = cursorSpellId or cursorId
-		if spellId then addedEntryId = self:AddEntrySafe(panelId, "SPELL", spellId) end
+		if spellId then addedEntryId = self:AddEntrySafe(panelId, "SPELL", spellId, mergeDropOverrides()) end
 	elseif cursorType == "item" then
-		if cursorId then addedEntryId = self:AddEntrySafe(panelId, "ITEM", cursorId) end
+		if cursorId then addedEntryId = self:AddEntrySafe(panelId, "ITEM", cursorId, mergeDropOverrides()) end
 	elseif cursorType == "macro" then
 		if cursorId then
 			local macroName = Api.GetMacroInfo and Api.GetMacroInfo(cursorId) or nil
-			addedEntryId = self:AddEntrySafe(panelId, "MACRO", cursorId, { macroName = macroName })
+			addedEntryId = self:AddEntrySafe(panelId, "MACRO", cursorId, mergeDropOverrides({ macroName = macroName }))
 		end
 	elseif cursorType == "action" and Api.GetActionInfo then
 		local actionType, actionId = Api.GetActionInfo(cursorId)
 		if actionType == "spell" then
-			addedEntryId = self:AddEntrySafe(panelId, "SPELL", actionId)
+			addedEntryId = self:AddEntrySafe(panelId, "SPELL", actionId, mergeDropOverrides())
 		elseif actionType == "item" then
-			addedEntryId = self:AddEntrySafe(panelId, "ITEM", actionId)
+			addedEntryId = self:AddEntrySafe(panelId, "ITEM", actionId, mergeDropOverrides())
 		elseif actionType == "macro" then
 			local macroID = tonumber(actionId)
 			local macroName = Api.GetActionText and CooldownPanels.NormalizeMacroName(Api.GetActionText(cursorId)) or nil
@@ -3340,7 +3862,7 @@ function CooldownPanels:HandleCursorDrop(panelId, targetSlot)
 				if type(byName) == "number" and byName > 0 then macroID = byName end
 			end
 			if not macroName and macroID and Api.GetMacroInfo then macroName = CooldownPanels.NormalizeMacroName(Api.GetMacroInfo(macroID)) end
-			addedEntryId = self:AddEntrySafe(panelId, "MACRO", macroID or macroName, { macroName = macroName })
+			addedEntryId = self:AddEntrySafe(panelId, "MACRO", macroID or macroName, mergeDropOverrides({ macroName = macroName }))
 		end
 	end
 
@@ -3452,8 +3974,10 @@ function CooldownPanels:PreparePanelForFixedLayoutEdit(panelId)
 		changed = true
 	end
 	local maxColumn, maxRow = Helper.EnsureFixedSlotAssignments(panel)
-	local nextColumns = math.max(Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0), maxColumn, 1)
-	local nextRows = math.max(Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0), maxRow, 1)
+	local nextColumns = Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0)
+	local nextRows = Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0)
+	if nextColumns <= 0 then nextColumns = math.max(maxColumn or 0, 1) end
+	if nextRows <= 0 then nextRows = math.max(maxRow or 0, 1) end
 	if layout.fixedGridColumns ~= nextColumns then
 		layout.fixedGridColumns = nextColumns
 		changed = true
@@ -5224,6 +5748,195 @@ local function createPanelFrame(panelId, panel)
 	return frame
 end
 
+function CooldownPanels.PanelHasUngroupedEntryInRect(panel, column, row, columns, rows)
+	if not panel then return false end
+	for _, entry in pairs(panel.entries or {}) do
+		if entry and Helper.NormalizeFixedGroupId(entry.fixedGroupId) == nil then
+			local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+			local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
+			if CooldownPanels.RectContainsCell(column, row, columns, rows, slotColumn, slotRow) then return true end
+		end
+	end
+	return false
+end
+
+function CooldownPanels.ClearFixedGroupDragState(runtime)
+	if not runtime then return end
+	local frame = runtime.frame
+	local grid = frame and frame.editGrid or nil
+	if grid and grid:GetScript("OnUpdate") then grid:SetScript("OnUpdate", nil) end
+	runtime._eqolFixedGroupDrag = nil
+end
+
+function CooldownPanels:GetFixedGroupDragRect(panelId)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local runtime = panelId and getRuntime(panelId) or nil
+	local drag = runtime and runtime._eqolFixedGroupDrag or nil
+	if not (panel and drag and Helper.IsFixedLayout(panel.layout)) then return nil end
+	local currentColumn = Helper.NormalizeSlotCoordinate(drag.currentColumn or drag.startColumn)
+	local currentRow = Helper.NormalizeSlotCoordinate(drag.currentRow or drag.startRow)
+	if drag.mode == "create" then
+		local startColumn = Helper.NormalizeSlotCoordinate(drag.startColumn)
+		local startRow = Helper.NormalizeSlotCoordinate(drag.startRow)
+		if not (startColumn and startRow and currentColumn and currentRow) then return nil end
+		local column = math.min(startColumn, currentColumn)
+		local row = math.min(startRow, currentRow)
+		local columns = math.abs(currentColumn - startColumn) + 1
+		local rows = math.abs(currentRow - startRow) + 1
+		return {
+			mode = "create",
+			column = column,
+			row = row,
+			columns = columns,
+			rows = rows,
+			valid = self:CanCreateFixedGroup(panelId, column, row, columns, rows),
+		}
+	elseif drag.mode == "move" then
+		local group = CooldownPanels.GetFixedGroupById(panel, drag.groupId)
+		if not (group and currentColumn and currentRow) then return nil end
+		local column = currentColumn - ((drag.anchorColumn or 1) - 1)
+		local row = currentRow - ((drag.anchorRow or 1) - 1)
+		local gridColumns, gridRows = Helper.GetFixedGridBounds(panel, false)
+		local valid = column >= 1
+			and row >= 1
+			and gridColumns > 0
+			and gridRows > 0
+			and (column + group.columns - 1) <= gridColumns
+			and (row + group.rows - 1) <= gridRows
+			and not self:DoesFixedGroupRectOverlap(panel, column, row, group.columns, group.rows, group.id)
+		if valid and CooldownPanels.PanelHasUngroupedEntryInRect(panel, column, row, group.columns, group.rows) then valid = false end
+		return {
+			mode = "move",
+			groupId = group.id,
+			column = column,
+			row = row,
+			columns = group.columns,
+			rows = group.rows,
+			valid = valid,
+		}
+	end
+	return nil
+end
+
+function CooldownPanels:CancelFixedGroupDrag(panelId)
+	panelId = normalizeId(panelId)
+	local runtime = panelId and getRuntime(panelId) or nil
+	if not runtime or not runtime._eqolFixedGroupDrag then return false end
+	CooldownPanels.ClearFixedGroupDragState(runtime)
+	local panel = self:GetPanel(panelId)
+	local slotCount = panel and Helper.GetFixedSlotCount(panel, false) or 0
+	self:UpdateLayoutEditGrid(panelId, slotCount)
+	return true
+end
+
+function CooldownPanels:EnableFixedGroupDragTracking(panelId)
+	panelId = normalizeId(panelId)
+	local runtime = panelId and getRuntime(panelId) or nil
+	local frame = runtime and runtime.frame or nil
+	local grid = frame and frame.editGrid or nil
+	if not (runtime and grid) then return false end
+	grid:SetScript("OnUpdate", function()
+		local activeRuntime = getRuntime(panelId)
+		if not (activeRuntime and activeRuntime._eqolFixedGroupDrag) then
+			grid:SetScript("OnUpdate", nil)
+			return
+		end
+		local targetSlot = CooldownPanels:GetLayoutEditCursorSlot(panelId)
+		if targetSlot then CooldownPanels:UpdateFixedGroupDragTarget(panelId, targetSlot.column, targetSlot.row) end
+	end)
+	return true
+end
+
+function CooldownPanels:StartFixedGroupDraw(panelId, column, row)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local runtime = panelId and getRuntime(panelId) or nil
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (panel and runtime and column and row and Helper.IsFixedLayout(panel.layout)) then return false end
+	runtime._eqolFixedGroupDrag = {
+		mode = "create",
+		startColumn = column,
+		startRow = row,
+		currentColumn = column,
+		currentRow = row,
+	}
+	self:EnableFixedGroupDragTracking(panelId)
+	self:UpdateLayoutEditGrid(panelId, Helper.GetFixedSlotCount(panel, false))
+	return true
+end
+
+function CooldownPanels:StartFixedGroupMove(panelId, groupId, column, row)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local runtime = panelId and getRuntime(panelId) or nil
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	if not (panel and runtime and group and column and row and Helper.IsFixedLayout(panel.layout)) then return false end
+	local anchorColumn = math.max(1, math.min(group.columns, column - group.column + 1))
+	local anchorRow = math.max(1, math.min(group.rows, row - group.row + 1))
+	runtime._eqolFixedGroupDrag = {
+		mode = "move",
+		groupId = group.id,
+		startColumn = column,
+		startRow = row,
+		currentColumn = column,
+		currentRow = row,
+		anchorColumn = anchorColumn,
+		anchorRow = anchorRow,
+	}
+	self:EnableFixedGroupDragTracking(panelId)
+	self:UpdateLayoutEditGrid(panelId, Helper.GetFixedSlotCount(panel, false))
+	return true
+end
+
+function CooldownPanels:UpdateFixedGroupDragTarget(panelId, column, row)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local runtime = panelId and getRuntime(panelId) or nil
+	local drag = runtime and runtime._eqolFixedGroupDrag or nil
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (panel and drag and column and row) then return false end
+	if drag.currentColumn == column and drag.currentRow == row then return false end
+	drag.currentColumn = column
+	drag.currentRow = row
+	self:UpdateLayoutEditGrid(panelId, Helper.GetFixedSlotCount(panel, false))
+	return true
+end
+
+function CooldownPanels:FinishFixedGroupDrag(panelId)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local runtime = panelId and getRuntime(panelId) or nil
+	local drag = runtime and runtime._eqolFixedGroupDrag or nil
+	if not (panel and runtime and drag) then return false end
+	local rect = self:GetFixedGroupDragRect(panelId)
+	CooldownPanels.ClearFixedGroupDragState(runtime)
+	self:UpdateLayoutEditGrid(panelId, Helper.GetFixedSlotCount(panel, false))
+	if not (rect and rect.valid) then return false end
+	if drag.mode == "create" then
+		local groupId = self:CreateFixedGroup(panelId, rect.column, rect.row, rect.columns, rect.rows)
+		if groupId then
+			clearRuntimeLayoutShapeCache(runtime)
+			self:RefreshPanel(panelId)
+			self:RefreshEditor()
+			return true
+		end
+	elseif drag.mode == "move" then
+		local moved, reason = self:MoveFixedGroup(panelId, drag.groupId, rect.column, rect.row)
+		if moved then
+			clearRuntimeLayoutShapeCache(runtime)
+			self:RefreshPanel(panelId)
+			self:RefreshEditor()
+			return true
+		end
+	end
+	return false
+end
+
 function CooldownPanels:UpdateLayoutEditGrid(panelId, slotCount)
 	local runtime = getRuntime(panelId)
 	local frame = runtime and runtime.frame
@@ -5242,6 +5955,8 @@ function CooldownPanels:UpdateLayoutEditGrid(panelId, slotCount)
 	end
 	grid:Show()
 	grid.cells = grid.cells or {}
+	local _, _, gridColumns = Helper.BuildFixedSlotEntryIds(panel, nil, false)
+	local groups = CooldownPanels.GetFixedGroups(panel)
 	for i = 1, slotCount do
 		local icon = frame.icons and frame.icons[i]
 		local cell = grid.cells[i]
@@ -5259,17 +5974,127 @@ function CooldownPanels:UpdateLayoutEditGrid(panelId, slotCount)
 		end
 		if icon then
 			local cellAnchor = icon.slotAnchor or icon
+			local cellColumn = gridColumns and gridColumns > 0 and (((i - 1) % gridColumns) + 1) or i
+			local cellRow = gridColumns and gridColumns > 0 and (math.floor((i - 1) / gridColumns) + 1) or 1
+			local group = CooldownPanels.GetFixedGroupAtCell(panel, cellColumn, cellRow)
 			cell:ClearAllPoints()
 			cell:SetPoint("TOPLEFT", cellAnchor, "TOPLEFT", 0, 0)
 			cell:SetPoint("BOTTOMRIGHT", cellAnchor, "BOTTOMRIGHT", 0, 0)
+			cell._eqolLayoutSlotColumn = cellColumn
+			cell._eqolLayoutSlotRow = cellRow
+			if group then
+				if CooldownPanels.IsFixedGroupStatic(group) then
+					cell:SetBackdropColor(0.15, 0.22, 0.34, 0.18)
+					cell:SetBackdropBorderColor(0.42, 0.62, 0.92, 0.32)
+				else
+					cell:SetBackdropColor(0.18, 0.28, 0.34, 0.16)
+					cell:SetBackdropBorderColor(0.8, 0.68, 0.22, 0.28)
+				end
+			else
+				cell:SetBackdropColor(0.08, 0.2, 0.24, 0.08)
+				cell:SetBackdropBorderColor(1, 1, 1, 0.14)
+			end
 			cell:Show()
 		else
+			cell._eqolLayoutSlotColumn = nil
+			cell._eqolLayoutSlotRow = nil
 			cell:Hide()
 		end
 	end
 	for i = slotCount + 1, #grid.cells do
 		local cell = grid.cells[i]
-		if cell then cell:Hide() end
+		if cell then
+			cell._eqolLayoutSlotColumn = nil
+			cell._eqolLayoutSlotRow = nil
+			cell:Hide()
+		end
+	end
+
+	grid.groupOverlays = grid.groupOverlays or {}
+	for i = 1, #groups do
+		local group = groups[i]
+		local overlay = grid.groupOverlays[i]
+		if not overlay then
+			overlay = CreateFrame("Frame", nil, grid, "BackdropTemplate")
+			overlay:SetBackdrop({
+				bgFile = "Interface\\Buttons\\WHITE8x8",
+				edgeFile = "Interface\\Buttons\\WHITE8x8",
+				edgeSize = 1,
+			})
+			overlay:SetBackdropColor(0.85, 0.72, 0.22, 0.06)
+			overlay:SetBackdropBorderColor(0.9, 0.78, 0.24, 0.55)
+			overlay:EnableMouse(false)
+			overlay.label = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+			overlay.label:SetPoint("TOPLEFT", overlay, "TOPLEFT", 4, -3)
+			overlay.label:SetTextColor(1, 0.88, 0.34, 0.9)
+			grid.groupOverlays[i] = overlay
+		end
+		local startIndex = CooldownPanels.GetFixedGridCellIndex(panel, group.column, group.row)
+		local endIndex = CooldownPanels.GetFixedGridCellIndex(panel, group.column + group.columns - 1, group.row + group.rows - 1)
+		local startIcon = startIndex and frame.icons and frame.icons[startIndex] or nil
+		local endIcon = endIndex and frame.icons and frame.icons[endIndex] or nil
+		if startIcon and endIcon then
+			local startAnchor = startIcon.slotAnchor or startIcon
+			local endAnchor = endIcon.slotAnchor or endIcon
+			overlay:ClearAllPoints()
+			overlay:SetPoint("TOPLEFT", startAnchor, "TOPLEFT", 1, -1)
+			overlay:SetPoint("BOTTOMRIGHT", endAnchor, "BOTTOMRIGHT", -1, 1)
+			if CooldownPanels.IsFixedGroupStatic(group) then
+				overlay:SetBackdropColor(0.35, 0.52, 0.92, 0.08)
+				overlay:SetBackdropBorderColor(0.45, 0.64, 0.95, 0.55)
+				overlay.label:SetTextColor(0.78, 0.86, 1, 0.95)
+			else
+				overlay:SetBackdropColor(0.85, 0.72, 0.22, 0.06)
+				overlay:SetBackdropBorderColor(0.9, 0.78, 0.24, 0.55)
+				overlay.label:SetTextColor(1, 0.88, 0.34, 0.9)
+			end
+			overlay.label:SetText(CooldownPanels.GetFixedGroupDisplayLabel(group))
+			overlay:Show()
+		else
+			overlay:Hide()
+		end
+	end
+	for i = #groups + 1, #(grid.groupOverlays or {}) do
+		local overlay = grid.groupOverlays[i]
+		if overlay then overlay:Hide() end
+	end
+
+	if not grid.selectionOverlay then
+		local overlay = CreateFrame("Frame", nil, grid, "BackdropTemplate")
+		overlay:SetBackdrop({
+			bgFile = "Interface\\Buttons\\WHITE8x8",
+			edgeFile = "Interface\\Buttons\\WHITE8x8",
+			edgeSize = 1,
+		})
+		overlay:EnableMouse(false)
+		overlay:Hide()
+		grid.selectionOverlay = overlay
+	end
+	local dragRect = CooldownPanels:GetFixedGroupDragRect(panelId)
+	if dragRect then
+		local startIndex = CooldownPanels.GetFixedGridCellIndex(panel, dragRect.column, dragRect.row)
+		local endIndex = CooldownPanels.GetFixedGridCellIndex(panel, dragRect.column + dragRect.columns - 1, dragRect.row + dragRect.rows - 1)
+		local startIcon = startIndex and frame.icons and frame.icons[startIndex] or nil
+		local endIcon = endIndex and frame.icons and frame.icons[endIndex] or nil
+		if startIcon and endIcon then
+			local startAnchor = startIcon.slotAnchor or startIcon
+			local endAnchor = endIcon.slotAnchor or endIcon
+			grid.selectionOverlay:ClearAllPoints()
+			grid.selectionOverlay:SetPoint("TOPLEFT", startAnchor, "TOPLEFT", 1, -1)
+			grid.selectionOverlay:SetPoint("BOTTOMRIGHT", endAnchor, "BOTTOMRIGHT", -1, 1)
+			if dragRect.valid then
+				grid.selectionOverlay:SetBackdropColor(0.2, 0.7, 0.3, 0.14)
+				grid.selectionOverlay:SetBackdropBorderColor(0.2, 0.85, 0.35, 0.9)
+			else
+				grid.selectionOverlay:SetBackdropColor(0.8, 0.15, 0.15, 0.12)
+				grid.selectionOverlay:SetBackdropBorderColor(0.9, 0.2, 0.2, 0.9)
+			end
+			grid.selectionOverlay:Show()
+		else
+			grid.selectionOverlay:Hide()
+		end
+	else
+		grid.selectionOverlay:Hide()
 	end
 end
 
@@ -6028,6 +6853,10 @@ local function importCooldownManagerSpells(panelId, sourceKind)
 		local canonicalSpellID = CooldownPanels:GetCanonicalSpellVariantID(resolvedSpellId) or resolvedSpellId
 		if existingBySpellId[canonicalSpellID] then
 			stats.duplicates = stats.duplicates + 1
+			return
+		end
+		if CooldownPanels:GetFixedEntryAddError(panel, nil) then
+			stats.invalid = stats.invalid + 1
 			return
 		end
 		local entryId = Helper.GetNextNumericId(panel.entries)
@@ -9678,6 +10507,181 @@ function CooldownPanels:ShowEditorGroupRenamePopup(groupId)
 	StaticPopup_Show("EQOL_COOLDOWN_PANEL_GROUP_RENAME", nil, nil, { groupId = groupId })
 end
 
+function CooldownPanels:EnsureFixedGroupRenamePopup()
+	if StaticPopupDialogs["EQOL_COOLDOWN_PANEL_FIXED_GROUP_RENAME"] then return end
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_FIXED_GROUP_RENAME"] = {
+		text = L["CooldownPanelRenameGroupPrompt"] or "Rename group",
+		button1 = OKAY,
+		button2 = CANCEL,
+		hasEditBox = true,
+		editBoxWidth = 240,
+		enterClicksFirstButton = true,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnShow = function(self, data)
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			local currentName = data and CooldownPanels:GetFixedGroupLabel(data.panelId, data.groupId) or ""
+			if editBox then
+				editBox:SetText(currentName or "")
+				editBox:SetFocus()
+				if editBox.HighlightText then editBox:HighlightText() end
+			end
+		end,
+		OnAccept = function(self, data)
+			if not (data and data.panelId and data.groupId) then return end
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			local text = editBox and editBox:GetText()
+			if CooldownPanels:RenameFixedGroup(data.panelId, data.groupId, text) then
+				CooldownPanels:RefreshPanel(data.panelId)
+				CooldownPanels:RefreshEditor()
+			end
+		end,
+	}
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_FIXED_GROUP_RENAME"].EditBoxOnEnterPressed = function(editBox)
+		local parent = editBox and editBox.GetParent and editBox:GetParent()
+		if parent and parent.button1 and parent.button1:IsEnabled() then parent.button1:Click() end
+	end
+end
+
+function CooldownPanels:EnsureFixedGroupDeletePopup()
+	if StaticPopupDialogs["EQOL_COOLDOWN_PANEL_FIXED_GROUP_DELETE"] then return end
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_FIXED_GROUP_DELETE"] = {
+		text = L["CooldownPanelDeleteGroupPrompt"] or "Delete group %s? Entries will become static fixed slots.",
+		button1 = YES,
+		button2 = CANCEL,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnAccept = function(_, data)
+			if not (data and data.panelId and data.groupId) then return end
+			if CooldownPanels:DeleteFixedGroup(data.panelId, data.groupId) then
+				local runtime = getRuntime(data.panelId)
+				if runtime then clearRuntimeLayoutShapeCache(runtime) end
+				CooldownPanels:RefreshPanel(data.panelId)
+				CooldownPanels:RefreshEditor()
+			end
+		end,
+	}
+end
+
+function CooldownPanels:EnsureFixedGroupIconSizePopup()
+	if StaticPopupDialogs["EQOL_COOLDOWN_PANEL_FIXED_GROUP_ICON_SIZE"] then return end
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_FIXED_GROUP_ICON_SIZE"] = {
+		text = L["CooldownPanelFixedGroupIconSizePrompt"] or "Set group icon size (leave empty for panel size)",
+		button1 = OKAY,
+		button2 = CANCEL,
+		hasEditBox = true,
+		editBoxWidth = 180,
+		enterClicksFirstButton = true,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnShow = function(self, data)
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			local panel = data and data.panelId and CooldownPanels:GetPanel(data.panelId) or nil
+			local group = panel and CooldownPanels.GetFixedGroupById(panel, data.groupId) or nil
+			local size = group and Helper.NormalizeFixedGroupIconSize(group.iconSize) or nil
+			if editBox then
+				editBox:SetText(size and tostring(size) or "")
+				editBox:SetFocus()
+				if editBox.HighlightText then editBox:HighlightText() end
+			end
+		end,
+		OnAccept = function(self, data)
+			if not (data and data.panelId and data.groupId) then return end
+			local editBox = self.editBox or self.GetEditBox and self:GetEditBox()
+			local text = editBox and editBox:GetText() or ""
+			if strtrim then text = strtrim(text) end
+			local nextSize = text ~= "" and Helper.NormalizeFixedGroupIconSize(tonumber(text)) or nil
+			if text ~= "" and nextSize == nil then
+				showErrorMessage(L["CooldownPanelFixedGroupIconSizeInvalid"] or "Icon size must be between 12 and 128.")
+				return
+			end
+			if CooldownPanels:SetFixedGroupIconSize(data.panelId, data.groupId, nextSize) then
+				CooldownPanels:RefreshPanel(data.panelId)
+				CooldownPanels:RefreshEditor()
+			end
+		end,
+	}
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_FIXED_GROUP_ICON_SIZE"].EditBoxOnEnterPressed = function(editBox)
+		local parent = editBox and editBox.GetParent and editBox:GetParent()
+		if parent and parent.button1 and parent.button1:IsEnabled() then parent.button1:Click() end
+	end
+end
+
+function CooldownPanels:ShowFixedGroupRenamePopup(panelId, groupId)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if not (panelId and groupId) then return end
+	self:EnsureFixedGroupRenamePopup()
+	StaticPopup_Show("EQOL_COOLDOWN_PANEL_FIXED_GROUP_RENAME", nil, nil, { panelId = panelId, groupId = groupId })
+end
+
+function CooldownPanels:ShowFixedGroupIconSizePopup(panelId, groupId)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if not (panelId and groupId) then return end
+	self:EnsureFixedGroupIconSizePopup()
+	StaticPopup_Show("EQOL_COOLDOWN_PANEL_FIXED_GROUP_ICON_SIZE", nil, nil, { panelId = panelId, groupId = groupId })
+end
+
+function CooldownPanels:ShowFixedGroupMenu(owner, panelId, groupId)
+	panelId = normalizeId(panelId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if not (owner and panelId and groupId and Api.MenuUtil and Api.MenuUtil.CreateContextMenu) then return end
+	local panel = self:GetPanel(panelId)
+	local group = panel and CooldownPanels.GetFixedGroupById(panel, groupId) or nil
+	if not group then return end
+	local groupName = CooldownPanels.GetFixedGroupName(group)
+	Api.MenuUtil.CreateContextMenu(owner, function(_, rootDescription)
+		rootDescription:CreateTitle(CooldownPanels.GetFixedGroupDisplayLabel(group))
+		rootDescription:CreateDivider()
+		local modeMenu = rootDescription:CreateButton(L["CooldownPanelMode"] or "Mode")
+		modeMenu:CreateRadio(L["CooldownPanelDynamic"] or "Dynamic", function() return not CooldownPanels.IsFixedGroupStatic(group) end, function()
+			if CooldownPanels:SetFixedGroupMode(panelId, groupId, "DYNAMIC") then
+				CooldownPanels:RefreshPanel(panelId)
+				CooldownPanels:RefreshEditor()
+			end
+		end)
+		modeMenu:CreateRadio(L["CooldownPanelStatic"] or "Static", function() return CooldownPanels.IsFixedGroupStatic(group) end, function()
+			local changed, reason = CooldownPanels:SetFixedGroupMode(panelId, groupId, "STATIC")
+			if changed then
+				CooldownPanels:RefreshPanel(panelId)
+				CooldownPanels:RefreshEditor()
+			elseif reason == "GROUP_FULL" then
+				showErrorMessage(L["CooldownPanelFixedGroupFull"] or "Fixed group is full.")
+			end
+		end)
+		local sizeMenu = rootDescription:CreateButton(L["CooldownPanelIconSize"] or "Icon size")
+		sizeMenu:CreateRadio(L["CooldownPanelUsePanelSize"] or "Use panel size", function() return Helper.NormalizeFixedGroupIconSize(group.iconSize) == nil end, function()
+			if CooldownPanels:SetFixedGroupIconSize(panelId, groupId, nil) then
+				CooldownPanels:RefreshPanel(panelId)
+				CooldownPanels:RefreshEditor()
+			end
+		end)
+		for _, preset in ipairs({ 24, 30, 36, 42, 48, 56 }) do
+			local size = preset
+			sizeMenu:CreateRadio(tostring(size), function() return Helper.NormalizeFixedGroupIconSize(group.iconSize) == size end, function()
+				if CooldownPanels:SetFixedGroupIconSize(panelId, groupId, size) then
+					CooldownPanels:RefreshPanel(panelId)
+					CooldownPanels:RefreshEditor()
+				end
+			end)
+		end
+		sizeMenu:CreateButton(L["CooldownPanelCustom"] or "Custom", function() CooldownPanels:ShowFixedGroupIconSizePopup(panelId, groupId) end)
+		rootDescription:CreateDivider()
+		rootDescription:CreateButton(L["CooldownPanelRename"] or "Rename", function() CooldownPanels:ShowFixedGroupRenamePopup(panelId, groupId) end)
+		rootDescription:CreateButton(DELETE or "Delete", function()
+			CooldownPanels:EnsureFixedGroupDeletePopup()
+			StaticPopup_Show("EQOL_COOLDOWN_PANEL_FIXED_GROUP_DELETE", groupName, nil, { panelId = panelId, groupId = groupId })
+		end)
+	end)
+end
+
 function CooldownPanels:ShowEditorGroupMenu(owner, groupId)
 	groupId = normalizeId(groupId)
 	if not (owner and groupId and Api.MenuUtil and Api.MenuUtil.CreateContextMenu) then return end
@@ -10089,6 +11093,32 @@ local function moveEntryInOrder(panel, entryId, targetEntryId)
 	return true
 end
 
+function CooldownPanels.MoveEntryToOrderIndex(panel, entryId, targetIndex)
+	if not panel or not panel.order then return false end
+	targetIndex = tonumber(targetIndex)
+	if not targetIndex then return false end
+	local fromIndex
+	for i, id in ipairs(panel.order) do
+		if id == entryId then
+			fromIndex = i
+			break
+		end
+	end
+	if not fromIndex then return false end
+	local maxIndex = #panel.order + 1
+	if targetIndex < 1 then
+		targetIndex = 1
+	elseif targetIndex > maxIndex then
+		targetIndex = maxIndex
+	end
+	if fromIndex == targetIndex or fromIndex + 1 == targetIndex then return false end
+	table.remove(panel.order, fromIndex)
+	if fromIndex < targetIndex then targetIndex = targetIndex - 1 end
+	if targetIndex > #panel.order + 1 then targetIndex = #panel.order + 1 end
+	table.insert(panel.order, targetIndex, entryId)
+	return true
+end
+
 function CooldownPanels:MoveEntryToFixedSlot(panelId, entryId, targetSlot)
 	panelId = normalizeId(panelId)
 	entryId = normalizeId(entryId)
@@ -10118,42 +11148,101 @@ function CooldownPanels:MoveEntryToFixedSlot(panelId, entryId, targetSlot)
 	if Helper.NormalizeLayoutMode(layout.layoutMode, Helper.PANEL_LAYOUT_DEFAULTS.layoutMode) == "RADIAL" then return false end
 	if not Helper.IsFixedLayout(layout) then
 		layout.layoutMode = "FIXED"
-		Helper.EnsureFixedSlotAssignments(panel)
 		local gridColumns = Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0)
 		if gridColumns <= 0 then
 			gridColumns = Helper.ClampInt(layout.wrapCount, 0, 40, Helper.PANEL_LAYOUT_DEFAULTS.wrapCount or 0)
 			if not gridColumns or gridColumns <= 0 then gridColumns = math.min(math.max(type(panel.order) == "table" and #panel.order or 0, 4), 12) end
 			layout.fixedGridColumns = gridColumns
 		end
+		Helper.EnsureFixedSlotAssignments(panel)
+		if Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0) <= 0 then
+			local _, maxRow = Helper.EnsureFixedSlotAssignments(panel)
+			layout.fixedGridRows = math.max(maxRow or 0, 1)
+		end
 	end
 	Helper.EnsureFixedSlotAssignments(panel)
+	if not self:IsFixedCellWithinBounds(panel, targetColumn, targetRow) then return false end
 	local fromEntry = panel.entries[entryId]
 	if not fromEntry then return false end
-	local fromColumn = Helper.NormalizeSlotCoordinate(fromEntry.slotColumn)
-	local fromRow = Helper.NormalizeSlotCoordinate(fromEntry.slotRow)
-	if fromColumn == targetColumn and fromRow == targetRow then return false end
-	local swapId
-	for candidateId, candidate in pairs(panel.entries or {}) do
-		if
-			candidateId ~= entryId
-			and Helper.NormalizeSlotCoordinate(candidate and candidate.slotColumn) == targetColumn
-			and Helper.NormalizeSlotCoordinate(candidate and candidate.slotRow) == targetRow
-		then
-			swapId = candidateId
-			break
+	local fromPlacement = CooldownPanels.GetEntryFixedPlacement(panel, fromEntry)
+	local fromGroupId = Helper.NormalizeFixedGroupId(fromEntry.fixedGroupId)
+	local targetGroup = CooldownPanels.GetFixedGroupAtCell(panel, targetColumn, targetRow)
+	if targetGroup then
+		if CooldownPanels.IsFixedGroupStatic(targetGroup) then
+			if fromPlacement and fromPlacement.groupId == targetGroup.id and fromPlacement.column == targetColumn and fromPlacement.row == targetRow then return false end
+			local targetOccupantId, targetOccupant = self:GetEntryAtStaticGroupCell(panel, targetGroup.id, targetColumn, targetRow, entryId)
+			if targetOccupant then
+				local swapPlacement = fromPlacement
+				if not swapPlacement or (swapPlacement.groupId == targetGroup.id and swapPlacement.column == targetColumn and swapPlacement.row == targetRow) then
+					local freeColumn, freeRow = self:FindFirstFreeStaticGroupCell(panel, targetGroup.id, entryId)
+					if not (freeColumn and freeRow) then return false end
+					swapPlacement = {
+						groupId = targetGroup.id,
+						column = freeColumn,
+						row = freeRow,
+					}
+				end
+				CooldownPanels.AssignEntryFixedPlacement(targetOccupant, swapPlacement)
+				self:SyncEntryFixedGroupState(panel, targetOccupant)
+			end
+			CooldownPanels.AssignEntryFixedPlacement(fromEntry, {
+				groupId = targetGroup.id,
+				column = targetColumn,
+				row = targetRow,
+			})
+			self:SyncEntryFixedGroupState(panel, fromEntry)
+			Helper.EnsureFixedSlotAssignments(panel)
+			return true
 		end
-	end
-	fromEntry.slotColumn = targetColumn
-	fromEntry.slotRow = targetRow
-	if swapId and fromColumn and fromRow then
-		local swapEntry = panel.entries[swapId]
-		if swapEntry then
-			swapEntry.slotColumn = fromColumn
-			swapEntry.slotRow = fromRow
+		local targetLocalIndex = Helper.GetFixedGroupLocalIndex(targetGroup, targetColumn, targetRow) or (#CooldownPanels.GetFixedGroupEntriesInOrder(panel, targetGroup.id, entryId) + 1)
+		local changed = false
+		if fromGroupId ~= targetGroup.id then
+			fromEntry.fixedGroupId = targetGroup.id
+			changed = true
 		end
+		fromEntry.slotColumn = nil
+		fromEntry.slotRow = nil
+		fromEntry.slotIndex = nil
+		self:SyncEntryFixedGroupState(panel, fromEntry)
+		local groupMemberIds = CooldownPanels.GetFixedGroupEntriesInOrder(panel, targetGroup.id, entryId)
+		local desiredIndex = math.max(1, math.min(targetLocalIndex, #groupMemberIds + 1))
+		if desiredIndex <= #groupMemberIds then
+			if moveEntryInOrder(panel, entryId, groupMemberIds[desiredIndex]) then changed = true end
+		else
+			local lastIndex
+			for i, id in ipairs(panel.order or {}) do
+				if id ~= entryId then
+					local candidate = panel.entries and panel.entries[id]
+					if candidate and Helper.NormalizeFixedGroupId(candidate.fixedGroupId) == targetGroup.id then lastIndex = i end
+				end
+			end
+			if CooldownPanels.MoveEntryToOrderIndex(panel, entryId, (lastIndex or #panel.order) + 1) then changed = true end
+		end
+		Helper.EnsureFixedSlotAssignments(panel)
+		return changed
 	end
-	layout.fixedGridColumns = math.max(Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0), targetColumn)
-	layout.fixedGridRows = math.max(Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0), targetRow)
+	if fromPlacement and fromPlacement.groupId == nil and fromPlacement.column == targetColumn and fromPlacement.row == targetRow then return false end
+	local swapId, swapEntry = self:GetEntryAtUngroupedFixedCell(panel, targetColumn, targetRow, entryId)
+	if swapEntry then
+		local swapPlacement = fromPlacement
+		if not swapPlacement or (swapPlacement.groupId == nil and swapPlacement.column == targetColumn and swapPlacement.row == targetRow) then
+			local freeColumn, freeRow = self:FindFirstFreeUngroupedFixedCell(panel, entryId)
+			if not (freeColumn and freeRow) then return false end
+			swapPlacement = {
+				groupId = nil,
+				column = freeColumn,
+				row = freeRow,
+			}
+		end
+		CooldownPanels.AssignEntryFixedPlacement(swapEntry, swapPlacement)
+		self:SyncEntryFixedGroupState(panel, swapEntry)
+	end
+	CooldownPanels.AssignEntryFixedPlacement(fromEntry, {
+		groupId = nil,
+		column = targetColumn,
+		row = targetRow,
+	})
+	self:SyncEntryFixedGroupState(panel, fromEntry)
 	Helper.EnsureFixedSlotAssignments(panel)
 	return true
 end
@@ -10166,6 +11255,23 @@ function CooldownPanels:GetLayoutEditCursorSlot(panelId)
 	if not frame or not frame.icons then return nil end
 	local cursorX, cursorY = self:GetCursorPositionOnUIParent()
 	if not (cursorX and cursorY) then return nil end
+	local grid = frame.editGrid
+	if grid and grid.cells then
+		for i = 1, #grid.cells do
+			local cell = grid.cells[i]
+			if cell and cell.IsShown and cell:IsShown() then
+				local left = cell.GetLeft and cell:GetLeft()
+				local right = cell.GetRight and cell:GetRight()
+				local top = cell.GetTop and cell:GetTop()
+				local bottom = cell.GetBottom and cell:GetBottom()
+				if left and right and top and bottom and cursorX >= left and cursorX <= right and cursorY <= top and cursorY >= bottom then
+					local column = Helper.NormalizeSlotCoordinate(cell._eqolLayoutSlotColumn)
+					local row = Helper.NormalizeSlotCoordinate(cell._eqolLayoutSlotRow)
+					if column and row then return { column = column, row = row } end
+				end
+			end
+		end
+	end
 	for i = 1, #frame.icons do
 		local icon = frame.icons[i]
 		local handle = icon and icon.layoutHandle
@@ -10263,7 +11369,11 @@ local function refreshEntryList(editor, panel)
 
 				row.entryId = entryId
 				row.icon:SetTexture(getEntryIcon(entry))
-				row.label:SetText(getEntryName(entry))
+				local label = getEntryName(entry)
+				local group = CooldownPanels.GetFixedGroupById(panel, entry.fixedGroupId)
+				local groupLabel = group and CooldownPanels.GetFixedGroupDisplayLabel(group) or nil
+				if groupLabel then label = string.format("%s {%s}", label, groupLabel) end
+				row.label:SetText(label)
 				row.kind:SetText(getEntryTypeLabel(entry.type))
 				row:Show()
 
@@ -11116,6 +12226,10 @@ end
 function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotColumn, slotRow)
 	if not icon then return end
 	local handle = icon.layoutHandle
+	entryId = normalizeId(entryId)
+	slotColumn = Helper.NormalizeSlotCoordinate(slotColumn)
+	slotRow = Helper.NormalizeSlotCoordinate(slotRow)
+	icon._eqolLayoutEntryId = entryId
 	icon._eqolLayoutSlotColumn = nil
 	icon._eqolLayoutSlotRow = nil
 	local active = self:IsPanelLayoutEditActive(panelId)
@@ -11135,6 +12249,7 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 		handle:SetScript("OnDragStop", nil)
 		handle:SetScript("OnReceiveDrag", nil)
 		handle:SetScript("OnMouseUp", nil)
+		handle._eqolLayoutEntryId = nil
 		handle._eqolLayoutSlotColumn = nil
 		handle._eqolLayoutSlotRow = nil
 		handle._eqolLayoutConfigured = nil
@@ -11146,15 +12261,18 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 		handle:RegisterForDrag("LeftButton")
 		handle:ClearAllPoints()
 		handle:SetAllPoints(icon.slotAnchor or icon)
+		handle._eqolLayoutEntryId = entryId
 		handle._eqolLayoutSlotColumn = slotColumn
 		handle._eqolLayoutSlotRow = slotRow
 		return
 	end
 	handle:Show()
 	handle:EnableMouse(true)
+	handle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	handle:RegisterForDrag("LeftButton")
 	handle:ClearAllPoints()
 	handle:SetAllPoints(icon.slotAnchor or icon)
+	handle._eqolLayoutEntryId = entryId
 	handle._eqolLayoutSlotColumn = slotColumn
 	handle._eqolLayoutSlotRow = slotRow
 	handle._eqolLayoutConfigured = true
@@ -11172,6 +12290,11 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 			end
 			return
 		end
+		local runtimePanel = getRuntime(panelId)
+		if runtimePanel and runtimePanel._eqolFixedGroupDrag then
+			CooldownPanels:UpdateFixedGroupDragTarget(panelId, self._eqolLayoutSlotColumn, self._eqolLayoutSlotRow)
+			return
+		end
 		CooldownPanels.ShowIconTooltip(icon)
 	end)
 	handle:SetScript("OnLeave", function(self)
@@ -11185,15 +12308,28 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 		icon:SetAlpha(1)
 		CooldownPanels.HideIconTooltip(icon)
 	end)
-	handle:SetScript("OnDragStart", function()
-		if not entryId then return end
+	handle:SetScript("OnDragStart", function(self)
+		local currentEntryId = normalizeId(self._eqolLayoutEntryId)
+		local currentColumn = Helper.NormalizeSlotCoordinate(self._eqolLayoutSlotColumn)
+		local currentRow = Helper.NormalizeSlotCoordinate(self._eqolLayoutSlotRow)
+		if IsShiftKeyDown and IsShiftKeyDown() then
+			local currentPanel = CooldownPanels:GetPanel(panelId)
+			local group = currentPanel and CooldownPanels.GetFixedGroupAtCell(currentPanel, currentColumn, currentRow) or nil
+			if group then
+				if CooldownPanels:StartFixedGroupMove(panelId, group.id, currentColumn, currentRow) then icon:SetAlpha(0.8) end
+			else
+				CooldownPanels:StartFixedGroupDraw(panelId, currentColumn, currentRow)
+			end
+			return
+		end
+		if not currentEntryId then return end
 		local editor = getEditor()
 		if not editor then return end
 		if CooldownPanels:PreparePanelForFixedLayoutEdit(panelId) then
 			CooldownPanels:RefreshPanel(panelId)
 			CooldownPanels:RefreshEditor()
 		end
-		editor.dragEntryId = entryId
+		editor.dragEntryId = currentEntryId
 		editor.dragTargetId = nil
 		editor.dragPreviewSlot = nil
 		editor.draggingEntry = true
@@ -11202,6 +12338,13 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 	end)
 	handle:SetScript("OnDragStop", function()
 		icon:SetAlpha(1)
+		local runtimePanel = getRuntime(panelId)
+		if runtimePanel and runtimePanel._eqolFixedGroupDrag then
+			local targetSlot = CooldownPanels:GetLayoutEditCursorSlot(panelId)
+			if targetSlot then CooldownPanels:UpdateFixedGroupDragTarget(panelId, targetSlot.column, targetSlot.row) end
+			CooldownPanels:FinishFixedGroupDrag(panelId)
+			return
+		end
 		local editor = getEditor()
 		if not (editor and editor.draggingEntry) then return end
 		editor.draggingEntry = nil
@@ -11214,19 +12357,35 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 		if panelId and fromId and targetSlot and CooldownPanels:MoveEntryToFixedSlot(panelId, fromId, targetSlot) then CooldownPanels:RefreshPanel(panelId) end
 		CooldownPanels:RefreshEditor()
 	end)
-	handle:SetScript("OnReceiveDrag", function()
+	handle:SetScript("OnReceiveDrag", function(self)
+		local currentColumn = Helper.NormalizeSlotCoordinate(self._eqolLayoutSlotColumn)
+		local currentRow = Helper.NormalizeSlotCoordinate(self._eqolLayoutSlotRow)
 		local editor = getEditor()
 		if editor and editor.draggingEntry then return end
-		if CooldownPanels:HandleCursorDrop(panelId, { column = slotColumn, row = slotRow }) then
+		if CooldownPanels:HandleCursorDrop(panelId, { column = currentColumn, row = currentRow }) then
 			CooldownPanels:RefreshPanel(panelId)
 			CooldownPanels:RefreshEditor()
 		end
 	end)
-	handle:SetScript("OnMouseUp", function(_, btn)
+	handle:SetScript("OnMouseUp", function(self, btn)
+		local currentEntryId = normalizeId(self._eqolLayoutEntryId)
+		local currentColumn = Helper.NormalizeSlotCoordinate(self._eqolLayoutSlotColumn)
+		local currentRow = Helper.NormalizeSlotCoordinate(self._eqolLayoutSlotRow)
+		if btn == "RightButton" then
+			local currentPanel = CooldownPanels:GetPanel(panelId)
+			local group = currentPanel and CooldownPanels.GetFixedGroupAtCell(currentPanel, currentColumn, currentRow) or nil
+			if group then
+				CooldownPanels:ShowFixedGroupMenu(handle or icon, panelId, group.id)
+				return
+			end
+			return
+		end
 		if btn ~= "LeftButton" then return end
 		local editor = getEditor()
 		if editor and editor.draggingEntry then return end
-		if CooldownPanels:HandleCursorDrop(panelId, { column = slotColumn, row = slotRow }) then
+		local runtimePanel = getRuntime(panelId)
+		if runtimePanel and runtimePanel._eqolFixedGroupDrag then return end
+		if CooldownPanels:HandleCursorDrop(panelId, { column = currentColumn, row = currentRow }) then
 			CooldownPanels:RefreshPanel(panelId)
 			CooldownPanels:RefreshEditor()
 			return
@@ -11235,7 +12394,7 @@ function CooldownPanels:ConfigureEditModePanelIcon(panelId, icon, entryId, slotC
 		local cursorCandidates = CooldownPanels:GetLayoutEntryCandidatesAtCursor(panelId)
 		if cursorCandidates and #cursorCandidates > 1 and CooldownPanels:ShowLayoutEntryChooserMenu(handle or icon, panelId, cursorCandidates) then return end
 		local selectedCandidate = cursorCandidates and cursorCandidates[1] or nil
-		local targetEntryId = selectedCandidate and selectedCandidate.entryId or entryId
+		local targetEntryId = selectedCandidate and selectedCandidate.entryId or currentEntryId
 		local targetAnchor = selectedCandidate and (selectedCandidate.anchorFrame or selectedCandidate.icon) or (handle or icon)
 		if targetEntryId then
 			CooldownPanels:SelectEntry(targetEntryId)
@@ -11580,8 +12739,11 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local order = panel.order or {}
 	local fixedSlotCount = 0
 	local fixedGridColumns = 0
+	local fixedGridRows = 0
+	local fixedGroups = fixedLayout and CooldownPanels.GetFixedGroups(panel) or nil
+	local fixedGroupVisibleEntries = fixedLayout and {} or nil
 	if fixedLayout then
-		_, fixedSlotCount, fixedGridColumns = Helper.BuildFixedSlotEntryIds(panel, nil, false)
+		_, fixedSlotCount, fixedGridColumns, fixedGridRows = Helper.BuildFixedSlotEntryIds(panel, nil, false)
 	end
 	local editGridColumns
 	if layoutEditActive and not fixedLayout then
@@ -11855,17 +13017,55 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			if show then
 				visibleCount = visibleCount + 1
 				local targetIndex = visibleCount
+				local data
 				if fixedLayout then
-					local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
-					local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
-					if slotColumn and slotRow and fixedGridColumns > 0 then targetIndex = ((slotRow - 1) * fixedGridColumns) + slotColumn end
-					visibleSlotsUsed[targetIndex] = true
-					if targetIndex > fixedSlotCount then fixedSlotCount = targetIndex end
+					local fixedGroup = CooldownPanels.GetFixedGroupById(panel, entry.fixedGroupId)
+					if fixedGroup then
+						if CooldownPanels.IsFixedGroupStatic(fixedGroup) then
+							local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+							local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
+							if
+								slotColumn
+								and slotRow
+								and fixedGridColumns > 0
+								and fixedGridRows > 0
+								and slotColumn <= fixedGridColumns
+								and slotRow <= fixedGridRows
+								and CooldownPanels.RectContainsCell(fixedGroup.column, fixedGroup.row, fixedGroup.columns, fixedGroup.rows, slotColumn, slotRow)
+							then
+								targetIndex = ((slotRow - 1) * fixedGridColumns) + slotColumn
+								visibleSlotsUsed[targetIndex] = true
+								if targetIndex > fixedSlotCount then fixedSlotCount = targetIndex end
+							else
+								targetIndex = nil
+							end
+						else
+							local list = fixedGroupVisibleEntries[fixedGroup.id]
+							if not list then
+								list = {}
+								fixedGroupVisibleEntries[fixedGroup.id] = list
+							end
+							data = {}
+							list[#list + 1] = data
+							targetIndex = nil
+							data._eqolFixedGroupId = fixedGroup.id
+						end
+					else
+						local slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+						local slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
+						if slotColumn and slotRow and fixedGridColumns > 0 and fixedGridRows > 0 and slotColumn <= fixedGridColumns and slotRow <= fixedGridRows then
+							targetIndex = ((slotRow - 1) * fixedGridColumns) + slotColumn
+							visibleSlotsUsed[targetIndex] = true
+							if targetIndex > fixedSlotCount then fixedSlotCount = targetIndex end
+						else
+							targetIndex = nil
+						end
+					end
 				end
-				local data = visible[targetIndex]
+				if not data then data = targetIndex and visible[targetIndex] or nil end
 				if not data then
 					data = {}
-					visible[targetIndex] = data
+					if targetIndex then visible[targetIndex] = data end
 				end
 				data.icon = iconTexture or Helper.PREVIEW_ICON
 				data.showCooldown = showCooldown
@@ -11978,6 +13178,27 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					visiblePowerSpellSeen[spellId] = true
 					visiblePowerSpellCount = visiblePowerSpellCount + 1
 					visiblePowerSpells[visiblePowerSpellCount] = spellId
+				end
+			end
+		end
+	end
+
+	if fixedLayout and fixedGroups then
+		for i = 1, #fixedGroups do
+			local group = fixedGroups[i]
+			local list = group and not CooldownPanels.IsFixedGroupStatic(group) and fixedGroupVisibleEntries and fixedGroupVisibleEntries[group.id] or nil
+			if list then
+				local capacity = Helper.GetFixedGroupCapacity(group)
+				local limit = math.min(capacity, #list)
+				for groupIndex = 1, limit do
+					local column = group.column + ((groupIndex - 1) % group.columns)
+					local row = group.row + math.floor((groupIndex - 1) / group.columns)
+					if fixedGridColumns > 0 and fixedGridRows > 0 and column <= fixedGridColumns and row <= fixedGridRows then
+						local targetIndex = ((row - 1) * fixedGridColumns) + column
+						visible[targetIndex] = list[groupIndex]
+						visibleSlotsUsed[targetIndex] = true
+						if targetIndex > fixedSlotCount then fixedSlotCount = targetIndex end
+					end
 				end
 			end
 		end
@@ -12927,8 +14148,8 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.layoutMode = Helper.NormalizeLayoutMode(value, layout.layoutMode or Helper.PANEL_LAYOUT_DEFAULTS.layoutMode)
 		if Helper.IsFixedLayout(layout) then
 			local maxColumn, maxRow = Helper.EnsureFixedSlotAssignments(panel)
-			layout.fixedGridColumns = math.max(Helper.NormalizeFixedGridSize(layout.fixedGridColumns, Helper.PANEL_LAYOUT_DEFAULTS.fixedGridColumns or 0), maxColumn or 0)
-			layout.fixedGridRows = math.max(Helper.NormalizeFixedGridSize(layout.fixedGridRows, Helper.PANEL_LAYOUT_DEFAULTS.fixedGridRows or 0), maxRow or 0)
+			if Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0) <= 0 then layout.fixedGridColumns = math.max(maxColumn or 0, 1) end
+			if Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0) <= 0 then layout.fixedGridRows = math.max(maxRow or 0, 1) end
 		end
 	elseif field == "fixedSlotCount" then
 		local minimum = 0
@@ -13434,7 +14655,6 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 	local visibilityRuleOptions = PanelVisibility.GetRuleOptions()
 	local settings
 	if SettingType then
-
 		settings = {
 			{
 				name = L["CooldownPanelCopySettingsHeader"] or "Copy Settings",
@@ -13476,9 +14696,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				field = "anchorRelativeFrame",
 				parentId = "cooldownPanelAnchor",
 				height = 200,
-				get = function()
-					return CooldownPanels.ValidateRelativeFrameChoice(panel, panelKey, runtime)
-				end,
+				get = function() return CooldownPanels.ValidateRelativeFrameChoice(panel, panelKey, runtime) end,
 				set = function(_, value)
 					local a = ensureAnchorTable()
 					if not a then return end
@@ -13506,11 +14724,11 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 							if not a then return end
 							local target = entry.key
 							local cache = CooldownPanels.GetRelativeFrameCache(runtime, panel, panelKey)
-								if not (cache.valid and cache.valid[target]) then target = "UIParent" end
-								if target == FAKE_CURSOR_FRAME_NAME then
-									CooldownPanels:AttachFakeCursor(panelId)
-									return
-								end
+							if not (cache.valid and cache.valid[target]) then target = "UIParent" end
+							if target == FAKE_CURSOR_FRAME_NAME then
+								CooldownPanels:AttachFakeCursor(panelId)
+								return
+							end
 							if a.relativeFrame ~= target then CooldownPanels.MarkRelativeFrameEntriesDirty() end
 							a.relativeFrame = target
 							applyAnchorDefaults(a, target)

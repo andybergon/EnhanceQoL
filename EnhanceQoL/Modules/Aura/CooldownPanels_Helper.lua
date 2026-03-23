@@ -499,6 +499,25 @@ function Helper.NormalizeFixedGridSize(value, fallback)
 	return num
 end
 
+function Helper.NormalizeFixedGroupMode(value, fallback)
+	local mode = type(value) == "string" and string.upper(value) or nil
+	if mode == "STATIC" or mode == "DYNAMIC" then return mode end
+	return fallback or "DYNAMIC"
+end
+
+function Helper.GetFixedGroupMode(group)
+	if type(group) ~= "table" then return "DYNAMIC" end
+	return Helper.NormalizeFixedGroupMode(group.mode, "DYNAMIC")
+end
+
+function Helper.FixedGroupUsesStaticSlots(group) return Helper.GetFixedGroupMode(group) == "STATIC" end
+
+function Helper.NormalizeFixedGroupIconSize(value)
+	local size = Helper.ClampInt(value, 12, 128, nil)
+	if size == nil then return nil end
+	return size
+end
+
 local function getFixedGridDefaultColumns(panel)
 	if type(panel) ~= "table" then return 4 end
 	local layout = type(panel.layout) == "table" and panel.layout or nil
@@ -512,69 +531,304 @@ local function getFixedGridDefaultColumns(panel)
 	return math.min(math.max(math.ceil(math.sqrt(entryCount)), 4), 12)
 end
 
+function Helper.NormalizeFixedGroupId(value)
+	if type(value) == "number" then value = tostring(math.floor(value)) end
+	if type(value) ~= "string" then return nil end
+	if strtrim then
+		value = strtrim(value)
+	else
+		value = value:match("^%s*(.-)%s*$")
+	end
+	if value == "" then return nil end
+	return value
+end
+
+function Helper.NormalizeFixedGroups(layout)
+	if type(layout) ~= "table" then return {} end
+	local source = type(layout.fixedGroups) == "table" and layout.fixedGroups or {}
+	local normalized = {}
+	local seen = {}
+	local fallbackIndex = 1
+	for i = 1, #source do
+		local group = source[i]
+		if type(group) == "table" then
+			local id = Helper.NormalizeFixedGroupId(group.id)
+			if not id then id = "group" .. tostring(fallbackIndex) end
+			while seen[id] do
+				fallbackIndex = fallbackIndex + 1
+				id = "group" .. tostring(fallbackIndex)
+			end
+			local column = Helper.NormalizeSlotCoordinate(group.column)
+			local row = Helper.NormalizeSlotCoordinate(group.row)
+			local columns = Helper.NormalizeFixedGridSize(group.columns, 0)
+			local rows = Helper.NormalizeFixedGridSize(group.rows, 0)
+			if column and row and columns > 0 and rows > 0 then
+				local name = type(group.name) == "string" and group.name or ""
+				if strtrim then
+					name = strtrim(name)
+				else
+					name = name:match("^%s*(.-)%s*$")
+				end
+				if name == "" then name = "Group " .. tostring(fallbackIndex) end
+				normalized[#normalized + 1] = {
+					id = id,
+					name = name,
+					column = column,
+					row = row,
+					columns = columns,
+					rows = rows,
+					mode = Helper.NormalizeFixedGroupMode(group.mode, "DYNAMIC"),
+					iconSize = Helper.NormalizeFixedGroupIconSize(group.iconSize),
+				}
+				seen[id] = true
+			end
+			fallbackIndex = fallbackIndex + 1
+		end
+	end
+	layout.fixedGroups = normalized
+	return normalized
+end
+
+function Helper.GetFixedGroupById(panelOrLayout, groupId)
+	groupId = Helper.NormalizeFixedGroupId(groupId)
+	if not groupId then return nil end
+	local layout = panelOrLayout
+	if type(panelOrLayout) == "table" and type(panelOrLayout.layout) == "table" then layout = panelOrLayout.layout end
+	local groups = Helper.NormalizeFixedGroups(layout)
+	for i = 1, #groups do
+		local group = groups[i]
+		if group and group.id == groupId then return group, i end
+	end
+	return nil
+end
+
+function Helper.GetFixedGroupCapacity(group)
+	if type(group) ~= "table" then return 0 end
+	local columns = Helper.NormalizeFixedGridSize(group.columns, 0)
+	local rows = Helper.NormalizeFixedGridSize(group.rows, 0)
+	if columns <= 0 or rows <= 0 then return 0 end
+	return columns * rows
+end
+
+function Helper.GetFixedGridCapacity(panel)
+	if type(panel) ~= "table" then return 0 end
+	local layout = type(panel.layout) == "table" and panel.layout or nil
+	local columns = Helper.NormalizeFixedGridSize(layout and layout.fixedGridColumns, 0)
+	local rows = Helper.NormalizeFixedGridSize(layout and layout.fixedGridRows, 0)
+	if columns <= 0 or rows <= 0 then return 0 end
+	return columns * rows
+end
+
+function Helper.GetFixedGroupAtCell(panelOrLayout, column, row, ignoreGroupId)
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	ignoreGroupId = Helper.NormalizeFixedGroupId(ignoreGroupId)
+	if not (column and row) then return nil end
+	local layout = panelOrLayout
+	if type(panelOrLayout) == "table" and type(panelOrLayout.layout) == "table" then layout = panelOrLayout.layout end
+	local groups = Helper.NormalizeFixedGroups(layout)
+	for i = 1, #groups do
+		local group = groups[i]
+		if group and group.id ~= ignoreGroupId then
+			local right = group.column + group.columns - 1
+			local bottom = group.row + group.rows - 1
+			if column >= group.column and column <= right and row >= group.row and row <= bottom then return group, i end
+		end
+	end
+	return nil
+end
+
+function Helper.GetFixedGroupLocalIndex(group, column, row)
+	if type(group) ~= "table" then return nil end
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (column and row) then return nil end
+	local relativeColumn = column - group.column + 1
+	local relativeRow = row - group.row + 1
+	if relativeColumn < 1 or relativeRow < 1 or relativeColumn > group.columns or relativeRow > group.rows then return nil end
+	return ((relativeRow - 1) * group.columns) + relativeColumn
+end
+
+function Helper.SyncEntryFixedGroupIconState(panelOrLayout, entry)
+	if type(entry) ~= "table" then return nil end
+	local group = Helper.GetFixedGroupById(panelOrLayout, entry.fixedGroupId)
+	local groupIconSize = group and Helper.NormalizeFixedGroupIconSize(group.iconSize) or nil
+	if group and groupIconSize ~= nil then
+		if entry.fixedGroupIconSizeInherited ~= true then
+			entry.fixedGroupIconSizePrevUseGlobal = entry.iconSizeUseGlobal
+			entry.fixedGroupIconSizePrev = entry.iconSize
+		end
+		entry.iconSizeUseGlobal = false
+		entry.iconSize = groupIconSize
+		entry.fixedGroupIconSizeInherited = true
+	elseif entry.fixedGroupIconSizeInherited == true then
+		local previousUseGlobal = entry.fixedGroupIconSizePrevUseGlobal
+		if type(previousUseGlobal) == "boolean" then
+			entry.iconSizeUseGlobal = previousUseGlobal
+		else
+			entry.iconSizeUseGlobal = true
+		end
+		entry.iconSize = entry.fixedGroupIconSizePrev
+		entry.fixedGroupIconSizeInherited = nil
+		entry.fixedGroupIconSizePrevUseGlobal = nil
+		entry.fixedGroupIconSizePrev = nil
+	else
+		entry.fixedGroupIconSizeInherited = nil
+		entry.fixedGroupIconSizePrevUseGlobal = nil
+		entry.fixedGroupIconSizePrev = nil
+	end
+	return group
+end
+
 function Helper.EnsureFixedSlotAssignments(panel)
 	if type(panel) ~= "table" or type(panel.entries) ~= "table" or type(panel.order) ~= "table" then return 0, 0 end
 	panel.layout = type(panel.layout) == "table" and panel.layout or {}
 	local layout = panel.layout
+	local fixedGroups = Helper.NormalizeFixedGroups(layout)
+	local configuredColumns = Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0)
+	local configuredRows = Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0)
 	local used = {}
+	local groupStates = {}
 	local columns = getFixedGridDefaultColumns(panel)
 	local nextIndex = 1
 	local maxColumn = 0
 	local maxRow = 0
 
 	local function makeKey(column, row) return tostring(column) .. ":" .. tostring(row) end
+	local function isWithinGrid(column, row)
+		if not (column and row) then return false end
+		if configuredColumns > 0 and column > configuredColumns then return false end
+		if configuredRows > 0 and row > configuredRows then return false end
+		return true
+	end
 	local function claimNextFreeCell()
 		while true do
 			local column = ((nextIndex - 1) % columns) + 1
 			local row = math.floor((nextIndex - 1) / columns) + 1
+			if configuredRows > 0 and row > configuredRows then return nil end
 			nextIndex = nextIndex + 1
 			local key = makeKey(column, row)
-			if not used[key] then return column, row end
+			if isWithinGrid(column, row) and not used[key] then return column, row end
+		end
+	end
+	local function claimNextFreeGroupCell(groupState)
+		local group = groupState and groupState.group or nil
+		if not group then return nil end
+		for groupRow = group.row, group.row + group.rows - 1 do
+			for groupColumn = group.column, group.column + group.columns - 1 do
+				local key = makeKey(groupColumn, groupRow)
+				if isWithinGrid(groupColumn, groupRow) and not groupState.used[key] then return groupColumn, groupRow end
+			end
+		end
+		return nil
+	end
+
+	for i = 1, #fixedGroups do
+		local group = fixedGroups[i]
+		if group then
+			local right = group.column + group.columns - 1
+			local bottom = group.row + group.rows - 1
+			if right > columns then columns = right end
+			if right > maxColumn then maxColumn = right end
+			if bottom > maxRow then maxRow = bottom end
+			groupStates[group.id] = {
+				group = group,
+				used = {},
+			}
+			for groupRow = group.row, bottom do
+				for groupColumn = group.column, right do
+					used[makeKey(groupColumn, groupRow)] = true
+				end
+			end
 		end
 	end
 
 	for _, entryId in ipairs(panel.order) do
 		local entry = panel.entries[entryId]
 		if entry then
-			local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
-			local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
-			local key = (column and row) and makeKey(column, row) or nil
-			if key and used[key] then
-				column = nil
-				row = nil
-				key = nil
-			end
-			if not (column and row) then
-				local slot = Helper.NormalizeSlotIndex(entry.slotIndex)
-				if slot then
-					local derivedColumn = ((slot - 1) % columns) + 1
-					local derivedRow = math.floor((slot - 1) / columns) + 1
-					local derivedKey = makeKey(derivedColumn, derivedRow)
-					if not used[derivedKey] then
-						column = derivedColumn
-						row = derivedRow
-						key = derivedKey
+			local group = Helper.GetFixedGroupById(layout, entry.fixedGroupId)
+			if group then
+				entry.fixedGroupId = group.id
+				Helper.SyncEntryFixedGroupIconState(layout, entry)
+				if Helper.FixedGroupUsesStaticSlots(group) then
+					local groupState = groupStates[group.id]
+					local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+					local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+					local key = (column and row) and makeKey(column, row) or nil
+					local withinGroup = key ~= nil
+						and column >= group.column
+						and column <= (group.column + group.columns - 1)
+						and row >= group.row
+						and row <= (group.row + group.rows - 1)
+						and isWithinGrid(column, row)
+						and not groupState.used[key]
+					if not withinGroup then
+						column = nil
+						row = nil
+						key = nil
+					end
+					if not (column and row) then
+						column, row = claimNextFreeGroupCell(groupState)
+						key = (column and row) and makeKey(column, row) or nil
+					end
+					if key then
+						groupState.used[key] = true
+						entry.slotColumn = column
+						entry.slotRow = row
+						entry.slotIndex = nil
+					else
+						entry.slotColumn = nil
+						entry.slotRow = nil
+						entry.slotIndex = nil
+					end
+				else
+					entry.slotIndex = nil
+				end
+			else
+				entry.fixedGroupId = nil
+				Helper.SyncEntryFixedGroupIconState(layout, entry)
+				local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+				local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+				local key = (column and row) and makeKey(column, row) or nil
+				if key and (used[key] or not isWithinGrid(column, row)) then
+					column = nil
+					row = nil
+					key = nil
+				end
+				if not (column and row) then
+					local slot = Helper.NormalizeSlotIndex(entry.slotIndex)
+					if slot then
+						local derivedColumn = ((slot - 1) % columns) + 1
+						local derivedRow = math.floor((slot - 1) / columns) + 1
+						local derivedKey = makeKey(derivedColumn, derivedRow)
+						if isWithinGrid(derivedColumn, derivedRow) and not used[derivedKey] then
+							column = derivedColumn
+							row = derivedRow
+							key = derivedKey
+						end
 					end
 				end
+				if not (column and row) then
+					column, row = claimNextFreeCell()
+					key = (column and row) and makeKey(column, row) or nil
+				end
+				if key then
+					used[key] = true
+					entry.slotColumn = column
+					entry.slotRow = row
+					entry.slotIndex = ((row - 1) * columns) + column
+					if entry.slotColumn > maxColumn then maxColumn = entry.slotColumn end
+					if entry.slotRow > maxRow then maxRow = entry.slotRow end
+					if entry.slotIndex >= nextIndex then nextIndex = entry.slotIndex + 1 end
+				else
+					entry.slotColumn = nil
+					entry.slotRow = nil
+					entry.slotIndex = nil
+				end
 			end
-			if not (column and row) then
-				column, row = claimNextFreeCell()
-				key = makeKey(column, row)
-			end
-			used[key] = true
-			entry.slotColumn = column
-			entry.slotRow = row
-			entry.slotIndex = ((row - 1) * columns) + column
-			if entry.slotColumn > maxColumn then maxColumn = entry.slotColumn end
-			if entry.slotRow > maxRow then maxRow = entry.slotRow end
-			if entry.slotIndex >= nextIndex then nextIndex = entry.slotIndex + 1 end
 		end
 	end
 
-	local configuredColumns = Helper.NormalizeFixedGridSize(layout.fixedGridColumns, 0)
-	local configuredRows = Helper.NormalizeFixedGridSize(layout.fixedGridRows, 0)
-	layout.fixedGridColumns = math.max(configuredColumns, maxColumn, columns)
-	layout.fixedGridRows = math.max(configuredRows, maxRow)
 	return maxColumn, maxRow
 end
 
@@ -591,8 +845,10 @@ function Helper.GetFixedGridBounds(panel, includePreviewPadding)
 	if type(panel) ~= "table" then return 0, 0 end
 	local maxColumn, maxRow = Helper.EnsureFixedSlotAssignments(panel)
 	local layout = type(panel.layout) == "table" and panel.layout or nil
-	local columns = math.max(Helper.NormalizeFixedGridSize(layout and layout.fixedGridColumns, 0), maxColumn)
-	local rows = math.max(Helper.NormalizeFixedGridSize(layout and layout.fixedGridRows, 0), maxRow)
+	local configuredColumns = Helper.NormalizeFixedGridSize(layout and layout.fixedGridColumns, 0)
+	local configuredRows = Helper.NormalizeFixedGridSize(layout and layout.fixedGridRows, 0)
+	local columns = configuredColumns > 0 and configuredColumns or maxColumn
+	local rows = configuredRows > 0 and configuredRows or maxRow
 	if columns <= 0 and rows <= 0 then return 0, 0 end
 	if columns <= 0 then columns = 1 end
 	if rows <= 0 then rows = 1 end
@@ -628,12 +884,55 @@ function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 	local count = columns * rows
 	local slotEntryIds = {}
 	if count <= 0 then return slotEntryIds, 0, columns, rows end
+	local groups = Helper.NormalizeFixedGroups(panel.layout)
+	local dynamicGroupEntries = {}
 	for _, entryId in ipairs(panel.order) do
 		local entry = panel.entries[entryId]
 		if entry and (type(filterFn) ~= "function" or filterFn(entry, entryId) ~= false) then
-			local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
-			local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
-			if column and row and column <= columns and row <= rows then slotEntryIds[((row - 1) * columns) + column] = entryId end
+			local groupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
+			local group = groupId and Helper.GetFixedGroupById(panel, groupId) or nil
+			if group then
+				if Helper.FixedGroupUsesStaticSlots(group) then
+					local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+					local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+					if
+						column
+						and row
+						and column <= columns
+						and row <= rows
+						and column >= group.column
+						and column <= (group.column + group.columns - 1)
+						and row >= group.row
+						and row <= (group.row + group.rows - 1)
+					then
+						slotEntryIds[((row - 1) * columns) + column] = entryId
+					end
+				else
+					local list = dynamicGroupEntries[group.id]
+					if not list then
+						list = {}
+						dynamicGroupEntries[group.id] = list
+					end
+					list[#list + 1] = entryId
+				end
+			else
+				local column = Helper.NormalizeSlotCoordinate(entry.slotColumn)
+				local row = Helper.NormalizeSlotCoordinate(entry.slotRow)
+				if column and row and column <= columns and row <= rows then slotEntryIds[((row - 1) * columns) + column] = entryId end
+			end
+		end
+	end
+	for i = 1, #groups do
+		local group = groups[i]
+		local list = group and not Helper.FixedGroupUsesStaticSlots(group) and dynamicGroupEntries[group.id] or nil
+		if list then
+			local capacity = Helper.GetFixedGroupCapacity(group)
+			local limit = math.min(capacity, #list)
+			for groupIndex = 1, limit do
+				local column = group.column + ((groupIndex - 1) % group.columns)
+				local row = group.row + math.floor((groupIndex - 1) / group.columns)
+				if column <= columns and row <= rows then slotEntryIds[((row - 1) * columns) + column] = list[groupIndex] end
+			end
 		end
 	end
 	return slotEntryIds, count, columns, rows
@@ -1084,6 +1383,7 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.fixedSlotCount = Helper.NormalizeFixedSlotCount(panel.layout.fixedSlotCount, layoutDefaults.fixedSlotCount or Helper.PANEL_LAYOUT_DEFAULTS.fixedSlotCount or 0)
 	panel.layout.fixedGridColumns = Helper.NormalizeFixedGridSize(panel.layout.fixedGridColumns, layoutDefaults.fixedGridColumns or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridColumns or 0)
 	panel.layout.fixedGridRows = Helper.NormalizeFixedGridSize(panel.layout.fixedGridRows, layoutDefaults.fixedGridRows or Helper.PANEL_LAYOUT_DEFAULTS.fixedGridRows or 0)
+	Helper.NormalizeFixedGroups(panel.layout)
 	panel.layout.spacing = Helper.ClampInt(panel.layout.spacing, 0, Helper.SPACING_RANGE or 200, layoutDefaults.spacing or Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2)
 	panel.layout.radialArcDegrees = Helper.ClampInt(
 		panel.layout.radialArcDegrees,
@@ -1145,7 +1445,11 @@ function Helper.NormalizePanel(panel, defaults)
 	if type(panel.order) ~= "table" then panel.order = {} end
 	if panel.enabled == nil then panel.enabled = true end
 	if type(panel.name) ~= "string" or panel.name == "" then panel.name = "Cooldown Panel" end
-	if Helper.IsFixedLayout(panel.layout) then Helper.EnsureFixedSlotAssignments(panel) end
+	if Helper.IsFixedLayout(panel.layout) then
+		local maxColumn, maxRow = Helper.EnsureFixedSlotAssignments(panel)
+		if panel.layout.fixedGridColumns <= 0 and maxColumn > 0 then panel.layout.fixedGridColumns = math.max(panel.layout.fixedGridColumns, maxColumn) end
+		if panel.layout.fixedGridRows <= 0 and maxRow > 0 then panel.layout.fixedGridRows = math.max(panel.layout.fixedGridRows, maxRow) end
+	end
 	if hadKeybindsEnabled == nil or hadChargesCooldown == nil then
 		for _, entry in pairs(panel.entries) do
 			if entry then
@@ -1320,6 +1624,7 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.slotIndex = Helper.NormalizeSlotIndex(entry.slotIndex)
 	entry.slotColumn = Helper.NormalizeSlotCoordinate(entry.slotColumn)
 	entry.slotRow = Helper.NormalizeSlotCoordinate(entry.slotRow)
+	entry.fixedGroupId = Helper.NormalizeFixedGroupId(entry.fixedGroupId)
 end
 
 function Helper.SyncOrder(order, map)
@@ -1346,6 +1651,8 @@ end
 function Helper.CreatePanel(name, defaults)
 	defaults = defaults or {}
 	local layoutDefaults = defaults.layout or Helper.PANEL_LAYOUT_DEFAULTS
+	local layout = Helper.CopyTableShallow(layoutDefaults)
+	layout.fixedGroups = {}
 	return {
 		name = (type(name) == "string" and name ~= "" and name) or "Cooldown Panel",
 		enabled = true,
@@ -1359,7 +1666,7 @@ function Helper.CreatePanel(name, defaults)
 			x = 0,
 			y = 0,
 		},
-		layout = Helper.CopyTableShallow(layoutDefaults),
+		layout = layout,
 		entries = {},
 		order = {},
 	}
