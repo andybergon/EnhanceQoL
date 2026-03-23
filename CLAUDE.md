@@ -23,7 +23,7 @@ Each PR branch must contain **only the commits for that feature** — never incl
 
 ### Syncing with upstream
 
-Use `/sync-fork` skill. Rebase rewrites fork commit hashes, so push requires `--force-with-lease`.
+Use `/fork-sync` skill. Rebase rewrites fork commit hashes, so push requires `--force-with-lease`.
 
 ## Dev Setup
 
