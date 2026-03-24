@@ -1056,6 +1056,17 @@ function Reminder:GetFlaskMissingEntry()
 	return makeSelfMissingEntry(displaySpellId, displayLabel)
 end
 
+function Reminder:IsLongBuffTrinketWithActiveBuff(itemId)
+	if type(itemId) ~= "number" then return false end
+	for i = 1, #TRINKET_BUFF_ITEMS do
+		local trinket = TRINKET_BUFF_ITEMS[i]
+		if trinket.itemId == itemId then
+			return self:UnitHasAnyAuraSpellId("player", { trinket.buffSpellId }) == true
+		end
+	end
+	return false
+end
+
 function Reminder:GetTrinketMissingEntries()
 	if not self:CanCheckTrinketReminder() then return nil end
 	if not canEvaluateUnit("player") then return nil end
