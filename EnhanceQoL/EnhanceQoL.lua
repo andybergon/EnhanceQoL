@@ -5610,15 +5610,13 @@ local function setAllHooks()
 	updateClassResourceVisibility()
 
 	if TotemFrame then
-		local classname = string.lower(select(2, UnitClass("player")))
+		local _, classTag = UnitClass("player")
+		local classname = classTag and string.lower(classTag)
+		local hideKey = classname and (classname .. "_HideTotemBar")
 		TotemFrame:HookScript("OnShow", function(self)
-			if addon.db[classname .. "_HideTotemBar"] then
-				TotemFrame:Hide()
-			else
-				TotemFrame:Show()
-			end
+			if hideKey and addon.db and addon.db[hideKey] then self:Hide() end
 		end)
-		if addon.db[classname .. "_HideTotemBar"] then TotemFrame:Hide() end
+		if hideKey and addon.db and addon.db[hideKey] then TotemFrame:Hide() end
 	end
 
 	local ignoredApplicants = {}
