@@ -309,22 +309,26 @@ function addon.functions.hideTimeoutReleaseHint(popup)
 end
 
 local function toggleGroupApplication(value)
+	if addon.functions and addon.functions.isRestrictedContent and addon.functions.isRestrictedContent(true) then return end
+	local viewer = _G.LFGListFrame and _G.LFGListFrame.ApplicationViewer
+	local cover = viewer and viewer.UnempoweredCover
+	if not (cover and cover.Label and cover.Background and cover.Waitdot1 and cover.Waitdot2 and cover.Waitdot3) then return end
 	if value then
 		-- Hide overlay and text label
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Label:Hide()
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Background:Hide()
+		cover.Label:Hide()
+		cover.Background:Hide()
 		-- Hide the 3 animated texture icons
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Waitdot1:Hide()
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Waitdot2:Hide()
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Waitdot3:Hide()
+		cover.Waitdot1:Hide()
+		cover.Waitdot2:Hide()
+		cover.Waitdot3:Hide()
 	else
 		-- Hide overlay and text label
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Label:Show()
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Background:Show()
+		cover.Label:Show()
+		cover.Background:Show()
 		-- Hide the 3 animated texture icons
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Waitdot1:Show()
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Waitdot2:Show()
-		_G.LFGListFrame.ApplicationViewer.UnempoweredCover.Waitdot3:Show()
+		cover.Waitdot1:Show()
+		cover.Waitdot2:Show()
+		cover.Waitdot3:Show()
 	end
 end
 
@@ -1243,7 +1247,7 @@ addon.functions.SettingsCreateCheckbox(cChar, {
 local eventHandlers = {
 
 	["LFG_LIST_APPLICANT_UPDATED"] = function()
-		if PVEFrame:IsShown() and addon.db["lfgSortByRio"] then C_LFGList.RefreshApplicants() end
+		if PVEFrame:IsShown() and addon.db["lfgSortByRio"] and not addon.functions.isRestrictedContent() then C_LFGList.RefreshApplicants() end
 		if InCombatLockdown() then return end
 		if addon.db["groupfinderAppText"] then toggleGroupApplication(true) end
 	end,

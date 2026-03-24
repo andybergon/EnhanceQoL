@@ -5622,56 +5622,102 @@ local function setAllHooks()
 	end
 
 	local ignoredApplicants = {}
+	local function isSecret(value)
+		local issecretvalue = _G.issecretvalue
+		local issecrettable = _G.issecrettable
+		if issecretvalue and issecretvalue(value) then return true end
+		if issecrettable and issecrettable(value) then return true end
+		return false
+	end
+
+	local function getApplicantPrimaryName(applicantID)
+		if isSecret(applicantID) or not (C_LFGList and C_LFGList.GetApplicantMemberInfo) then return nil end
+		local name = C_LFGList.GetApplicantMemberInfo(applicantID, 1)
+		if isSecret(name) or type(name) ~= "string" or name == "" then return nil end
+		return name
+	end
+
+	local function getApplicantDungeonScore(applicantID)
+		if isSecret(applicantID) or not (C_LFGList and C_LFGList.GetApplicantMemberInfo) then return nil end
+		local _, _, _, _, _, _, _, _, _, _, _, dungeonScore = C_LFGList.GetApplicantMemberInfo(applicantID, 1)
+		if isSecret(dungeonScore) or type(dungeonScore) ~= "number" then return nil end
+		return dungeonScore
+	end
+
+	local function decorateIgnoredFontString(fs)
+		if not (fs and fs.GetText and fs.SetText) then return end
+		local ok, text = pcall(fs.GetText, fs)
+		if not ok or isSecret(text) or type(text) ~= "string" or text == "" then return end
+		if text:find("!!!", 1, true) then return end
+		fs:SetText("!!! " .. text .. " !!!")
+	end
 
 	local function FlagIgnoredApplicants(applicantIDs)
-		if not addon.db.enableIgnore or not addon.Ignore or not addon.Ignore.CheckIgnore then return end
+		if not addon.db.enableIgnore or not addon.Ignore or not addon.Ignore.CheckIgnore or isSecret(applicantIDs) then return end
 		wipe(ignoredApplicants)
 		for _, applicantID in ipairs(applicantIDs) do
-			local name = C_LFGList.GetApplicantMemberInfo(applicantID, 1)
-			if type(name) == "string" then
-				local entry = addon.Ignore:CheckIgnore(name)
-				if entry then ignoredApplicants[applicantID] = entry end
+			if not isSecret(applicantID) then
+				local name = getApplicantPrimaryName(applicantID)
+				if name then
+					local entry = addon.Ignore:CheckIgnore(name)
+					if entry then ignoredApplicants[applicantID] = entry end
+				end
 			end
 		end
 	end
 
 	local function ApplyIgnoreHighlight(memberFrame, applicantID)
+		if isSecret(applicantID) then return end
 		local entry = ignoredApplicants[applicantID]
 		if not entry or not memberFrame or not memberFrame.Name then return end
 		memberFrame.Name:SetTextColor(1, 0, 0, 1)
-		memberFrame.Name:SetText("!!! " .. memberFrame.Name:GetText() .. " !!!")
+		decorateIgnoredFontString(memberFrame.Name)
 		memberFrame.eqolIgnoreEntry = entry
 	end
 
 	local function SortApplicants(applicants)
 		if addon.functions.isRestrictedContent() then return end
 		if addon.db.lfgSortByRio then
-			local function SortApplicantsCB(applicantID1, applicantID2)
-				local applicantInfo1 = C_LFGList.GetApplicantInfo(applicantID1)
-				local applicantInfo2 = C_LFGList.GetApplicantInfo(applicantID2)
+			local order = {}
+			local scores = {}
+			local hasSortableScore = false
+			local hasSecretApplicant = false
 
-				if applicantInfo1 == nil then return false end
-
-				if applicantInfo2 == nil then return true end
-
-				local _, _, _, _, _, _, _, _, _, _, _, dungeonScore1 = C_LFGList.GetApplicantMemberInfo(applicantInfo1.applicantID, 1)
-				local _, _, _, _, _, _, _, _, _, _, _, dungeonScore2 = C_LFGList.GetApplicantMemberInfo(applicantInfo2.applicantID, 1)
-
-				return dungeonScore1 > dungeonScore2
+			for index, applicantID in ipairs(applicants) do
+				if isSecret(applicantID) then
+					hasSecretApplicant = true
+				else
+					order[applicantID] = index
+					local dungeonScore = getApplicantDungeonScore(applicantID)
+					if dungeonScore ~= nil then
+						scores[applicantID] = dungeonScore
+						hasSortableScore = true
+					end
+				end
 			end
 
-			table.sort(applicants, SortApplicantsCB)
+			if not hasSecretApplicant and hasSortableScore then
+				table.sort(applicants, function(applicantID1, applicantID2)
+					local dungeonScore1 = scores[applicantID1]
+					local dungeonScore2 = scores[applicantID2]
+
+					if dungeonScore1 ~= nil and dungeonScore2 ~= nil and dungeonScore1 ~= dungeonScore2 then return dungeonScore1 > dungeonScore2 end
+					if dungeonScore1 ~= nil and dungeonScore2 == nil then return true end
+					if dungeonScore1 == nil and dungeonScore2 ~= nil then return false end
+
+					return (order[applicantID1] or 0) < (order[applicantID2] or 0)
+				end)
+			end
 		end
 
 		FlagIgnoredApplicants(applicants)
-		LFGListApplicationViewer_UpdateResults(LFGListFrame.ApplicationViewer)
 	end
 
 	hooksecurefunc("LFGListApplicationViewer_UpdateApplicantMember", function(memberFrame, appID, memberIdx)
 		-- Store identifiers for context-menu usage (e.g., Raider.IO link)
 		if memberFrame then
-			memberFrame._eqolApplicantID = appID
-			memberFrame._eqolMemberIdx = memberIdx
+			memberFrame._eqolApplicantID = isSecret(appID) and nil or appID
+			memberFrame._eqolMemberIdx = isSecret(memberIdx) and nil or memberIdx
 		end
 		if addon.db.enableIgnore then ApplyIgnoreHighlight(memberFrame, appID) end
 	end)
@@ -5685,10 +5731,10 @@ local function setAllHooks()
 	-- Highlight group listings where the leader is on the ignore list
 	local function ApplyIgnoreHighlightSearch(entry)
 		if not addon.db.enableIgnore or not addon.Ignore or not addon.Ignore.CheckIgnore then return end
-		if not entry or not entry.resultID then return end
+		if not entry or not entry.resultID or isSecret(entry.resultID) then return end
 
 		local info = C_LFGList.GetSearchResultInfo(entry.resultID)
-		if not info or not info.leaderName then return end
+		if not info or isSecret(info) or isSecret(info.leaderName) or not info.leaderName then return end
 
 		local ignoreEntry = addon.Ignore:CheckIgnore(info.leaderName)
 		if not ignoreEntry then return end
@@ -5699,11 +5745,7 @@ local function setAllHooks()
 
 		colorString(entry.Name)
 		colorString(entry.ActivityName)
-
-		if entry.Name and entry.Name.GetText then
-			local text = entry.Name:GetText() or ""
-			if not text:find("!!!", 1, true) then entry.Name:SetText("!!! " .. text .. " !!!") end
-		end
+		decorateIgnoredFontString(entry.Name)
 	end
 
 	hooksecurefunc("LFGListSearchEntry_Update", function(entry) ApplyIgnoreHighlightSearch(entry) end)
