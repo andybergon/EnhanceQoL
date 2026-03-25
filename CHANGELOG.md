@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.10.1] - 2026-03-25
+
+### 🐛 Fixed
+
+- Cooldown Panels: Fixed tracked aura totem timers to keep showing correctly after the latest WoW update.
+
+---
+
 ## [9.10.0] - 2026-03-25
 
 ### ✨ Added

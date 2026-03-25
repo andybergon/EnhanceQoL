@@ -291,27 +291,19 @@ local function getTotemSlot(frame)
 	return nil
 end
 
-local function getTotemCooldownInfo(frame)
-	local passCache = frame and getRuntimePassCacheTable("runtimePassTotemCooldownByFrame") or nil
+local function getTotemDurationObject(frame)
+	local passCache = frame and getRuntimePassCacheTable("runtimePassTotemDurationByFrame") or nil
 	if passCache then
 		local cached = passCache[frame]
-		if cached then return cached.startTime, cached.duration, cached.modRate end
+		if cached ~= nil then return cached ~= false and cached or nil end
 	end
-	if not (frame and frame.totemData ~= nil and GetTotemInfo) then return nil, nil, nil end
+	if not (frame and frame.totemData ~= nil and GetTotemDuration) then return nil end
 	local slot = getTotemSlot(frame)
-	if not slot then return nil, nil, nil end
-	local _, _, startTime, duration = GetTotemInfo(slot)
-	if not duration then return nil, nil, nil end
-	local modRate = 1
-	local okMod, rawModRate = pcall(function() return frame.totemData and frame.totemData.modRate end)
-	if okMod and rawModRate then modRate = rawModRate end
-	if passCache then
-		passCache[frame] = passCache[frame] or {}
-		passCache[frame].startTime = startTime
-		passCache[frame].duration = duration
-		passCache[frame].modRate = modRate
-	end
-	return startTime, duration, modRate
+	if not slot then return nil end
+	local ok, durationObject = pcall(GetTotemDuration, slot)
+	if not ok then return nil end
+	if passCache then passCache[frame] = durationObject or false end
+	return durationObject
 end
 
 isUsableSpellID = function(value) return type(value) == "number" and not isSecretValue(value) and value > 0 end
@@ -1567,12 +1559,8 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	end
 
 	if not cooldownDurationObject and hasTotemData then
-		local startTime, duration, modRate = getTotemCooldownInfo(chosenFrame)
-		if duration then
-			cooldownStart = startTime
-			cooldownDuration = duration
-			cooldownRate = modRate or 1
-		end
+		cooldownDurationObject = getTotemDurationObject(chosenFrame)
+		if cooldownDurationObject then durationActive = true end
 	end
 
 	local fallbackAlwaysShowMode = normalizeAlwaysShowMode(entry.cdmAuraAlwaysShowMode, entry.alwaysShow == true and "SHOW" or "HIDE")

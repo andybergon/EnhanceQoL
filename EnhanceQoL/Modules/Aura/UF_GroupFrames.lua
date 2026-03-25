@@ -24668,6 +24668,7 @@ function GF:RunPostEnterWorldRefreshPass()
 	if not isFeatureEnabled() then return end
 	self:EnsureHeaders()
 	self.Refresh()
+	self:RefreshRangeFade()
 	self:RefreshRoleIcons()
 	self:RefreshGroupIcons()
 	self:RefreshStatusIcons()
