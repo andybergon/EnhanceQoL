@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.10.2] - 2026-03-25
+
+### 🐛 Fixed
+
+- Groupframes: Smoothing wasn't working as expected
+
+---
+
 ## [9.10.1] - 2026-03-25
 
 ### 🐛 Fixed
