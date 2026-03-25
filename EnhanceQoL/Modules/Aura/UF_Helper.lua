@@ -1213,7 +1213,7 @@ function H.applyHighlightStyle(st, highlightCfg)
 	if st._highlightFrame and st._highlightFrame.GetParent and st._highlightFrame:GetParent() ~= host then
 		st._highlightFrame:Hide()
 	end
-	local highlight = ensureHighlightFrame(host)
+	highlight = ensureHighlightFrame(host)
 	if not highlight then return end
 	st._highlightFrame = highlight
 	local size = highlightCfg.size or 1
