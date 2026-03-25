@@ -879,7 +879,7 @@ end
 function Reminder:IsRuntimeEvaluationBlockedByCombat()
 	if self:IsOnlyOutOfCombatEnabled() ~= true then return false end
 	if not InCombatLockdown then return false end
-	return InCombatLockdown() == true
+	return InCombatLockdown() and true or false
 end
 
 function Reminder:IsRoleFilterEnabled()
