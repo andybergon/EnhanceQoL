@@ -61,6 +61,7 @@ local DB_TRACK_FLASKS = "classBuffReminderTrackFlasks"
 local DB_TRACK_FLASKS_INSTANCE_ONLY = "classBuffReminderTrackFlasksInstanceOnly"
 local DB_TRACK_TRINKETS = "classBuffReminderTrackTrinkets"
 local DB_TRACK_TRINKETS_INSTANCE_ONLY = "classBuffReminderTrackTrinketsInstanceOnly"
+local DB_NEARBY_ONLY = "classBuffReminderNearbyOnly"
 local DB_SCALE = "classBuffReminderScale"
 local DB_ICON_SIZE = "classBuffReminderIconSize"
 local DB_FONT_SIZE = "classBuffReminderFontSize"
@@ -79,6 +80,7 @@ Reminder.defaults = Reminder.defaults
 		showSolo = false,
 		onlyOutOfCombat = false,
 		instanceOnly = false,
+		nearbyOnly = false,
 		roleFilterEnabled = false,
 		roleFilterContext = "RAID_ONLY",
 		hideForHealer = false,
@@ -817,6 +819,8 @@ function Reminder:IsFlaskTrackingEnabled() return getValue(DB_TRACK_FLASKS, defa
 
 function Reminder:IsFlaskInstanceOnlyEnabled() return getValue(DB_TRACK_FLASKS_INSTANCE_ONLY, defaults.trackFlasksInstanceOnly) == true end
 
+function Reminder:IsNearbyOnlyEnabled() return getValue(DB_NEARBY_ONLY, defaults.nearbyOnly) == true end
+
 function Reminder:IsDungeonOrRaidInstance()
 	if not IsInInstance then return false end
 	local inInstance, instanceType = IsInInstance()
@@ -1179,13 +1183,16 @@ function Reminder:GetGroupBuffMissingCountBySpellIds(spellIds, includeAIFollower
 
 	local total = 0
 	local missing = 0
+	local nearbyOnly = self:IsNearbyOnlyEnabled()
 	for i = 1, #units do
 		local unit = units[i]
 		if isAIFollowerUnit(unit) and includeAIFollowers ~= true then
 			-- Skip AI followers for group-buff requirements.
 		elseif UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-			total = total + 1
-			if not self:UnitHasAnyAuraSpellId(unit, spellIds) then missing = missing + 1 end
+			if not (nearbyOnly and UnitIsVisible and not UnitIsVisible(unit)) then
+				total = total + 1
+				if not self:UnitHasAnyAuraSpellId(unit, spellIds) then missing = missing + 1 end
+			end
 		end
 	end
 
@@ -2226,6 +2233,7 @@ end
 function Reminder:GetGroupUnitMissingStatus(provider, unit)
 	if isAIFollowerUnit(unit) then return GROUP_UNIT_STATUS_INELIGIBLE end
 	if not (UnitExists and UnitExists(unit) and UnitIsConnected and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit)) then return GROUP_UNIT_STATUS_INELIGIBLE end
+	if self:IsNearbyOnlyEnabled() and UnitIsVisible and not UnitIsVisible(unit) then return GROUP_UNIT_STATUS_INELIGIBLE end
 	if self:UnitHasProviderBuff(unit, provider) then return GROUP_UNIT_STATUS_PRESENT end
 	return GROUP_UNIT_STATUS_MISSING
 end
@@ -2849,10 +2857,13 @@ function Reminder:CollectEligibleUnits(target, includeAIFollowers)
 	end
 
 	local units = self:GetRosterUnits()
+	local nearbyOnly = self:IsNearbyOnlyEnabled()
 	for i = 1, #units do
 		local unit = units[i]
 		if (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-			target[#target + 1] = unit
+			if not (nearbyOnly and UnitIsVisible and not UnitIsVisible(unit)) then
+				target[#target + 1] = unit
+			end
 		end
 	end
 
@@ -2866,10 +2877,13 @@ function Reminder:CollectOtherEligibleUnits(target, includeAIFollowers)
 	end
 
 	local units = self:GetRosterUnits()
+	local nearbyOnly = self:IsNearbyOnlyEnabled()
 	for i = 1, #units do
 		local unit = units[i]
 		if not isPlayerUnit(unit) and (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-			target[#target + 1] = unit
+			if not (nearbyOnly and UnitIsVisible and not UnitIsVisible(unit)) then
+				target[#target + 1] = unit
+			end
 		end
 	end
 
@@ -3473,6 +3487,14 @@ function Reminder:RegisterEditMode()
 				default = defaults.instanceOnly == true,
 				get = function() return getValue("classBuffReminderInstanceOnly", defaults.instanceOnly) == true end,
 				set = function(_, value) setBool("classBuffReminderInstanceOnly", value) end,
+			},
+			{
+				name = "Only count nearby group members",
+				kind = SettingType.Checkbox,
+				parentId = "filters",
+				default = defaults.nearbyOnly == true,
+				get = function() return getValue("classBuffReminderNearbyOnly", defaults.nearbyOnly) == true end,
+				set = function(_, value) setBool("classBuffReminderNearbyOnly", value) end,
 			},
 			{
 				name = L["ClassBuffReminderRoleFilterEnabled"] or "Enable role responsibility filter",

@@ -28,6 +28,7 @@ local DB_GROWTH_DIRECTION = "classBuffReminderGrowthDirection"
 local DB_GROWTH_FROM_CENTER = "classBuffReminderGrowthFromCenter"
 local DB_TRACK_FLASKS = "classBuffReminderTrackFlasks"
 local DB_TRACK_FLASKS_INSTANCE_ONLY = "classBuffReminderTrackFlasksInstanceOnly"
+local DB_NEARBY_ONLY = "classBuffReminderNearbyOnly"
 local DB_SCALE = "classBuffReminderScale"
 local DB_ICON_SIZE = "classBuffReminderIconSize"
 local DB_FONT_SIZE = "classBuffReminderFontSize"
@@ -48,6 +49,7 @@ local defaults = (Reminder and Reminder.defaults)
 		showRaid = true,
 		showSolo = false,
 		onlyOutOfCombat = false,
+		nearbyOnly = false,
 		roleFilterEnabled = false,
 		roleFilterContext = "RAID_ONLY",
 		hideForHealer = false,
@@ -178,6 +180,7 @@ function addon.functions.initClassBuffReminder()
 	init(DB_GROWTH_FROM_CENTER, defaults.growthFromCenter)
 	init(DB_TRACK_FLASKS, defaults.trackFlasks)
 	init(DB_TRACK_FLASKS_INSTANCE_ONLY, defaults.trackFlasksInstanceOnly)
+	init(DB_NEARBY_ONLY, defaults.nearbyOnly)
 	init(DB_SCALE, defaults.scale)
 	init(DB_ICON_SIZE, defaults.iconSize)
 	init(DB_FONT_SIZE, defaults.fontSize)
