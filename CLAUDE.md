@@ -103,9 +103,11 @@ Blizzard's taint system marks certain API return values as "secret" when addon c
 
 **Emerald Coach's Whistle (item 193718):** Caster gets spell 389581 "Coaching", target gets spell 386578 "Coached". Check the caster buff (389581) on the player, not the target buff. `GetAuraDataByIndex` reports overridden spell ID 386581, but `GetUnitAuraBySpellID` needs the base ID 389581.
 
-## Lua Local Variable Limit
+## Lua Limits
 
-`ResourceBars.lua` is at the 200 local variable limit for Lua's main chunk. **Do NOT add new `local` forward declarations at the top level.** Instead, put new functions on the `ResourceBars` table (e.g. `ResourceBars.myFunction = function(...)` instead of `local myFunction`). This applies to any large file that's near the limit.
+**200 local variable limit (main chunk):** `ResourceBars.lua` is at the limit. **Do NOT add new `local` forward declarations at the top level.** Instead, put new functions on the `ResourceBars` table (e.g. `ResourceBars.myFunction = function(...)` instead of `local myFunction`). This applies to any large file that's near the limit.
+
+**60 upvalue limit per function:** `ClassBuffReminder.lua`'s `RegisterEditMode()` is at the 60 upvalue limit. **Do NOT reference new `local` DB key constants (e.g. `DB_NEARBY_ONLY`) inside closures within `RegisterEditMode`.** Instead, inline the string literal (e.g. `"classBuffReminderNearbyOnly"`). Each distinct local captured by any closure in the function counts as one upvalue. Exceeding 60 causes a hard Lua error that breaks the entire settings panel.
 
 ## PR Conventions
 
