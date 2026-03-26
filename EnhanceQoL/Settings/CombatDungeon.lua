@@ -808,6 +808,7 @@ function addon.functions.initDungeonFrame()
 
 	addon.functions.InitDBValue("autoChooseDelvePower", false)
 	addon.functions.InitDBValue("lfgSortByRio", false)
+	addon.functions.InitDBValue("lfgSortSearchByScore", false)
 	addon.functions.InitDBValue("groupfinderSkipRoleSelect", false)
 	addon.functions.InitDBValue("enableChatIMRaiderIO", false)
 	addon.functions.InitDBValue(NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY, false)
@@ -1347,6 +1348,12 @@ data = {
 		var = "lfgSortByRio",
 		text = L["lfgSortByRio"],
 		func = function(value) addon.db["lfgSortByRio"] = value end,
+		parentSection = sectionGroupFinder,
+	},
+	{
+		var = "lfgSortSearchByScore",
+		text = L["lfgSortSearchByScore"],
+		func = function(value) addon.db["lfgSortSearchByScore"] = value end,
 		parentSection = sectionGroupFinder,
 	},
 	{

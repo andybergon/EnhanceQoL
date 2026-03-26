@@ -6150,6 +6150,46 @@ local function setAllHooks()
 		FlagIgnoredApplicants(applicants)
 	end)
 
+	local isSortingSearch = false
+	hooksecurefunc("LFGListSearchPanel_UpdateResults", function(self)
+		if isSortingSearch or not addon.db.lfgSortSearchByScore or addon.functions.isRestrictedContent() then return end
+		if not self.results or #self.results <= 1 then return end
+
+		table.sort(self.results, function(a, b)
+			local infoA = C_LFGList.GetSearchResultInfo(a)
+			local infoB = C_LFGList.GetSearchResultInfo(b)
+			if issecretvalue and (issecretvalue(infoA) or issecretvalue(infoB)) then return false end
+			local scoreA = infoA and infoA.leaderOverallDungeonScore or 0
+			local scoreB = infoB and infoB.leaderOverallDungeonScore or 0
+			if issecretvalue and (issecretvalue(scoreA) or issecretvalue(scoreB)) then return false end
+			return (scoreA or 0) > (scoreB or 0)
+		end)
+
+		isSortingSearch = true
+		LFGListSearchPanel_UpdateResults(self)
+		isSortingSearch = false
+	end)
+
+	hooksecurefunc("LFGListSearchEntry_Update", function(entry)
+		if not addon.db.lfgSortSearchByScore then return end
+		if not entry or not entry.resultID or isSecret(entry.resultID) then return end
+		if not entry.Name then return end
+
+		local info = C_LFGList.GetSearchResultInfo(entry.resultID)
+		if not info or isSecret(info) then return end
+		local score = info.leaderOverallDungeonScore
+		if not score or score == 0 or (issecretvalue and issecretvalue(score)) then return end
+
+		local color = C_ChallengeMode.GetDungeonScoreRarityColor(score)
+		local r, g, b = 1, 1, 1
+		if color and color.GetRGB then r, g, b = color:GetRGB() end
+
+		local currentText = entry.Name:GetText()
+		if currentText then
+			entry.Name:SetFormattedText("|cff%02x%02x%02x[%d]|r %s", r * 255, g * 255, b * 255, score, currentText)
+		end
+	end)
+
 	-- Highlight group listings where the leader is on the ignore list
 	local function ApplyIgnoreHighlightSearch(entry)
 		if hasApplicantRestrictions() then return end
