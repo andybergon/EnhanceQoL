@@ -78,6 +78,7 @@ Reminder.defaults = Reminder.defaults
 		showRaid = true,
 		showSolo = false,
 		onlyOutOfCombat = false,
+		instanceOnly = false,
 		roleFilterEnabled = false,
 		roleFilterContext = "RAID_ONLY",
 		hideForHealer = false,
@@ -878,6 +879,7 @@ end
 
 function Reminder:IsRuntimeEvaluationBlockedByCombat()
 	if self:IsOnlyOutOfCombatEnabled() ~= true then return false end
+	if self.combatActive then return true end
 	if not InCombatLockdown then return false end
 	return InCombatLockdown() and true or false
 end
@@ -1061,7 +1063,9 @@ function Reminder:IsLongBuffTrinketWithActiveBuff(itemId)
 	for i = 1, #TRINKET_BUFF_ITEMS do
 		local trinket = TRINKET_BUFF_ITEMS[i]
 		if trinket.itemId == itemId then
-			return self:UnitHasAnyAuraSpellId("player", { trinket.buffSpellId }) == true
+			if InCombatLockdown and InCombatLockdown() then return true end
+			if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive() then return true end
+			return self:UnitHasAnyAuraSpellId("player", { trinket.buffSpellId })
 		end
 	end
 	return false
@@ -1069,6 +1073,7 @@ end
 
 function Reminder:GetTrinketMissingEntries()
 	if not self:CanCheckTrinketReminder() then return nil end
+	if InCombatLockdown and InCombatLockdown() then return nil end
 	if not canEvaluateUnit("player") then return nil end
 	local entries
 	for i = 1, #TRINKET_BUFF_ITEMS do
@@ -1080,6 +1085,7 @@ function Reminder:GetTrinketMissingEntries()
 			equipped = (slot13 == trinket.itemId) or (slot14 == trinket.itemId)
 		end
 		if equipped then
+			if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive() then break end
 			local hasBuff = self:UnitHasAnyAuraSpellId("player", { trinket.buffSpellId })
 			if not hasBuff then
 				if not entries then entries = {} end
@@ -1116,6 +1122,16 @@ function Reminder:UnitHasAnyAuraSpellId(unit, spellIds)
 	for i = 1, #spellIds do
 		local sid = normalizeSpellId(spellIds[i])
 		if sid and unitHasAuraBySpellId(unit, sid) then return true end
+	end
+	return false
+end
+
+function Reminder:GroupHasAnyAuraSpellId(spellIds)
+	if type(spellIds) ~= "table" then return false end
+	if self:UnitHasAnyAuraSpellId("player", spellIds) then return true end
+	local units = self:GetRosterUnits()
+	for i = 1, #units do
+		if self:UnitHasAnyAuraSpellId(units[i], spellIds) then return true end
 	end
 	return false
 end
@@ -2896,9 +2912,15 @@ end
 
 function Reminder:IsGroupModeAllowed()
 	local context = self:GetGroupContext()
-	if context == GROUP_CONTEXT_RAID then return getValue(DB_SHOW_RAID, defaults.showRaid) == true end
-	if context == GROUP_CONTEXT_PARTY then return getValue(DB_SHOW_PARTY, defaults.showParty) == true end
-	return getValue(DB_SHOW_SOLO, defaults.showSolo) == true
+	if context == GROUP_CONTEXT_RAID then
+		if getValue(DB_SHOW_RAID, defaults.showRaid) ~= true then return false end
+	elseif context == GROUP_CONTEXT_PARTY then
+		if getValue(DB_SHOW_PARTY, defaults.showParty) ~= true then return false end
+	else
+		if getValue(DB_SHOW_SOLO, defaults.showSolo) ~= true then return false end
+	end
+	if getValue("classBuffReminderInstanceOnly", defaults.instanceOnly) == true then return self:IsDungeonOrRaidInstance() end
+	return true
 end
 
 function Reminder:ShouldRegisterRuntimeEvents()
@@ -3127,6 +3149,9 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:MarkAuraStatesDirty()
 		self:InvalidateFlaskCache()
 		self:RequestUpdate(true)
+		if C_Timer and C_Timer.After then
+			C_Timer.After(1, function() Reminder:MarkAuraStatesDirty() Reminder:RequestUpdate(true) end)
+		end
 		return
 	end
 
@@ -3143,6 +3168,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	end
 
 	if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+		self.combatActive = event == "PLAYER_REGEN_DISABLED"
 		if self:IsOnlyOutOfCombatEnabled() == true then self:MarkAuraStatesDirty() end
 		self:RequestUpdate(true)
 		return
@@ -3190,30 +3216,30 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 
 	if event == "UNIT_AURA" then
 		if not isTrackedUnit(unit) then return end
-		if self:IsRuntimeEvaluationBlockedByCombat() then return end
+		local blockedByCombat = self:IsRuntimeEvaluationBlockedByCombat()
 		local provider = self:GetProvider()
 		if provider and provider.scope == PROVIDER_SCOPE_GROUP and self:ShouldEvaluateGroupResponsibilities(provider) ~= true then
-			if isPlayerUnit(unit) and self:CanCheckFlaskReminder() then self:RequestUpdate(false) end
+			if not blockedByCombat and isPlayerUnit(unit) and (self:CanCheckFlaskReminder() or self:CanCheckTrinketReminder()) then self:RequestUpdate(false) end
 			return
 		end
 		if provider and provider.scope == PROVIDER_SCOPE_SELF then
-			if isPlayerUnit(unit) or provider.tracksExternalUnitAuras == true then self:RequestUpdate(false) end
+			if not blockedByCombat and (isPlayerUnit(unit) or provider.tracksExternalUnitAuras == true) then self:RequestUpdate(false) end
 			return
 		end
 		if isAIFollowerUnit(unit) then
 			local state = self:GetUnitAuraState(unit)
 			if state then self:ResetUnitAuraState(state) end
-			self:RefreshGroupMissingStateUnit(provider, unit)
+			if not blockedByCombat then self:RefreshGroupMissingStateUnit(provider, unit) end
 			return
 		end
 		if provider then
 			self:ApplyDeltaToUnitAuraState(unit, updateInfo, provider)
-			self:RefreshGroupMissingStateUnit(provider, unit)
+			if not blockedByCombat then self:RefreshGroupMissingStateUnit(provider, unit) end
 		else
 			local state = self:GetUnitAuraState(unit)
 			if state then self:ResetUnitAuraState(state) end
 		end
-		self:RequestUpdate(false)
+		if not blockedByCombat then self:RequestUpdate(false) end
 		return
 	end
 end
@@ -3439,6 +3465,14 @@ function Reminder:RegisterEditMode()
 				default = defaults.onlyOutOfCombat == true,
 				get = function() return getValue(DB_ONLY_OUT_OF_COMBAT, defaults.onlyOutOfCombat) == true end,
 				set = function(_, value) setBool(DB_ONLY_OUT_OF_COMBAT, value) end,
+			},
+			{
+				name = "Only in dungeons/raids",
+				kind = SettingType.Checkbox,
+				parentId = "filters",
+				default = defaults.instanceOnly == true,
+				get = function() return getValue("classBuffReminderInstanceOnly", defaults.instanceOnly) == true end,
+				set = function(_, value) setBool("classBuffReminderInstanceOnly", value) end,
 			},
 			{
 				name = L["ClassBuffReminderRoleFilterEnabled"] or "Enable role responsibility filter",

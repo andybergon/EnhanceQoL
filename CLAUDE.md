@@ -83,6 +83,16 @@ All fork changes are tracked in [`FORK_CHANGES.md`](FORK_CHANGES.md). Update it 
 - **Edit Mode inspector uses `getEditor()` not `editor` directly.** The `editor` variable is local to `ensureEditor()`. Use `getEditor()` to access `selectedPanelId`/`selectedEntryId` from button handlers.
 - **Standalone entry editor (`OpenLayoutEntryStandaloneMenu`)** opens when clicking icons directly on-screen during layout edit, not from the Cooldown Panel Editor window. The editor window uses `RegisterEditModePanel` settings.
 
+## Taint / Secret Number Gotchas
+
+Blizzard's taint system marks certain API return values as "secret" when addon code runs inside secure callback chains (e.g. `GameTooltip:HookScript("OnHide")` triggered from `LFGList.lua`). Arithmetic on these values errors with "attempt to perform arithmetic on a secret number value". Affected APIs include `GetStringWidth()`, `GetPoint()`, `GetHeight()`, `GetSize()`.
+
+**Fix pattern:** Wrap the call or the arithmetic in `pcall` with a fallback, and check `issecretvalue` on return values before using them. See `SafeGetStringWidth()` in `DungeonPortal.lua` and `getHeightOffset()` in `functions.lua` for examples. Upstream has dozens of similar fixes throughout the codebase (search git history for "secret", "taint", "pcall").
+
+**Aura taint in M+ and combat:** `C_UnitAuras.GetUnitAuraBySpellID` returns `nil` for valid buffs when aura data is tainted (active M+ via `ForceTaint_Strong`, and during combat). `GetAuraDataByIndex` still shows the aura, but slot-scan and spell-ID-lookup APIs fail silently. For long-duration buffs like Emerald Coach's Whistle (spell 389581 "Coaching"), assume buff is active when in combat or M+ rather than showing a false "missing" state. Check `C_ChallengeMode.IsChallengeModeActive()` and `InCombatLockdown()` as guards.
+
+**Emerald Coach's Whistle (item 193718):** Caster gets spell 389581 "Coaching", target gets spell 386578 "Coached". Check the caster buff (389581) on the player, not the target buff. `GetAuraDataByIndex` reports overridden spell ID 386581, but `GetUnitAuraBySpellID` needs the base ID 389581.
+
 ## PR Conventions
 
 This is an external repo — always preview PR title/body for user review before submitting. Keep tone casual and human.
