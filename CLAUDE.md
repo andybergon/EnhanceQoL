@@ -74,7 +74,7 @@ To test upstream code (e.g. verify a bug exists there before opening a PR):
 
 ## Fork Changes Tracking
 
-All fork changes are tracked in [`FORK_CHANGES.md`](FORK_CHANGES.md). Update it after committing new features or when syncing with upstream (features brought upstream, status changes, etc.).
+All fork changes are tracked in [`FORK_CHANGES.md`](FORK_CHANGES.md). **CRITICAL: Always update FORK_CHANGES.md as part of every commit — not after. Include it in the same commit.** Also update when syncing with upstream (features brought upstream, status changes, etc.).
 
 ## Cooldown Panels Gotchas
 

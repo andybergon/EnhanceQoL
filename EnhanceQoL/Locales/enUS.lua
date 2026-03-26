@@ -684,6 +684,7 @@ L["unitframeVisibility_hideCombat"] = "Hide in combat"
 -- Dungeon
 L["autoChooseDelvePower"] = "Automatically select delve power when only 1 option"
 L["lfgSortByRio"] = "Sort Mythic Dungeon Applicants by Mythic Score"
+L["lfgSortSearchByScore"] = "Sort Mythic Dungeon Search results by leader's Mythic Score"
 L["groupfinderAppText"] = 'Hide the group finder text "Your group is currently forming"'
 L["groupfinderMoveResetButton"] = "Shift the 'Reset Filter' button in the Dungeon Browser to the left side"
 L["groupfinderSkipRoleSelect"] = "Skip role selection"
