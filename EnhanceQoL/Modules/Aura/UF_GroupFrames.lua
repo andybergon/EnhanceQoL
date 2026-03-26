@@ -584,6 +584,28 @@ function GF._applyOverlayHeight(bar, anchor, height, maxHeight)
 	bar:SetHeight(desired)
 end
 
+function GF._ensureOverlayClipFrame(anchor, key)
+	if not anchor then return nil end
+	key = key or "_eqolOverlayClip"
+	local clip = anchor[key]
+	if not clip then
+		clip = CreateFrame("Frame", nil, anchor)
+		clip:SetClipsChildren(true)
+		anchor[key] = clip
+	end
+	clip:ClearAllPoints()
+	clip:SetAllPoints(anchor)
+	if clip.SetFrameStrata and anchor.GetFrameStrata then
+		local anchorStrata = anchor:GetFrameStrata()
+		if anchorStrata and clip:GetFrameStrata() ~= anchorStrata then clip:SetFrameStrata(anchorStrata) end
+	end
+	if clip.SetFrameLevel and anchor.GetFrameLevel then
+		local desiredLevel = (anchor:GetFrameLevel() or 0) + 1
+		if clip:GetFrameLevel() ~= desiredLevel then clip:SetFrameLevel(desiredLevel) end
+	end
+	return clip
+end
+
 function GF._computeOverlayHeightFallback(frameHeight, powerHeight)
 	local totalHeight = clampNumber(tonumber(frameHeight) or 24, 10, 200, 24)
 	local power = clampNumber(tonumber(powerHeight) or 6, 0, 50, 6)
@@ -599,6 +621,18 @@ function GF._resolveOverlayHeightSetting(value, fallback)
 	local v = tonumber(value)
 	if not v or v <= 0 then return fallback end
 	if v > fallback then return fallback end
+	return v
+end
+
+function GF._resolveRuntimeOverlayHeightSetting(value, configuredFallback, runtimeHeight)
+	local runtimeLimit = tonumber(runtimeHeight)
+	if not runtimeLimit or runtimeLimit <= 0 then runtimeLimit = tonumber(configuredFallback) or 1 end
+	local baseFallback = tonumber(configuredFallback)
+	if not baseFallback or baseFallback <= 0 then baseFallback = runtimeLimit end
+	local v = tonumber(value)
+	if not v or v <= 0 then return runtimeLimit end
+	if v >= baseFallback then return runtimeLimit end
+	if v > runtimeLimit then return runtimeLimit end
 	return v
 end
 
@@ -4845,6 +4879,21 @@ local function ensureDB()
 			end
 		end
 		sanitizeHealthColorMode(t)
+		do
+			local healthCfg = t.health or {}
+			t.health = healthCfg
+			local defHealth = (def and def.health) or {}
+			local overlayFallback =
+				GF._computeOverlayHeightFallback((t.height ~= nil and t.height) or def.height, (t.powerHeight ~= nil and t.powerHeight) or def.powerHeight)
+			healthCfg.absorbOverlayHeight = GF._resolveOverlayHeightSetting(
+				healthCfg.absorbOverlayHeight ~= nil and healthCfg.absorbOverlayHeight or defHealth.absorbOverlayHeight,
+				overlayFallback
+			)
+			healthCfg.healAbsorbOverlayHeight = GF._resolveOverlayHeightSetting(
+				healthCfg.healAbsorbOverlayHeight ~= nil and healthCfg.healAbsorbOverlayHeight or defHealth.healAbsorbOverlayHeight,
+				overlayFallback
+			)
+		end
 		if UF.GroupFramesHealerBuffs and UF.GroupFramesHealerBuffs.EnsureConfig then UF.GroupFramesHealerBuffs.EnsureConfig(t) end
 		if kind == "party" then
 			-- Legacy party defaults grouped by role; clear persisted values so INDEX uses party unit index order.
@@ -5730,7 +5779,19 @@ function GF:LayoutButton(self)
 		end
 	end
 
-	local healthHeight = st.health.GetHeight and st.health:GetHeight() or (h - powerH)
+	local healthHeight = max(1, (tonumber(h) or 0) - (tonumber(healthBottomOffset) or 0))
+	local configuredOverlayFallback =
+		GF._computeOverlayHeightFallback((cfg.height ~= nil and cfg.height) or def.height, (cfg.powerHeight ~= nil and cfg.powerHeight) or def.powerHeight)
+	local resolvedAbsorbHeight = GF._resolveRuntimeOverlayHeightSetting(
+		hc.absorbOverlayHeight ~= nil and hc.absorbOverlayHeight or defH.absorbOverlayHeight,
+		configuredOverlayFallback,
+		healthHeight
+	)
+	local resolvedHealAbsorbHeight = GF._resolveRuntimeOverlayHeightSetting(
+		hc.healAbsorbOverlayHeight ~= nil and hc.healAbsorbOverlayHeight or defH.healAbsorbOverlayHeight,
+		configuredOverlayFallback,
+		healthHeight
+	)
 	if st.incomingHeal then
 		local incomingHealTextureKey = hc.incomingHealTexture or healthTexKey
 		if st.incomingHeal.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -5775,9 +5836,10 @@ function GF:LayoutButton(self)
 			st.absorb2:Hide()
 		end
 		stabilizeStatusBarTexture(st.absorb)
-		local absorbHeight = hc.absorbOverlayHeight
-		if absorbHeight == nil then absorbHeight = defH.absorbOverlayHeight end
-		GF._applyOverlayHeight(st.absorb, st.health, absorbHeight, healthHeight)
+		local absorbClip = GF._ensureOverlayClipFrame(st.health, "_eqolDirectOverlayClip")
+		if absorbClip and st.absorb.GetParent and st.absorb:GetParent() ~= absorbClip then st.absorb:SetParent(absorbClip) end
+		local absorbHeight = resolvedAbsorbHeight
+		GF._applyOverlayHeight(st.absorb, absorbClip or st.health, absorbHeight, healthHeight)
 		setFrameLevelAbove(st.absorb, st.incomingHeal or st.health, 1)
 		if reverseAbsorb and st.absorb2 then
 			if st.absorb2.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -5814,9 +5876,10 @@ function GF:LayoutButton(self)
 		if st.healAbsorb.SetStatusBarDesaturated then st.healAbsorb:SetStatusBarDesaturated(false) end
 		if UFHelper and UFHelper.applyStatusBarReverseFill then UFHelper.applyStatusBarReverseFill(st.healAbsorb, hc.healAbsorbReverseFill == true) end
 		stabilizeStatusBarTexture(st.healAbsorb)
-		local healAbsorbHeight = hc.healAbsorbOverlayHeight
-		if healAbsorbHeight == nil then healAbsorbHeight = defH.healAbsorbOverlayHeight end
-		GF._applyOverlayHeight(st.healAbsorb, st.health, healAbsorbHeight, healthHeight)
+		local healAbsorbClip = GF._ensureOverlayClipFrame(st.health, "_eqolDirectOverlayClip")
+		if healAbsorbClip and st.healAbsorb.GetParent and st.healAbsorb:GetParent() ~= healAbsorbClip then st.healAbsorb:SetParent(healAbsorbClip) end
+		local healAbsorbHeight = resolvedHealAbsorbHeight
+		GF._applyOverlayHeight(st.healAbsorb, healAbsorbClip or st.health, healAbsorbHeight, healthHeight)
 		setFrameLevelAbove(st.healAbsorb, st.absorb or st.incomingHeal or st.health, 1)
 	end
 
@@ -16458,6 +16521,7 @@ local function buildEditModeSettings(kind, editModeId)
 				local fallback = GF._computeOverlayHeightFallback((cfg and cfg.height) or def.height, (cfg and cfg.powerHeight) or def.powerHeight)
 				local v = clampNumber(value, 1, 300, fallback)
 				if not v or v <= 0 then v = fallback end
+				v = GF._resolveOverlayHeightSetting(v, fallback)
 				cfg.health.absorbOverlayHeight = v
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "absorbOverlayHeight", v, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
@@ -16664,6 +16728,7 @@ local function buildEditModeSettings(kind, editModeId)
 				local fallback = GF._computeOverlayHeightFallback((cfg and cfg.height) or def.height, (cfg and cfg.powerHeight) or def.powerHeight)
 				local v = clampNumber(value, 1, 300, fallback)
 				if not v or v <= 0 then v = fallback end
+				v = GF._resolveOverlayHeightSetting(v, fallback)
 				cfg.health.healAbsorbOverlayHeight = v
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healAbsorbOverlayHeight", v, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
@@ -23260,7 +23325,8 @@ local function applyEditModeData(kind, data)
 	end
 	if data.absorbOverlayHeight ~= nil then
 		cfg.health = cfg.health or {}
-		cfg.health.absorbOverlayHeight = clampNumber(data.absorbOverlayHeight, 1, 300, GF._computeOverlayHeightFallback(cfg.height, cfg.powerHeight))
+		local fallback = GF._computeOverlayHeightFallback(cfg.height, cfg.powerHeight)
+		cfg.health.absorbOverlayHeight = GF._resolveOverlayHeightSetting(clampNumber(data.absorbOverlayHeight, 1, 300, fallback), fallback)
 	end
 	if data.absorbUseCustomColor ~= nil then
 		cfg.health = cfg.health or {}
@@ -23288,7 +23354,8 @@ local function applyEditModeData(kind, data)
 	end
 	if data.healAbsorbOverlayHeight ~= nil then
 		cfg.health = cfg.health or {}
-		cfg.health.healAbsorbOverlayHeight = clampNumber(data.healAbsorbOverlayHeight, 1, 300, GF._computeOverlayHeightFallback(cfg.height, cfg.powerHeight))
+		local fallback = GF._computeOverlayHeightFallback(cfg.height, cfg.powerHeight)
+		cfg.health.healAbsorbOverlayHeight = GF._resolveOverlayHeightSetting(clampNumber(data.healAbsorbOverlayHeight, 1, 300, fallback), fallback)
 	end
 	if data.healAbsorbUseCustomColor ~= nil then
 		cfg.health = cfg.health or {}

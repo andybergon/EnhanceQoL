@@ -401,15 +401,21 @@ function H.setupAbsorbOverShift(healthBar, overAbsorbBar, height, maxHeight)
 	clip:ClearAllPoints()
 
 	if healthBar:GetReverseFill() then
-		clip:SetPoint("TOPLEFT", htex, "TOPLEFT", 0, 0)
-		clip:SetPoint("BOTTOMLEFT", htex, "BOTTOMLEFT", 0, 0)
 		clip:SetPoint("TOPRIGHT", healthBar, "TOPRIGHT", 0, 0)
 		clip:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", 0, 0)
+		if htex then
+			clip:SetPoint("LEFT", htex, "LEFT", 0, 0)
+		else
+			clip:SetPoint("LEFT", healthBar, "LEFT", 0, 0)
+		end
 	else
 		clip:SetPoint("TOPLEFT", healthBar, "TOPLEFT", 0, 0)
 		clip:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", 0, 0)
-		clip:SetPoint("TOPRIGHT", htex, "TOPRIGHT", 0, 0)
-		clip:SetPoint("BOTTOMRIGHT", htex, "BOTTOMRIGHT", 0, 0)
+		if htex then
+			clip:SetPoint("RIGHT", htex, "RIGHT", 0, 0)
+		else
+			clip:SetPoint("RIGHT", healthBar, "RIGHT", 0, 0)
+		end
 	end
 
 	overAbsorbBar:SetParent(clip)
