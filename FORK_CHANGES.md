@@ -22,7 +22,7 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | [LFG ApplicationViewer taint fix](#lfg-applicationviewer-taint-fix) | Fork-only | — | [`fe800f94`](https://github.com/andybergon/EnhanceQoL/commit/fe800f94) (2026-03-23) | Moves RIO sort from `table.sort` on applicants array to `DataProvider:SetSortComparator` to prevent taint |
 | [Trinket buff tracking + CPE glow suppression](#trinket-buff-tracking--cpe-glow-suppression) | Fork-only | — | [`bcc905cb`](https://github.com/andybergon/EnhanceQoL/commit/bcc905cb), [`819657ea`](https://github.com/andybergon/EnhanceQoL/commit/819657ea), [`28e065aa`](https://github.com/andybergon/EnhanceQoL/commit/28e065aa) (2026-03-23 → 2026-03-26) | ClassBuffReminder tracks trinket buff durations; suppresses "missing buff" while active; CPE glow suppression; combat/M+ taint guards; instance-only setting |
 | [DungeonPortal RIO score frame taint fix](#dungeonportal-rio-score-frame-taint-fix) | Fork-only | — | [`7e6fccf6`](https://github.com/andybergon/EnhanceQoL/commit/7e6fccf6) (2026-03-26) | pcall guards on `GetStringWidth`/`GetPoint`/`GetHeight`/`GetStringHeight` + `SafeSetSize` secret-value bail; prevents "secret number" taint errors in Backdrop.lua from tainted frame dimensions |
-| [Sort M+ search results by leader score](#sort-m-search-results-by-leader-score) | Fork-only | — | [`53fa4695`](https://github.com/andybergon/EnhanceQoL/commit/53fa4695) (2026-03-26) | Sorts Dungeon Finder search results by leader's overall M+ score; shows score in color-coded brackets on each listing |
+| [Sort M+ search results by leader score](#sort-m-search-results-by-leader-score) | Fork-only | — | [`53fa4695`](https://github.com/andybergon/EnhanceQoL/commit/53fa4695) (2026-03-26) | Sorts Dungeon Finder search results by leader's overall M+ score; shows score in color-coded brackets on each listing; applied-first option; debounced async re-sort |
 | [Heal absorb bar for resource bars](#heal-absorb-bar-for-resource-bars) | Fork-only | — | [`ef6405f9`](https://github.com/andybergon/EnhanceQoL/commit/ef6405f9) (2026-03-26) | Adds heal absorb overlay to health bar with custom texture, color, fill mode (normal/reverse/opposite side), and sample preview |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
@@ -122,6 +122,8 @@ Additionally, `getHeightOffset()` in `functions.lua` wraps the entire `GetPoint(
 
 **Key pattern:** Two levels of protection — `pcall` catches errors from using secret values, then `issecretvalue()` prevents secret values from being stored and propagating.
 
+**Backdrop taint:** Blizzard's `BackdropTemplate` calls `SetupTextureCoordinates()` on `OnSizeChanged`, which does `self:GetSize()`. In a tainted execution context, `GetSize()` returns secret values and the arithmetic in `SetupTextureCoordinates` errors. The `SafeSetSize` guards can't prevent this because the taint comes from `GetSize()` returning secret values in the tainted *context*, not from stored tainted dimensions. Fix: wrap `SetupTextureCoordinates` and `SetupPieceVisuals` on the `EQOLDungeonScoreFrame` instance with `pcall`.
+
 **Files changed:** `Modules/MythicPlus/DungeonPortal.lua`, `General/functions.lua`.
 
 ---
@@ -134,7 +136,13 @@ Additionally, `getHeightOffset()` in `functions.lua` wraps the entire `GetPoint(
 1. `LFGListSearchPanel_UpdateResults` — sorts `self.results` by `leaderOverallDungeonScore` (descending) via `C_LFGList.GetSearchResultInfo()`. Uses a `isSortingSearch` flag to prevent infinite recursion: the hook sorts the array, sets the flag, re-calls the original function (which re-fires the hook but bails on the flag), then clears the flag.
 2. `LFGListSearchEntry_Update` — prepends each entry's name with the leader's score in color-coded brackets using `C_ChallengeMode.GetDungeonScoreRarityColor()`.
 
-**Why not `SetSortComparator`?** The ApplicationViewer's DataProvider elements are `{id=X}` tables — each element carries its own ID, so reordering the DataProvider correctly re-binds frames. Search results (`self.results`) are a flat array of raw result IDs (just numbers). `SetSortComparator` reorders data internally but search frames bind `resultID` by position, not element identity — clicking a row would sign up for the wrong group. Instead, we sort the array directly and re-call the update function with a recursion guard. Both scores and info objects are checked with `issecretvalue()` before comparison.
+**Why not `SetSortComparator`?** The ApplicationViewer's DataProvider elements are `{id=X}` tables — each element carries its own ID, so reordering the DataProvider correctly re-binds frames. Search results (`self.results`) are a flat array of raw result IDs (just numbers). `SetSortComparator` reorders data internally but search frames bind `resultID` by position, not element identity — clicking a row would sign up for the wrong group. Instead, we sort the array directly and re-call the update function with a recursion guard.
+
+**Taint-safe cached comparator:** Scores and applied status are cached *before* `table.sort` to avoid calling `GetSearchResultInfo()` inside the comparator. Tainted API calls mid-sort can make the comparator non-transitive (`false` for both `a<b` and `b<a`), corrupting Lua's sort. The cache resolves taint once per result, then the comparator uses only clean cached values.
+
+**Applied-first option:** New `lfgSortSearchAppliedFirst` setting floats groups the player has applied to above unapplied groups. Uses `C_LFGList.GetApplicationInfo()` to detect applied/pending status. Works independently of score sorting.
+
+**Debounced async re-sort:** Scores load asynchronously — the first `UpdateResults` fires before `leaderOverallDungeonScore` is populated. A hidden frame listens for `LFG_LIST_SEARCH_RESULT_UPDATED` events and debounces (0.3s via `C_Timer.NewTimer`) a re-call to `LFGListSearchPanel_UpdateResults`, ensuring the list re-sorts once scores arrive.
 
 **Files changed:** `EnhanceQoL.lua`, `Settings/CombatDungeon.lua`, `Locales/enUS.lua`.
 
