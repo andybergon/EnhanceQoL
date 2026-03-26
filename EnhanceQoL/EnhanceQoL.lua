@@ -5715,22 +5715,63 @@ local function setAllHooks()
 
 	local isSortingSearch = false
 	hooksecurefunc("LFGListSearchPanel_UpdateResults", function(self)
-		if isSortingSearch or not addon.db.lfgSortSearchByScore or addon.functions.isRestrictedContent() then return end
+		if isSortingSearch or addon.functions.isRestrictedContent() then return end
+		local sortByScore = addon.db.lfgSortSearchByScore
+		local appliedFirst = addon.db.lfgSortSearchAppliedFirst
+		if not sortByScore and not appliedFirst then return end
 		if not self.results or #self.results <= 1 then return end
 
+		-- Cache scores and applied status before sorting to avoid taint mid-comparator
+		local scoreCache = {}
+		local appliedCache = {}
+		for _, resultID in ipairs(self.results) do
+			if sortByScore then
+				local info = C_LFGList.GetSearchResultInfo(resultID)
+				local score = info and info.leaderOverallDungeonScore or 0
+				if issecretvalue and (issecretvalue(info) or issecretvalue(score)) then
+					score = 0
+				end
+				scoreCache[resultID] = score or 0
+			end
+			if appliedFirst then
+				local _, appStatus, pendingStatus = C_LFGList.GetApplicationInfo(resultID)
+				appliedCache[resultID] = (appStatus and appStatus ~= "none") or pendingStatus or false
+			end
+		end
+
 		table.sort(self.results, function(a, b)
-			local infoA = C_LFGList.GetSearchResultInfo(a)
-			local infoB = C_LFGList.GetSearchResultInfo(b)
-			if issecretvalue and (issecretvalue(infoA) or issecretvalue(infoB)) then return false end
-			local scoreA = infoA and infoA.leaderOverallDungeonScore or 0
-			local scoreB = infoB and infoB.leaderOverallDungeonScore or 0
-			if issecretvalue and (issecretvalue(scoreA) or issecretvalue(scoreB)) then return false end
-			return (scoreA or 0) > (scoreB or 0)
+			if appliedFirst then
+				local appA = appliedCache[a] and 1 or 0
+				local appB = appliedCache[b] and 1 or 0
+				if appA ~= appB then return appA > appB end
+			end
+			if sortByScore then
+				return (scoreCache[a] or 0) > (scoreCache[b] or 0)
+			end
+			return false
 		end)
 
 		isSortingSearch = true
 		LFGListSearchPanel_UpdateResults(self)
 		isSortingSearch = false
+	end)
+
+	-- Scores load asynchronously — the first UpdateResults often fires before
+	-- scores arrive. Debounce a re-sort when individual results finish loading.
+	local sortDebounceTimer
+	local sortDebounceFrame = CreateFrame("Frame")
+	sortDebounceFrame:RegisterEvent("LFG_LIST_SEARCH_RESULT_UPDATED")
+	sortDebounceFrame:SetScript("OnEvent", function()
+		if not addon.db.lfgSortSearchByScore and not addon.db.lfgSortSearchAppliedFirst then return end
+		if addon.functions.isRestrictedContent() then return end
+		if sortDebounceTimer then sortDebounceTimer:Cancel() end
+		sortDebounceTimer = C_Timer.NewTimer(0.3, function()
+			sortDebounceTimer = nil
+			local panel = LFGListFrame and LFGListFrame.SearchPanel
+			if panel and panel:IsShown() and panel.results and #panel.results > 1 then
+				LFGListSearchPanel_UpdateResults(panel)
+			end
+		end)
 	end)
 
 	hooksecurefunc("LFGListSearchEntry_Update", function(entry)
