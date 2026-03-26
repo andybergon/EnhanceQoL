@@ -1775,6 +1775,158 @@ local function registerEditModeBars()
 				}
 			end
 
+			if barType == "HEALTH" then
+				local healAbsorbDefaultColor = { 1.0, 0.3, 0.3, 0.7 }
+				settingsList[#settingsList + 1] = {
+					name = L["HealAbsorbBar"] or "Heal Absorb Bar",
+					kind = settingType.Collapsible,
+					id = "healabsorb",
+					defaultCollapsed = true,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Enable heal absorb bar"] or "Enable heal absorb bar",
+					kind = settingType.Checkbox,
+					field = "healAbsorbEnabled",
+					parentId = "healabsorb",
+					get = function()
+						local c = curSpecCfg()
+						return c and c.healAbsorbEnabled == true
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.healAbsorbEnabled = value and true or false
+						queueRefresh()
+					end,
+					default = false,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Use custom heal absorb color"] or "Use custom heal absorb color",
+					kind = settingType.CheckboxColor,
+					field = "healAbsorbUseCustomColor",
+					parentId = "healabsorb",
+					default = false,
+					get = function()
+						local c = curSpecCfg()
+						return c and c.healAbsorbUseCustomColor == true
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.healAbsorbUseCustomColor = value and true or false
+						queueRefresh()
+					end,
+					colorDefault = toUIColor(cfg and cfg.healAbsorbColor, healAbsorbDefaultColor),
+					colorGet = function()
+						local c = curSpecCfg()
+						local col = (c and c.healAbsorbColor) or (cfg and cfg.healAbsorbColor) or healAbsorbDefaultColor
+						local r, g, b, a = toColorComponents(col, healAbsorbDefaultColor)
+						return { r = r, g = g, b = b, a = a }
+					end,
+					colorSet = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.healAbsorbColor = toColorArray(value, healAbsorbDefaultColor)
+						c.healAbsorbUseCustomColor = true
+						queueRefresh()
+					end,
+					hasOpacity = true,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Heal absorb texture"] or "Heal absorb texture",
+					kind = settingType.Dropdown,
+					height = 180,
+					field = "healAbsorbTexture",
+					parentId = "healabsorb",
+					generator = function(dropdown, root)
+						local listTex, orderTex = addon.Aura.functions.getStatusbarDropdownLists(true)
+						if not listTex or not orderTex then
+							listTex, orderTex = { DEFAULT = DEFAULT }, { "DEFAULT" }
+						end
+						if not listTex or not orderTex then return end
+						ensureDropdownTexturePreview(dropdown)
+						for index, key in ipairs(orderTex) do
+							local label = listTex[key] or key
+							local previewIndex = index
+							local previewPath = resolveStatusbarPreviewPath(key)
+							local checkbox = root:CreateCheckbox(label, function()
+								local c = curSpecCfg()
+								local cur = c and c.healAbsorbTexture or cfg.healAbsorbTexture or cfg.barTexture or "DEFAULT"
+								return cur == key
+							end, function()
+								local c = curSpecCfg()
+								if not c then return end
+								local cur = c.healAbsorbTexture or cfg.healAbsorbTexture or cfg.barTexture or "DEFAULT"
+								if cur == key then return end
+								c.healAbsorbTexture = key
+								queueRefresh()
+							end)
+							if previewPath then checkbox:AddInitializer(function(button) attachDropdownTexturePreview(dropdown, button, previewIndex, previewPath) end) end
+						end
+					end,
+					get = function()
+						local c = curSpecCfg()
+						return (c and c.healAbsorbTexture) or cfg.healAbsorbTexture or cfg.barTexture or "DEFAULT"
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.healAbsorbTexture = value
+						queueRefresh()
+					end,
+					default = cfg and (cfg.healAbsorbTexture or cfg.barTexture) or "DEFAULT",
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Heal absorb fill mode"] or "Heal absorb fill mode",
+					kind = settingType.Dropdown,
+					field = "healAbsorbFillMode",
+					parentId = "healabsorb",
+					values = {
+						{ value = "normal", text = L["Normal"] or "Normal" },
+						{ value = "reverse", text = L["Reverse fill"] or "Reverse fill" },
+						{ value = "opposite", text = L["Opposite side"] or "Opposite side" },
+					},
+					get = function()
+						local c = curSpecCfg()
+						if not c then return "normal" end
+						if c.healAbsorbOppositeSide then return "opposite" end
+						if c.healAbsorbReverseFill then return "reverse" end
+						return "normal"
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.healAbsorbReverseFill = value == "reverse"
+						c.healAbsorbOppositeSide = value == "opposite"
+						queueRefresh()
+						refreshSettingsUI()
+					end,
+					default = "normal",
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Show sample heal absorb"] or "Show sample heal absorb",
+					kind = settingType.Checkbox,
+					field = "healAbsorbSample",
+					parentId = "healabsorb",
+					get = function()
+						local c = curSpecCfg()
+						return c and c.healAbsorbSample == true
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.healAbsorbSample = value and true or false
+						queueRefresh()
+					end,
+					default = false,
+				}
+			end
+
 			settingsList[#settingsList + 1] = {
 				name = LOCALE_TEXT_LABEL,
 				kind = settingType.Collapsible,

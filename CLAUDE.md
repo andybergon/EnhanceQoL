@@ -97,6 +97,10 @@ Blizzard's taint system marks certain API return values as "secret" when addon c
 
 **Emerald Coach's Whistle (item 193718):** Caster gets spell 389581 "Coaching", target gets spell 386578 "Coached". Check the caster buff (389581) on the player, not the target buff. `GetAuraDataByIndex` reports overridden spell ID 386581, but `GetUnitAuraBySpellID` needs the base ID 389581.
 
+## Lua Local Variable Limit
+
+`ResourceBars.lua` is at the 200 local variable limit for Lua's main chunk. **Do NOT add new `local` forward declarations at the top level.** Instead, put new functions on the `ResourceBars` table (e.g. `ResourceBars.myFunction = function(...)` instead of `local myFunction`). This applies to any large file that's near the limit.
+
 ## PR Conventions
 
 This is an external repo — always preview PR title/body for user review before submitting. Keep tone casual and human.
