@@ -5049,7 +5049,10 @@ local function createPowerBar(type, anchor)
 		bar._runeVisibilityHooks = true
 	end
 	if type == "ESSENCE" and not bar._essenceVisibilityHooks then
-		bar:HookScript("OnHide", function(self) ResourceBars.DeactivateEssenceTicker(self) end)
+		bar:HookScript("OnHide", function(self)
+			ResourceBars.DeactivateEssenceTicker(self)
+			if ResourceBars.InvalidateEssenceSegmentCaches then ResourceBars.InvalidateEssenceSegmentCaches(self) end
+		end)
 		bar._essenceVisibilityHooks = true
 	end
 	if type == "RUNES" then
