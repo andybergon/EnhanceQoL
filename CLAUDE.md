@@ -76,6 +76,8 @@ To test upstream code (e.g. verify a bug exists there before opening a PR):
 
 All fork changes are tracked in [`FORK_CHANGES.md`](FORK_CHANGES.md). **CRITICAL: Always update FORK_CHANGES.md as part of every commit — not after. Include it in the same commit.** Also update when syncing with upstream (features brought upstream, status changes, etc.).
 
+Non-trivial features get a **detail section** below the table (linked via anchor in the Feature column). Each section covers: Problem, Root cause (if a bug fix), Fix/How it works, Key gotchas, Files changed. Simple/self-explanatory features stay as table-only entries.
+
 ## Cooldown Panels Gotchas
 
 - **Don't add new fields to `PANEL_LAYOUT_DEFAULTS` or `ENTRY_DEFAULTS`** in `CooldownPanels_Helper.lua`. `NormalizePanel` iterates over these defaults and sets them on every panel layout during initialization, which can interfere with panel rendering and the `enabledPanels` rebuild timing. Instead, let new boolean fields default to `nil` (which evaluates as `false` via `field == true` checks).
