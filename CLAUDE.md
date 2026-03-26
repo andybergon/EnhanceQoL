@@ -83,6 +83,20 @@ All fork changes are tracked in [`FORK_CHANGES.md`](FORK_CHANGES.md). **CRITICAL
 - **Edit Mode inspector uses `getEditor()` not `editor` directly.** The `editor` variable is local to `ensureEditor()`. Use `getEditor()` to access `selectedPanelId`/`selectedEntryId` from button handlers.
 - **Standalone entry editor (`OpenLayoutEntryStandaloneMenu`)** opens when clicking icons directly on-screen during layout edit, not from the Cooldown Panel Editor window. The editor window uses `RegisterEditModePanel` settings.
 
+## Taint / Secret Number Gotchas
+
+Blizzard's taint system marks certain API return values as "secret" when addon code runs inside secure callback chains (e.g. `GameTooltip:HookScript("OnHide")` triggered from `LFGList.lua`). Arithmetic on these values errors with "attempt to perform arithmetic on a secret number value". Affected APIs include `GetStringWidth()`, `GetPoint()`, `GetHeight()`, `GetSize()`.
+
+**Fix pattern:** Wrap the call or the arithmetic in `pcall` with a fallback, and check `issecretvalue` on return values before using them. See `SafeGetStringWidth()` / `SafeGetStringHeight()` / `SafeSetSize()` in `DungeonPortal.lua` and `getHeightOffset()` in `functions.lua` for examples. Upstream has dozens of similar fixes throughout the codebase (search git history for "secret", "taint", "pcall").
+
+**Taint propagates through module-level variables.** If a tainted value is stored in a module-scope `local` (e.g. `minFrameSize = max(title:GetStringWidth(), 205)`), ALL subsequent uses of that variable are tainted for the rest of the session. Always use safe wrappers even for "one-time" initialization code at module scope.
+
+**LFG search DataProvider sort:** Don't use `DataProvider:SetSortComparator()` for the search panel — it reorders data internally but frames don't re-bind their `resultID`, breaking click targeting (signs up for wrong group). Instead, sort `panel.results` directly (flat array of result IDs) and re-call `LFGListSearchPanel_UpdateResults(self)` with a recursion guard. The applicant viewer's `SetSortComparator` works because its data elements use `{id=X}` tables, but search result elements may differ.
+
+**Aura taint in M+ and combat:** `C_UnitAuras.GetUnitAuraBySpellID` returns `nil` for valid buffs when aura data is tainted (active M+ via `ForceTaint_Strong`, and during combat). `GetAuraDataByIndex` still shows the aura, but slot-scan and spell-ID-lookup APIs fail silently. For long-duration buffs like Emerald Coach's Whistle (spell 389581 "Coaching"), assume buff is active when in combat or M+ rather than showing a false "missing" state. Check `C_ChallengeMode.IsChallengeModeActive()` and `InCombatLockdown()` as guards.
+
+**Emerald Coach's Whistle (item 193718):** Caster gets spell 389581 "Coaching", target gets spell 386578 "Coached". Check the caster buff (389581) on the player, not the target buff. `GetAuraDataByIndex` reports overridden spell ID 386581, but `GetUnitAuraBySpellID` needs the base ID 389581.
+
 ## PR Conventions
 
 This is an external repo — always preview PR title/body for user review before submitting. Keep tone casual and human.
