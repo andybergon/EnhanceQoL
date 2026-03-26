@@ -14397,6 +14397,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					iconTexture = Api.GetItemIconByID and Api.GetItemIconByID(itemId) or iconTexture
 					if itemHasUseSpell(itemId) then
 						canTriggerReadyGlow = true
+						if canTriggerReadyGlow and addon.ClassBuffReminder and addon.ClassBuffReminder.IsLongBuffTrinketWithActiveBuff then
+							if addon.ClassBuffReminder:IsLongBuffTrinketWithActiveBuff(itemId) then canTriggerReadyGlow = false end
+						end
 						if trackCooldown then
 							cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(itemId, resolvedSlotId)
 							if CooldownPanels:IsItemCooldownOnGCD(itemId, cooldownStart, cooldownDuration) then

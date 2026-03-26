@@ -22,6 +22,8 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | LFG ApplicationViewer taint fix | Fork-only | — | [`fe800f94`](https://github.com/andybergon/EnhanceQoL/commit/fe800f94) (2026-03-23) | Moves RIO sort from `table.sort` on applicants array to `DataProvider:SetSortComparator` to prevent taint |
 | Symbiotic Relationship + trinket buff tracking | Fork-only | — | [`bcc905cb`](https://github.com/andybergon/EnhanceQoL/commit/bcc905cb) (2026-03-23) | ClassBuffReminder tracks trinket buff durations; suppresses "missing buff" while active |
 | CPE glow suppression for long-buff trinkets | Fork-only | — | [`819657ea`](https://github.com/andybergon/EnhanceQoL/commit/819657ea) (2026-03-24) | Suppresses ready glow on cooldown panel entries when long-buff trinket buff is active |
+| DungeonPortal RIO score frame taint fix | Fork-only | — | [`7ac37c48`](https://github.com/andybergon/EnhanceQoL/commit/7ac37c48) (2026-03-26) | pcall guards on `GetStringWidth`/`GetPoint`/`GetHeight` in tooltip OnHide callback to prevent "secret number" taint errors; upstream has many similar taint fixes but not these specific spots |
+| ClassBuffReminder: instance-only, combat robustness, trinket taint | Fork-only | — | (pending commit) | "Only in dungeons/raids" setting; robust combat tracking via flag; trinket reminder suppressed in combat/M+ (aura taint); UNIT_AURA state updates during combat; CPE SLOT-type trinket glow suppression |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
 This file and `CLAUDE.md` are also fork-only (project docs for Claude Code).
