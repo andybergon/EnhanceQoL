@@ -1237,6 +1237,22 @@ local function ensureRioScoreFrame()
 		insets = { left = 4, right = 4, top = 4, bottom = 4 },
 	})
 	frameAnchorScore:SetBackdropColor(0, 0, 0, 0.8)
+	-- Guard against taint in backdrop texture coordinate setup: GetSize() can
+	-- return secret values in tainted execution contexts (LFG tooltip chains),
+	-- causing "attempt to perform arithmetic on a secret number value".
+	-- Wrap SetupTextureCoordinates directly — OnSizeChanged bypasses OnBackdropSizeChanged.
+	if frameAnchorScore.SetupTextureCoordinates then
+		local origSetupTC = frameAnchorScore.SetupTextureCoordinates
+		frameAnchorScore.SetupTextureCoordinates = function(self)
+			pcall(origSetupTC, self)
+		end
+	end
+	if frameAnchorScore.SetupPieceVisuals then
+		local origSetupPV = frameAnchorScore.SetupPieceVisuals
+		frameAnchorScore.SetupPieceVisuals = function(self)
+			pcall(origSetupPV, self)
+		end
+	end
 	frameAnchorScore:SetFrameStrata("TOOLTIP")
 	frameAnchorScore:SetMovable(true)
 	frameAnchorScore:EnableMouse(true)
