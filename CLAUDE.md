@@ -93,6 +93,10 @@ Blizzard's taint system marks certain API return values as "secret" when addon c
 
 **Taint propagates through module-level variables.** If a tainted value is stored in a module-scope `local` (e.g. `minFrameSize = max(title:GetStringWidth(), 205)`), ALL subsequent uses of that variable are tainted for the rest of the session. Always use safe wrappers even for "one-time" initialization code at module scope.
 
+**Never call WoW APIs inside `table.sort` comparators.** If an API returns tainted data mid-sort, the comparator becomes non-transitive (returns `false` for both `a<b` and `b<a`), corrupting Lua's sort. Cache all values *before* sorting, resolving taint once per element, then sort using the cache.
+
+**BackdropTemplate taint:** `SafeSetSize` alone doesn't prevent backdrop errors. Blizzard's `SetupTextureCoordinates`/`SetupPieceVisuals` call `self:GetSize()` which returns secret values in tainted *execution contexts* — even if stored dimensions are clean. Fix: wrap these methods with `pcall` on the frame instance. See `ensureRioScoreFrame()` in `DungeonPortal.lua`.
+
 **LFG search DataProvider sort:** Don't use `DataProvider:SetSortComparator()` for the search panel — it reorders data internally but frames don't re-bind their `resultID`, breaking click targeting (signs up for wrong group). Instead, sort `panel.results` directly (flat array of result IDs) and re-call `LFGListSearchPanel_UpdateResults(self)` with a recursion guard. The applicant viewer's `SetSortComparator` works because its data elements use `{id=X}` tables, but search result elements may differ.
 
 **Aura taint in M+ and combat:** `C_UnitAuras.GetUnitAuraBySpellID` returns `nil` for valid buffs when aura data is tainted (active M+ via `ForceTaint_Strong`, and during combat). `GetAuraDataByIndex` still shows the aura, but slot-scan and spell-ID-lookup APIs fail silently. For long-duration buffs like Emerald Coach's Whistle (spell 389581 "Coaching"), assume buff is active when in combat or M+ rather than showing a false "missing" state. Check `C_ChallengeMode.IsChallengeModeActive()` and `InCombatLockdown()` as guards.
