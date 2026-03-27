@@ -17,6 +17,7 @@ local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local issecretvalue = _G.issecretvalue
 local UnitInPartyIsAI = _G.UnitInPartyIsAI
 local GetTimePreciseSec = _G.GetTimePreciseSec
+local IsSpellInRange = C_Spell and C_Spell.IsSpellInRange
 
 local EDITMODE_ID = "classBuffReminder"
 local ICON_MISSING = "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -419,6 +420,16 @@ local function isUnitHealerRole(unit)
 	local role = UnitGroupRolesAssigned(unit)
 	if issecretvalue and issecretvalue(role) then return false end
 	return role == "HEALER"
+end
+
+local function isUnitInBuffRange(spellId, unit)
+	if not spellId or not unit then return true end
+	if IsSpellInRange then
+		local inRange = IsSpellInRange(spellId, unit)
+		if inRange ~= nil then return inRange end
+	end
+	-- Fallback for AoE buffs (e.g. Battle Shout) or missing API: use visibility (~100yd)
+	return not UnitIsVisible or UnitIsVisible(unit)
 end
 
 local function isPlayerOffhandShield()
@@ -1190,12 +1201,13 @@ function Reminder:GetGroupBuffMissingCountBySpellIds(spellIds, includeAIFollower
 	local total = 0
 	local missing = 0
 	local nearbyOnly = self:IsNearbyOnlyEnabled()
+	local rangeSpellId = nearbyOnly and spellIds[1] or nil
 	for i = 1, #units do
 		local unit = units[i]
 		if isAIFollowerUnit(unit) and includeAIFollowers ~= true then
 			-- Skip AI followers for group-buff requirements.
 		elseif UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-			if not (nearbyOnly and UnitIsVisible and not UnitIsVisible(unit)) then
+			if not (nearbyOnly and not isUnitInBuffRange(rangeSpellId, unit)) then
 				total = total + 1
 				if not self:UnitHasAnyAuraSpellId(unit, spellIds) then missing = missing + 1 end
 			end
@@ -1246,7 +1258,7 @@ local function paladinRitesGetSelfStatus(provider, reminder)
 
 	if reminder:GetCurrentSpecId() == PALADIN_SPEC_HOLY then
 		reminder.runtimeEligibleUnits = reminder.runtimeEligibleUnits or {}
-		local eligibleUnits = reminder:CollectEligibleUnits(reminder.runtimeEligibleUnits, true)
+		local eligibleUnits = reminder:CollectEligibleUnits(reminder.runtimeEligibleUnits, nil, true)
 
 		if #eligibleUnits > 1 then
 			totalRequirements = totalRequirements + 1
@@ -1517,7 +1529,7 @@ local function evokerSupportGetSelfStatus(provider, reminder)
 	local shouldTrackBlistering = hasKnownSpellInList(provider.blisteringKnownSpellIds or provider.blisteringSpellIds)
 	if shouldTrackBlistering then
 		reminder.runtimeEligibleUnits = reminder.runtimeEligibleUnits or {}
-		local eligibleUnits = reminder:CollectEligibleUnits(reminder.runtimeEligibleUnits, true)
+		local eligibleUnits = reminder:CollectEligibleUnits(reminder.runtimeEligibleUnits, provider.blisteringSpellIds and provider.blisteringSpellIds[1], true)
 		if #eligibleUnits > 0 then
 			totalRequirements = totalRequirements + 1
 			local hasBlisteringOnTarget = false
@@ -2281,7 +2293,7 @@ end
 function Reminder:GetGroupUnitMissingStatus(provider, unit)
 	if isAIFollowerUnit(unit) then return GROUP_UNIT_STATUS_INELIGIBLE end
 	if not (UnitExists and UnitExists(unit) and UnitIsConnected and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit)) then return GROUP_UNIT_STATUS_INELIGIBLE end
-	if self:IsNearbyOnlyEnabled() and UnitIsVisible and not UnitIsVisible(unit) then return GROUP_UNIT_STATUS_INELIGIBLE end
+	if self:IsNearbyOnlyEnabled() and not isUnitInBuffRange(provider.spellIds and provider.spellIds[1], unit) then return GROUP_UNIT_STATUS_INELIGIBLE end
 	if self:UnitHasProviderBuff(unit, provider) then return GROUP_UNIT_STATUS_PRESENT end
 	return GROUP_UNIT_STATUS_MISSING
 end
@@ -2898,7 +2910,7 @@ function Reminder:CollectOtherHealerUnits(target, includeAIFollowers)
 	return target
 end
 
-function Reminder:CollectEligibleUnits(target, includeAIFollowers)
+function Reminder:CollectEligibleUnits(target, rangeSpellId, includeAIFollowers)
 	if not target then target = {} end
 	for i = #target, 1, -1 do
 		target[i] = nil
@@ -2909,7 +2921,7 @@ function Reminder:CollectEligibleUnits(target, includeAIFollowers)
 	for i = 1, #units do
 		local unit = units[i]
 		if (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-			if not (nearbyOnly and UnitIsVisible and not UnitIsVisible(unit)) then
+			if not (nearbyOnly and not isUnitInBuffRange(rangeSpellId, unit)) then
 				target[#target + 1] = unit
 			end
 		end
@@ -2918,7 +2930,7 @@ function Reminder:CollectEligibleUnits(target, includeAIFollowers)
 	return target
 end
 
-function Reminder:CollectOtherEligibleUnits(target, includeAIFollowers)
+function Reminder:CollectOtherEligibleUnits(target, rangeSpellId, includeAIFollowers)
 	if not target then target = {} end
 	for i = #target, 1, -1 do
 		target[i] = nil
@@ -2929,7 +2941,7 @@ function Reminder:CollectOtherEligibleUnits(target, includeAIFollowers)
 	for i = 1, #units do
 		local unit = units[i]
 		if not isPlayerUnit(unit) and (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-			if not (nearbyOnly and UnitIsVisible and not UnitIsVisible(unit)) then
+			if not (nearbyOnly and not isUnitInBuffRange(rangeSpellId, unit)) then
 				target[#target + 1] = unit
 			end
 		end
