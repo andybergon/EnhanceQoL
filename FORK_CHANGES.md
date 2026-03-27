@@ -25,7 +25,7 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | [Sort M+ search results by leader score](#sort-m-search-results-by-leader-score) | Fork-only | — | [`53fa4695`](https://github.com/andybergon/EnhanceQoL/commit/53fa4695) (2026-03-26) | Sorts Dungeon Finder search results by leader's overall M+ score; shows score in color-coded brackets on each listing; applied-first option; debounced async re-sort |
 | [Heal absorb bar for resource bars](#heal-absorb-bar-for-resource-bars) | Fork-only | — | [`ef6405f9`](https://github.com/andybergon/EnhanceQoL/commit/ef6405f9) (2026-03-26) | Adds heal absorb overlay to health bar with custom texture, color, fill mode (normal/reverse/opposite side), and sample preview |
 | Cooldown panel passive trinket glow fix | Fork-only | — | `main` | `GetItemUseSpellID` checked `C_Item.GetItemSpell` which returns spells for "Equip:" effects too; now verifies "Use:" via tooltip |
-| Class buff reminder "nearby only" filter | Fork-only | — | `main` | Only count group members who are visible (same zone/instance) for missing buff counts; avoids false glow when members are still outside |
+| Class buff reminder "nearby only" filter | Fork-only | — | `main` | Only count group members in buff cast range (`IsSpellInRange`) for missing buff counts; falls back to visibility (~100yd) for AoE buffs like Battle Shout |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
 This file and `CLAUDE.md` are also fork-only (project docs for Claude Code).
