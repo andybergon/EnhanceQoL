@@ -118,6 +118,10 @@ local getBarColor
 local normalizeBarEntry
 local refreshPanelContext
 local refreshStandaloneEntryDialogForBars
+local inferChargeBaseCount
+local getDisplayedCharges
+local getChargeBarProgress
+local getChargeBarValueText
 
 local function getSettingType()
 	local lib = addon.EditModeLib or (addon.EditMode and addon.EditMode.lib)
@@ -126,17 +130,39 @@ end
 
 local function normalizeId(value) return tonumber(value) end
 local function isSecretValue(value) return Api.issecretvalue and Api.issecretvalue(value) end
+local function hasTextValue(value)
+	if type(value) ~= "string" then return false end
+	if isSecretValue(value) then return true end
+	return value ~= ""
+end
+
+local function getTextValue(value)
+	if type(value) ~= "string" then return nil end
+	if isSecretValue(value) then return value end
+	if value ~= "" then return value end
+	return nil
+end
+
 local function safeNumber(value)
 	if type(value) == "number" and not isSecretValue(value) then return value end
-	if type(value) == "string" and value ~= "" then
+	if type(value) == "string" then
+		if isSecretValue(value) then return nil end
+		if value == "" then return nil end
 		local numeric = tonumber(value)
 		if numeric then return numeric end
 	end
 	return nil
 end
 
+local function isSafeLessThan(a, b)
+	local lhs = safeNumber(a)
+	local rhs = safeNumber(b)
+	if not (lhs and rhs) then return false end
+	return lhs < rhs
+end
+
 local function isLikelyFilePath(value)
-	if type(value) ~= "string" or value == "" then return false end
+	if not hasTextValue(value) or isSecretValue(value) then return false end
 	return strfind(value, "[/\\]") ~= nil
 end
 
@@ -179,8 +205,7 @@ local function getCooldownText(icon)
 	local fontString = cooldown:GetCountdownFontString()
 	if not fontString or not fontString.GetText then return nil end
 	local text = fontString:GetText()
-	if text == "" then return nil end
-	return text
+	return getTextValue(text)
 end
 
 local function getDefaultBarColorForMode(mode)
@@ -189,18 +214,18 @@ local function getDefaultBarColorForMode(mode)
 end
 
 local function normalizeBarTexture(value, fallback)
-	local texture = type(value) == "string" and value or nil
-	if texture and texture ~= "" then return texture end
-	texture = type(fallback) == "string" and fallback or nil
-	if texture and texture ~= "" then return texture end
+	local texture = getTextValue(value)
+	if texture then return texture end
+	texture = getTextValue(fallback)
+	if texture then return texture end
 	return BAR_TEXTURE_DEFAULT
 end
 
 local function normalizeBarBorderTexture(value, fallback)
-	local texture = type(value) == "string" and value or nil
-	if texture and texture ~= "" then return texture end
-	texture = type(fallback) == "string" and fallback or nil
-	if texture and texture ~= "" then return texture end
+	local texture = getTextValue(value)
+	if texture then return texture end
+	texture = getTextValue(fallback)
+	if texture then return texture end
 	return BAR_BORDER_TEXTURE_DEFAULT
 end
 
@@ -260,7 +285,7 @@ local function resolveBarTexture(value)
 	if texture == BAR_TEXTURE_DEFAULT then return "Interface\\TargetingFrame\\UI-StatusBar" end
 	if LSM and LSM.Fetch then
 		local fetched = LSM:Fetch("statusbar", texture, true)
-		if type(fetched) == "string" and fetched ~= "" then return fetched end
+		if hasTextValue(fetched) then return fetched end
 	end
 	if isLikelyFilePath(texture) then return texture end
 	return "Interface\\TargetingFrame\\UI-StatusBar"
@@ -270,10 +295,10 @@ local function resolveBarBorderTexture(value)
 	local key = normalizeBarBorderTexture(value, BAR_BORDER_TEXTURE_DEFAULT)
 	local ufHelper = addon.Aura and addon.Aura.UFHelper
 	if ufHelper and ufHelper.resolveBorderTexture then return ufHelper.resolveBorderTexture(key) end
-	if not key or key == "" or key == BAR_BORDER_TEXTURE_DEFAULT then return "Interface\\Buttons\\WHITE8x8" end
+	if not hasTextValue(key) or isSecretValue(key) or key == BAR_BORDER_TEXTURE_DEFAULT then return "Interface\\Buttons\\WHITE8x8" end
 	if LSM and LSM.Fetch then
 		local fetched = LSM:Fetch("border", key, true)
-		if type(fetched) == "string" and fetched ~= "" then return fetched end
+		if hasTextValue(fetched) then return fetched end
 	end
 	if isLikelyFilePath(key) then return key end
 	return "Interface\\Buttons\\WHITE8x8"
@@ -298,7 +323,7 @@ local function getBarTextureOptions()
 	for index = 1, #names do
 		local name = names[index]
 		local path = hash[name]
-		if type(path) == "string" and path ~= "" then add(name, tostring(name)) end
+		if hasTextValue(path) then add(name, tostring(name)) end
 	end
 	return list
 end
@@ -321,7 +346,7 @@ local function getBarBorderTextureOptions()
 	for index = 1, #names do
 		local name = names[index]
 		local path = hash[name]
-		if type(path) == "string" and path ~= "" then add(name, tostring(name)) end
+		if hasTextValue(path) then add(name, tostring(name)) end
 	end
 	return list
 end
@@ -386,6 +411,7 @@ local function getRuntimeState()
 	CooldownPanels.runtime.cooldownPanelBars = CooldownPanels.runtime.cooldownPanelBars or {
 		activeBars = setmetatable({}, { __mode = "k" }),
 		stackMaxByEntryKey = {},
+		chargeMaxByEntryKey = {},
 	}
 	return CooldownPanels.runtime.cooldownPanelBars
 end
@@ -454,18 +480,18 @@ local function getEntryLabel(entry)
 		local spellId = tonumber((macro and macro.spellID) or entry.spellID)
 		if spellId and Api.GetSpellInfoFn then
 			local name = Api.GetSpellInfoFn(spellId)
-			if name and name ~= "" then return name end
+			if hasTextValue(name) then return name end
 		end
 	elseif resolvedType == "ITEM" then
 		local itemId = tonumber((macro and macro.itemID) or entry.itemID)
 		if itemId then
 			if C_Item and C_Item.GetItemNameByID then
 				local name = C_Item.GetItemNameByID(itemId)
-				if name and name ~= "" then return name end
+				if hasTextValue(name) then return name end
 			end
 			if GetItemInfo then
 				local name = GetItemInfo(itemId)
-				if name and name ~= "" then return name end
+				if hasTextValue(name) then return name end
 			end
 		end
 	elseif resolvedType == "CDM_AURA" and CooldownPanels.CDMAuras and CooldownPanels.CDMAuras.GetEntryName then
@@ -475,10 +501,10 @@ local function getEntryLabel(entry)
 			local macroId = tonumber(entry.macroID)
 			if macroId then
 				local name = Api.GetMacroInfo(macroId)
-				if name and name ~= "" then return name end
+				if hasTextValue(name) then return name end
 			end
 		end
-		if type(entry.macroName) == "string" and entry.macroName ~= "" then return entry.macroName end
+		if hasTextValue(entry.macroName) then return entry.macroName end
 	end
 	if CooldownPanels.GetEntryStandaloneTitle then return CooldownPanels:GetEntryStandaloneTitle(entry) end
 	return nil
@@ -710,36 +736,33 @@ local function ensureBarUpdater()
 						if text and barFrame.value and state.showValueText == true then barFrame.value:SetText(text) end
 					end
 				elseif state.mode == Bars.BAR_MODE.CHARGES then
-					local progress = state.progress
-					if safeNumber(state.currentCharges) and safeNumber(state.maxCharges) and safeNumber(state.maxCharges) > 0 then
-						progress = state.currentCharges / state.maxCharges
-						local rechargeProgress = 0
-						if safeNumber(state.rechargeStart) and safeNumber(state.rechargeDuration) and state.rechargeDuration > 0 and state.currentCharges < state.maxCharges then
-							local rate = safeNumber(state.rechargeRate) or 1
-							rechargeProgress = clamp(((now - state.rechargeStart) * rate) / state.rechargeDuration, 0, 1)
-							progress = clamp((state.currentCharges + rechargeProgress) / state.maxCharges, 0, 1)
-							if rechargeProgress >= 1 then activeBars[barFrame] = nil end
-						else
-							activeBars[barFrame] = nil
-						end
-						state.rechargeProgress = rechargeProgress
-						if state.segmentedCharges == true and barFrame._eqolSegmentCount and barFrame._eqolSegmentCount > 0 then
-							for index = 1, barFrame._eqolSegmentCount do
-								local segment = barFrame.segments and barFrame.segments[index] or nil
-								if segment and segment.fill then
-									local segmentValue = 0
-									if index <= state.currentCharges then
-										segmentValue = 1
-									elseif index == (state.currentCharges + 1) and state.currentCharges < state.maxCharges then
-										segmentValue = rechargeProgress
-									end
-									segment.fill:SetValue(clamp(segmentValue, 0, 1))
+					local displayedCharges = getDisplayedCharges(icon) or safeNumber(state.currentCharges)
+					if displayedCharges ~= nil then state.currentCharges = displayedCharges end
+					local progress = getChargeBarProgress(state)
+					if barFrame.value and state.showValueText == true then
+						barFrame.value:SetText(getChargeBarValueText(icon, state.currentCharges, state.maxCharges) or (state.valueText or ""))
+					end
+					if state.segmentedCharges == true and barFrame._eqolSegmentCount and barFrame._eqolSegmentCount > 0 then
+						for index = 1, barFrame._eqolSegmentCount do
+							local segment = barFrame.segments and barFrame.segments[index] or nil
+							if segment and segment.fill then
+								local segmentValue = 0
+								local maxCharges = safeNumber(state.maxCharges) or barFrame._eqolSegmentCount
+								local currentCharges = safeNumber(state.currentCharges)
+								if currentCharges == nil then currentCharges = inferChargeBaseCount(state, maxCharges) or 0 end
+								local rechargeProgress = clamp(safeNumber(state.rechargeProgress) or 0, 0, 1)
+								if index <= currentCharges then
+									segmentValue = 1
+								elseif index == (currentCharges + 1) and currentCharges < maxCharges then
+									segmentValue = rechargeProgress
 								end
+								segment.fill:SetValue(clamp(segmentValue, 0, 1))
 							end
-						elseif barFrame.fill then
-							barFrame.fill:SetValue(progress)
 						end
-					else
+					elseif barFrame.fill then
+						barFrame.fill:SetValue(progress)
+					end
+					if state.chargeInfoActive ~= true and state.chargeDurationObject == nil and (state.cooldownDurationObject == nil or state.cooldownGCD == true) then
 						activeBars[barFrame] = nil
 					end
 				else
@@ -780,7 +803,7 @@ end
 
 local function applyBackdropFrame(frame, edgeFile, edgeSize)
 	if not frame then return end
-	local resolvedEdge = (type(edgeFile) == "string" and edgeFile ~= "" and edgeFile) or "Interface\\Buttons\\WHITE8x8"
+	local resolvedEdge = hasTextValue(edgeFile) and not isSecretValue(edgeFile) and edgeFile or "Interface\\Buttons\\WHITE8x8"
 	local resolvedSize = max(edgeSize or 0, 1)
 	local signature = resolvedEdge .. "|" .. tostring(edgeSize or 0)
 	if frame._eqolBackdropSignature == signature then return end
@@ -1101,6 +1124,100 @@ local function getCooldownProgress(startTime, duration, rate)
 	return clamp(((now - start) * modifier) / total, 0, 1)
 end
 
+local function getDurationObjectRemaining(durationObject)
+	if not (durationObject and durationObject.GetRemainingDuration) then return nil end
+	return safeNumber(durationObject.GetRemainingDuration(durationObject, Api.DurationModifierRealTime))
+end
+
+local function getDurationObjectTotal(durationObject)
+	if not (durationObject and durationObject.GetTotalDuration) then return nil end
+	return safeNumber(durationObject.GetTotalDuration(durationObject, Api.DurationModifierRealTime))
+end
+
+local function getDurationObjectElapsedProgress(durationObject)
+	local remaining = getDurationObjectRemaining(durationObject)
+	local total = getDurationObjectTotal(durationObject)
+	if not (remaining and total and total > 0) then return nil end
+	return clamp(1 - (remaining / total), 0, 1)
+end
+
+inferChargeBaseCount = function(state, maxCharges)
+	if type(state) ~= "table" then return nil end
+	local numericMax = safeNumber(maxCharges)
+	if not (numericMax and numericMax > 0) then return nil end
+	if state.cooldownDurationObject ~= nil and state.cooldownGCD ~= true then return 0 end
+	if state.chargeDurationObject ~= nil or state.chargeInfoActive == true then return min(1, numericMax) end
+	return nil
+end
+
+getDisplayedCharges = function(icon)
+	return safeNumber(icon and icon.charges and icon.charges.GetText and icon.charges:GetText())
+end
+
+local function getChargeSessionMax(entryKey, observedMax, observedCurrent, hasRecharge, preview)
+	local runtime = getRuntimeState()
+	local maxByKey = runtime.chargeMaxByEntryKey or {}
+	runtime.chargeMaxByEntryKey = maxByKey
+	local currentMax = maxByKey[entryKey]
+	local safeObservedMax = safeNumber(observedMax)
+	if safeObservedMax and safeObservedMax > 0 then
+		currentMax = max(currentMax or safeObservedMax, safeObservedMax)
+		maxByKey[entryKey] = currentMax
+	end
+	local safeObservedCurrent = safeNumber(observedCurrent)
+	if currentMax and currentMax > 0 then return currentMax end
+	local fallback = preview and 3 or 1
+	if hasRecharge then
+		fallback = max(fallback, 2)
+		if safeObservedCurrent then fallback = max(fallback, safeObservedCurrent + 1) end
+	end
+	if safeObservedCurrent then fallback = max(fallback, safeObservedCurrent) end
+	return fallback
+end
+
+getChargeBarProgress = function(state)
+	if type(state) ~= "table" then return 0 end
+	local chargeRemaining = getDurationObjectRemaining(state.chargeDurationObject)
+	if chargeRemaining ~= nil and chargeRemaining <= 0 then
+		state.chargeDurationObject = nil
+		chargeRemaining = nil
+	end
+	local cooldownRemaining = getDurationObjectRemaining(state.cooldownDurationObject)
+	if cooldownRemaining ~= nil and cooldownRemaining <= 0 then
+		state.cooldownDurationObject = nil
+		cooldownRemaining = nil
+	end
+	local currentCharges = safeNumber(state.currentCharges)
+	local maxCharges = safeNumber(state.maxCharges)
+	local baseCharges = currentCharges
+	if baseCharges == nil then baseCharges = inferChargeBaseCount(state, maxCharges) end
+	local rechargeProgress = getDurationObjectElapsedProgress(state.chargeDurationObject)
+	if rechargeProgress == nil and state.cooldownGCD ~= true then
+		rechargeProgress = getDurationObjectElapsedProgress(state.cooldownDurationObject)
+	end
+	if rechargeProgress == nil then rechargeProgress = clamp(safeNumber(state.rechargeProgress) or 0, 0, 1) end
+	state.rechargeProgress = rechargeProgress
+	if baseCharges and maxCharges and maxCharges > 0 then
+		local progress = baseCharges / maxCharges
+		if rechargeProgress > 0 and baseCharges < maxCharges then progress = (baseCharges + rechargeProgress) / maxCharges end
+		return clamp(progress, 0, 1)
+	end
+	if rechargeProgress > 0 and maxCharges and maxCharges > 0 then
+		local inferredBase = inferChargeBaseCount(state, maxCharges) or 0
+		return clamp((inferredBase + rechargeProgress) / maxCharges, 0, 1)
+	end
+	if rechargeProgress > 0 then return clamp(rechargeProgress, 0, 1) end
+	if baseCharges and baseCharges > 0 then return 1 end
+	return (state.chargeInfoActive == true or state.cooldownGCD == true) and 1 or 0
+end
+
+getChargeBarValueText = function(icon, currentCharges, maxCharges)
+	local current = safeNumber(currentCharges)
+	local maximum = safeNumber(maxCharges)
+	if current and maximum and maximum > 0 then return format("%d/%d", current, maximum) end
+	return icon and icon.charges and icon.charges.GetText and icon.charges:GetText() or nil
+end
+
 local function buildBarState(panelId, entryId, entry, icon, preview)
 	if not entry then return nil end
 	local displayMode = normalizeDisplayMode(entry.displayMode, Bars.DEFAULTS.displayMode)
@@ -1226,30 +1343,51 @@ local function buildBarState(panelId, entryId, entry, icon, preview)
 		local spellId = getResolvedSpellId(entry, macro)
 		if spellId and CooldownPanels.GetCachedSpellChargesInfo then
 			local chargesInfo = CooldownPanels:GetCachedSpellChargesInfo(spellId)
-			local currentCharges = chargesInfo and safeNumber(chargesInfo.currentCharges) or nil
+			local chargeDurationObject = CooldownPanels.GetCachedSpellChargeDurationObject and CooldownPanels:GetCachedSpellChargeDurationObject(spellId) or nil
+			local cooldownDurationObject = CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil
+			local cooldownRemaining = getDurationObjectRemaining(cooldownDurationObject)
+			if cooldownRemaining ~= nil and cooldownRemaining <= 0 then
+				cooldownDurationObject = nil
+				cooldownRemaining = nil
+			end
+			local cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD, cooldownIsActive = 0, 0, false, 1, nil, false
+			if CooldownPanels.GetCachedSpellCooldownInfo then
+				cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD, cooldownIsActive =
+					CooldownPanels:GetCachedSpellCooldownInfo(spellId)
+			end
+			local chargeInfoActive = CooldownPanels.IsChargeInfoActive and CooldownPanels.IsChargeInfoActive(chargesInfo) or false
+			local cooldownInfoActive =
+				CooldownPanels.IsSpellCooldownInfoActive and CooldownPanels.IsSpellCooldownInfoActive(cooldownIsActive, cooldownEnabled, cooldownStart, cooldownDuration) or false
+			local displayedCharges = chargesInfo and safeNumber(chargesInfo.currentCharges) or getDisplayedCharges(icon)
 			local maxCharges = chargesInfo and safeNumber(chargesInfo.maxCharges) or nil
+			local hasRecharge = chargeInfoActive == true or chargeDurationObject ~= nil or (cooldownDurationObject ~= nil and cooldownGCD ~= true)
+			local entryKey = Helper.GetEntryKey(panelId, entryId)
+			maxCharges = getChargeSessionMax(entryKey, maxCharges, displayedCharges, hasRecharge, false)
 			local rechargeStart = chargesInfo and safeNumber(chargesInfo.cooldownStartTime) or nil
 			local rechargeDuration = chargesInfo and safeNumber(chargesInfo.cooldownDuration) or nil
 			local rechargeRate = chargesInfo and (safeNumber(chargesInfo.chargeModRate) or 1) or 1
-			local rechargeProgress = 0
-				if currentCharges and maxCharges and maxCharges > 0 then
-					progress = currentCharges / maxCharges
-					if rechargeStart and rechargeDuration and rechargeDuration > 0 and currentCharges < maxCharges then
-						rechargeProgress = clamp((((Api.GetTime and Api.GetTime()) or GetTime()) - rechargeStart) * rechargeRate / rechargeDuration, 0, 1)
-						progress = clamp((currentCharges + rechargeProgress) / maxCharges, 0, 1)
-						animate = true
-					end
-					valueText = format("%d/%d", currentCharges, maxCharges)
-				else
-					progress = 0
-					valueText = icon and icon.charges and icon.charges.GetText and icon.charges:GetText() or nil
-				end
-			state.currentCharges = currentCharges
+			local rechargeProgress = getDurationObjectElapsedProgress(chargeDurationObject)
+			if rechargeProgress == nil and cooldownGCD ~= true then rechargeProgress = getDurationObjectElapsedProgress(cooldownDurationObject) end
+			if rechargeProgress == nil and displayedCharges and maxCharges and rechargeStart and rechargeDuration and rechargeDuration > 0 and isSafeLessThan(displayedCharges, maxCharges) then
+				rechargeProgress = clamp((((Api.GetTime and Api.GetTime()) or GetTime()) - rechargeStart) * rechargeRate / rechargeDuration, 0, 1)
+			end
+			state.spellId = spellId
+			state.chargesInfo = chargesInfo
+			state.chargeInfoActive = chargeInfoActive == true
+			state.currentCharges = displayedCharges
 			state.maxCharges = maxCharges
+			state.chargeDurationObject = chargeDurationObject
+			state.cooldownDurationObject = cooldownDurationObject
+			state.cooldownRemaining = cooldownRemaining
+			state.cooldownGCD = cooldownGCD == true
+			state.cooldownInfoActive = cooldownInfoActive == true
 			state.rechargeStart = rechargeStart
 			state.rechargeDuration = rechargeDuration
 			state.rechargeRate = rechargeRate
-			state.rechargeProgress = rechargeProgress
+			state.rechargeProgress = rechargeProgress or 0
+			progress = getChargeBarProgress(state)
+			valueText = getChargeBarValueText(icon, state.currentCharges, state.maxCharges)
+			animate = state.chargeInfoActive == true or (state.cooldownDurationObject ~= nil and state.cooldownGCD ~= true)
 		end
 	else
 		local entryKey = Helper.GetEntryKey(panelId, entryId)
@@ -1427,8 +1565,9 @@ local function layoutBarFrame(barFrame, icon, span, layout, state)
 		end
 		hideUnusedBarSegments(barFrame, segmentCount + 1)
 		barFrame._eqolSegmentCount = segmentCount
-		local currentCharges = safeNumber(state.currentCharges) or 0
+		local currentCharges = safeNumber(state.currentCharges)
 		local rechargeProgress = clamp(safeNumber(state.rechargeProgress) or 0, 0, 1)
+		if currentCharges == nil then currentCharges = inferChargeBaseCount(state, segmentCount) or 0 end
 		for index = 1, segmentCount do
 			local segment = barFrame.segments and barFrame.segments[index] or nil
 			if segment and segment.fill then
@@ -1816,7 +1955,7 @@ end
 
 local function getStandaloneBarFontValue(value)
 	if CooldownPanels.GetFontDropdownValue then return CooldownPanels:GetFontDropdownValue(value) end
-	if type(value) == "string" and value ~= "" then return value end
+	if hasTextValue(value) then return value end
 	if CooldownPanels.GetGlobalFontConfigKey then return CooldownPanels:GetGlobalFontConfigKey() end
 	return "__EQOL_GLOBAL_FONT__"
 end
