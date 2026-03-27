@@ -1840,7 +1840,7 @@ local function calcLayout(unit, frame)
 	local usDef = statusDef.unitStatus or {}
 	local showUnitStatus = getValue(unit, { "status", "unitStatus", "enabled" }, usDef.enabled == true) == true
 	local showStatus = showName or showLevel or showCombat or showUnitStatus
-	local statusHeight = showStatus and (cfg.statusHeight or def.statusHeight or 18) or 0
+	local statusHeight = showStatus and 16 or 0
 	local borderOffset = 0
 	if cfg.border and cfg.border.enabled then
 		borderOffset = cfg.border.offset
@@ -5855,7 +5855,7 @@ local function buildUnitSettings(unit)
 	local classIconDef = statusDef.classificationIcon or { enabled = false, hideText = false, size = 16, offset = { x = -4, y = 0 } }
 	local function isClassificationIconEnabled() return getValue(unit, { "status", "classificationIcon", "enabled" }, classIconDef.enabled == true) == true end
 
-	local showNameToggle = checkbox(L["UFStatusEnable"] or "Show status line", isNameEnabled, function(val)
+	local showNameToggle = checkbox(L["Show name"] or L["UFStatusEnable"] or "Show name", isNameEnabled, function(val)
 		setValue(unit, { "status", "enabled" }, val and true or false)
 		refresh()
 		refreshSettingsUI()

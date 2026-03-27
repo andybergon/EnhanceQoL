@@ -925,7 +925,7 @@ local defaults = {
 		healthHeight = 24,
 		powerHeight = 16,
 		secondaryPowerHeight = 16,
-		statusHeight = 18,
+		statusHeight = 16,
 		anchor = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", x = 0, y = -200 },
 		strata = "LOW",
 		frameLevel = nil,
@@ -6563,6 +6563,11 @@ local function shouldShowLevel(scfg, unit)
 	return true
 end
 
+function UF.ResolveStatusHeight(cfg, def, showStatus)
+	if not showStatus then return 0 end
+	return 16
+end
+
 function UF.ShouldHideClassificationText(cfg, unit)
 	if unit == UNIT.PLAYER or not cfg then return false end
 	local scfg = cfg.status or {}
@@ -6584,7 +6589,8 @@ local function updateStatus(cfg, unit)
 	local showLevel = shouldShowLevel(scfg, unit)
 	local showUnitStatus = usCfg.enabled == true
 	local showStatus = showName or showLevel or showUnitStatus or (unit == UNIT.PLAYER and ciCfg.enabled ~= false)
-	local statusHeight = showStatus and (cfg.statusHeight or def.statusHeight) or 0.001
+	local statusHeight = UF.ResolveStatusHeight(cfg, def, showStatus)
+	if statusHeight <= 0 then statusHeight = 0.001 end
 	st.status:SetHeight(statusHeight)
 	st.status:SetShown(showStatus)
 	local nameFontSize = scfg.nameFontSize or scfg.fontSize or 14
@@ -6860,7 +6866,7 @@ local function layoutFrame(cfg, unit)
 	local secondaryPowerEnabled = unit == UNIT.PLAYER and st.secondaryPower and secondaryCfg.enabled ~= false and secondaryPowerToken ~= nil
 	local secondaryPowerDetached = secondaryPowerEnabled and secondaryCfg.detached == true
 	local width = max(MIN_WIDTH, cfg.width or def.width)
-	local statusHeight = showStatus and (cfg.statusHeight or def.statusHeight) or 0
+	local statusHeight = UF.ResolveStatusHeight(cfg, def, showStatus)
 	local healthHeight = cfg.healthHeight or def.healthHeight
 	local powerHeight = powerEnabled and (cfg.powerHeight or def.powerHeight) or 0
 	local secondaryPowerHeight = secondaryPowerEnabled and (cfg.secondaryPowerHeight or def.secondaryPowerHeight or cfg.powerHeight or def.powerHeight) or 0
