@@ -6199,7 +6199,31 @@ function CooldownPanels:GetItemUseSpellID(itemID)
 	if not Api.GetItemSpell then return nil end
 	local _, spellId = Api.GetItemSpell(itemID)
 	spellId = tonumber(spellId)
-	if spellId then runtime.itemUseSpellCache[itemID] = spellId end
+	if not spellId then
+		runtime.itemUseSpellCache[itemID] = false
+		return nil
+	end
+	-- C_Item.GetItemSpell returns spells for passive "Equip:" effects too.
+	-- Verify via tooltip that the item actually has a "Use:" trigger.
+	if C_TooltipInfo and C_TooltipInfo.GetItemByID then
+		local tooltipData = C_TooltipInfo.GetItemByID(itemID)
+		if not tooltipData or not tooltipData.lines then
+			return nil -- tooltip not loaded yet; don't cache, retry next frame
+		end
+		local usePrefix = ITEM_SPELL_TRIGGER_ONUSE or "Use: "
+		local found = false
+		for _, line in pairs(tooltipData.lines) do
+			if line.leftText and line.leftText:find(usePrefix, 1, true) then
+				found = true
+				break
+			end
+		end
+		if not found then
+			runtime.itemUseSpellCache[itemID] = false
+			return nil
+		end
+	end
+	runtime.itemUseSpellCache[itemID] = spellId or false
 	return spellId
 end
 
