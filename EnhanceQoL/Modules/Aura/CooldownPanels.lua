@@ -18467,8 +18467,19 @@ CooldownPanels.RequestEnabledPanelRefreshes = function()
 	local enabledPanelIds = runtime and runtime.enabledPanelIds
 	if not (root and root.panels and enabledPanels and next(enabledPanels)) then return false end
 	local queued = false
-	CooldownPanels:BeginRuntimeQueryBatch()
+	local queueRefresh = type(CooldownPanels.RequestPanelRefresh) == "function"
 	if enabledPanelIds and #enabledPanelIds > 0 then
+		if queueRefresh then
+			for i = 1, #enabledPanelIds do
+				local panelId = enabledPanelIds[i]
+				if enabledPanels[panelId] then
+					CooldownPanels:RequestPanelRefresh(panelId)
+					queued = true
+				end
+			end
+			return queued
+		end
+		CooldownPanels:BeginRuntimeQueryBatch()
 		for i = 1, #enabledPanelIds do
 			CooldownPanels:RefreshPanel(enabledPanelIds[i])
 			queued = true
@@ -18476,6 +18487,16 @@ CooldownPanels.RequestEnabledPanelRefreshes = function()
 		CooldownPanels:EndRuntimeQueryBatch()
 		return queued
 	end
+	if queueRefresh then
+		for _, panelId in ipairs(CooldownPanels.GetCachedPanelIds(root)) do
+			if enabledPanels[panelId] then
+				CooldownPanels:RequestPanelRefresh(panelId)
+				queued = true
+			end
+		end
+		return queued
+	end
+	CooldownPanels:BeginRuntimeQueryBatch()
 	for _, panelId in ipairs(CooldownPanels.GetCachedPanelIds(root)) do
 		if enabledPanels[panelId] then
 			CooldownPanels:RefreshPanel(panelId)
@@ -18871,6 +18892,7 @@ end
 
 function CooldownPanels:RequestUpdate(cause)
 	self.runtime = self.runtime or {}
+	local runtime = self.runtime
 	local fullRefresh = false
 	if type(cause) == "table" then
 		fullRefresh = cause.fullRefresh == true
@@ -18885,26 +18907,55 @@ function CooldownPanels:RequestUpdate(cause)
 	else
 		fullRefresh = true
 	end
-	if self.runtime.updatePending then
-		if cause then self.runtime.updateCause = cause end
-		if fullRefresh then self.runtime.updateFullRefresh = true end
+	if runtime.updateDispatching then
+		if cause then runtime.updateCause = cause end
+		if fullRefresh then runtime.updateFullRefresh = true end
+		runtime.updateReschedule = true
 		return
 	end
-	self.runtime.updatePending = true
-	self.runtime.updateCause = cause
-	self.runtime.updateFullRefresh = fullRefresh
+	if runtime.updatePending then
+		if cause then runtime.updateCause = cause end
+		if fullRefresh then runtime.updateFullRefresh = true end
+		return
+	end
+	runtime.updatePending = true
+	runtime.updateCause = cause
+	runtime.updateFullRefresh = fullRefresh
 	C_Timer.After(0, function()
-		local runtime = self.runtime
-		if not runtime then return end
-		local shouldFullRefresh = runtime.updateFullRefresh == true or self:IsInEditMode() == true
-		runtime.updatePending = nil
-		runtime.updateCause = nil
-		runtime.updateFullRefresh = nil
+		local currentRuntime = self.runtime
+		if not currentRuntime then return end
+		local shouldFullRefresh = currentRuntime.updateFullRefresh == true or self:IsInEditMode() == true
+		currentRuntime.updateDispatching = true
+		currentRuntime.updateCause = nil
+		currentRuntime.updateFullRefresh = nil
+		currentRuntime.updateReschedule = nil
 		if shouldFullRefresh then
 			CooldownPanels:RefreshAllPanels(true)
+		else
+			if not CooldownPanels.RequestEnabledPanelRefreshes() then CooldownPanels:RefreshAllPanels() end
+		end
+
+		currentRuntime = self.runtime
+		if not currentRuntime then return end
+		currentRuntime.updateDispatching = nil
+		currentRuntime.updatePending = nil
+
+		if currentRuntime.updateReschedule == true then
+			local nextCause = currentRuntime.updateCause
+			local nextFullRefresh = currentRuntime.updateFullRefresh == true
+			currentRuntime.updateCause = nil
+			currentRuntime.updateFullRefresh = nil
+			currentRuntime.updateReschedule = nil
+			self:RequestUpdate(nextFullRefresh and {
+				cause = nextCause,
+				fullRefresh = true,
+			} or nextCause)
 			return
 		end
-		if not CooldownPanels.RequestEnabledPanelRefreshes() then CooldownPanels:RefreshAllPanels() end
+
+		currentRuntime.updateCause = nil
+		currentRuntime.updateFullRefresh = nil
+		currentRuntime.updateReschedule = nil
 	end)
 end
 

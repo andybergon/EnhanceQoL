@@ -2687,9 +2687,19 @@ function CooldownPanels:RequestPanelRefresh(panelId)
 		local q = runtime._eqolPanelRefreshQueue
 		if not q then return end
 
+		local startedRuntimeQueryBatch = false
+		if CooldownPanels.IsRuntimeQueryBatchActive and CooldownPanels.BeginRuntimeQueryBatch and not CooldownPanels:IsRuntimeQueryBatchActive() then
+			CooldownPanels:BeginRuntimeQueryBatch()
+			startedRuntimeQueryBatch = true
+		end
+
 		for id in pairs(q) do
 			q[id] = nil
 			if CooldownPanels:GetPanel(id) then CooldownPanels:RefreshPanel(id) end
+		end
+
+		if startedRuntimeQueryBatch and CooldownPanels.EndRuntimeQueryBatch then
+			CooldownPanels:EndRuntimeQueryBatch()
 		end
 	end)
 end

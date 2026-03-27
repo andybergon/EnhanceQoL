@@ -248,35 +248,40 @@ local function getCooldownIDFromFrame(frame, sourceType)
 	return cooldownID
 end
 
-local function getFrameIconTexture(frame)
-	local function isUsableTexture(texture)
-		if texture == nil then return false end
-		local textureType = type(texture)
-		if textureType ~= "number" and textureType ~= "string" then return false end
-		if isSecretValue(texture) then return false end
-		if textureType == "number" then return texture ~= 0 end
-		return texture ~= ""
+local function isUsableTexture(texture)
+	if texture == nil then return false end
+	local textureType = type(texture)
+	if textureType ~= "number" and textureType ~= "string" then return false end
+	if isSecretValue(texture) then return false end
+	if textureType == "number" then return texture ~= 0 end
+	return texture ~= ""
+end
+
+local function readFrameTexture(region)
+	if not region then return nil end
+	if region.GetTextureFileID then
+		local ok, texture = pcall(region.GetTextureFileID, region)
+		if ok and isUsableTexture(texture) then return texture end
 	end
-	local function readTexture(region)
-		if not region then return nil end
-		if region.GetTextureFileID then
-			local ok, texture = pcall(region.GetTextureFileID, region)
-			if ok and isUsableTexture(texture) then return texture end
-		end
-		if region.GetTexture then
-			local ok, texture = pcall(region.GetTexture, region)
-			if ok and isUsableTexture(texture) then return texture end
-		end
-		return nil
+	if region.GetTexture then
+		local ok, texture = pcall(region.GetTexture, region)
+		if ok and isUsableTexture(texture) then return texture end
+	end
+	return nil
+end
+
+local function getFrameIconTexture(frame)
+	local passCache = frame and getRuntimePassCacheTable("runtimePassFrameIconTexture") or nil
+	if passCache then
+		local cached = passCache[frame]
+		if cached ~= nil then return cached ~= false and cached or nil end
 	end
 	if not frame then return nil end
-	local texture = readTexture(frame.Icon and frame.Icon.Icon)
-	if texture then return texture end
-	texture = readTexture(frame.Icon)
-	if texture then return texture end
-	texture = readTexture(frame)
-	if texture then return texture end
-	return nil
+	local texture = readFrameTexture(frame.Icon and frame.Icon.Icon)
+	if not texture then texture = readFrameTexture(frame.Icon) end
+	if not texture then texture = readFrameTexture(frame) end
+	if passCache then passCache[frame] = texture or false end
+	return texture
 end
 
 local function getFrameCooldownValues(frame)
@@ -449,11 +454,13 @@ local function resolveSpellFromCooldownID(cooldownID, frame)
 	return spellID, buffName, iconTextureID
 end
 
-local function resolveEntryScanInfo(entry, byCooldownID, bySpellID)
+local function resolveEntryScanInfo(entry, byCooldownID, bySpellID, byCooldownKey)
 	if type(entry) ~= "table" then return nil, nil end
 
 	local storedCooldownID = isValidCooldownID(entry.cooldownID) and entry.cooldownID or nil
+	local storedCooldownKey = getCooldownCacheKey(storedCooldownID)
 	local scanInfo = storedCooldownID and byCooldownID and byCooldownID[storedCooldownID] or nil
+	if not scanInfo and storedCooldownKey and byCooldownKey then scanInfo = byCooldownKey[storedCooldownKey] end
 	if scanInfo then
 		local resolvedCooldownID = isValidCooldownID(scanInfo.cooldownID) and scanInfo.cooldownID or storedCooldownID
 		return scanInfo, resolvedCooldownID
@@ -463,24 +470,8 @@ local function resolveEntryScanInfo(entry, byCooldownID, bySpellID)
 	if isUsableSpellID(spellID) and bySpellID then
 		local spellInfo = bySpellID[spellID]
 		if type(spellInfo) == "table" then
-			if spellInfo.cooldownID ~= nil then
-				local resolvedCooldownID = isValidCooldownID(spellInfo.cooldownID) and spellInfo.cooldownID or storedCooldownID
-				return spellInfo, resolvedCooldownID
-			end
-			if storedCooldownID then
-				for i = 1, #spellInfo do
-					local candidate = spellInfo[i]
-					if type(candidate) == "table" and cooldownIDsEqual(candidate.cooldownID, storedCooldownID) then
-						local resolvedCooldownID = isValidCooldownID(candidate.cooldownID) and candidate.cooldownID or storedCooldownID
-						return candidate, resolvedCooldownID
-					end
-				end
-			end
-			if #spellInfo == 1 and type(spellInfo[1]) == "table" then
-				local candidate = spellInfo[1]
-				local resolvedCooldownID = isValidCooldownID(candidate.cooldownID) and candidate.cooldownID or storedCooldownID
-				return candidate, resolvedCooldownID
-			end
+			local resolvedCooldownID = isValidCooldownID(spellInfo.cooldownID) and spellInfo.cooldownID or storedCooldownID
+			return spellInfo, resolvedCooldownID
 		end
 	end
 
@@ -513,6 +504,43 @@ local function ensureScanInfo(scan, cooldownID)
 	return info
 end
 
+local function mergeResolvedScanInfo(info, spellID, buffName, iconTextureID, overwrite)
+	if spellID and (overwrite or not info.spellID) then info.spellID = spellID end
+	if buffName and buffName ~= "" and (overwrite or not info.buffName or info.buffName == "") then info.buffName = buffName end
+	if iconTextureID and (overwrite or not info.iconTextureID) then info.iconTextureID = iconTextureID end
+end
+
+local function populateScanInfoDerivedFields(info, cooldownID, frame, overwrite)
+	if not (info and isValidCooldownID(cooldownID)) then return end
+	if not overwrite and info.spellID and info.buffName and info.iconTextureID then return end
+	local spellID, buffName, iconTextureID = resolveSpellFromCooldownID(cooldownID, frame)
+	mergeResolvedScanInfo(info, spellID, buffName, iconTextureID, overwrite)
+end
+
+local function shouldPreferSpellLookupInfo(primary, candidate)
+	if not primary then return true end
+	local primaryActive = primary.isActive == true
+	local candidateActive = candidate.isActive == true
+	if primaryActive ~= candidateActive then return candidateActive end
+	local primaryIcon = primary.sourceType == SOURCE_ICON
+	local candidateIcon = candidate.sourceType == SOURCE_ICON
+	if primaryIcon ~= candidateIcon then return candidateIcon end
+	local primaryFrame = primary.iconFrame or primary.barFrame
+	local candidateFrame = candidate.iconFrame or candidate.barFrame
+	if (primaryFrame ~= nil) ~= (candidateFrame ~= nil) then return candidateFrame ~= nil end
+	local primaryAura = primary.auraUnit ~= nil
+	local candidateAura = candidate.auraUnit ~= nil
+	if primaryAura ~= candidateAura then return candidateAura end
+	return tostring(candidate.cooldownID or "") < tostring(primary.cooldownID or "")
+end
+
+local function rememberScanInfoSpellLookup(scan, info)
+	local spellID = tonumber(info and info.spellID)
+	if not isUsableSpellID(spellID) then return end
+	local current = scan.bySpellID[spellID]
+	if current == nil or shouldPreferSpellLookupInfo(current, info) then scan.bySpellID[spellID] = info end
+end
+
 local function captureValues(buffer, ...)
 	wipe(buffer)
 	local count = select("#", ...)
@@ -536,10 +564,6 @@ local function seedScanFromCategorySet(scan, category, sourceType)
 				info.sourceType = sourceType
 				info.sourceViewer = sourceType == SOURCE_BAR and BAR_VIEWER or ICON_VIEWER
 			end
-			local spellID, buffName, iconTextureID = resolveSpellFromCooldownID(cooldownID, nil)
-			if spellID and not info.spellID then info.spellID = spellID end
-			if buffName and (not info.buffName or info.buffName == "") then info.buffName = buffName end
-			if iconTextureID and not info.iconTextureID then info.iconTextureID = iconTextureID end
 		end
 	end
 	return seeded
@@ -574,10 +598,7 @@ local function collectFrame(scan, frame, sourceType, viewerName, seenFrames)
 	if not auraUnit then auraUnit = normalizeTrackedUnit(frame.auraDataUnit) end
 	if auraUnit and not info.auraUnit then info.auraUnit = auraUnit end
 
-	local spellID, buffName, iconTextureID = resolveSpellFromCooldownID(cooldownID, frame)
-	if spellID then info.spellID = spellID end
-	if buffName and buffName ~= "" then info.buffName = buffName end
-	if iconTextureID then info.iconTextureID = iconTextureID end
+	populateScanInfoDerivedFields(info, cooldownID, frame, true)
 	if hasAuraInstanceID(frame.auraInstanceID) or frame.totemData ~= nil then info.isActive = true end
 end
 
@@ -632,22 +653,27 @@ local function sortTrackedBuffs(a, b)
 	return tostring(a and a.cooldownID or "") < tostring(b and b.cooldownID or "")
 end
 
-function CDMAuras:InvalidateScan()
+function CDMAuras:InvalidateScan(clearCooldownViewerInfo)
 	local runtime = getRuntime()
 	runtime.scan = nil
-	wipe(runtime.cooldownViewerInfoByID)
+	runtime.forcedRescanPass = nil
+	if clearCooldownViewerInfo then wipe(runtime.cooldownViewerInfoByID) end
 end
 
 function CDMAuras:ScanTrackedBuffs(force)
 	local runtime = getRuntime()
-	if not force and runtime.scan and runtime.scan.list and runtime.scan.byCooldownID then return runtime.scan.list, runtime.scan.byCooldownID, runtime.scan.bySpellID end
+	if not force and runtime.scan and runtime.scan.list and runtime.scan.byCooldownID then
+		return runtime.scan.list, runtime.scan.byCooldownID, runtime.scan.bySpellID, runtime.scan.byCooldownKey
+	end
 
 	local scan = runtime.scan or {}
 	scan.list = scan.list or {}
 	scan.byCooldownID = scan.byCooldownID or {}
+	scan.byCooldownKey = scan.byCooldownKey or {}
 	scan.bySpellID = scan.bySpellID or {}
 	wipe(scan.list)
 	wipe(scan.byCooldownID)
+	wipe(scan.byCooldownKey)
 	wipe(scan.bySpellID)
 	scan.hasAuthoritativeSeed = false
 	local seenFrames = runtime.scratchSeenFrames
@@ -666,35 +692,23 @@ function CDMAuras:ScanTrackedBuffs(force)
 	for cooldownID, info in pairs(scan.byCooldownID) do
 		if not seenInfo[info] then
 			seenInfo[info] = true
-			local spellID, buffName, iconTextureID = resolveSpellFromCooldownID(cooldownID, info.iconFrame or info.barFrame)
-			if spellID then info.spellID = spellID end
-			if buffName and buffName ~= "" then info.buffName = buffName end
-			if iconTextureID then info.iconTextureID = iconTextureID end
+			populateScanInfoDerivedFields(info, cooldownID, info.iconFrame or info.barFrame, false)
 			info.spellID = tonumber(info.spellID)
 			info.buffName = info.buffName or getSpellName(info.spellID) or tostring(cooldownID)
 			info.iconTextureID = info.iconTextureID or getSpellTexture(info.spellID) or Helper.PREVIEW_ICON
 			info.sortName = string.lower(tostring(info.buffName or ""))
 			info.sourceType = normalizeSourceType(info.sourceType or (info.availableSources[SOURCE_ICON] and SOURCE_ICON or SOURCE_BAR))
 			info.sourceViewer = info.sourceType == SOURCE_BAR and BAR_VIEWER or ICON_VIEWER
-			if info.spellID then
-				local spellInfo = scan.bySpellID[info.spellID]
-				if spellInfo == nil then
-					scan.bySpellID[info.spellID] = info
-				elseif spellInfo ~= info then
-					if spellInfo.cooldownID ~= nil then
-						scan.bySpellID[info.spellID] = { spellInfo, info }
-					else
-						spellInfo[#spellInfo + 1] = info
-					end
-				end
-			end
+			local cooldownKey = getCooldownCacheKey(info.cooldownID or cooldownID)
+			if cooldownKey then scan.byCooldownKey[cooldownKey] = info end
+			rememberScanInfoSpellLookup(scan, info)
 			scan.list[#scan.list + 1] = info
 		end
 	end
 
 	table.sort(scan.list, sortTrackedBuffs)
 	runtime.scan = scan
-	return scan.list, scan.byCooldownID, scan.bySpellID
+	return scan.list, scan.byCooldownID, scan.bySpellID, scan.byCooldownKey
 end
 
 local function clearAuraMapping(runtime, key, state, clearTrackedAura)
@@ -910,7 +924,7 @@ function CDMAuras:RebuildTrackedPanelIndex()
 
 	local enabledPanels = CooldownPanels.runtime and CooldownPanels.runtime.enabledPanels or nil
 	local useEnabledFilter = enabledPanels ~= nil
-	local _, byCooldownID, bySpellID = self:ScanTrackedBuffs(false)
+	local _, byCooldownID, bySpellID, byCooldownKey = self:ScanTrackedBuffs(false)
 
 	for panelId, panel in pairs(root.panels) do
 		local panelEnabled = useEnabledFilter and enabledPanels[panelId] == true or (panel and panel.enabled ~= false)
@@ -919,7 +933,7 @@ function CDMAuras:RebuildTrackedPanelIndex()
 				if entry and entry.type == ENTRY_TYPE then
 					local key = getEntryKey(panelId, entryId)
 					local state = runtime.entryStates[key]
-					local scanInfo = resolveEntryScanInfo(entry, byCooldownID, bySpellID)
+					local scanInfo = resolveEntryScanInfo(entry, byCooldownID, bySpellID, byCooldownKey)
 					local trackedUnit = getEntryTrackedUnit(scanInfo, state, scanInfo and (scanInfo.iconFrame or scanInfo.barFrame) or nil)
 					if state then state.trackUnit = trackedUnit end
 					registerTrackedPanel(runtime, trackedUnit, panelId)
@@ -1438,12 +1452,24 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 		scanInfo = cachedScan.scanInfo
 		resolvedCooldownID = cachedScan.resolvedCooldownID
 	else
-		local _, byCooldownID, bySpellID = self:ScanTrackedBuffs(false)
-		scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, byCooldownID, bySpellID)
+		local _, byCooldownID, bySpellID, byCooldownKey = self:ScanTrackedBuffs(false)
+		scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, byCooldownID, bySpellID, byCooldownKey)
 		if not scanInfo then
-			self:InvalidateScan()
-			local _, rescanned, rescannedBySpellID = self:ScanTrackedBuffs(true)
-			scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, rescanned, rescannedBySpellID)
+			local runtimePass = runtime.runtimePass
+			local rescanned
+			local rescannedBySpellID
+			local rescannedByCooldownKey
+			if runtimePass and runtime.forcedRescanPass == runtimePass then
+				_, rescanned, rescannedBySpellID, rescannedByCooldownKey = self:ScanTrackedBuffs(false)
+			else
+				self:InvalidateScan()
+				local _, rescannedByCooldownID, rescannedBySpellLookup, rescannedCooldownLookup = self:ScanTrackedBuffs(true)
+				rescanned = rescannedByCooldownID
+				rescannedBySpellID = rescannedBySpellLookup
+				rescannedByCooldownKey = rescannedCooldownLookup
+				if runtimePass then runtime.forcedRescanPass = runtimePass end
+			end
+			scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, rescanned, rescannedBySpellID, rescannedByCooldownKey)
 		end
 		if scanCache then
 			scanCache[entry] = {
@@ -1728,7 +1754,7 @@ function CDMAuras:HandleResetEvent(event, ...)
 		local unit = ...
 		if unit and unit ~= "player" then return end
 	end
-	self:InvalidateScan()
+	self:InvalidateScan(true)
 	self:SweepInvalidStates()
 	local runtime = getRuntime()
 	for key, state in pairs(runtime.entryStates) do
