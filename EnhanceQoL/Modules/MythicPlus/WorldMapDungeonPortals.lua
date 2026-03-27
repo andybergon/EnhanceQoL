@@ -1100,44 +1100,37 @@ function f:TryInit()
 			local wqt = _G and _G["WQT_QuestMapTab"]
 			if wqt then
 				EnsureTab(parent, wqt)
-				if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 			end
 		end)
 		C_Timer.After(0.2, function()
 			local wqt = _G and _G["WQT_QuestMapTab"]
 			if wqt then
 				EnsureTab(parent, wqt)
-				if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 			end
 		end)
 	end
 
-	-- Inject our panel into ContentFrames so SetDisplayMode can manage visibility
-	if QuestMapFrame.ContentFrames then
-		local exists = false
-		for _, frame in ipairs(QuestMapFrame.ContentFrames) do
-			if frame == panel then
-				exists = true
-				break
-			end
-		end
-		if not exists then table.insert(QuestMapFrame.ContentFrames, panel) end
-	end
+	-- NOTE: We intentionally do NOT insert into QuestMapFrame.ContentFrames or
+	-- TabButtons and do NOT call ValidateTabs() from addon code. Doing so taints
+	-- QuestMapFrame's layout data (frame positions/sizes become "secret numbers"),
+	-- causing cascading errors in quest button layout and tooltip widget layout.
+	-- Instead, panel/tab visibility is managed entirely via the SetDisplayMode hook
+	-- and EventRegistry callback below, and tab positioning is handled by EnsureTab
+	-- + a post-ValidateTabs hooksecurefunc.
 
-	-- Also register our tab as a managed tab for consistent checked state
-	if QuestMapFrame.TabButtons then
-		local present = false
-		for _, b in ipairs(QuestMapFrame.TabButtons) do
-			if b == tabButton then
-				present = true
-				break
+	-- Reposition our tab after Blizzard's natural (secure) ValidateTabs runs
+	if QuestMapFrame and QuestMapFrame.ValidateTabs and not QuestMapFrame._eqolValidateHook then
+		hooksecurefunc(QuestMapFrame, "ValidateTabs", function()
+			if tabButton and tabButton:GetParent() then
+				local anchor = GetPreferredTabAnchor()
+				if anchor then
+					tabButton:ClearAllPoints()
+					tabButton:SetPoint("TOP", anchor, "BOTTOM", 0, -3)
+				end
 			end
-		end
-		if not present then table.insert(QuestMapFrame.TabButtons, tabButton) end
+		end)
+		QuestMapFrame._eqolValidateHook = true
 	end
-
-	-- Ensure tabs layout is recalculated so our tab appears immediately
-	if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 
 	-- Track display mode changes to update our tab state and refresh content
 	if EventRegistry and not f._eqolDisplayEvent then
@@ -1277,7 +1270,6 @@ local function worldMapEventHandler(self, event, arg1, arg2, arg3)
 			WorldMapFrame:HookScript("OnShow", function()
 				if addon.db and addon.db["teleportsWorldMapEnabled"] then
 					f:TryInit()
-					if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 					if f._selectOnNextShow and QuestMapFrame and QuestMapFrame.SetDisplayMode and not IsPanelSuppressed() then
 						QuestMapFrame:SetDisplayMode(DISPLAY_MODE)
 						f._selectOnNextShow = nil
@@ -1297,7 +1289,6 @@ local function worldMapEventHandler(self, event, arg1, arg2, arg3)
 			local wqt = _G and _G["WQT_QuestMapTab"]
 			if wqt then
 				EnsureTab(QuestMapFrame, wqt)
-				if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 			end
 		end
 		-- Do not return here; allow further processing when map is shown
@@ -1325,7 +1316,6 @@ function addon.MythicPlus.functions.InitWorldMapTeleportPanel()
 		WorldMapFrame:HookScript("OnShow", function()
 			if addon.db and addon.db["teleportsWorldMapEnabled"] then
 				f:TryInit()
-				if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 				if f._selectOnNextShow and QuestMapFrame and QuestMapFrame.SetDisplayMode and not IsPanelSuppressed() then
 					QuestMapFrame:SetDisplayMode(DISPLAY_MODE)
 					f._selectOnNextShow = nil
@@ -1355,7 +1345,6 @@ function addon.MythicPlus.functions.RefreshWorldMapTeleportPanel()
 			WorldMapFrame:HookScript("OnShow", function()
 				if addon.db and addon.db["teleportsWorldMapEnabled"] then
 					f:TryInit()
-					if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 					if f._selectOnNextShow and QuestMapFrame and QuestMapFrame.SetDisplayMode and not IsPanelSuppressed() then
 						QuestMapFrame:SetDisplayMode(DISPLAY_MODE)
 						f._selectOnNextShow = nil
@@ -1369,9 +1358,8 @@ function addon.MythicPlus.functions.RefreshWorldMapTeleportPanel()
 			WorldMapFrame._eqolTeleportHook = true
 		end
 
-		-- Always ensure our UI is injected and tabs validated, even if hidden
+		-- Always ensure our UI is injected, even if hidden
 		f:TryInit()
-		if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 
 		if not addon.db["teleportsWorldMapEnabled"] then
 			if QuestMapFrame and QuestMapFrame.GetDisplayMode and QuestMapFrame:GetDisplayMode() == DISPLAY_MODE then
@@ -1442,6 +1430,5 @@ function addon.MythicPlus.functions.OpenWorldMapTeleportPanel(force)
 		f._selectOnNextShow = true
 	end
 
-	if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 	if f and f.RefreshPanel then QueuePanelRefresh({ delay = 0 }) end
 end
