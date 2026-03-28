@@ -14974,7 +14974,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				icon.texture:SetVertexColor(unusableTintR or 0.6, unusableTintG or 0.6, unusableTintB or 0.6)
 			elseif data.powerInsufficient then
 				icon.texture:SetVertexColor(powerTintR or 0.5, powerTintG or 0.5, powerTintB or 1)
-			elseif (data.resolvedType == "ITEM" or data.resolvedType == "SLOT") and not cooldownEnabledOk and isSafeGreaterThan(cooldownDuration, 0) then
+			elseif ((data.resolvedType == "ITEM" or data.resolvedType == "SLOT") and not cooldownEnabledOk and isSafeGreaterThan(cooldownDuration, 0))
+				or (data.resolvedType == "SPELL" and data.cooldownEnabled == false and data.cooldownIsActive == false and data.cooldownGCD ~= true) then
 				icon.texture:SetVertexColor(0.4, 0.4, 0.4)
 			else
 				icon.texture:SetVertexColor(1, 1, 1)
@@ -17986,6 +17987,62 @@ refreshPanelsForSpell = function(spellId)
 	return refreshed
 end
 
+CooldownPanels.TraceChargeSpellSnapshot = function(stage, spellId, extra)
+	local numericId = tonumber(spellId)
+	if not numericId then return end
+	local baseId = getBaseSpellId(numericId)
+	local effectiveId = getEffectiveSpellId(numericId)
+	local bars = CooldownPanels.Bars
+	if not (bars and bars.TraceChargeDebug and bars.ShouldTraceChargeSpell and bars.ShouldTraceChargeSpell(numericId, baseId, effectiveId)) then return end
+	local info = Api.GetSpellChargesInfo and Api.GetSpellChargesInfo(numericId) or nil
+	local chargeDurationObject = C_Spell and C_Spell.GetSpellChargeDuration and C_Spell.GetSpellChargeDuration(numericId) or nil
+	local cooldownDurationObject = getSpellCooldownDurationObject and getSpellCooldownDurationObject(numericId) or nil
+	local startTime, duration, enabled, modRate, isOnGCD, isActive = getSpellCooldownInfo(numericId)
+	local payload = {
+		spellId = numericId,
+		baseSpellId = baseId,
+		effectiveSpellId = effectiveId,
+		chargesIsActive = info and info.isActive,
+		currentCharges = info and info.currentCharges,
+		maxCharges = info and info.maxCharges,
+		chargeStartTime = info and info.cooldownStartTime,
+		chargeCooldownDuration = info and info.cooldownDuration,
+		chargeModRate = info and info.chargeModRate,
+		chargeDurationObject = chargeDurationObject ~= nil,
+		chargeDurationRemaining = chargeDurationObject and chargeDurationObject.GetRemainingDuration and chargeDurationObject.GetRemainingDuration(chargeDurationObject, Api.DurationModifierRealTime) or nil,
+		cooldownStartTime = startTime,
+		cooldownDuration = duration,
+		cooldownEnabled = enabled,
+		cooldownModRate = modRate,
+		cooldownIsOnGCD = isOnGCD,
+		cooldownIsActive = isActive,
+		cooldownDurationObject = cooldownDurationObject ~= nil,
+		cooldownDurationRemaining = cooldownDurationObject and cooldownDurationObject.GetRemainingDuration and cooldownDurationObject.GetRemainingDuration(cooldownDurationObject, Api.DurationModifierRealTime) or nil,
+	}
+	if type(extra) == "table" then
+		for key, value in pairs(extra) do
+			payload[key] = value
+		end
+	end
+	bars.TraceChargeDebug(stage, payload)
+end
+
+CooldownPanels.InvalidateChargeCachesForSpell = function(spellId)
+	local numericSpellId = tonumber(spellId)
+	local baseId = numericSpellId and getBaseSpellId(numericSpellId) or nil
+	local effectiveId = numericSpellId and getEffectiveSpellId(numericSpellId) or nil
+	local function invalidateForId(id)
+		if not id then return end
+		CooldownPanels:InvalidateSpellQueryCaches("charges", id)
+		CooldownPanels:InvalidateSpellQueryCaches("chargeDuration", id)
+		CooldownPanels:InvalidateSpellQueryCaches("duration", id)
+		CooldownPanels:InvalidateSpellQueryCaches("info", id)
+	end
+	invalidateForId(numericSpellId)
+	if baseId and baseId ~= numericSpellId then invalidateForId(baseId) end
+	if effectiveId and effectiveId ~= numericSpellId and effectiveId ~= baseId then invalidateForId(effectiveId) end
+end
+
 refreshPanelsForCharges = function()
 	local runtime = CooldownPanels.runtime
 	local chargesIndex = runtime and runtime.chargesIndex
@@ -18032,6 +18089,10 @@ refreshPanelsForCharges = function()
 		updateStateField("duration", duration, durationSecret)
 		updateStateField("rate", rate, rateSecret)
 		updateStateField("active", active, activeSecret)
+		CooldownPanels.TraceChargeSpellSnapshot("trace51505_coreRefreshPanelsForCharges", spellId, {
+			changed = changed == true,
+			hasPanels = panels ~= nil,
+		})
 
 		if changed and panels then
 			panelsToRefresh = panelsToRefresh or {}
@@ -18824,6 +18885,7 @@ local function ensureUpdateFrame()
 			local unit, _, spellId = ...
 			if unit ~= "player" then return end
 			if not spellId then return end
+			CooldownPanels.TraceChargeSpellSnapshot("trace51505_event_UNIT_SPELLCAST_SUCCEEDED", spellId, { event = event })
 			local runtime = CooldownPanels.runtime
 			local enabledPanels = runtime and runtime.enabledPanels
 			if enabledPanels and not next(enabledPanels) then return end
@@ -18836,8 +18898,10 @@ local function ensureUpdateFrame()
 		if event == "SPELL_UPDATE_COOLDOWN" then
 			local spellId = ...
 			if spellId ~= nil then
+				CooldownPanels.TraceChargeSpellSnapshot("trace51505_event_SPELL_UPDATE_COOLDOWN_before", spellId, { event = event })
 				CooldownPanels:InvalidateSpellQueryCaches("duration", spellId)
 				CooldownPanels:InvalidateSpellQueryCaches("info", spellId)
+				CooldownPanels.TraceChargeSpellSnapshot("trace51505_event_SPELL_UPDATE_COOLDOWN_after", spellId, { event = event })
 				refreshPanelsForSpell(spellId)
 				return
 			end
@@ -18852,10 +18916,13 @@ local function ensureUpdateFrame()
 		if event == "SPELL_UPDATE_CHARGES" then
 			local spellId = ...
 			if spellId ~= nil then
-				CooldownPanels:InvalidateSpellQueryCaches("charges", spellId)
-				CooldownPanels:InvalidateSpellQueryCaches("info", spellId)
+				CooldownPanels.TraceChargeSpellSnapshot("trace51505_event_SPELL_UPDATE_CHARGES_before", spellId, { event = event })
+				CooldownPanels.InvalidateChargeCachesForSpell(spellId)
+				CooldownPanels.TraceChargeSpellSnapshot("trace51505_event_SPELL_UPDATE_CHARGES_after", spellId, { event = event })
 			else
 				CooldownPanels:InvalidateSpellQueryCaches("charges")
+				CooldownPanels:InvalidateSpellQueryCaches("chargeDuration")
+				CooldownPanels:InvalidateSpellQueryCaches("duration")
 				CooldownPanels:InvalidateSpellQueryCaches("info")
 			end
 			refreshPanelsForCharges()
