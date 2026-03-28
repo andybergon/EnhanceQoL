@@ -10,6 +10,7 @@ local DEFAULT_BORDER_STYLE = "DEFAULT"
 local QUICK_SLOT_BORDER = "Interface\\Buttons\\UI-Quickslot2"
 local DEFAULT_BORDER_EDGE_SIZE = 16
 local DEFAULT_BORDER_PADDING = 0
+local EXTRA_ACTION_BAR_NAME = "ExtraActionBar"
 local LSM = LibStub("LibSharedMedia-3.0", true)
 
 local function getDefaultFontFace()
@@ -43,8 +44,19 @@ local function EnsureActionBarNameLookup()
 	return ACTION_BAR_NAME_LOOKUP
 end
 
+local function IsExtraActionButton(button)
+	if not button then return false end
+	if button.isExtra == true then return true end
+	if _G.ExtraActionButton1 and button == _G.ExtraActionButton1 then return true end
+	return button.GetName and button:GetName() == "ExtraActionButton1"
+end
+
 local function DetermineButtonBarName(button)
 	if not button then return nil end
+	if IsExtraActionButton(button) then
+		button.EQOL_ActionBarName = EXTRA_ACTION_BAR_NAME
+		return EXTRA_ACTION_BAR_NAME
+	end
 	if button.EQOL_ActionBarName then return button.EQOL_ActionBarName end
 	local lookup = EnsureActionBarNameLookup()
 	local parent = button:GetParent()
@@ -78,6 +90,23 @@ local function ForEachActionButton(callback)
 				end
 			end
 		end
+	end
+end
+
+local function ForEachHotkeyButton(callback)
+	if type(callback) ~= "function" then return end
+	local seen = {}
+	ForEachActionButton(function(button, info, index)
+		seen[button] = true
+		callback(button, info, index)
+	end)
+
+	local extraActionButton = _G.ExtraActionButton1
+	if extraActionButton and not seen[extraActionButton] then
+		callback(extraActionButton, {
+			name = EXTRA_ACTION_BAR_NAME,
+			text = (addon.L and addon.L["actionBarExtraActionButton"]) or "Extra Action Button",
+		}, 1)
 	end
 end
 
@@ -573,8 +602,9 @@ local function ApplyCountStyling(button)
 	end
 end
 
-local function ShouldHideHotkey(barName)
-	if not addon.db or not barName then return false end
+local function ShouldHideHotkey(barName, button)
+	if not addon.db then return false end
+	if not barName then return false end
 	local overrides = addon.db.actionBarHiddenHotkeys
 	if type(overrides) ~= "table" then return false end
 	return overrides[barName] == true
@@ -601,7 +631,7 @@ local function RefreshHotkeyVisibility(button, barNameOverride)
 	local hotkey = GetActionButtonHotkey(button)
 	if not hotkey then return end
 	local barName = barNameOverride or DetermineButtonBarName(button)
-	UpdateHotkeyVisibility(hotkey, ShouldHideHotkey(barName))
+	UpdateHotkeyVisibility(hotkey, ShouldHideHotkey(barName, button))
 end
 
 local HOTKEY_SHORT_REPLACEMENTS = {
@@ -786,11 +816,11 @@ if not Labels.hotkeyHookInstalled then
 end
 
 function Labels.RefreshAllHotkeyStyles()
-	ForEachActionButton(function(button, info) ApplyHotkeyStyling(button, info and info.name) end)
+	ForEachHotkeyButton(function(button, info) ApplyHotkeyStyling(button, info and info.name) end)
 end
 
 function Labels.RefreshAllHotkeyVisibility()
-	ForEachActionButton(function(button, info) RefreshHotkeyVisibility(button, info and info.name) end)
+	ForEachHotkeyButton(function(button, info) RefreshHotkeyVisibility(button, info and info.name) end)
 end
 
 local function InstallCountHook()
@@ -833,7 +863,7 @@ local function RefreshHotkeyColorOverride(button)
 	local hotkey = GetActionButtonHotkey(button)
 	if not hotkey then return end
 	local barName = DetermineButtonBarName(button)
-	if ShouldHideHotkey(barName) then
+	if ShouldHideHotkey(barName, button) then
 		RefreshHotkeyVisibility(button, barName)
 		return
 	end
@@ -846,6 +876,15 @@ local function RefreshHotkeyColorOverride(button)
 		RestoreTextColorOverride(hotkey, "EQOL_OriginalHotkeyColor", "EQOL_UsingHotkeyColorOverride")
 	end
 	RefreshHotkeyVisibility(button, barName)
+end
+
+function Labels.GetAdditionalHotkeyBarOptions()
+	return {
+		{
+			value = EXTRA_ACTION_BAR_NAME,
+			text = (addon.L and addon.L["actionBarExtraActionButton"]) or "Extra Action Button",
+		},
+	}
 end
 
 hooksecurefunc("ActionButton_UpdateRangeIndicator", function(self, checksRange, inRange)

@@ -2336,7 +2336,9 @@ function Helper.UpdateActionDisplayCountsForSpell(spellId, baseSpellId)
 				end
 			end
 			if needsRefresh then
-				if CooldownPanels:GetPanel(panelId) then CooldownPanels:RefreshPanel(panelId) end
+				if CooldownPanels:GetPanel(panelId) then
+					CooldownPanels:RefreshPanel(panelId)
+				end
 			end
 		end
 	end

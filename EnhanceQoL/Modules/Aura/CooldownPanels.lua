@@ -14173,72 +14173,13 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local showWhenMissing = resolvedType == "STANCE" and entry.showWhenMissing == true
 			local alwaysShow = entry.alwaysShow ~= false
 			local cdmAuraAlwaysShowMode = resolvedType == "CDM_AURA" and CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(entryLayout, entry) or nil
-			local entryHideOnCooldown, entryShowOnCooldown = self:ResolveEntryCooldownVisibility(entryLayout, entry)
-			if layoutEditActive or resolvedType == "CDM_AURA" then
-				entryHideOnCooldown = false
-				entryShowOnCooldown = false
-			end
-			local showEntryIconTexture = self:ResolveEntryShowIconTexture(entryLayout, entry)
-			local showGhostIcon = self:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, layoutEditActive)
-			local entryNoDesaturation = self:ResolveEntryNoDesaturation(entryLayout, entry)
-			local entryShowChargesCooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe, entryGcdDrawEdge, entryGcdDrawBling, entryGcdDrawSwipe = self:ResolveEntryCooldownVisuals(entryLayout, entry)
-			local cdmAuraActiveGlow = entry.type == "CDM_AURA" and entry.glowReady == true
-			local cdmAuraPandemicGlow = entry.type == "CDM_AURA" and entry.pandemicGlow == true
 			local glowReady = entry.type ~= "MACRO" and entry.type ~= "CDM_AURA" and entry.glowReady ~= false
-			local glowDuration, glowColor, glowStyle, glowInset = CooldownPanels:ResolveEntryGlowStyle(entryLayout, entry)
-			local procGlowStyle, procGlowInset = CooldownPanels:ResolveEntryProcGlowVisual(entryLayout, entry)
-			local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
-				CooldownPanels:ResolveEntryStateTexture(entry)
-			local pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = glowColor, glowStyle, glowInset
-			if resolvedType == "CDM_AURA" then
-				pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = CooldownPanels:ResolveEntryPandemicGlowVisual(entryLayout, entry)
-			end
-			local soundReady = false
-			local soundName = normalizeSoundName(nil)
-			local previewSound = false
-			do
-				local _, soundEnabledField, soundField = self:GetEntrySoundConfig(entry)
-				if soundEnabledField and soundField then
-					previewSound = entry[soundEnabledField] == true
-					soundName = normalizeSoundName(entry[soundField])
-					soundReady = resolvedType ~= "CDM_AURA" and previewSound
-				end
-			end
 			local baseSpellId = resolvedType == "SPELL" and ((macro and macro.spellID) or entry.spellID) or nil
 			local effectiveSpellId = baseSpellId and getEffectiveSpellId(baseSpellId) or nil
 			local stanceRelevant = resolvedType == "STANCE" and CooldownPanels.IsStanceEntryRelevant and CooldownPanels:IsStanceEntryRelevant(entry) or false
 			local stanceActive = stanceRelevant and CooldownPanels.IsStanceEntryActive and CooldownPanels:IsStanceEntryActive(entry) or false
 			local spellPassive = baseSpellId and isSpellPassiveSafe(baseSpellId, effectiveSpellId) or false
 			local cdmAuraData
-			-- local function isSpellFlagged(map)
-			-- 	if not map then return false end
-			-- 	if effectiveSpellId and map[effectiveSpellId] == true then return true end
-			-- 	if baseSpellId and map[baseSpellId] == true then return true end
-			-- 	return false
-			-- end
-
-			local entryCheckPower = resolvedType == "SPELL" and self:ResolveEntryCheckPower(entryLayout, entry)
-			local hideWhenNoResource = self:ResolveEntryHideWhenNoResource(entryLayout, entry)
-			local readyGlowCheckPower = resolvedType == "SPELL" and glowReady and self:ResolveEntryReadyGlowCheckPower(entryLayout, entry)
-			local procGlowEnabled = resolvedType == "SPELL" and CooldownPanels:ResolveEntryProcGlowEnabled(entryLayout, entry)
-			local procActive = resolvedType == "SPELL" and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
-			local overlayGlow = procActive and procGlowEnabled
-			local resourceInsufficient = resolvedType == "SPELL" and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
-			local readyGlowResourceBlocked = resolvedType == "SPELL" and readyGlowCheckPower and resourceInsufficient
-			local powerInsufficient = resolvedType == "SPELL" and entryCheckPower and resourceInsufficient
-			local spellUnusable = resolvedType == "SPELL" and entryCheckPower and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
-			local rangeOverlay = rangeOverlayEnabled and resolvedType == "SPELL" and isSpellFlagged(rangeOverlaySpells, baseSpellId, effectiveSpellId)
-			local assistedSuggested = resolvedType == "SPELL"
-				and CooldownPanels.IsAssistedSuggestedSpell(assistedSuggestedSpellId, assistedSuggestedBaseId, assistedSuggestedEffectiveId, baseSpellId, effectiveSpellId)
-			if rangeOverlay and Api.IsSpellUsableFn then
-				local checkId = effectiveSpellId or baseSpellId
-				if checkId then
-					local isUsable = Api.IsSpellUsableFn(checkId)
-					if not isUsable then rangeOverlay = false end
-				end
-			end
-
-			local iconTexture = getEntryIcon(entry)
 			local stackCount
 			local itemCount
 			local itemUses
@@ -14251,11 +14192,12 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local cooldownEnabledOk = true
 			local emptyItem = false
 			local canTriggerReadyGlow = false
-			local spellReadyCondition
+			local spellId
+			local spellPassState
 
 			if resolvedType == "SPELL" and baseSpellId then
-				local spellId = effectiveSpellId or baseSpellId
-				local spellPassState = self:GetSpellPassState(spellId)
+				spellId = effectiveSpellId or baseSpellId
+				spellPassState = self:GetSpellPassState(spellId)
 				if spellPassive then
 					show = false
 				elseif Api.IsSpellKnown and not Api.IsSpellKnown(spellId) then
@@ -14269,13 +14211,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						end
 						chargesInfo = spellPassState and spellPassState.chargesInfo or self:GetCachedSpellChargesInfo(spellId)
 						chargesInfoActive = CooldownPanels.IsChargeInfoActive(chargesInfo)
-						if showCooldown and entryShowChargesCooldown and chargesInfoActive then
-							if spellPassState and spellPassState.chargeDurationLoaded == nil then
-								spellPassState.chargeDurationObject = self:GetCachedSpellChargeDurationObject(spellId)
-								spellPassState.chargeDurationLoaded = true
-							end
-							chargeDurationObject = spellPassState and spellPassState.chargeDurationObject or self:GetCachedSpellChargeDurationObject(spellId)
-						end
 					end
 					if trackCooldown or (showCooldown and chargesInfoActive) then
 						if spellPassState and spellPassState.infoLoaded == nil then
@@ -14295,20 +14230,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						end
 					end
 					cooldownIsActive = CooldownPanels.IsSpellCooldownInfoActive(cooldownIsActive, cooldownEnabled, cooldownStart, cooldownDuration)
-					if trackCooldown and cooldownIsActive then
-						if spellPassState and spellPassState.durationLoaded == nil then
-							spellPassState.cooldownDurationObject = self:GetCachedSpellCooldownDurationObject(spellId)
-							spellPassState.durationLoaded = true
-						end
-						cooldownDurationObject = spellPassState and spellPassState.cooldownDurationObject or self:GetCachedSpellCooldownDurationObject(spellId)
-					end
-					if glowReady and showCooldown then
-						if cooldownGCD then
-							spellReadyCondition = true
-						elseif type(cooldownIsActive) == "boolean" then
-							spellReadyCondition = not cooldownIsActive
-						end
-					end
 					if showStacks then
 						local entryKey = Helper.GetEntryKey(panelId, entryId)
 						local displayCount = Helper.GetActionDisplayCountForSpell and Helper.GetActionDisplayCountForSpell(spellId) or nil
@@ -14323,12 +14244,11 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						end
 					end
 					cooldownEnabledOk = isSafeNotFalse(cooldownEnabled)
-						local durationActive = cooldownDurationObject ~= nil and cooldownIsActive
-						show = alwaysShow
-						if not show and showCooldown and (durationActive or cooldownIsActive) then show = true end
-						if not show and showCharges and chargesInfoActive then show = true end
-						if not show and showStacks and Helper.HasDisplayCount(stackCount) then show = true end
-					end
+					show = alwaysShow
+					if not show and showCooldown and cooldownIsActive then show = true end
+					if not show and showCharges and chargesInfoActive then show = true end
+					if not show and showStacks and Helper.HasDisplayCount(stackCount) then show = true end
+				end
 			elseif resolvedType == "ITEM" and resolvedItemId then
 				local itemCache = shared and shared.itemCountCache
 				local cached = itemCache and itemCache[resolvedItemId]
@@ -14338,7 +14258,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					cached = itemCache and itemCache[resolvedItemId]
 				end
 				local cachedCount = cached and cached.count
-				local cachedUses = cached and cached.uses
 				local ownsItem
 				if cachedCount ~= nil then
 					ownsItem = cachedCount > 0 or (Api.IsEquippedItem and Api.IsEquippedItem(resolvedItemId))
@@ -14355,35 +14274,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 							cooldownGCD = true
 						end
 					end
-					if showItemCount then
-						local count = cachedCount
-						if count == nil then
-							updateItemCountCacheForItem(resolvedItemId, showItemUses)
-							itemCache = shared and shared.itemCountCache
-							cached = itemCache and itemCache[resolvedItemId]
-							count = cached and cached.count or 0
-							cachedUses = cached and cached.uses
-						end
-						if isSafeGreaterThan(count, 0) then
-							itemCount = count
-						elseif showWhenEmpty then
-							itemCount = 0
-						end
-					end
-					if showItemUses then
-						local uses = cachedUses
-						if uses == nil then
-							updateItemCountCacheForItem(resolvedItemId, true)
-							itemCache = shared and shared.itemCountCache
-							cached = itemCache and itemCache[resolvedItemId]
-							uses = cached and cached.uses or 0
-						end
-						if isSafeGreaterThan(uses, 0) then
-							itemUses = uses
-						elseif showWhenEmpty then
-							itemUses = 0
-						end
-					end
 					cooldownEnabledOk = cooldownEnabled ~= false and cooldownEnabled ~= 0
 					show = alwaysShow or showWhenEmpty
 					if not show and showCooldown and cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration) then show = true end
@@ -14391,7 +14281,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			elseif resolvedType == "SLOT" and resolvedSlotId then
 				local itemId = Api.GetInventoryItemID and Api.GetInventoryItemID("player", resolvedSlotId) or nil
 				if itemId then
-					iconTexture = Api.GetItemIconByID and Api.GetItemIconByID(itemId) or iconTexture
 					if itemHasUseSpell(itemId) then
 						canTriggerReadyGlow = true
 						if trackCooldown then
@@ -14419,7 +14308,6 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			elseif resolvedType == "CDM_AURA" and cdmAuras and cdmAuras.BuildRuntimeData then
 				cdmAuraData = cdmAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, cdmAuraAlwaysShowMode)
 				if cdmAuraData then
-					iconTexture = cdmAuraData.iconTextureID or iconTexture
 					stackCount = cdmAuraData.stackCount
 					cooldownStart = cdmAuraData.cooldownStart
 					cooldownDuration = cdmAuraData.cooldownDuration
@@ -14428,10 +14316,125 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					show = cdmAuraData.show == true
 				end
 			end
-			if show and hideWhenNoResource and resourceInsufficient then show = false end
+			if show and resolvedType == "SPELL" and baseSpellId and self:ResolveEntryHideWhenNoResource(entryLayout, entry) then
+				if isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId) then show = false end
+			end
 			if layoutEditActive then show = true end
 
 			if show then
+				-- Phase 2: only hydrate expensive visual/runtime details for entries that will actually render.
+				local entryHideOnCooldown, entryShowOnCooldown = self:ResolveEntryCooldownVisibility(entryLayout, entry)
+				if layoutEditActive or resolvedType == "CDM_AURA" then
+					entryHideOnCooldown = false
+					entryShowOnCooldown = false
+				end
+				local showEntryIconTexture = self:ResolveEntryShowIconTexture(entryLayout, entry)
+				local showGhostIcon = self:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, layoutEditActive)
+				local entryNoDesaturation = self:ResolveEntryNoDesaturation(entryLayout, entry)
+				local entryShowChargesCooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe, entryGcdDrawEdge, entryGcdDrawBling, entryGcdDrawSwipe =
+					self:ResolveEntryCooldownVisuals(entryLayout, entry)
+				local cdmAuraActiveGlow = entry.type == "CDM_AURA" and entry.glowReady == true
+				local cdmAuraPandemicGlow = entry.type == "CDM_AURA" and entry.pandemicGlow == true
+				local glowDuration, glowColor, glowStyle, glowInset = CooldownPanels:ResolveEntryGlowStyle(entryLayout, entry)
+				local procGlowStyle, procGlowInset = CooldownPanels:ResolveEntryProcGlowVisual(entryLayout, entry)
+				local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror,
+					stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY = CooldownPanels:ResolveEntryStateTexture(entry)
+				local pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = glowColor, glowStyle, glowInset
+				if resolvedType == "CDM_AURA" then
+					pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = CooldownPanels:ResolveEntryPandemicGlowVisual(entryLayout, entry)
+				end
+				local soundReady = false
+				local soundName = normalizeSoundName(nil)
+				local previewSound = false
+				do
+					local _, soundEnabledField, soundField = self:GetEntrySoundConfig(entry)
+					if soundEnabledField and soundField then
+						previewSound = entry[soundEnabledField] == true
+						soundName = normalizeSoundName(entry[soundField])
+						soundReady = resolvedType ~= "CDM_AURA" and previewSound
+					end
+				end
+				local entryCheckPower = resolvedType == "SPELL" and self:ResolveEntryCheckPower(entryLayout, entry)
+				local readyGlowCheckPower = resolvedType == "SPELL" and glowReady and self:ResolveEntryReadyGlowCheckPower(entryLayout, entry)
+				local procGlowEnabled = resolvedType == "SPELL" and CooldownPanels:ResolveEntryProcGlowEnabled(entryLayout, entry)
+				local procActive = resolvedType == "SPELL" and isSpellFlagged(overlayGlowSpells, baseSpellId, effectiveSpellId)
+				local overlayGlow = procActive and procGlowEnabled
+				local resourceInsufficient = resolvedType == "SPELL" and isSpellFlagged(powerInsufficientSpells, baseSpellId, effectiveSpellId)
+				local readyGlowResourceBlocked = resolvedType == "SPELL" and readyGlowCheckPower and resourceInsufficient
+				local powerInsufficient = resolvedType == "SPELL" and entryCheckPower and resourceInsufficient
+				local spellUnusable = resolvedType == "SPELL" and entryCheckPower and isSpellFlagged(spellUnusableSpells, baseSpellId, effectiveSpellId)
+				local rangeOverlay = rangeOverlayEnabled and resolvedType == "SPELL" and isSpellFlagged(rangeOverlaySpells, baseSpellId, effectiveSpellId)
+				local assistedSuggested = resolvedType == "SPELL"
+					and CooldownPanels.IsAssistedSuggestedSpell(assistedSuggestedSpellId, assistedSuggestedBaseId, assistedSuggestedEffectiveId, baseSpellId, effectiveSpellId)
+				if rangeOverlay and Api.IsSpellUsableFn then
+					local checkId = effectiveSpellId or baseSpellId
+					if checkId then
+						local isUsable = Api.IsSpellUsableFn(checkId)
+						if not isUsable then rangeOverlay = false end
+					end
+				end
+				local spellReadyCondition
+				if resolvedType == "SPELL" and spellId then
+					if showCooldown and entryShowChargesCooldown and chargesInfoActive then
+						if spellPassState and spellPassState.chargeDurationLoaded == nil then
+							spellPassState.chargeDurationObject = self:GetCachedSpellChargeDurationObject(spellId)
+							spellPassState.chargeDurationLoaded = true
+						end
+						chargeDurationObject = spellPassState and spellPassState.chargeDurationObject or self:GetCachedSpellChargeDurationObject(spellId)
+					end
+					if trackCooldown and cooldownIsActive then
+						if spellPassState and spellPassState.durationLoaded == nil then
+							spellPassState.cooldownDurationObject = self:GetCachedSpellCooldownDurationObject(spellId)
+							spellPassState.durationLoaded = true
+						end
+						cooldownDurationObject = spellPassState and spellPassState.cooldownDurationObject or self:GetCachedSpellCooldownDurationObject(spellId)
+					end
+					if glowReady and showCooldown then
+						if cooldownGCD then
+							spellReadyCondition = true
+						elseif type(cooldownIsActive) == "boolean" then
+							spellReadyCondition = not cooldownIsActive
+						end
+					end
+				end
+				if resolvedType == "ITEM" and resolvedItemId then
+					local itemCache = shared and shared.itemCountCache
+					local cached = itemCache and itemCache[resolvedItemId]
+					if not cached then
+						updateItemCountCacheForItem(resolvedItemId, showItemUses)
+						itemCache = shared and shared.itemCountCache
+						cached = itemCache and itemCache[resolvedItemId]
+					end
+					if showItemCount then
+						local count = cached and cached.count
+						if count == nil then
+							updateItemCountCacheForItem(resolvedItemId, showItemUses)
+							itemCache = shared and shared.itemCountCache
+							cached = itemCache and itemCache[resolvedItemId]
+							count = cached and cached.count or 0
+						end
+						if isSafeGreaterThan(count, 0) then
+							itemCount = count
+						elseif showWhenEmpty then
+							itemCount = 0
+						end
+					end
+					if showItemUses then
+						local uses = cached and cached.uses
+						if uses == nil then
+							updateItemCountCacheForItem(resolvedItemId, true)
+							itemCache = shared and shared.itemCountCache
+							cached = itemCache and itemCache[resolvedItemId]
+							uses = cached and cached.uses or 0
+						end
+						if isSafeGreaterThan(uses, 0) then
+							itemUses = uses
+						elseif showWhenEmpty then
+							itemUses = 0
+						end
+					end
+				end
+				local iconTexture = cdmAuraData and cdmAuraData.iconTextureID or getEntryIcon(entry)
 				visibleCount = visibleCount + 1
 				local targetIndex = visibleCount
 				local data = nil
@@ -18084,7 +18087,9 @@ refreshPanelsForCharges = function()
 
 	if panelsToRefresh then
 		for panelId in pairs(panelsToRefresh) do
-			if CooldownPanels:GetPanel(panelId) then CooldownPanels:RefreshPanel(panelId) end
+			if CooldownPanels:GetPanel(panelId) then
+				CooldownPanels:RefreshPanel(panelId)
+			end
 		end
 		return true
 	end
@@ -18713,7 +18718,9 @@ local function ensureUpdateFrame()
 			local itemUsesPanels = runtime and runtime.itemUsesPanels
 			if itemUsesPanels and next(itemUsesPanels) then updateItemCountCache(true) end
 			for panelId in pairs(itemPanels) do
-				if CooldownPanels:GetPanel(panelId) then CooldownPanels:RefreshPanel(panelId) end
+				if CooldownPanels:GetPanel(panelId) then
+					CooldownPanels:RefreshPanel(panelId)
+				end
 			end
 			return
 		end

@@ -856,6 +856,11 @@ local function createLabelControls(category, expandable)
 	for _, info in ipairs(addon.variables.actionBarNames or {}) do
 		if info.name then table.insert(barOptions, { value = info.name, text = info.text or info.name }) end
 	end
+	if ActionBarLabels and ActionBarLabels.GetAdditionalHotkeyBarOptions then
+		for _, info in ipairs(ActionBarLabels.GetAdditionalHotkeyBarOptions() or {}) do
+			if info and info.value then table.insert(barOptions, info) end
+		end
+	end
 	table.sort(barOptions, function(a, b) return tostring(a.text) < tostring(b.text) end)
 
 	addon.functions.SettingsCreateCheckbox(category, {
