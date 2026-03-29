@@ -1004,6 +1004,62 @@ function GF.BuildPartyCenterGrowthNameList(cfg)
 	return nameList, 0, count
 end
 
+function GF.IsUnitMainTank(unit)
+	if not (unit and UnitInRaid and UnitInRaid(unit)) then return false end
+	if GetPartyAssignment then return GetPartyAssignment("MAINTANK", unit) and true or false end
+	if not GetRaidRosterInfo then return false end
+	local raidID = UnitInRaid(unit)
+	if not raidID then return false end
+	return select(10, GetRaidRosterInfo(raidID)) == "MAINTANK"
+end
+
+function GF.BuildSplitRolePlayerFirstNameList(kind, cfg)
+	if kind ~= "mt" or not (cfg and cfg.playerFirst == true) or cfg.hideSelf == true then return nil end
+	if not GF.IsUnitMainTank("player") then return nil end
+
+	local playerName
+	local others = {}
+	local seen = {}
+
+	local function getFullName(unit)
+		local name = GFH and GFH.GetUnitFullName and GFH.GetUnitFullName(unit)
+		if name then return name end
+		if not UnitName then return nil end
+		local rawName, realm = UnitName(unit)
+		if not rawName or rawName == "" then return nil end
+		if realm and realm ~= "" then return rawName .. "-" .. realm end
+		return rawName
+	end
+
+	local num = (GetNumGroupMembers and GetNumGroupMembers()) or 0
+	for i = 1, num do
+		local unit = "raid" .. i
+		if UnitExists and UnitExists(unit) and GF.IsUnitMainTank(unit) then
+			local name = getFullName(unit)
+			if name and not seen[name] then
+				seen[name] = true
+				if UnitIsUnit and UnitIsUnit(unit, "player") then
+					playerName = name
+				else
+					others[#others + 1] = name
+				end
+			end
+		end
+	end
+
+	if not playerName then
+		playerName = getFullName("player")
+		if not playerName or seen[playerName] then return nil end
+	end
+
+	table.sort(others)
+	local names = { playerName }
+	for i = 1, #others do
+		names[#names + 1] = others[i]
+	end
+	return table.concat(names, ",")
+end
+
 function GF.CountCsvTokens(value)
 	if type(value) ~= "string" or value == "" then return 0 end
 	local count = 0
@@ -4384,6 +4440,7 @@ do
 	mtDefaults.sortMethod = "NAME"
 	mtDefaults.sortDir = "ASC"
 	mtDefaults.hideSelf = false
+	mtDefaults.playerFirst = false
 	mtDefaults.groupBy = nil
 	mtDefaults.groupingOrder = nil
 	mtDefaults.groupFilter = nil
@@ -11164,6 +11221,7 @@ function GF:ApplyHeaderAttributes(kind, options)
 			cfg.groupGrowth = (GFH.NormalizeGrowthDirection and GFH.NormalizeGrowthDirection(cfg.groupGrowth, nil)) or ((growth == "RIGHT" or growth == "LEFT") and "DOWN" or "RIGHT")
 		end
 	elseif isSplitRoleKind(kind) then
+		local splitRoleNameList = GF.BuildSplitRolePlayerFirstNameList(kind, cfg)
 		setAttr("showParty", false)
 		setAttr("showRaid", true)
 		setAttr("showPlayer", not (kind == "mt" and cfg.hideSelf == true))
@@ -11171,10 +11229,16 @@ function GF:ApplyHeaderAttributes(kind, options)
 		setAttr("groupingOrder", nil)
 		setAttr("groupFilter", nil)
 		setAttr("groupBy", nil)
-		setAttr("nameList", nil)
-		setAttr("roleFilter", getSplitRoleFilter(kind))
-		setAttr("strictFiltering", true)
-		setAttr("sortMethod", "NAME")
+		setAttr("nameList", splitRoleNameList)
+		if splitRoleNameList then
+			setAttr("roleFilter", nil)
+			setAttr("strictFiltering", false)
+			setAttr("sortMethod", "NAMELIST")
+		else
+			setAttr("roleFilter", getSplitRoleFilter(kind))
+			setAttr("strictFiltering", true)
+			setAttr("sortMethod", "NAME")
+		end
 		setAttr("sortDir", "ASC")
 		raidUnitsPerColumn = clampNumber(tonumber(cfg.unitsPerColumn) or ((DEFAULTS[kind] and DEFAULTS[kind].unitsPerColumn) or 2), 1, 10, 2)
 		raidMaxColumns = clampNumber(tonumber(cfg.maxColumns) or ((DEFAULTS[kind] and DEFAULTS[kind].maxColumns) or 1), 1, 10, 1)
@@ -12032,6 +12096,7 @@ GF._groupCopySectionRules = {
 	},
 	raid = {
 		{ "hideSelf" },
+		{ "playerFirst" },
 		{ "unitsPerColumn" },
 		{ "maxColumns" },
 		{ "columnSpacing" },
@@ -22110,6 +22175,32 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = isPrivateAurasEnabled,
 		},
 		{
+			name = L["UFPrivateAurasTextScale"] or "Text scale",
+			kind = SettingType.Slider,
+			allowInput = true,
+			field = "privateAurasTextScale",
+			parentId = "privateAuras",
+			minValue = 1,
+			maxValue = 2.5,
+			valueStep = 0.05,
+			get = function()
+				local cfg = getCfg(kind)
+				local pcfg = cfg and cfg.privateAuras or {}
+				local defValue = tonumber(defPrivateAuras.textScale) or 1
+				return tonumber(pcfg.textScale) or defValue
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				local pcfg = ensurePrivateAuraConfig(cfg)
+				if not pcfg then return end
+				pcfg.textScale = clampNumber(value, 1, 2.5, tonumber(pcfg.textScale) or 1)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "privateAurasTextScale", pcfg.textScale, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			formatter = formatSliderDecimal,
+			isEnabled = isPrivateAurasEnabled,
+		},
+		{
 			name = L["Show dispel type"] or "Show dispel type",
 			kind = SettingType.Checkbox,
 			field = "privateAurasShowDispelType",
@@ -22419,6 +22510,25 @@ local function buildEditModeSettings(kind, editModeId)
 				if not cfg then return end
 				cfg.hideSelf = value and true or false
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "hideSelf", cfg.hideSelf, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isShown = function() return kind == "mt" end,
+		}
+		settings[#settings + 1] = {
+			name = L["UFGroupPlayerFirst"] or "Player first",
+			kind = SettingType.Checkbox,
+			field = "playerFirst",
+			parentId = "raid",
+			default = (DEFAULTS.mt and DEFAULTS.mt.playerFirst) or false,
+			get = function()
+				local cfg = getCfg(kind)
+				return cfg and cfg.playerFirst == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.playerFirst = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "playerFirst", cfg.playerFirst, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			isShown = function() return kind == "mt" end,
@@ -23910,6 +24020,7 @@ local function applyEditModeData(kind, data)
 		data.privateAurasEnabled ~= nil
 		or data.privateAurasAmount ~= nil
 		or data.privateAurasSize ~= nil
+		or data.privateAurasTextScale ~= nil
 		or data.privateAurasPoint ~= nil
 		or data.privateAurasOffset ~= nil
 		or data.privateAurasParentPoint ~= nil
@@ -23930,6 +24041,7 @@ local function applyEditModeData(kind, data)
 		if data.privateAurasEnabled ~= nil then cfg.privateAuras.enabled = data.privateAurasEnabled and true or false end
 		if data.privateAurasAmount ~= nil then cfg.privateAuras.icon.amount = data.privateAurasAmount end
 		if data.privateAurasSize ~= nil then cfg.privateAuras.icon.size = data.privateAurasSize end
+		if data.privateAurasTextScale ~= nil then cfg.privateAuras.textScale = clampNumber(data.privateAurasTextScale, 1, 2.5, tonumber(cfg.privateAuras.textScale) or 1) end
 		if data.privateAurasPoint ~= nil then cfg.privateAuras.icon.point = data.privateAurasPoint end
 		if data.privateAurasOffset ~= nil then cfg.privateAuras.icon.offset = data.privateAurasOffset end
 		if data.privateAurasParentPoint ~= nil then cfg.privateAuras.parent.point = data.privateAurasParentPoint end
@@ -23983,6 +24095,7 @@ local function applyEditModeData(kind, data)
 		end
 	elseif isRaidLikeKind(kind) then
 		if kind == "mt" and data.hideSelf ~= nil then cfg.hideSelf = data.hideSelf and true or false end
+		if kind == "mt" and data.playerFirst ~= nil then cfg.playerFirst = data.playerFirst and true or false end
 		if kind == "raid" then
 			local custom = GFH.EnsureCustomSortConfig(cfg)
 			if data.customSortEnabled ~= nil then
@@ -24197,6 +24310,7 @@ function GF:EnsureEditMode()
 				showPlayer = cfg.showPlayer == true,
 				showSolo = cfg.showSolo == true,
 				hideSelf = cfg.hideSelf == true,
+				playerFirst = cfg.playerFirst == true,
 				hideInClientScene = (cfg.hideInClientScene ~= nil and cfg.hideInClientScene == true) or ((cfg.hideInClientScene == nil) and (def.hideInClientScene ~= false)),
 				unitsPerColumn = cfg.unitsPerColumn or (DEFAULTS[kind] and DEFAULTS[kind].unitsPerColumn) or (DEFAULTS.raid and DEFAULTS.raid.unitsPerColumn) or 5,
 				maxColumns = cfg.maxColumns or (DEFAULTS[kind] and DEFAULTS[kind].maxColumns) or (DEFAULTS.raid and DEFAULTS.raid.maxColumns) or 8,
@@ -24460,6 +24574,7 @@ function GF:EnsureEditMode()
 				privateAurasEnabled = (pa.enabled ~= nil) and (pa.enabled == true) or ((pa.enabled == nil) and defPrivate.enabled == true),
 				privateAurasAmount = paIcon.amount or defPrivateIcon.amount or 2,
 				privateAurasSize = paIcon.size or defPrivateIcon.size or 20,
+				privateAurasTextScale = tonumber(pa.textScale) or tonumber(defPrivate.textScale) or 1,
 				privateAurasPoint = paIcon.point or defPrivateIcon.point or "LEFT",
 				privateAurasOffset = paIcon.offset or defPrivateIcon.offset or 2,
 				privateAurasParentPoint = paParent.point or defPrivateParent.point or "CENTER",
@@ -24731,6 +24846,7 @@ registerFeatureEvents = function(frame)
 		frame:RegisterEvent("PARTY_MEMBER_ENABLE")
 		frame:RegisterEvent("PARTY_MEMBER_DISABLE")
 		frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+		frame:RegisterEvent("RAID_ROSTER_UPDATE")
 		frame:RegisterEvent("UNIT_NAME_UPDATE")
 		frame:RegisterEvent("PARTY_LEADER_CHANGED")
 		frame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
@@ -24758,6 +24874,7 @@ unregisterFeatureEvents = function(frame)
 		frame:UnregisterEvent("PARTY_MEMBER_ENABLE")
 		frame:UnregisterEvent("PARTY_MEMBER_DISABLE")
 		frame:UnregisterEvent("GROUP_ROSTER_UPDATE")
+		frame:UnregisterEvent("RAID_ROSTER_UPDATE")
 		frame:UnregisterEvent("UNIT_NAME_UPDATE")
 		frame:UnregisterEvent("PARTY_LEADER_CHANGED")
 		frame:UnregisterEvent("PLAYER_ROLES_ASSIGNED")
@@ -24901,6 +25018,17 @@ do
 				queueGroupIndicatorRefresh(0, 4)
 			end
 			if custom and custom.separateMeleeRanged == true and sortMethod == "NAMELIST" and GFH and GFH.QueueInspectGroup then GFH.QueueInspectGroup() end
+		elseif event == "RAID_ROSTER_UPDATE" then
+			if InCombatLockdown and InCombatLockdown() then
+				GF:MarkPendingHeaderRefresh("mt")
+				GF:MarkPendingHeaderRefresh("ma")
+			else
+				GF:ApplyHeaderAttributes("mt")
+				GF:ApplyHeaderAttributes("ma")
+				GF:RefreshChangedUnitButtons()
+			end
+			GF:RefreshGroupIcons()
+			GF:RefreshStatusIcons()
 		elseif event == "PLAYER_ROLES_ASSIGNED" then
 			GF:RefreshRoleIcons()
 			GF:RefreshTargetHighlights()

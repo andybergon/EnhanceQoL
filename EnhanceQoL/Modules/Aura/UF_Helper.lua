@@ -937,10 +937,19 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 	local size = floor(tonumber(iconCfg.size) or 24)
 	if size > maxSize then size = maxSize end
 	if size < minSize then size = minSize end
+	local textScale = tonumber(cfg.textScale) or 1
+	if textScale < 0.5 then
+		textScale = 0.5
+	elseif textScale > 3 then
+		textScale = 3
+	end
+	-- Keep the icon's visual size unchanged while letting the private aura frame scale its text.
+	local logicalSize = size / textScale
 	local iconPoint = tostring(iconCfg.point or "RIGHT"):upper()
 	local iconOffset = tonumber(iconCfg.offset or iconCfg.spacing or 2) or 0
 	local borderScale = tonumber(iconCfg.borderScale)
 	if borderScale == nil then borderScale = (size / 32) * 2 end
+	borderScale = borderScale / textScale
 	local layoutEnabled = layoutCfg.enabled == true or layoutCfg.wrapCount ~= nil or layoutCfg.direction ~= nil or layoutCfg.wrapDirection ~= nil
 	local layoutDirection = H.PrivateAuraNormalizeDirection(layoutCfg.direction or iconCfg.direction or iconPoint, iconPoint)
 	local primaryHorizontal = layoutDirection == "LEFT" or layoutDirection == "RIGHT"
@@ -983,6 +992,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		or state.countdownFrame ~= showFrame
 		or state.countdownNumbers ~= showNumbers
 		or state.borderScale ~= borderScale
+		or state.textScale ~= textScale
 		or state.durationEnabled ~= durationEnabled
 		or state.durationPoint ~= durationPoint
 		or state.durationOffsetX ~= durationOffsetX
@@ -996,6 +1006,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		state.countdownFrame = showFrame
 		state.countdownNumbers = showNumbers
 		state.borderScale = borderScale
+		state.textScale = textScale
 		state.durationEnabled = durationEnabled
 		state.durationPoint = durationPoint
 		state.durationOffsetX = durationOffsetX
@@ -1072,7 +1083,8 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 			local prevLayout = (anchors[i - 1] and anchors[i - 1]._eqolPrivateAuraLayout) or anchors[i - 1]
 			layout:SetPoint(attachPoint, prevLayout, iconPoint, ox, oy)
 		end
-		layout:SetSize(size, size)
+		layout:SetScale(textScale)
+		layout:SetSize(logicalSize, logicalSize)
 		layout:Show()
 		anchor:ClearAllPoints()
 		anchor:SetPoint("CENTER", layout, "CENTER", 0, 0)
@@ -1115,7 +1127,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		end
 		if changed or not anchor.anchorID then
 			removePrivateAuraAnchor(anchor)
-			anchor.anchorID = buildPrivateAuraAnchor(anchor, effectiveUnit, i, size, borderScale, showFrame, showNumbers, durationEnabled, durationPoint, durationOffsetX, durationOffsetY, layout)
+			anchor.anchorID = buildPrivateAuraAnchor(anchor, effectiveUnit, i, logicalSize, borderScale, showFrame, showNumbers, durationEnabled, durationPoint, durationOffsetX, durationOffsetY, layout)
 		end
 		stripCooldownEdge(anchor)
 	end
