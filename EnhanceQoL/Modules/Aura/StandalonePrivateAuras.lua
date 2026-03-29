@@ -62,7 +62,7 @@ local function createDefaultConfig()
 			amount = 3,
 			size = 64,
 			minSize = MIN_SIZE,
-			maxSize = MAX_SIZE,
+			maxSize = 60,
 			point = "RIGHT",
 			offset = 4,
 			borderScale = nil,

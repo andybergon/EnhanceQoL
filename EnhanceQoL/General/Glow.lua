@@ -83,6 +83,21 @@ local function normalizeInset(opts)
 	return roundOffset(opts.inset)
 end
 
+local function normalizeScalar(opts, key, fallback)
+	if type(opts) ~= "table" then return fallback end
+	local value = tonumber(opts[key])
+	if value == nil then return fallback end
+	return value
+end
+
+local function normalizeGlowThrottle(opts)
+	local frequency = normalizeScalar(opts, "frequency", nil)
+	if frequency and frequency > 0 then
+		return 0.25 / frequency * 0.01
+	end
+	return 0.01
+end
+
 local function getState(target, key, create)
 	if not target then return nil end
 	local states = target._eqolGlowStates
@@ -363,7 +378,7 @@ end
 
 local function blizzardOverlayOnUpdate(self, elapsed)
 	if not (self and self.ants and self.ants:IsShown()) then return end
-	if AnimateTexCoords then AnimateTexCoords(self.ants, 256, 256, 48, 48, 22, elapsed, 0.01) end
+	if AnimateTexCoords then AnimateTexCoords(self.ants, 256, 256, 48, 48, 22, elapsed, self.throttle or 0.01) end
 end
 
 local function blizzardAnimInOnPlay(group)
@@ -463,6 +478,9 @@ local function updateBlizzardOverlay(host, opts)
 	local width = max(1, host:GetWidth() or 0)
 	local height = max(1, host:GetHeight() or 0)
 	local inset = normalizeInset(opts)
+	local xOffset = normalizeScalar(opts, "xOffset", 0)
+	local yOffset = normalizeScalar(opts, "yOffset", 0)
+	local frameLevel = roundOffset(normalizeScalar(opts, "frameLevel", 3))
 	local extraX = max(0, (width * 0.2) + inset)
 	local extraY = max(0, (height * 0.2) + inset)
 	local overlayWidth = max(1, width + (extraX * 2))
@@ -472,10 +490,11 @@ local function updateBlizzardOverlay(host, opts)
 
 	overlay:SetParent(host)
 	overlay:SetFrameStrata(host:GetFrameStrata())
-	overlay:SetFrameLevel(max(0, (host:GetFrameLevel() or 0) + 3))
+	overlay:SetFrameLevel(max(0, (host:GetFrameLevel() or 0) + frameLevel))
 	overlay:ClearAllPoints()
 	overlay:SetSize(overlayWidth, overlayHeight)
-	overlay:SetPoint("CENTER", host, "CENTER", 0, 0)
+	overlay:SetPoint("CENTER", host, "CENTER", xOffset, yOffset)
+	overlay.throttle = normalizeGlowThrottle(opts)
 
 	overlay.spark:SetVertexColor(r, g, b, a)
 	overlay.innerGlow:SetVertexColor(r, g, b, a)

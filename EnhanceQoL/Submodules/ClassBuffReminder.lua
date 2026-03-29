@@ -1869,6 +1869,21 @@ function Reminder:ScheduleInitialSoundSync()
 	end)
 end
 
+function Reminder:ScheduleDeferredAuraResync(delay)
+	if not (C_Timer and C_Timer.After) then return end
+
+	local token = (tonumber(self.deferredAuraResyncToken) or 0) + 1
+	self.deferredAuraResyncToken = token
+	C_Timer.After(tonumber(delay) or 0.35, function()
+		if Reminder.deferredAuraResyncToken ~= token then return end
+		Reminder.deferredAuraResyncToken = nil
+		if not Reminder:ShouldRegisterRuntimeEvents() then return end
+
+		Reminder:MarkAuraStatesDirty()
+		Reminder:RequestUpdate(false)
+	end)
+end
+
 function Reminder:GetMissingSoundValue()
 	local _, resolvedKey = self:ResolveMissingSound()
 	if type(resolvedKey) ~= "string" then return "" end
@@ -3213,13 +3228,15 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:InvalidateRosterCache()
 		self:MarkAuraStatesDirty()
 		self:InvalidateFlaskCache()
-		self:RequestUpdate(true)
+		self:RequestUpdate(false)
+		self:ScheduleDeferredAuraResync(0.35)
 		return
 	end
 
 	if event == "GROUP_ROSTER_UPDATE" then
 		self:InvalidateRosterCache()
 		self:RequestUpdate(false)
+		self:ScheduleDeferredAuraResync(0.5)
 		return
 	end
 

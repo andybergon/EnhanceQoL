@@ -71,7 +71,7 @@ function addon.Aura.functions.InitDB()
 			amount = 3,
 			size = 64,
 			minSize = 10,
-			maxSize = 256,
+			maxSize = 60,
 			point = "RIGHT",
 			offset = 4,
 		},

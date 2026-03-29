@@ -4010,12 +4010,11 @@ function updatePowerBar(type, runeSlot)
 	local thresholdModeForBar = ResourceBars.GetThresholdColorModeAndCap(type)
 	local isSoulShards = type == "SOUL_SHARDS"
 	local useRaw = ResourceBars.ShouldUseRawPowerValues(type)
-	local maxPower = bar._lastMax
-	if not maxPower or bar._lastMaxRaw ~= useRaw then
-		maxPower = UnitPowerMax("player", pType, useRaw)
+	local maxPower = UnitPowerMax("player", pType, useRaw) or 0
+	if bar._lastMax ~= maxPower or bar._lastMaxRaw ~= useRaw then
 		bar._lastMax = maxPower
 		bar._lastMaxRaw = useRaw
-		bar:SetMinMaxValues(0, maxPower)
+		bar:SetMinMaxValues(0, max(maxPower, 1))
 	end
 	local curPower = UnitPower("player", pType, useRaw)
 	local barValue = curPower
@@ -5961,6 +5960,33 @@ local function updateStaggerBarIfShown()
 	if powerbar["STAGGER"] and powerbar["STAGGER"]:IsShown() then updatePowerBar("STAGGER") end
 end
 
+function ResourceBars.ResetPowerBarRuntimeCaches()
+	for pType, bar in pairs(powerbar or {}) do
+		if bar then
+			bar._lastMax = nil
+			bar._lastMaxRaw = nil
+			if pType == "ESSENCE" then
+				bar._essenceNextTick = nil
+				bar._essenceFraction = 0
+				bar._essenceLastPower = nil
+				if ResourceBars.InvalidateEssenceSegmentCaches then ResourceBars.InvalidateEssenceSegmentCaches(bar) end
+			end
+		end
+	end
+end
+
+function ResourceBars.RefreshBarsAfterPlayerStateChange(reason)
+	ResourceBars.ResetPowerBarRuntimeCaches()
+	if setPowerbars then setPowerbars() end
+	if healthBar then
+		healthBar._lastMax = nil
+		if healthBar:IsShown() then updateHealthBar(reason or "PLAYER_STATE_CHANGED") end
+	end
+	for pType, bar in pairs(powerbar or {}) do
+		if bar and bar:IsShown() then updatePowerBar(pType) end
+	end
+end
+
 local function eventHandler(self, event, unit, arg1)
 	if event == "UNIT_DISPLAYPOWER" and unit == "player" then
 		setPowerbars()
@@ -5972,6 +5998,14 @@ local function eventHandler(self, event, unit, arg1)
 		ResourceBars.SyncRuntimeSpecContext()
 		scheduleSpecRefresh()
 		if scheduleRelativeFrameWidthSync then scheduleRelativeFrameWidthSync() end
+	elseif event == "PLAYER_DEAD" or event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+		ResourceBars.RefreshBarsAfterPlayerStateChange(event)
+		if After and event ~= "PLAYER_DEAD" then
+			After(0.20, function()
+				if frameAnchor then ResourceBars.RefreshBarsAfterPlayerStateChange(event .. "_DELAYED") end
+			end)
+		end
+		return
 	elseif event == "PET_BATTLE_OPENING_START" then
 		ResourceBars._petBattleOpen = true
 		ResourceBars.ApplyVisibilityPreference(event)
@@ -6108,6 +6142,9 @@ function ResourceBars.EnableResourceBars()
 		end
 	end
 	frameAnchor:RegisterEvent("PLAYER_ENTERING_WORLD")
+	frameAnchor:RegisterEvent("PLAYER_DEAD")
+	frameAnchor:RegisterEvent("PLAYER_ALIVE")
+	frameAnchor:RegisterEvent("PLAYER_UNGHOST")
 	frameAnchor:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
 	frameAnchor:RegisterEvent("TRAIT_CONFIG_UPDATED")
 	frameAnchor:RegisterEvent("CLIENT_SCENE_OPENED")

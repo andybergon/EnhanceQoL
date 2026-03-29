@@ -183,7 +183,7 @@ function GF.GetScaledPrivateAuraConfig(self, cfg)
 	end
 	icon.size = GF.ScaleContentValue(self, icon.size or 24, nil, 1)
 	icon.minSize = GF.ScaleContentValue(self, icon.minSize or 4, nil, 1)
-	icon.maxSize = GF.ScaleContentValue(self, icon.maxSize or 60, nil, 1)
+	icon.maxSize = GF.ScaleContentValue(self, icon.maxSize or 100, nil, 1)
 	icon.offset = (tonumber(icon.offset or icon.spacing or 2) or 0) * factor
 	if icon.spacing ~= nil then icon.spacing = (tonumber(icon.spacing) or 0) * factor end
 	if icon.borderScale ~= nil then icon.borderScale = (tonumber(icon.borderScale) or 0) * factor end
@@ -1428,6 +1428,10 @@ local function stopDispelGlow(frame, effect, st)
 		effect = effect or st._dispelGlowEffect
 		st._dispelGlowActive = nil
 		st._dispelGlowEffect = nil
+	end
+	if addon.Glow and addon.Glow.Stop and frame then
+		addon.Glow.Stop(frame, DISPEL_GLOW_KEY)
+		return
 	end
 	if not (LCG and frame) then return end
 	if effect == "SHINE" then
@@ -7665,15 +7669,9 @@ function GF:UpdateSampleAuras(self)
 		else
 			GF:UpdateDispelTint(self, nil, nil)
 		end
-		if UF.GroupFramesHealerBuffs then
-			if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs.UpdateSample then
-				UF.GroupFramesHealerBuffs.UpdateSample(self)
-				st._healerBuffPlacementActive = true
-				st._auraSampleActive = true
-			elseif st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs.ClearButton then
-				UF.GroupFramesHealerBuffs.ClearButton(self)
-				st._healerBuffPlacementActive = nil
-			end
+		if UF.GroupFramesHealerBuffs and st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs.ClearButton then
+			UF.GroupFramesHealerBuffs.ClearButton(self)
+			st._healerBuffPlacementActive = nil
 		end
 		return
 	end
@@ -7761,14 +7759,9 @@ function GF:UpdateSampleAuras(self)
 	else
 		GF:UpdateDispelTint(self, nil, nil)
 	end
-	if UF.GroupFramesHealerBuffs then
-		if wantsHealerBuffPlacement and UF.GroupFramesHealerBuffs.UpdateSample then
-			UF.GroupFramesHealerBuffs.UpdateSample(self)
-			st._healerBuffPlacementActive = true
-		elseif st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs.ClearButton then
-			UF.GroupFramesHealerBuffs.ClearButton(self)
-			st._healerBuffPlacementActive = nil
-		end
+	if UF.GroupFramesHealerBuffs and st._healerBuffPlacementActive and UF.GroupFramesHealerBuffs.ClearButton then
+		UF.GroupFramesHealerBuffs.ClearButton(self)
+		st._healerBuffPlacementActive = nil
 	end
 	st._auraSampleActive = true
 end
@@ -8322,7 +8315,6 @@ end
 function GF:UpdateDispelGlow(self, r, g, b)
 	local st = getState(self)
 	if not st then return end
-	if not (LCG and LCG.PixelGlow_Start) then return end
 	local kind = self._eqolGroupKind or "party"
 	local cfg = self._eqolCfg or getCfg(kind)
 	local scfg = cfg and cfg.status or {}
@@ -8360,17 +8352,36 @@ function GF:UpdateDispelGlow(self, r, g, b)
 	end
 
 	local target = st.barGroup or self
+	local usingGlow = addon.Glow and addon.Glow.Start and addon.Glow.Stop
+	local canPixel = LCG and LCG.PixelGlow_Start
+	local canShine = LCG and LCG.AutoCastGlow_Start
+	local canButton = LCG and LCG.ButtonGlow_Start
 	local appliedEffect = effect
-	if appliedEffect == "SHINE" and not LCG.AutoCastGlow_Start then
+	if appliedEffect == "SHINE" and not canShine then
 		appliedEffect = "PIXEL"
-	elseif appliedEffect == "BLIZZARD" and not LCG.ButtonGlow_Start then
+	elseif appliedEffect == "BLIZZARD" and not usingGlow and not canButton then
 		appliedEffect = "PIXEL"
+	end
+	if appliedEffect == "PIXEL" and not canPixel then
+		stopDispelGlow(target, nil, st)
+		return
 	end
 	if st._dispelGlowActive and st._dispelGlowEffect ~= appliedEffect then stopDispelGlow(target, nil, st) end
 	local glowColor = { cr, cg, cb, 1 }
-	if appliedEffect == "SHINE" and LCG.AutoCastGlow_Start then
+	if usingGlow then
+		addon.Glow.Start(target, DISPEL_GLOW_KEY, appliedEffect, {
+			color = glowColor,
+			count = lines,
+			frequency = freq,
+			scale = scale,
+			thickness = thickness,
+			xOffset = xoff,
+			yOffset = yoff,
+			frameLevel = 8,
+		})
+	elseif appliedEffect == "SHINE" and canShine then
 		LCG.AutoCastGlow_Start(target, glowColor, lines, freq, scale, xoff, yoff, DISPEL_GLOW_KEY)
-	elseif appliedEffect == "BLIZZARD" and LCG.ButtonGlow_Start then
+	elseif appliedEffect == "BLIZZARD" and canButton then
 		LCG.ButtonGlow_Start(target, glowColor, freq)
 	else
 		LCG.PixelGlow_Start(target, glowColor, lines, freq, nil, thickness, xoff, yoff, nil, DISPEL_GLOW_KEY)
@@ -21909,7 +21920,7 @@ local function buildEditModeSettings(kind, editModeId)
 			field = "privateAurasSize",
 			parentId = "privateAuras",
 			minValue = 8,
-			maxValue = 60,
+			maxValue = 100,
 			valueStep = 1,
 			get = function()
 				local cfg = getCfg(kind)
@@ -21922,7 +21933,7 @@ local function buildEditModeSettings(kind, editModeId)
 				local cfg = getCfg(kind)
 				local pcfg = ensurePrivateAuraConfig(cfg)
 				if not pcfg then return end
-				pcfg.icon.size = clampNumber(value, 8, 60, pcfg.icon.size or 20)
+				pcfg.icon.size = clampNumber(value, 8, 100, pcfg.icon.size or 20)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "privateAurasSize", pcfg.icon.size, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,

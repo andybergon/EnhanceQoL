@@ -931,9 +931,9 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 	if amount < 1 then amount = 1 end
 	local minSize = floor(tonumber(iconCfg.minSize) or 4)
 	if minSize < 4 then minSize = 4 end
-	local maxSize = floor(tonumber(iconCfg.maxSize) or 60)
+	local maxSize = floor(tonumber(iconCfg.maxSize) or 100)
 	if maxSize < minSize then maxSize = minSize end
-	if maxSize > 256 then maxSize = 256 end
+	if maxSize > 100 then maxSize = 100 end
 	local size = floor(tonumber(iconCfg.size) or 24)
 	if size > maxSize then size = maxSize end
 	if size < minSize then size = minSize end

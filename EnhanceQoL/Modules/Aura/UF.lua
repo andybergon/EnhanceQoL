@@ -4378,8 +4378,13 @@ function AuraUtil.HideSingleDispelIndicator(unit)
 	st._dispelGlowActive = nil
 	st._dispelGlowEffect = nil
 
-	local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
 	local target = st.barGroup or st.frame
+	if addon.Glow and addon.Glow.Stop and target then
+		addon.Glow.Stop(target, "EQOL_DISPEL")
+		return
+	end
+
+	local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
 	if not (glowLib and target) then return end
 	if effect == "SHINE" then
 		if glowLib.AutoCastGlow_Stop then glowLib.AutoCastGlow_Stop(target, "EQOL_DISPEL") end
@@ -4439,8 +4444,13 @@ function AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 		st._dispelGlowActive = nil
 		st._dispelGlowEffect = nil
 
-		local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
 		local target = st.barGroup or st.frame
+		if addon.Glow and addon.Glow.Stop and target then
+			addon.Glow.Stop(target, "EQOL_DISPEL")
+			return
+		end
+
+		local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
 		if not (glowLib and target) then return end
 		if effect == "SHINE" then
 			if glowLib.AutoCastGlow_Stop then glowLib.AutoCastGlow_Stop(target, "EQOL_DISPEL") end
@@ -4560,12 +4570,16 @@ function AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 		return
 	end
 
-	local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
 	local target = st.barGroup or st.frame
-	if not (glowLib and glowLib.PixelGlow_Start and target and r and g and b) then
+	if not (target and r and g and b) then
 		stopGlow()
 		return
 	end
+	local glowLib = LibStub and LibStub("LibCustomGlow-1.0", true)
+	local usingGlow = addon.Glow and addon.Glow.Start and addon.Glow.Stop
+	local canPixel = glowLib and glowLib.PixelGlow_Start
+	local canShine = glowLib and glowLib.AutoCastGlow_Start
+	local canButton = glowLib and glowLib.ButtonGlow_Start
 
 	local colorMode = dcfg.glowColorMode or defDispel.glowColorMode or "DISPEL"
 	local cr, cg, cb = r, g, b
@@ -4583,10 +4597,14 @@ function AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 	if effect ~= "PIXEL" and effect ~= "SHINE" and effect ~= "BLIZZARD" then effect = "PIXEL" end
 
 	local appliedEffect = effect
-	if appliedEffect == "SHINE" and not glowLib.AutoCastGlow_Start then
+	if appliedEffect == "SHINE" and not canShine then
 		appliedEffect = "PIXEL"
-	elseif appliedEffect == "BLIZZARD" and not glowLib.ButtonGlow_Start then
+	elseif appliedEffect == "BLIZZARD" and not usingGlow and not canButton then
 		appliedEffect = "PIXEL"
+	end
+	if appliedEffect == "PIXEL" and not canPixel then
+		stopGlow()
+		return
 	end
 	if st._dispelGlowActive and st._dispelGlowEffect ~= appliedEffect then stopGlow() end
 
@@ -4598,9 +4616,20 @@ function AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 		scale = 4
 	end
 
-	if appliedEffect == "SHINE" and glowLib.AutoCastGlow_Start then
+	if usingGlow then
+		addon.Glow.Start(target, "EQOL_DISPEL", appliedEffect, {
+			color = glowColor,
+			count = lines,
+			frequency = freq,
+			scale = scale,
+			thickness = thickness,
+			xOffset = xoff,
+			yOffset = yoff,
+			frameLevel = 8,
+		})
+	elseif appliedEffect == "SHINE" and canShine then
 		glowLib.AutoCastGlow_Start(target, glowColor, lines, freq, scale, xoff, yoff, "EQOL_DISPEL")
-	elseif appliedEffect == "BLIZZARD" and glowLib.ButtonGlow_Start then
+	elseif appliedEffect == "BLIZZARD" and canButton then
 		glowLib.ButtonGlow_Start(target, glowColor, freq)
 	else
 		glowLib.PixelGlow_Start(target, glowColor, lines, freq, nil, thickness, xoff, yoff, nil, "EQOL_DISPEL")
