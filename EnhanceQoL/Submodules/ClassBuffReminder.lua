@@ -16,6 +16,7 @@ local Glow = addon.Glow
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local issecretvalue = _G.issecretvalue
 local UnitInPartyIsAI = _G.UnitInPartyIsAI
+local UnitGUID = _G.UnitGUID
 local GetTimePreciseSec = _G.GetTimePreciseSec
 
 local EDITMODE_ID = "classBuffReminder"
@@ -389,6 +390,14 @@ local function canEvaluateUnit(unit)
 	if not (UnitIsConnected and UnitIsConnected(unit)) then return false end
 	if UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit) then return false end
 	return true
+end
+
+local function getUnitIdentity(unit)
+	if type(unit) ~= "string" or unit == "" or not UnitGUID then return nil end
+	local guid = UnitGUID(unit)
+	if issecretvalue and issecretvalue(guid) then return nil end
+	if type(guid) ~= "string" or guid == "" then return nil end
+	return guid
 end
 
 local function isAIFollowerUnit(unit)
@@ -1907,6 +1916,7 @@ function Reminder:GetUnitAuraState(unit)
 			trackedCount = 0,
 			hasBuff = false,
 			initialized = false,
+			unitIdentity = nil,
 			providerRef = nil,
 			providerVersion = nil,
 		}
@@ -1919,6 +1929,12 @@ end
 
 function Reminder:ResetUnitAuraState(state)
 	if type(state) ~= "table" then return end
+	self:ClearTrackedAuraState(state)
+	state.unitIdentity = nil
+end
+
+function Reminder:ClearTrackedAuraState(state)
+	if type(state) ~= "table" then return end
 	if type(state.trackedByInstance) == "table" then wipeTable(state.trackedByInstance) end
 	state.trackedCount = 0
 	state.hasBuff = false
@@ -1928,11 +1944,20 @@ end
 function Reminder:PrepareUnitAuraState(unit, provider)
 	local state = self:GetUnitAuraState(unit)
 	if not state then return nil end
+	local unitIdentity = getUnitIdentity(unit)
+
+	-- Preserve hot unit caches across roster churn and only invalidate tokens that now point to a different unit.
+	if state.unitIdentity ~= unitIdentity then
+		self:ResetUnitAuraState(state)
+		state.unitIdentity = unitIdentity
+	end
+
 	if type(provider) ~= "table" then return state end
 
 	local providerVersion = getProviderStateVersion(provider)
 	if state.providerRef ~= provider or state.providerVersion ~= providerVersion then
 		self:ResetUnitAuraState(state)
+		state.unitIdentity = unitIdentity
 		state.providerRef = provider
 		state.providerVersion = providerVersion
 	end
@@ -2007,7 +2032,8 @@ end
 function Reminder:FullRefreshUnitAuraState(unit, provider)
 	local state = self:PrepareUnitAuraState(unit, provider)
 	if not state then return nil end
-	self:ResetUnitAuraState(state)
+	-- Keep unit identity intact so a fresh full scan does not immediately invalidate itself.
+	self:ClearTrackedAuraState(state)
 	if isAIFollowerUnit(unit) then
 		state.initialized = true
 		return state
@@ -2474,9 +2500,15 @@ function Reminder:SetGlowShown(show)
 			self.glowTargets[target] = nil
 		end
 		self.glowShown = false
+		self.glowActiveStyle = nil
+		self.glowActiveInset = nil
 		return
 	end
 
+	local style = self:GetGlowStyle()
+	local inset = self:GetGlowInset()
+	local styleChanged = self.glowActiveStyle ~= style
+	local insetChanged = self.glowActiveInset ~= inset
 	local targets = self:GetGlowTargets() or {}
 	local nextTargets = {}
 	for i = 1, #targets do
@@ -2492,11 +2524,16 @@ function Reminder:SetGlowShown(show)
 	end
 
 	for target in pairs(nextTargets) do
-		Glow.Start(target, REMINDER_GLOW_KEY, self:GetGlowStyle(), { inset = self:GetGlowInset() })
+		if styleChanged or insetChanged or not self.glowTargets[target] then
+			Glow.Start(target, REMINDER_GLOW_KEY, style, { inset = inset })
+		end
 		self.glowTargets[target] = true
 	end
 
-	self.glowShown = next(self.glowTargets) ~= nil
+	local hasGlow = next(self.glowTargets) ~= nil
+	self.glowShown = hasGlow
+	self.glowActiveStyle = hasGlow and style or nil
+	self.glowActiveInset = hasGlow and inset or nil
 end
 
 function Reminder:HideSamplePreview()
@@ -3035,8 +3072,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 
 	if event == "GROUP_ROSTER_UPDATE" then
 		self:InvalidateRosterCache()
-		self:MarkAuraStatesDirty()
-		self:RequestUpdate(true)
+		self:RequestUpdate(false)
 		return
 	end
 
