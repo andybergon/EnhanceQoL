@@ -1775,6 +1775,7 @@ function Reminder:RequestProviderPresentationRefresh(provider)
 end
 
 function Reminder:InvalidateProviderAvailabilityCache()
+	self:ClearPendingAuraUpdates()
 	self.activeProvider = nil
 	self.hasProviderCached = nil
 	self.runtimeProviderValid = nil
@@ -1941,6 +1942,107 @@ function Reminder:ClearTrackedAuraState(state)
 	state.initialized = false
 end
 
+function Reminder:ClearPendingAuraUpdates()
+	self.pendingAuraUpdates = nil
+end
+
+function Reminder:GetPendingAuraUpdate(unit)
+	if type(unit) ~= "string" or unit == "" then return nil end
+	local pending = self.pendingAuraUpdates
+	if type(pending) ~= "table" then
+		pending = {}
+		self.pendingAuraUpdates = pending
+	end
+
+	local entry = pending[unit]
+	if type(entry) ~= "table" then
+		entry = {}
+		pending[unit] = entry
+	end
+	return entry
+end
+
+function Reminder:QueuePendingAuraReset(unit)
+	local entry = self:GetPendingAuraUpdate(unit)
+	if not entry then return end
+	entry.reset = true
+	entry.fullRefresh = false
+	entry.updates = nil
+end
+
+function Reminder:QueuePendingAuraDelta(unit, updateInfo)
+	local entry = self:GetPendingAuraUpdate(unit)
+	if not entry then return end
+
+	entry.reset = false
+	if entry.fullRefresh == true then return end
+	if not updateInfo or (issecretvalue and issecretvalue(updateInfo)) then
+		entry.fullRefresh = true
+		entry.updates = nil
+		return
+	end
+
+	local isFullUpdate = updateInfo.isFullUpdate
+	if issecretvalue and issecretvalue(isFullUpdate) then isFullUpdate = true end
+	if isFullUpdate == true then
+		entry.fullRefresh = true
+		entry.updates = nil
+		return
+	end
+
+	local updates = entry.updates
+	if type(updates) ~= "table" then
+		updates = {}
+		entry.updates = updates
+	end
+	updates[#updates + 1] = updateInfo
+end
+
+function Reminder:FlushPendingAuraUpdates()
+	local pending = self.pendingAuraUpdates
+	if type(pending) ~= "table" or not next(pending) then return end
+	self.pendingAuraUpdates = nil
+
+	local provider = self:GetProvider()
+	if not (provider and provider.scope == PROVIDER_SCOPE_GROUP and self:ShouldEvaluateGroupResponsibilities(provider) == true) then
+		for unit, entry in pairs(pending) do
+			if type(entry) == "table" and entry.reset == true then
+				local state = self:GetUnitAuraState(unit)
+				if state then self:ResetUnitAuraState(state) end
+			end
+		end
+		return
+	end
+
+	local dirtyUnits
+	local canRefreshGroupState = self:IsGroupMissingStateValid(provider, self.groupMissingState)
+	for unit, entry in pairs(pending) do
+		if type(entry) == "table" then
+			if entry.reset == true then
+				local state = self:GetUnitAuraState(unit)
+				if state then self:ResetUnitAuraState(state) end
+			elseif entry.fullRefresh == true then
+				self:FullRefreshUnitAuraState(unit, provider)
+			elseif type(entry.updates) == "table" then
+				for i = 1, #entry.updates do
+					self:ApplyDeltaToUnitAuraState(unit, entry.updates[i], provider)
+				end
+			end
+
+			if canRefreshGroupState == true and self:IsRosterUnit(unit) then
+				dirtyUnits = dirtyUnits or {}
+				dirtyUnits[unit] = true
+			end
+		end
+	end
+
+	if type(dirtyUnits) == "table" then
+		for unit in pairs(dirtyUnits) do
+			self:RefreshGroupMissingStateUnit(provider, unit)
+		end
+	end
+end
+
 function Reminder:PrepareUnitAuraState(unit, provider)
 	local state = self:GetUnitAuraState(unit)
 	if not state then return nil end
@@ -1967,6 +2069,7 @@ end
 function Reminder:InvalidateGroupMissingState() self.groupMissingState = nil end
 
 function Reminder:MarkAuraStatesDirty()
+	self:ClearPendingAuraUpdates()
 	if type(self.unitAuraStates) == "table" then
 		for _, state in pairs(self.unitAuraStates) do
 			if type(state) == "table" then state.initialized = false end
@@ -1976,6 +2079,7 @@ function Reminder:MarkAuraStatesDirty()
 end
 
 function Reminder:InvalidateAuraStates()
+	self:ClearPendingAuraUpdates()
 	self.unitAuraStates = {}
 	self:InvalidateGroupMissingState()
 end
@@ -2689,6 +2793,7 @@ function Reminder:ApplyVisualSettings()
 end
 
 function Reminder:InvalidateRosterCache()
+	self:ClearPendingAuraUpdates()
 	self.rosterUnitsValid = nil
 	self.rosterUnitsVersion = (tonumber(self.rosterUnitsVersion) or 0) + 1
 	self:InvalidateGroupMissingState()
@@ -2952,6 +3057,7 @@ function Reminder:RenderEditModePreview()
 end
 
 function Reminder:UpdateDisplay()
+	self:FlushPendingAuraUpdates()
 	local frame = self:EnsureFrame()
 	if not frame then return end
 
@@ -3045,6 +3151,7 @@ end
 
 function Reminder:RequestUpdate(immediate)
 	if immediate or not (C_Timer and C_Timer.After) then
+		self:FlushPendingAuraUpdates()
 		self:UpdateDisplay()
 		return
 	end
@@ -3053,6 +3160,7 @@ function Reminder:RequestUpdate(immediate)
 	self.updatePending = true
 	C_Timer.After(0.08, function()
 		Reminder.updatePending = false
+		Reminder:FlushPendingAuraUpdates()
 		Reminder:UpdateDisplay()
 	end)
 end
@@ -3140,17 +3248,14 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 			return
 		end
 		if isAIFollowerUnit(unit) then
-			local state = self:GetUnitAuraState(unit)
-			if state then self:ResetUnitAuraState(state) end
-			self:RefreshGroupMissingStateUnit(provider, unit)
+			self:QueuePendingAuraReset(unit)
+			self:RequestUpdate(false)
 			return
 		end
 		if provider then
-			self:ApplyDeltaToUnitAuraState(unit, updateInfo, provider)
-			self:RefreshGroupMissingStateUnit(provider, unit)
+			self:QueuePendingAuraDelta(unit, updateInfo)
 		else
-			local state = self:GetUnitAuraState(unit)
-			if state then self:ResetUnitAuraState(state) end
+			self:QueuePendingAuraReset(unit)
 		end
 		self:RequestUpdate(false)
 		return
