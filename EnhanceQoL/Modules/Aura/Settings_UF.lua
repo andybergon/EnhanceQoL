@@ -1089,8 +1089,15 @@ end
 
 function refreshSettingsUI()
 	local lib = addon.EditModeLib
-	if lib and lib.internal and lib.internal.RefreshSettings then lib.internal:RefreshSettings() end
-	if lib and lib.internal and lib.internal.RefreshSettingValues then lib.internal:RefreshSettingValues() end
+	local internal = lib and lib.internal
+	if not internal then return end
+	if internal.RequestRefreshSettings then
+		internal:RequestRefreshSettings()
+		if internal.RequestRefreshSettingValues then internal:RequestRefreshSettingValues() end
+		return
+	end
+	if internal.RefreshSettings then internal:RefreshSettings() end
+	if internal.RefreshSettingValues then internal:RefreshSettingValues() end
 end
 
 local frameIds = {
@@ -1151,7 +1158,14 @@ local function refreshEditModeFrame(unit)
 			end
 		end
 	end
-	if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then addon.EditModeLib.internal:RefreshSettingValues() end
+	do
+		local internal = addon.EditModeLib and addon.EditModeLib.internal
+		if internal and internal.RequestRefreshSettingValues then
+			internal:RequestRefreshSettingValues()
+		elseif internal and internal.RefreshSettingValues then
+			internal:RefreshSettingValues()
+		end
+	end
 	if not syncingEditModeFrameRefresh[frameId] then
 		syncingEditModeFrameRefresh[frameId] = true
 		EditMode:RefreshFrame(frameId)
@@ -2718,14 +2732,16 @@ local function buildUnitSettings(unit)
 	end
 	local isBoss = isBossUnit(unit)
 	local refreshFunc = refresh
-	local function refreshSelf()
+	local function refreshSelf(syncEditModeValues)
 		local visualOnlyRefresh = consumeVisualOnlyRefreshPending()
 		if isBoss and UF.UpdateBossFrames then
 			UF.UpdateBossFrames(true)
 		else
 			refreshFunc(unit)
 		end
-		if not visualOnlyRefresh and addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode() then refreshEditModeFrame(isBoss and "boss" or unit) end
+		if syncEditModeValues and not visualOnlyRefresh and addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode() then
+			refreshEditModeFrame(isBoss and "boss" or unit)
+		end
 	end
 	local refresh = refreshSelf
 	local isPlayer = unit == "player"
@@ -2920,7 +2936,7 @@ local function buildUnitSettings(unit)
 		setValue(unit, { "anchor", "point" }, val or "CENTER")
 		local currentRelative = getValue(unit, { "anchor", "relativePoint" }, nil)
 		if not currentRelative then setValue(unit, { "anchor", "relativePoint" }, val or "CENTER") end
-		refreshSelf()
+		refreshSelf(true)
 		refreshSettingsUI()
 	end, (def.anchor and def.anchor.point) or "CENTER", "frame")
 
@@ -2929,7 +2945,7 @@ local function buildUnitSettings(unit)
 		return getValue(unit, { "anchor", "relativePoint" }, fallback)
 	end, function(val)
 		setValue(unit, { "anchor", "relativePoint" }, val or "CENTER")
-		refreshSelf()
+		refreshSelf(true)
 		refreshSettingsUI()
 	end, (def.anchor and def.anchor.relativePoint) or (def.anchor and def.anchor.point) or "CENTER", "frame")
 
@@ -2939,7 +2955,7 @@ local function buildUnitSettings(unit)
 		return tonumber(value) or 0
 	end, function(val)
 		setValue(unit, { "anchor", "x" }, tonumber(val) or 0)
-		refreshSelf()
+		refreshSelf(true)
 	end, (def.anchor and def.anchor.x) or 0, "frame", true)
 
 	list[#list + 1] = slider(L["Offset Y"] or "Offset Y", -OFFSET_RANGE, OFFSET_RANGE, 1, function()
@@ -2948,7 +2964,7 @@ local function buildUnitSettings(unit)
 		return tonumber(value) or 0
 	end, function(val)
 		setValue(unit, { "anchor", "y" }, tonumber(val) or 0)
-		refreshSelf()
+		refreshSelf(true)
 	end, (def.anchor and def.anchor.y) or 0, "frame", true)
 
 	if isBoss then
@@ -5323,9 +5339,7 @@ local function buildUnitSettings(unit)
 		castIconOffsetX.isEnabled = isCastIconEnabled
 		list[#list + 1] = castIconOffsetX
 
-		local function isCastIconBorderEnabled()
-			return isCastIconEnabled() and getValue(unit, { "cast", "iconBorder", "enabled" }, (castDef.iconBorder and castDef.iconBorder.enabled) == true) == true
-		end
+		local function isCastIconBorderEnabled() return isCastIconEnabled() and getValue(unit, { "cast", "iconBorder", "enabled" }, (castDef.iconBorder and castDef.iconBorder.enabled) == true) == true end
 
 		list[#list + 1] = checkboxColor({
 			name = L["Cast icon border"] or "Cast icon border",
@@ -5334,7 +5348,9 @@ local function buildUnitSettings(unit)
 			isChecked = function() return isCastIconBorderEnabled() end,
 			onChecked = function(val)
 				setValue(unit, { "cast", "iconBorder", "enabled" }, val and true or false)
-				if val and not getValue(unit, { "cast", "iconBorder", "color" }) then setValue(unit, { "cast", "iconBorder", "color" }, (castDef.iconBorder and castDef.iconBorder.color) or { 0, 0, 0, 0.8 }) end
+				if val and not getValue(unit, { "cast", "iconBorder", "color" }) then
+					setValue(unit, { "cast", "iconBorder", "color" }, (castDef.iconBorder and castDef.iconBorder.color) or { 0, 0, 0, 0.8 })
+				end
 				refresh()
 				refreshSettingsUI()
 			end,
