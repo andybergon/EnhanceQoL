@@ -166,6 +166,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	hideOnCooldown = false,
 	showOnCooldown = false,
 	showIconTexture = true,
+	ignoreMasque = false,
 	iconBorderEnabled = false,
 	iconBorderTexture = "DEFAULT",
 	iconBorderSize = 1,
@@ -247,6 +248,8 @@ Helper.ENTRY_DEFAULTS = {
 	showWhenNoCooldown = false,
 	showWhenMissing = false,
 	showIconTextureUseGlobal = true,
+	ignoreMasqueUseGlobal = true,
+	ignoreMasque = false,
 	cooldownVisualsUseGlobal = true,
 	showChargesCooldown = false,
 	cooldownDrawEdge = true,
@@ -290,6 +293,8 @@ Helper.ENTRY_DEFAULTS = {
 	stateTextureDouble = false,
 	stateTextureMirror = false,
 	stateTextureMirrorSecond = true,
+	stateTextureMirrorVertical = false,
+	stateTextureMirrorVerticalSecond = false,
 	stateTextureSpacingX = 0,
 	stateTextureSpacingY = 0,
 }
@@ -1787,6 +1792,7 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.readyGlowCheckPower = panel.layout.readyGlowCheckPower == true
 	panel.layout.noDesaturation = panel.layout.noDesaturation == true
 	panel.layout.hideWhenNoResource = panel.layout.hideWhenNoResource == true
+	panel.layout.ignoreMasque = panel.layout.ignoreMasque == true
 	panel.layout.cdmAuraAlwaysShowMode =
 		normalizeCDMAuraAlwaysShowMode(panel.layout.cdmAuraAlwaysShowMode, layoutDefaults.cdmAuraAlwaysShowMode or Helper.PANEL_LAYOUT_DEFAULTS.cdmAuraAlwaysShowMode or "HIDE")
 	panel.layout.stackColor = Helper.NormalizeColor(panel.layout.stackColor, layoutDefaults.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
@@ -1887,6 +1893,8 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.iconOffsetX = Helper.ClampInt(entry.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.iconOffsetX or 0)
 	entry.iconOffsetY = Helper.ClampInt(entry.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.iconOffsetY or 0)
 	if type(entry.showIconTextureUseGlobal) ~= "boolean" then entry.showIconTextureUseGlobal = true end
+	if type(entry.ignoreMasqueUseGlobal) ~= "boolean" then entry.ignoreMasqueUseGlobal = Helper.ENTRY_DEFAULTS.ignoreMasqueUseGlobal end
+	if type(entry.ignoreMasque) ~= "boolean" then entry.ignoreMasque = Helper.ENTRY_DEFAULTS.ignoreMasque end
 	if type(entry.stackStyleUseGlobal) ~= "boolean" then entry.stackStyleUseGlobal = true end
 	entry.stackAnchor = Helper.NormalizeAnchor(entry.stackAnchor, Helper.ENTRY_DEFAULTS.stackAnchor or Helper.PANEL_LAYOUT_DEFAULTS.stackAnchor or "BOTTOMRIGHT")
 	entry.stackX = Helper.ClampInt(entry.stackX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.stackX or 0)
@@ -1973,6 +1981,10 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.stateTextureDouble = entry.stateTextureDouble == true
 	entry.stateTextureMirror = entry.stateTextureMirror == true
 	if type(entry.stateTextureMirrorSecond) ~= "boolean" then entry.stateTextureMirrorSecond = Helper.ENTRY_DEFAULTS.stateTextureMirrorSecond == true end
+	entry.stateTextureMirrorVertical = entry.stateTextureMirrorVertical == true
+	if type(entry.stateTextureMirrorVerticalSecond) ~= "boolean" then
+		entry.stateTextureMirrorVerticalSecond = Helper.ENTRY_DEFAULTS.stateTextureMirrorVerticalSecond == true
+	end
 	entry.stateTextureSpacingX = Helper.ClampInt(entry.stateTextureSpacingX, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, Helper.ENTRY_DEFAULTS.stateTextureSpacingX or 0)
 	entry.stateTextureSpacingY = Helper.ClampInt(entry.stateTextureSpacingY, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, Helper.ENTRY_DEFAULTS.stateTextureSpacingY or 0)
 	if entry.stateTextureInput == "" then

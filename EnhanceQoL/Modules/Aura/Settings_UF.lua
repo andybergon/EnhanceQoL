@@ -5323,6 +5323,78 @@ local function buildUnitSettings(unit)
 		castIconOffsetX.isEnabled = isCastIconEnabled
 		list[#list + 1] = castIconOffsetX
 
+		local function isCastIconBorderEnabled()
+			return isCastIconEnabled() and getValue(unit, { "cast", "iconBorder", "enabled" }, (castDef.iconBorder and castDef.iconBorder.enabled) == true) == true
+		end
+
+		list[#list + 1] = checkboxColor({
+			name = L["Cast icon border"] or "Cast icon border",
+			parentId = "cast",
+			defaultChecked = (castDef.iconBorder and castDef.iconBorder.enabled) == true,
+			isChecked = function() return isCastIconBorderEnabled() end,
+			onChecked = function(val)
+				setValue(unit, { "cast", "iconBorder", "enabled" }, val and true or false)
+				if val and not getValue(unit, { "cast", "iconBorder", "color" }) then setValue(unit, { "cast", "iconBorder", "color" }, (castDef.iconBorder and castDef.iconBorder.color) or { 0, 0, 0, 0.8 }) end
+				refresh()
+				refreshSettingsUI()
+			end,
+			getColor = function()
+				local fallback = (castDef.iconBorder and castDef.iconBorder.color) or { 0, 0, 0, 0.8 }
+				return toRGBA(getValue(unit, { "cast", "iconBorder", "color" }, castDef.iconBorder and castDef.iconBorder.color), fallback)
+			end,
+			onColor = function(color)
+				setColor(unit, { "cast", "iconBorder", "color" }, color.r, color.g, color.b, color.a)
+				setValue(unit, { "cast", "iconBorder", "enabled" }, true)
+				refresh()
+			end,
+			colorDefault = {
+				r = (castDef.iconBorder and castDef.iconBorder.color and castDef.iconBorder.color[1]) or 0,
+				g = (castDef.iconBorder and castDef.iconBorder.color and castDef.iconBorder.color[2]) or 0,
+				b = (castDef.iconBorder and castDef.iconBorder.color and castDef.iconBorder.color[3]) or 0,
+				a = (castDef.iconBorder and castDef.iconBorder.color and castDef.iconBorder.color[4]) or 0.8,
+			},
+			isEnabled = isCastIconEnabled,
+		})
+
+		local castIconBorderTexture = checkboxDropdown(
+			L["Border texture"] or "Border texture",
+			borderOptions,
+			function() return getValue(unit, { "cast", "iconBorder", "texture" }, (castDef.iconBorder and castDef.iconBorder.texture) or "DEFAULT") end,
+			function(val)
+				setValue(unit, { "cast", "iconBorder", "texture" }, val or "DEFAULT")
+				refresh()
+			end,
+			(castDef.iconBorder and castDef.iconBorder.texture) or "DEFAULT",
+			"cast"
+		)
+		castIconBorderTexture.isEnabled = isCastIconBorderEnabled
+		list[#list + 1] = castIconBorderTexture
+
+		local castIconBorderSize = slider(L["Border size"] or "Border size", 1, 64, 1, function()
+			local border = getValue(unit, { "cast", "iconBorder" }, castDef.iconBorder or {})
+			return border.edgeSize or 1
+		end, function(val)
+			local border = getValue(unit, { "cast", "iconBorder" }, castDef.iconBorder or {})
+			border.edgeSize = val or 1
+			setValue(unit, { "cast", "iconBorder" }, border)
+			refresh()
+		end, (castDef.iconBorder and castDef.iconBorder.edgeSize) or 1, "cast", true)
+		castIconBorderSize.isEnabled = isCastIconBorderEnabled
+		list[#list + 1] = castIconBorderSize
+
+		local castIconBorderOffset = slider(L["Border offset"] or "Border offset", 0, 64, 1, function()
+			local border = getValue(unit, { "cast", "iconBorder" }, castDef.iconBorder or {})
+			if border.offset == nil then return border.edgeSize or 1 end
+			return border.offset
+		end, function(val)
+			local border = getValue(unit, { "cast", "iconBorder" }, castDef.iconBorder or {})
+			border.offset = val or 0
+			setValue(unit, { "cast", "iconBorder" }, border)
+			refresh()
+		end, (castDef.iconBorder and castDef.iconBorder.offset) or (castDef.iconBorder and castDef.iconBorder.edgeSize) or 1, "cast", true)
+		castIconBorderOffset.isEnabled = isCastIconBorderEnabled
+		list[#list + 1] = castIconBorderOffset
+
 		list[#list + 1] = { name = "", kind = settingType.Divider, parentId = "cast" }
 
 		list[#list + 1] = checkbox(L["Show spell name"] or "Show spell name", function() return getValue(unit, { "cast", "showName" }, castDef.showName ~= false) ~= false end, function(val)

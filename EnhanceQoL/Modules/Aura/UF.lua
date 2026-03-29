@@ -1179,6 +1179,13 @@ local defaults = {
 			showIcon = true,
 			iconSize = 22,
 			iconOffset = { x = -4, y = 0 },
+			iconBorder = {
+				enabled = false,
+				color = { 0, 0, 0, 0.8 },
+				texture = "DEFAULT",
+				edgeSize = 1,
+				offset = 1,
+			},
 			texture = "DEFAULT",
 			color = { 0.9, 0.7, 0.2, 1 },
 			useClassColor = false,
@@ -1363,6 +1370,13 @@ local defaults = {
 			showIcon = true,
 			iconSize = 22,
 			iconOffset = { x = -4, y = 0 },
+			iconBorder = {
+				enabled = false,
+				color = { 0, 0, 0, 0.8 },
+				texture = "DEFAULT",
+				edgeSize = 1,
+				offset = 1,
+			},
 			texture = "DEFAULT",
 			color = { 0.9, 0.7, 0.2, 1 },
 			useClassColor = false,
@@ -4872,6 +4886,77 @@ local function applyCastBorder(st, ccfg, defc)
 	end
 end
 
+function UF._getCastIconBorderMetrics(borderCfg, borderDef)
+	local size = type(borderCfg) == "table" and tonumber(borderCfg.edgeSize) or nil
+	if size == nil and type(borderDef) == "table" then size = tonumber(borderDef.edgeSize) end
+	if size == nil then size = 1 end
+	if size < 1 then size = 1 end
+
+	local offset = type(borderCfg) == "table" and borderCfg.offset or nil
+	if offset == nil and type(borderDef) == "table" then offset = borderDef.offset end
+	if offset == nil then offset = size end
+	offset = math.max(0, tonumber(offset) or 0)
+
+	return size, offset
+end
+
+function UF._getCastIconBorderOutset(ccfg, defc)
+	local borderCfg = ccfg and ccfg.iconBorder
+	local borderDef = defc and defc.iconBorder
+	local enabled = type(borderCfg) == "table" and borderCfg.enabled
+	if enabled == nil and type(borderDef) == "table" then enabled = borderDef.enabled end
+	if enabled ~= true then return 0 end
+	local size, offset = UF._getCastIconBorderMetrics(borderCfg, borderDef)
+	return size + offset
+end
+
+function UF._ensureCastIconBorderFrame(st)
+	if not st or not st.castBar or not st.castIcon or not st.castIconLayer then return nil end
+	local border = st.castIconBorder
+	if not border then
+		border = CreateFrame("Frame", nil, st.castIconLayer, "BackdropTemplate")
+		border:EnableMouse(false)
+		st.castIconBorder = border
+	end
+	border:SetFrameStrata(st.castBar:GetFrameStrata())
+	local baseLevel = st.castBar:GetFrameLevel() or 0
+	border:SetFrameLevel(baseLevel + 4)
+	return border
+end
+
+function UF._applyCastIconBorder(st, ccfg, defc)
+	if not st or not st.castIcon then return end
+	local borderCfg = ccfg and ccfg.iconBorder
+	local borderDef = defc and defc.iconBorder
+	local enabled = type(borderCfg) == "table" and borderCfg.enabled
+	if enabled == nil and type(borderDef) == "table" then enabled = borderDef.enabled end
+
+	if enabled == true and st.castIcon:IsShown() then
+		local border = UF._ensureCastIconBorderFrame(st)
+		if not border then return end
+		local size, offset = UF._getCastIconBorderMetrics(borderCfg, borderDef)
+		border:ClearAllPoints()
+		border:SetPoint("TOPLEFT", st.castIcon, "TOPLEFT", -offset, offset)
+		border:SetPoint("BOTTOMRIGHT", st.castIcon, "BOTTOMRIGHT", offset, -offset)
+		border:SetBackdrop({
+			bgFile = "Interface\\Buttons\\WHITE8x8",
+			edgeFile = UFHelper.resolveBorderTexture((type(borderCfg) == "table" and borderCfg.texture) or (type(borderDef) == "table" and borderDef.texture)),
+			edgeSize = size,
+			insets = { left = size, right = size, top = size, bottom = size },
+		})
+		border:SetBackdropColor(0, 0, 0, 0)
+		local color = (type(borderCfg) == "table" and borderCfg.color) or (type(borderDef) == "table" and borderDef.color) or { 0, 0, 0, 0.8 }
+		border:SetBackdropBorderColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
+		border:Show()
+	else
+		local border = st.castIconBorder
+		if border then
+			border:SetBackdrop(nil)
+			border:Hide()
+		end
+	end
+end
+
 local function applyOverlayHeight(bar, anchor, height, maxHeight)
 	if not bar or not anchor then return end
 	bar:ClearAllPoints()
@@ -5091,6 +5176,10 @@ local function applyCastLayout(cfg, unit)
 		if st.castDuration.SetWordWrap then st.castDuration:SetWordWrap(false) end
 		if st.castDuration.SetJustifyH then st.castDuration:SetJustifyH("RIGHT") end
 	end
+	local showIcon = ccfg.showIcon
+	if showIcon == nil then showIcon = defc.showIcon end
+	if showIcon == nil then showIcon = true end
+	showIcon = showIcon ~= false
 	if st.castIcon then
 		local size = ccfg.iconSize or defc.iconSize or height
 		local iconOff = ccfg.iconOffset or defc.iconOffset or { x = -4, y = 0 }
@@ -5098,7 +5187,7 @@ local function applyCastLayout(cfg, unit)
 		st.castIcon:SetSize(size, size)
 		st.castIcon:ClearAllPoints()
 		st.castIcon:SetPoint("RIGHT", st.castBar, "LEFT", iconOff.x or -4, iconOff.y or 0)
-		st.castIcon:SetShown(ccfg.showIcon ~= false)
+		st.castIcon:SetShown(showIcon)
 	end
 	local texKey = ccfg.texture or defc.texture or "DEFAULT"
 	local useDefaultArt = not texKey or texKey == "" or texKey == "DEFAULT"
@@ -5135,10 +5224,15 @@ local function applyCastLayout(cfg, unit)
 		end
 	end
 	applyCastBorder(st, ccfg, defc)
+	UF._applyCastIconBorder(st, ccfg, defc)
 	-- Limit cast name width so long names don't overlap duration text
 	if st.castName then
 		local iconSize = (ccfg.iconSize or defc.iconSize or height) + 4
-		if ccfg.showIcon == false then iconSize = 0 end
+		if not showIcon then
+			iconSize = 0
+		else
+			iconSize = iconSize + (UF._getCastIconBorderOutset(ccfg, defc) * 2)
+		end
 		local durationSpace = (ccfg.showDuration ~= false) and 60 or 0
 		local available = (width or 0) - iconSize - durationSpace - 6
 		if available < 0 then available = 0 end
@@ -5253,13 +5347,17 @@ local function configureCastStatic(unit, ccfg, defc)
 	end
 	if st.castIcon then
 		local iconTexture = UFHelper.resolveCastIconTexture(st.castInfo.texture)
-		local showIcon = ccfg.showIcon ~= false
+		local showIcon = ccfg.showIcon
+		if showIcon == nil then showIcon = defc.showIcon end
+		if showIcon == nil then showIcon = true end
+		showIcon = showIcon ~= false
 		st.castIcon:SetShown(showIcon)
 		if showIcon then
 			st.castIcon:SetTexture(iconTexture)
 			st.castIconTexture = iconTexture
 		end
 	end
+	UF._applyCastIconBorder(st, ccfg, defc)
 	if st.castDuration then st.castDuration:SetShown(ccfg.showDuration ~= false) end
 	st.castBar:Show()
 end
@@ -5512,13 +5610,17 @@ function UF.ShowCastInterrupt(unit, event)
 	end
 	if st.castIcon then
 		local iconTexture = UFHelper.resolveCastIconTexture((st.castInfo and st.castInfo.texture) or st.castIconTexture)
-		local showIcon = ccfg.showIcon ~= false
+		local showIcon = ccfg.showIcon
+		if showIcon == nil then showIcon = defc.showIcon end
+		if showIcon == nil then showIcon = true end
+		showIcon = showIcon ~= false
 		st.castIcon:SetShown(showIcon)
 		if showIcon then
 			st.castIcon:SetTexture(iconTexture)
 			st.castIconTexture = iconTexture
 		end
 	end
+	UF._applyCastIconBorder(st, ccfg, defc)
 
 	local showInterruptFeedbackGlow = st.castInterruptFeedbackGlow
 	if showInterruptFeedbackGlow == nil then

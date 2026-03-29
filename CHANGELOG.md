@@ -4,6 +4,7 @@
 
 ### ✨ Added
 
+- Unit Frames / Standalone Castbar: Added an optional cast-icon border with configurable color, LSM border texture, size, and offset.
 - Data Panels (Item Level): Added a stream option to hide the average item level and show only the equipped item level in the panel text.
 - Data Panels (Stats): Added per-stat options for `Mastery` and `Versatility` to hide the second percentage value and show only the primary percentage.
 - Group Frames (Main Tank): Added an optional `Player first` setting so your own frame can stay at the front when you are assigned as a Main Tank.

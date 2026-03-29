@@ -1099,6 +1099,63 @@ local function getMasqueGroup()
 	return CooldownPanels.runtime.masqueGroup
 end
 
+function CooldownPanels:GetMasqueRegions(icon)
+	if not icon then return nil end
+	icon._eqolMasqueRegions = icon._eqolMasqueRegions or {
+		Icon = icon.texture,
+		Cooldown = icon.cooldown,
+		Normal = icon.msqNormal,
+	}
+	return icon._eqolMasqueRegions
+end
+
+function CooldownPanels:ResetIgnoredMasqueRegions(icon)
+	if not icon then return end
+	if icon.texture then
+		icon.texture:ClearAllPoints()
+		icon.texture:SetAllPoints(icon)
+		icon.texture:SetDrawLayer("ARTWORK")
+		icon.texture:SetTexCoord(0, 1, 0, 1)
+	end
+	if icon.cooldown then
+		icon.cooldown:ClearAllPoints()
+		icon.cooldown:SetAllPoints(icon)
+	end
+	if icon.msqNormal then
+		icon.msqNormal:ClearAllPoints()
+		icon.msqNormal:SetAllPoints(icon)
+		icon.msqNormal:Hide()
+	end
+end
+
+function CooldownPanels:SyncMasqueButton(icon, ignoreMasque)
+	if not icon then return false end
+	ignoreMasque = ignoreMasque == true
+	icon._eqolIgnoreMasque = ignoreMasque
+
+	local group = getMasqueGroup()
+	if ignoreMasque then
+		if group and group.RemoveButton and icon._eqolMasqueAdded then
+			group:RemoveButton(icon)
+			icon._eqolMasqueAdded = nil
+		end
+		icon._eqolMasqueNeedsReskin = nil
+		self:ResetIgnoredMasqueRegions(icon)
+		return false
+	end
+
+	if not group then return false end
+	if not icon._eqolMasqueAdded then
+		group:AddButton(icon, self:GetMasqueRegions(icon), "Action", true)
+		icon._eqolMasqueAdded = true
+		if group.ReSkin then group:ReSkin(icon) end
+	elseif icon._eqolMasqueNeedsReskin then
+		if group.ReSkin then group:ReSkin(icon) end
+		icon._eqolMasqueNeedsReskin = nil
+	end
+	return true
+end
+
 local ICON_BORDER_TEXTURE_DEFAULT = "DEFAULT"
 
 local function iconBorderOptions()
@@ -1146,15 +1203,7 @@ function CooldownPanels:RegisterMasqueButtons()
 		local frame = runtime and runtime.frame
 		if frame and frame._eqolPanelFrame and frame.icons then
 			for _, icon in ipairs(frame.icons) do
-				if icon and not icon._eqolMasqueAdded then
-					local regions = {
-						Icon = icon.texture,
-						Cooldown = icon.cooldown,
-						Normal = icon.msqNormal,
-					}
-					group:AddButton(icon, regions, "Action", true)
-					icon._eqolMasqueAdded = true
-				end
+				if icon then self:SyncMasqueButton(icon, icon._eqolIgnoreMasque == true) end
 			end
 		end
 	end
@@ -5159,9 +5208,11 @@ function CooldownPanels:ResolveEntryStateTexture(entry)
 	local doubleTexture = entry.stateTextureDouble == true
 	local mirror = entry.stateTextureMirror == true
 	local mirrorSecond = entry.stateTextureMirrorSecond == true
+	local mirrorVertical = entry.stateTextureMirrorVertical == true
+	local mirrorVerticalSecond = entry.stateTextureMirrorVerticalSecond == true
 	local spacingX = Helper.ClampInt(entry.stateTextureSpacingX, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
 	local spacingY = Helper.ClampInt(entry.stateTextureSpacingY, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
-	return textureType, textureValue, width, height, scale, angle, doubleTexture, mirror, mirrorSecond, spacingX, spacingY
+	return textureType, textureValue, width, height, scale, angle, doubleTexture, mirror, mirrorSecond, mirrorVertical, mirrorVerticalSecond, spacingX, spacingY
 end
 
 function CooldownPanels:HasConfiguredStateTexture(entry)
@@ -5228,6 +5279,12 @@ function CooldownPanels:ResolveEntryShowIconTexture(layout, entry)
 	if entry.hideIcon == true then return false end
 	if entry.showIconTextureUseGlobal == false then return true end
 	return panelValue
+end
+
+function CooldownPanels:ResolveEntryIgnoreMasque(layout, entry)
+	local panelValue = layout and layout.ignoreMasque == true
+	if not entry or entry.ignoreMasqueUseGlobal ~= false then return panelValue end
+	return entry.ignoreMasque == true
 end
 
 function CooldownPanels:ShouldShowEditorGhostIcon(layout, entry, showIconTexture, editorContext)
@@ -5475,6 +5532,8 @@ local function applyStateTexture(icon, data)
 	local doubleTexture = data.stateTextureDouble == true
 	local mirror = data.stateTextureMirror == true
 	local mirrorSecond = data.stateTextureMirrorSecond == true
+	local mirrorVertical = data.stateTextureMirrorVertical == true
+	local mirrorVerticalSecond = data.stateTextureMirrorVerticalSecond == true
 	local spacingX = Helper.ClampInt(data.stateTextureSpacingX, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
 	local spacingY = Helper.ClampInt(data.stateTextureSpacingY, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, 0)
 	local atlasInfo = data.stateTextureType == "ATLAS" and Api.GetAtlasInfo and Api.GetAtlasInfo(data.stateTextureValue) or nil
@@ -5490,7 +5549,13 @@ local function applyStateTexture(icon, data)
 	local width = baseWidth * scale * widthScale
 	local height = baseHeight * scale * heightScale
 
-	local function applyRegion(region, offsetX, offsetY, mirrored)
+	local function setRegionTexCoord(region, left, right, top, bottom, mirroredHorizontal, mirroredVertical)
+		if mirroredHorizontal then left, right = right, left end
+		if mirroredVertical then top, bottom = bottom, top end
+		region:SetTexCoord(left, right, top, bottom)
+	end
+
+	local function applyRegion(region, offsetX, offsetY, mirroredHorizontal, mirroredVertical)
 		if not region then return end
 		region:ClearAllPoints()
 		region:SetPoint("CENTER", icon, "CENTER", offsetX or 0, offsetY or 0)
@@ -5504,21 +5569,13 @@ local function applyStateTexture(icon, data)
 				local right = atlasInfo.rightTexCoord or 1
 				local top = atlasInfo.topTexCoord or 0
 				local bottom = atlasInfo.bottomTexCoord or 1
-				if mirrored then
-					region:SetTexCoord(right, left, top, bottom)
-				else
-					region:SetTexCoord(left, right, top, bottom)
-				end
+				setRegionTexCoord(region, left, right, top, bottom, mirroredHorizontal, mirroredVertical)
 			end
 		else
 			local fileID = tonumber(data.stateTextureValue)
 			region:SetTexture(nil)
 			region:SetTexture(fileID)
-			if mirrored then
-				region:SetTexCoord(1, 0, 0, 1)
-			else
-				region:SetTexCoord(0, 1, 0, 1)
-			end
+			setRegionTexCoord(region, 0, 1, 0, 1, mirroredHorizontal, mirroredVertical)
 		end
 		if region.SetRotation then region:SetRotation(math.rad(angle)) end
 		region:Show()
@@ -5528,10 +5585,11 @@ local function applyStateTexture(icon, data)
 		local halfX = spacingX / 2
 		local halfY = spacingY / 2
 		local secondMirrored = (mirrorSecond and not mirror) or ((not mirrorSecond) and mirror)
-		applyRegion(texture, -halfX, -halfY, mirror)
-		applyRegion(textureSecond, halfX, halfY, secondMirrored)
+		local secondMirroredVertical = (mirrorVerticalSecond and not mirrorVertical) or ((not mirrorVerticalSecond) and mirrorVertical)
+		applyRegion(texture, -halfX, -halfY, mirror, mirrorVertical)
+		applyRegion(textureSecond, halfX, halfY, secondMirrored, secondMirroredVertical)
 	else
-		applyRegion(texture, 0, 0, mirror)
+		applyRegion(texture, 0, 0, mirror, mirrorVertical)
 		if textureSecond then textureSecond:Hide() end
 	end
 end
@@ -5655,12 +5713,7 @@ local function createIconFrame(parent)
 	if not (parent and parent._eqolIsPreview) then
 		local group = getMasqueGroup()
 		if group then
-			local regions = {
-				Icon = icon.texture,
-				Cooldown = icon.cooldown,
-				Normal = icon.msqNormal,
-			}
-			group:AddButton(icon, regions, "Action", true)
+			group:AddButton(icon, CooldownPanels:GetMasqueRegions(icon), "Action", true)
 			icon._eqolMasqueAdded = true
 			icon._eqolMasqueNeedsReskin = true
 		end
@@ -8158,6 +8211,15 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		refreshEntryViews()
 	end
 
+	local function setIgnoreMasqueOverrideEnabled(value)
+		local _, currentEntry = getEntry()
+		if not currentEntry then return end
+		local useGlobal = value ~= true
+		if currentEntry.ignoreMasqueUseGlobal == useGlobal then return end
+		currentEntry.ignoreMasqueUseGlobal = useGlobal
+		refreshEntryViews()
+	end
+
 	local function setCooldownVisualsOverrideEnabled(value)
 		local _, currentEntry = getEntry()
 		if not currentEntry then return end
@@ -8459,6 +8521,12 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		return CooldownPanels:ResolveEntryHideWhenNoResource(layout, currentEntry)
 	end
 
+	local function getResolvedIgnoreMasque()
+		local layout = getLayout()
+		local _, currentEntry = getEntry()
+		return CooldownPanels:ResolveEntryIgnoreMasque(layout, currentEntry)
+	end
+
 	local function getResolvedCDMAuraAlwaysShowMode()
 		local layout = getLayout()
 		local _, currentEntry = getEntry()
@@ -8646,6 +8714,27 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 				return currentEntry and currentEntry.showIconTextureUseGlobal == false or false
 			end,
 			set = function(_, value) setShowIconOverrideEnabled(value) end,
+		},
+		{
+			name = L["CooldownPanelOverwritePanelIgnoreMasque"] or "Overwrite panel Ignore Masque",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneDisplay",
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.ignoreMasqueUseGlobal == false or false
+			end,
+			set = function(_, value) setIgnoreMasqueOverrideEnabled(value) end,
+		},
+		{
+			name = L["CooldownPanelIgnoreMasque"] or "Ignore Masque",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneDisplay",
+			disabled = function()
+				local _, currentEntry = getEntry()
+				return not (currentEntry and currentEntry.ignoreMasqueUseGlobal == false)
+			end,
+			get = function() return getResolvedIgnoreMasque() == true end,
+			set = function(_, value) setEntryBoolean("ignoreMasque", value) end,
 		},
 		{
 			name = L["CooldownPanelOverwriteGlobalSize"] or "Overwrite global size",
@@ -9682,6 +9771,28 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 				return currentEntry and currentEntry.stateTextureMirrorSecond ~= false or false
 			end,
 			set = function(_, value) setStateTextureField("stateTextureMirrorSecond", value == true) end,
+		},
+		{
+			name = L["CooldownPanelStateTextureMirrorVertical"] or "Mirror texture vertically",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			isShown = function() return isStateTextureSupported() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.stateTextureMirrorVertical == true or false
+			end,
+			set = function(_, value) setStateTextureField("stateTextureMirrorVertical", value == true) end,
+		},
+		{
+			name = L["CooldownPanelStateTextureMirrorVerticalSecond"] or "Mirror second texture vertically",
+			kind = SettingType.Checkbox,
+			parentId = "cooldownPanelStandaloneStateTexture",
+			isShown = function() return isStateTextureSupported() and entryUsesDoubleStateTexture() end,
+			get = function()
+				local _, currentEntry = getEntry()
+				return currentEntry and currentEntry.stateTextureMirrorVerticalSecond == true or false
+			end,
+			set = function(_, value) setStateTextureField("stateTextureMirrorVerticalSecond", value == true) end,
 		},
 		{
 			name = L["CooldownPanelStateTextureScale"] or "Texture scale",
@@ -10911,6 +11022,7 @@ function CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId)
 	data.opacityInCombat = Helper.NormalizeOpacity(layout.opacityInCombat, Helper.PANEL_LAYOUT_DEFAULTS.opacityInCombat)
 	data.showTooltips = layout.showTooltips == true
 	data.showIconTexture = layout.showIconTexture ~= false
+	data.ignoreMasque = layout.ignoreMasque == true
 	data.iconBorderEnabled = layout.iconBorderEnabled == true
 	data.iconBorderTexture = normalizeIconBorderTexture(layout.iconBorderTexture, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderTexture)
 	data.iconBorderSize = Helper.ClampInt(layout.iconBorderSize, 1, 64, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderSize)
@@ -12935,9 +13047,9 @@ local function refreshPreview(editor, panel)
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(entryLayout, entry) or true
 		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, true) or false
-		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY
+		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureMirrorVertical, stateTextureMirrorVerticalSecond, stateTextureSpacingX, stateTextureSpacingY
 		if entry then
-			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
+			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureMirrorVertical, stateTextureMirrorVerticalSecond, stateTextureSpacingX, stateTextureSpacingY =
 				CooldownPanels:ResolveEntryStateTexture(entry)
 		end
 		icon:Show()
@@ -12972,6 +13084,8 @@ local function refreshPreview(editor, panel)
 				stateTextureDouble = stateTextureDouble,
 				stateTextureMirror = stateTextureMirror,
 				stateTextureMirrorSecond = stateTextureMirrorSecond,
+				stateTextureMirrorVertical = stateTextureMirrorVertical,
+				stateTextureMirrorVerticalSecond = stateTextureMirrorVerticalSecond,
 				stateTextureSpacingX = stateTextureSpacingX,
 				stateTextureSpacingY = stateTextureSpacingY,
 			})
@@ -13909,9 +14023,10 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		local showItemUses = entry and resolvedType == "ITEM" and entry.showItemUses == true
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(entryLayout, entry) or showIconTexture
 		local showGhostIcon = entry and CooldownPanels:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, true) or false
-		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY
+		local ignoreMasque = entry and CooldownPanels:ResolveEntryIgnoreMasque(entryLayout, entry) or CooldownPanels:ResolveEntryIgnoreMasque(layout, nil)
+		local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureMirrorVertical, stateTextureMirrorVerticalSecond, stateTextureSpacingX, stateTextureSpacingY
 		if entry then
-			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
+			stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureMirrorVertical, stateTextureMirrorVerticalSecond, stateTextureSpacingX, stateTextureSpacingY =
 				CooldownPanels:ResolveEntryStateTexture(entry)
 		end
 		local slotColumn = previewGridColumns and (((i - 1) % previewGridColumns) + 1) or (editGridColumns and (((i - 1) % editGridColumns) + 1) or i)
@@ -13920,6 +14035,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		icon._eqolPreviewCellColumn = slotColumn
 		icon._eqolPreviewCellRow = slotRow
 		CooldownPanels:ApplyEntryIconVisualLayout(icon, entryLayout, entry, fixedLayout and panel or nil, fixedLayout and previewGridColumns or nil, slotColumn, slotRow)
+		CooldownPanels:SyncMasqueButton(icon, ignoreMasque == true)
 		CooldownPanels:HideEditorGhostIcon(icon)
 		icon.texture:SetTexture(entry and getEntryIcon(entry) or Helper.PREVIEW_ICON)
 		icon.texture:SetVertexColor(1, 1, 1)
@@ -13949,6 +14065,8 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 				stateTextureDouble = stateTextureDouble,
 				stateTextureMirror = stateTextureMirror,
 				stateTextureMirrorSecond = stateTextureMirrorSecond,
+				stateTextureMirrorVertical = stateTextureMirrorVertical,
+				stateTextureMirrorVerticalSecond = stateTextureMirrorVerticalSecond,
 				stateTextureSpacingX = stateTextureSpacingX,
 				stateTextureSpacingY = stateTextureSpacingY,
 			})
@@ -14437,6 +14555,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				end
 				local showEntryIconTexture = self:ResolveEntryShowIconTexture(entryLayout, entry)
 				local showGhostIcon = self:ShouldShowEditorGhostIcon(entryLayout, entry, showEntryIconTexture, layoutEditActive)
+				local ignoreMasque = self:ResolveEntryIgnoreMasque(entryLayout, entry)
 				local entryNoDesaturation = self:ResolveEntryNoDesaturation(entryLayout, entry)
 				local entryShowChargesCooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe, entryGcdDrawEdge, entryGcdDrawBling, entryGcdDrawSwipe =
 					self:ResolveEntryCooldownVisuals(entryLayout, entry)
@@ -14444,7 +14563,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				local cdmAuraPandemicGlow = entry.type == "CDM_AURA" and entry.pandemicGlow == true
 				local glowDuration, glowColor, glowStyle, glowInset = CooldownPanels:ResolveEntryGlowStyle(entryLayout, entry)
 				local procGlowStyle, procGlowInset = CooldownPanels:ResolveEntryProcGlowVisual(entryLayout, entry)
-				local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureSpacingX, stateTextureSpacingY =
+				local stateTextureType, stateTextureValue, stateTextureWidth, stateTextureHeight, stateTextureScale, stateTextureAngle, stateTextureDouble, stateTextureMirror, stateTextureMirrorSecond, stateTextureMirrorVertical, stateTextureMirrorVerticalSecond, stateTextureSpacingX, stateTextureSpacingY =
 					CooldownPanels:ResolveEntryStateTexture(entry)
 				local pandemicGlowColor, pandemicGlowStyle, pandemicGlowInset = glowColor, glowStyle, glowInset
 				if resolvedType == "CDM_AURA" then
@@ -14585,6 +14704,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.showKeybinds = entryLayout.keybindsEnabled == true
 				data.keybindText = data.showKeybinds and Keybinds.GetEntryKeybindText(entry, entryLayout) or nil
 				data.layout = entryLayout
+				data.ignoreMasque = ignoreMasque == true
 				data.liveGlowAllowed = entryLayout.hideGlowOutOfCombat ~= true or playerInCombat == true
 				data.entry = entry
 				data.entryId = entryId
@@ -14605,6 +14725,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.stateTextureDouble = stateTextureDouble
 				data.stateTextureMirror = stateTextureMirror
 				data.stateTextureMirrorSecond = stateTextureMirrorSecond
+				data.stateTextureMirrorVertical = stateTextureMirrorVertical
+				data.stateTextureMirrorVerticalSecond = stateTextureMirrorVerticalSecond
 				data.stateTextureSpacingX = stateTextureSpacingX
 				data.stateTextureSpacingY = stateTextureSpacingY
 				if resolvedType == "STANCE" and glowReady then
@@ -14724,6 +14846,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				icon:Hide()
 			else
 				CooldownPanels:ApplyEntryIconVisualLayout(icon, nil, nil)
+				self:SyncMasqueButton(icon, self:ResolveEntryIgnoreMasque(layout, nil))
 				CooldownPanels:HideEditorGhostIcon(icon)
 				clearPreviewCooldown(icon.cooldown)
 				icon.cooldown:Clear()
@@ -14779,6 +14902,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local hideOnCooldown = data.hideOnCooldown == true
 			local showOnCooldown = data.showOnCooldown == true
 			CooldownPanels:ApplyEntryIconVisualLayout(icon, data.layout, data.entry, fixedLayout and panel or nil, fixedLayout and fixedGridColumns or nil, slotColumn, slotRow)
+			self:SyncMasqueButton(icon, data.ignoreMasque == true)
 			CooldownPanels:HideEditorGhostIcon(icon)
 			if showOnCooldown then
 				icon:SetAlpha(0)
@@ -15801,6 +15925,8 @@ applyEditLayout = function(panelId, field, value, skipRefresh)
 		layout.showTooltips = value == true
 	elseif field == "showIconTexture" then
 		layout.showIconTexture = value ~= false
+	elseif field == "ignoreMasque" then
+		layout.ignoreMasque = value == true
 	elseif field == "iconBorderEnabled" then
 		layout.iconBorderEnabled = value == true
 	elseif field == "iconBorderTexture" then
@@ -15965,6 +16091,7 @@ function CooldownPanels:ApplyEditMode(panelId, data)
 	applyEditLayout(panelId, "cooldownGcdDrawSwipe", data.cooldownGcdDrawSwipe, true)
 	applyEditLayout(panelId, "showTooltips", data.showTooltips, true)
 	applyEditLayout(panelId, "showIconTexture", data.showIconTexture, true)
+	applyEditLayout(panelId, "ignoreMasque", data.ignoreMasque, true)
 	applyEditLayout(panelId, "iconBorderEnabled", data.iconBorderEnabled, true)
 	applyEditLayout(panelId, "iconBorderTexture", data.iconBorderTexture, true)
 	applyEditLayout(panelId, "iconBorderSize", data.iconBorderSize, true)
@@ -16708,6 +16835,15 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				default = layout.showIconTexture ~= false,
 				get = function() return layout.showIconTexture ~= false end,
 				set = function(_, value) applyEditLayout(panelId, "showIconTexture", value) end,
+			},
+			{
+				name = L["CooldownPanelIgnoreMasque"] or "Ignore Masque",
+				kind = SettingType.Checkbox,
+				field = "ignoreMasque",
+				parentId = "cooldownPanelDisplay",
+				default = layout.ignoreMasque == true,
+				get = function() return layout.ignoreMasque == true end,
+				set = function(_, value) applyEditLayout(panelId, "ignoreMasque", value) end,
 			},
 			{
 				name = "Icon border",
@@ -17859,6 +17995,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			opacityInCombat = Helper.NormalizeOpacity(layout.opacityInCombat, Helper.PANEL_LAYOUT_DEFAULTS.opacityInCombat),
 			showTooltips = layout.showTooltips == true,
 			showIconTexture = layout.showIconTexture ~= false,
+			ignoreMasque = layout.ignoreMasque == true,
 			iconBorderEnabled = layout.iconBorderEnabled == true,
 			iconBorderTexture = normalizeIconBorderTexture(layout.iconBorderTexture, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderTexture),
 			iconBorderSize = Helper.ClampInt(layout.iconBorderSize, 1, 64, Helper.PANEL_LAYOUT_DEFAULTS.iconBorderSize),
