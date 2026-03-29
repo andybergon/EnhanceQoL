@@ -103,6 +103,8 @@ local BR_TEXT_SIZE_MIN = BLOODLUST_COOLDOWN_TEXT_SIZE_MIN
 local BR_TEXT_SIZE_MAX = BLOODLUST_COOLDOWN_TEXT_SIZE_MAX
 local BR_TEXT_OFFSET_MIN = BLOODLUST_COOLDOWN_TEXT_OFFSET_MIN
 local BR_TEXT_OFFSET_MAX = BLOODLUST_COOLDOWN_TEXT_OFFSET_MAX
+local TRACKER_ICON_ZOOM_MIN = 0
+local TRACKER_ICON_ZOOM_MAX = 45
 local BR_PREVIEW_COOLDOWN_TEXT = BLOODLUST_PREVIEW_COOLDOWN_TEXT
 local BR_PREVIEW_CHARGES_TEXT = "1"
 local BR_DEFAULT_BORDER_COLOR = { 1, 1, 1, 1 }
@@ -131,6 +133,20 @@ local function normalizeBRSize(value)
 	if size < BR_MIN_SIZE then size = BR_MIN_SIZE end
 	if size > BR_MAX_SIZE then size = BR_MAX_SIZE end
 	return size
+end
+
+local function normalizeTrackerIconZoom(value)
+	local zoom = tonumber(value) or 0
+	zoom = math.floor(zoom + 0.5)
+	if zoom < TRACKER_ICON_ZOOM_MIN then zoom = TRACKER_ICON_ZOOM_MIN end
+	if zoom > TRACKER_ICON_ZOOM_MAX then zoom = TRACKER_ICON_ZOOM_MAX end
+	return zoom
+end
+
+local function applyTrackerIconZoom(texture, zoom)
+	if not texture then return end
+	local inset = normalizeTrackerIconZoom(zoom) / 100
+	texture:SetTexCoord(inset, 1 - inset, inset, 1 - inset)
 end
 
 local function normalizeBRTextPoint(value, fallback)
@@ -544,6 +560,7 @@ local function applyBRLayoutData(data)
 	local y = config.y
 	if y == nil then y = addon.db["mythicPlusBRTrackerY"] or 0 end
 	local size = normalizeBRSize(addon.db["mythicPlusBRButtonSize"] or config.size or defaultButtonSize)
+	local iconZoom = normalizeTrackerIconZoom(addon.db["mythicPlusBRTrackerIconZoom"])
 	local borderEnabled = addon.db["mythicPlusBRTrackerBorderEnabled"] ~= false
 	local borderTexture = normalizeBRBorderTexture(addon.db["mythicPlusBRTrackerBorderTexture"])
 	local borderSize = normalizeBRBorderSize(addon.db["mythicPlusBRTrackerBorderSize"])
@@ -574,6 +591,7 @@ local function applyBRLayoutData(data)
 		addon.db["mythicPlusBRTrackerX"] = x
 		addon.db["mythicPlusBRTrackerY"] = y
 		addon.db["mythicPlusBRButtonSize"] = size
+		addon.db["mythicPlusBRTrackerIconZoom"] = iconZoom
 		addon.db["mythicPlusBRTrackerBorderEnabled"] = borderEnabled
 		addon.db["mythicPlusBRTrackerBorderTexture"] = borderTexture
 		addon.db["mythicPlusBRTrackerBorderSize"] = borderSize
@@ -605,6 +623,7 @@ local function applyBRLayoutData(data)
 		brAnchor:ClearAllPoints()
 		brAnchor:SetPoint(point, UIParent, relativePoint, x, y)
 		if brAnchor.previewIcon then brAnchor.previewIcon:SetAllPoints(brAnchor) end
+		if brAnchor.previewIcon then applyTrackerIconZoom(brAnchor.previewIcon, iconZoom) end
 	end
 
 	if brButton then
@@ -612,6 +631,7 @@ local function applyBRLayoutData(data)
 		brButton:ClearAllPoints()
 		brButton:SetPoint(point, UIParent, relativePoint, x, y)
 		if brButton.cooldownFrame then brButton.cooldownFrame:SetScale(1) end
+		if brButton.icon then applyTrackerIconZoom(brButton.icon, iconZoom) end
 	end
 
 	applyBRBorderVisualSettings()
@@ -634,7 +654,7 @@ local function ensureBRAnchor()
 		brAnchor.previewIcon = brAnchor:CreateTexture(nil, "ARTWORK")
 		brAnchor.previewIcon:SetAllPoints(brAnchor)
 		brAnchor.previewIcon:SetTexture(BR_DEFAULT_ICON)
-		brAnchor.previewIcon:SetTexCoord(0, 1, 0, 1)
+		applyTrackerIconZoom(brAnchor.previewIcon, addon.db and addon.db["mythicPlusBRTrackerIconZoom"])
 
 		brAnchor.previewBorder = CreateFrame("Frame", nil, brAnchor, "BackdropTemplate")
 		brAnchor.previewBorder:SetFrameLevel((brAnchor:GetFrameLevel() or 0) + 4)
@@ -713,6 +733,20 @@ local function ensureBRAnchor()
 						local size = normalizeBRSize(value)
 						addon.db["mythicPlusBRButtonSize"] = size
 						if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "size", size, nil, true) end
+						applyBRLayoutData()
+					end,
+				},
+				{
+					name = L["mythicPlusBRTrackerIconZoom"] or "Icon zoom",
+					kind = settingType.Slider,
+					parentId = "mythicPlusBRTrackerLayout",
+					minValue = TRACKER_ICON_ZOOM_MIN,
+					maxValue = TRACKER_ICON_ZOOM_MAX,
+					valueStep = 1,
+					default = normalizeTrackerIconZoom(addon.db["mythicPlusBRTrackerIconZoom"]),
+					get = function() return normalizeTrackerIconZoom(addon.db["mythicPlusBRTrackerIconZoom"]) end,
+					set = function(_, value)
+						addon.db["mythicPlusBRTrackerIconZoom"] = normalizeTrackerIconZoom(value)
 						applyBRLayoutData()
 					end,
 				},
@@ -1246,7 +1280,7 @@ local function createBRFrame()
 		local icon = brButton:CreateTexture(nil, "ARTWORK")
 		icon:SetAllPoints(brButton)
 		icon:SetTexture(BR_DEFAULT_ICON)
-		icon:SetTexCoord(0, 1, 0, 1)
+		applyTrackerIconZoom(icon, addon.db and addon.db["mythicPlusBRTrackerIconZoom"])
 		brButton.icon = icon
 
 		brButton.border = CreateFrame("Frame", nil, brButton, "BackdropTemplate")
@@ -1431,6 +1465,7 @@ end
 local function applyBloodlustAnchorPreviewIcon()
 	if not (bloodlustAnchor and bloodlustAnchor.previewIcon) then return end
 	bloodlustAnchor.previewIcon:SetTexture(getBloodlustConfiguredIcon())
+	applyTrackerIconZoom(bloodlustAnchor.previewIcon, addon.db and addon.db["mythicPlusBloodlustTrackerIconZoom"])
 end
 
 local function applyBloodlustBorderFrame(frame, target, enabled, textureKey, borderSize, borderOffset, borderColor)
@@ -1588,6 +1623,7 @@ local function applyBloodlustLayoutData(data)
 	if y == nil then y = addon.db["mythicPlusBloodlustTrackerY"] or 0 end
 	local size = normalizeBloodlustSize(addon.db["mythicPlusBloodlustButtonSize"] or config.size or defaultButtonSize)
 	local iconId = normalizeBloodlustIcon(addon.db["mythicPlusBloodlustTrackerIcon"])
+	local iconZoom = normalizeTrackerIconZoom(addon.db["mythicPlusBloodlustTrackerIconZoom"])
 	local cooldownTextSize = normalizeBloodlustCooldownTextSize(addon.db["mythicPlusBloodlustTrackerCooldownTextSize"])
 	local cooldownTextOutline = normalizeBloodlustCooldownOutline(addon.db["mythicPlusBloodlustTrackerCooldownTextOutline"])
 	local cooldownTextColor = normalizeBloodlustCooldownColor(addon.db["mythicPlusBloodlustTrackerCooldownTextColor"])
@@ -1606,6 +1642,7 @@ local function applyBloodlustLayoutData(data)
 		addon.db["mythicPlusBloodlustTrackerY"] = y
 		addon.db["mythicPlusBloodlustButtonSize"] = size
 		addon.db["mythicPlusBloodlustTrackerIcon"] = iconId
+		addon.db["mythicPlusBloodlustTrackerIconZoom"] = iconZoom
 		addon.db["mythicPlusBloodlustTrackerCooldownTextSize"] = cooldownTextSize
 		addon.db["mythicPlusBloodlustTrackerCooldownTextOutline"] = cooldownTextOutline
 		addon.db["mythicPlusBloodlustTrackerCooldownTextColor"] = cooldownTextColor
@@ -1635,6 +1672,7 @@ local function applyBloodlustLayoutData(data)
 		local timerFontSize = math.floor(defaultFontSize * 0.75 * scaleFactor + 0.5)
 		if timerFontSize < 10 then timerFontSize = 10 end
 		bloodlustButton.defaultIcon = iconId
+		if bloodlustButton.icon then applyTrackerIconZoom(bloodlustButton.icon, iconZoom) end
 		if bloodlustButton.status then bloodlustButton.status:SetFont(addon.variables.defaultFont, timerFontSize, "OUTLINE") end
 		if bloodlustButton.cooldownFrame then bloodlustButton.cooldownFrame:SetScale(1) end
 	end
@@ -1658,7 +1696,7 @@ local function ensureBloodlustAnchor()
 		bloodlustAnchor.previewIcon = bloodlustAnchor:CreateTexture(nil, "ARTWORK")
 		bloodlustAnchor.previewIcon:SetAllPoints(bloodlustAnchor)
 		bloodlustAnchor.previewIcon:SetTexture(getBloodlustConfiguredIcon())
-		bloodlustAnchor.previewIcon:SetTexCoord(0, 1, 0, 1)
+		applyTrackerIconZoom(bloodlustAnchor.previewIcon, addon.db and addon.db["mythicPlusBloodlustTrackerIconZoom"])
 
 		bloodlustAnchor.previewBorder = CreateFrame("Frame", nil, bloodlustAnchor, "BackdropTemplate")
 		bloodlustAnchor.previewBorder:SetFrameLevel((bloodlustAnchor:GetFrameLevel() or 0) + 4)
@@ -1781,6 +1819,20 @@ local function ensureBloodlustAnchor()
 								end
 							end)
 						end
+						end,
+					},
+				{
+					name = L["mythicPlusBloodlustTrackerIconZoom"] or "Icon zoom",
+					kind = settingType.Slider,
+					minValue = TRACKER_ICON_ZOOM_MIN,
+					maxValue = TRACKER_ICON_ZOOM_MAX,
+					valueStep = 1,
+					default = normalizeTrackerIconZoom(addon.db["mythicPlusBloodlustTrackerIconZoom"]),
+					get = function() return normalizeTrackerIconZoom(addon.db["mythicPlusBloodlustTrackerIconZoom"]) end,
+					set = function(_, value)
+						if addon.db then addon.db["mythicPlusBloodlustTrackerIconZoom"] = normalizeTrackerIconZoom(value) end
+						applyBloodlustLayoutData()
+						if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.refreshBloodlustTracker then addon.MythicPlus.functions.refreshBloodlustTracker(false) end
 					end,
 				},
 				{
@@ -2212,7 +2264,7 @@ local function createBloodlustFrame()
 		local icon = bloodlustButton:CreateTexture(nil, "ARTWORK")
 		icon:SetAllPoints(bloodlustButton)
 		icon:SetTexture(defaultIcon)
-		icon:SetTexCoord(0, 1, 0, 1)
+		applyTrackerIconZoom(icon, addon.db and addon.db["mythicPlusBloodlustTrackerIconZoom"])
 		bloodlustButton.icon = icon
 		bloodlustButton.defaultIcon = defaultIcon
 
@@ -2389,6 +2441,7 @@ local function applyBloodlustAuraToFrame(aura)
 
 	if aura then
 		bloodlustButton.icon:SetTexture(icon)
+		applyTrackerIconZoom(bloodlustButton.icon, addon.db and addon.db["mythicPlusBloodlustTrackerIconZoom"])
 		bloodlustButton.icon:SetDesaturated(true)
 
 		local duration = aura.duration
@@ -2410,6 +2463,7 @@ local function applyBloodlustAuraToFrame(aura)
 		end
 	else
 		bloodlustButton.icon:SetTexture(icon)
+		applyTrackerIconZoom(bloodlustButton.icon, addon.db and addon.db["mythicPlusBloodlustTrackerIconZoom"])
 		bloodlustButton.icon:SetDesaturated(false)
 		bloodlustButton.cooldownFrame:Clear()
 		if bloodlustButton.status then

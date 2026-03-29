@@ -4,11 +4,14 @@
 
 ### ✨ Added
 
+- Mythic+ (Combat Resurrection Tracker / Bloodlust Tracker): Expanded the tracker Edit Mode options with border, font, color, cooldown/charges text visibility and positioning, plus optional icon zoom.
 - Unit Frames / Standalone Castbar: Added an optional cast-icon border with configurable color, LSM border texture, size, and offset.
 - Data Panels (Item Level): Added a stream option to hide the average item level and show only the equipped item level in the panel text.
 - Data Panels (Stats): Added per-stat options for `Mastery` and `Versatility` to hide the second percentage value and show only the primary percentage.
 - Group Frames (Main Tank): Added an optional `Player first` setting so your own frame can stay at the front when you are assigned as a Main Tank.
 - Group Frames (Private Auras): Added a `Text scale` setting so countdown and duration text can be made easier to read.
+- Cooldown Panels: Added an `Ignore Masque` option for whole panels and, if needed, separately per entry.
+- Cooldown Panels: Added vertical mirror options for state textures, including the second texture in double-texture setups.
 
 ### 🐛 Fixed
 
