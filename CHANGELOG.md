@@ -6,12 +6,15 @@
 
 - Data Panels (Item Level): Added a stream option to hide the average item level and show only the equipped item level in the panel text.
 - Data Panels (Stats): Added per-stat options for `Mastery` and `Versatility` to hide the second percentage value and show only the primary percentage.
+- Group Frames (Main Tank): Added an optional `Player first` setting so your own frame can stay at the front when you are assigned as a Main Tank.
+- Group Frames (Private Auras): Added a `Text scale` setting so countdown and duration text can be made easier to read.
 
 ### 🐛 Fixed
 
 - Class Buff Reminder (Holy Paladin): Added tracking for `Beacon of Light` and `Beacon of Faith`. The reminder now behaves correctly in groups, counts self-casts properly.
 - Cooldown Panels (Tracked Auras): Fixed heavy lag spikes caused by tracked-aura panels doing too much repeated refresh work in some situations.
 - Cooldown Panels (Spells): Fixed some spell icons not dimming correctly after use.
+- Group Frames (Main Tank / Private Auras): Raised the Main Tank private-aura size limit to `100`.
 
 ---
 
