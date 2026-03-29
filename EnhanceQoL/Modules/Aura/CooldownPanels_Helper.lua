@@ -590,6 +590,7 @@ end
 function Helper.NormalizeFixedGroupLayoutOverrides(value)
 	if type(value) ~= "table" then return nil end
 	local normalized = {}
+	if value.spacing ~= nil then normalized.spacing = Helper.ClampInt(value.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2) end
 	if value.iconOffsetX ~= nil then normalized.iconOffsetX = Helper.ClampInt(value.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if value.iconOffsetY ~= nil then normalized.iconOffsetY = Helper.ClampInt(value.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if type(value.procGlowEnabled) == "boolean" then normalized.procGlowEnabled = value.procGlowEnabled == true end
@@ -2336,9 +2337,7 @@ function Helper.UpdateActionDisplayCountsForSpell(spellId, baseSpellId)
 				end
 			end
 			if needsRefresh then
-				if CooldownPanels:GetPanel(panelId) then
-					CooldownPanels:RefreshPanel(panelId)
-				end
+				if CooldownPanels:GetPanel(panelId) then CooldownPanels:RefreshPanel(panelId) end
 			end
 		end
 	end
@@ -2700,8 +2699,6 @@ function CooldownPanels:RequestPanelRefresh(panelId)
 			if CooldownPanels:GetPanel(id) then CooldownPanels:RefreshPanel(id) end
 		end
 
-		if startedRuntimeQueryBatch and CooldownPanels.EndRuntimeQueryBatch then
-			CooldownPanels:EndRuntimeQueryBatch()
-		end
+		if startedRuntimeQueryBatch and CooldownPanels.EndRuntimeQueryBatch then CooldownPanels:EndRuntimeQueryBatch() end
 	end)
 end
