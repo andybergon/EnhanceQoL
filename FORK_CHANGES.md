@@ -26,6 +26,7 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | [Heal absorb bar for resource bars](#heal-absorb-bar-for-resource-bars) | Fork-only | — | [`ef6405f9`](https://github.com/andybergon/EnhanceQoL/commit/ef6405f9) (2026-03-26) | Adds heal absorb overlay to health bar with custom texture, color, fill mode (normal/reverse/opposite side), and sample preview |
 | Cooldown panel passive trinket glow fix | Fork-only | — | `main` | `GetItemUseSpellID` checked `C_Item.GetItemSpell` which returns spells for "Equip:" effects too; now verifies "Use:" via tooltip |
 | Class buff reminder "nearby only" filter | Fork-only | — | `main` | Only count group members in buff cast range (`IsSpellInRange`) for missing buff counts; falls back to visibility (~100yd) for AoE buffs like Battle Shout |
+| Absorb text on health bar | Fork-only | — | `main` | Shows absorb/heal-absorb amounts as text suffix on health bar; dropdown with None/Absorb/Heal Absorb/Both; taint-safe via `issecretvalue` guard |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
 This file and `CLAUDE.md` are also fork-only (project docs for Claude Code).
