@@ -552,12 +552,23 @@ local function registerEditModeBars()
 			local a = ensureAnchorTable()
 			if not a or (a.relativeFrame or "UIParent") ~= "UIParent" then return end
 			local layout = EditMode:GetActiveLayoutName()
+			local point = a.point or "CENTER"
+			local relativePoint = a.relativePoint or point
+			local x = a.x or 0
+			local y = a.y or 0
+			if EditMode.SetValue then
+				EditMode:SetValue(frameId, "point", point, layout, true)
+				EditMode:SetValue(frameId, "relativePoint", relativePoint, layout, true)
+				EditMode:SetValue(frameId, "x", x, layout, true)
+				EditMode:SetValue(frameId, "y", y, layout, true)
+				return
+			end
 			local data = EditMode:EnsureLayoutData(frameId, layout)
 			if not data then return end
-			data.point = a.point or "CENTER"
-			data.relativePoint = a.relativePoint or data.point
-			data.x = a.x or 0
-			data.y = a.y or 0
+			data.point = point
+			data.relativePoint = relativePoint
+			data.x = x
+			data.y = y
 		end
 		local function anchorUsesUIParent()
 			local a = ensureAnchorTable()
@@ -3560,6 +3571,8 @@ local function registerEditModeBars()
 			title = titleLabel,
 			enableOverlayToggle = true,
 			allowDrag = function() return anchorUsesUIParent() end,
+			managePosition = false,
+			persistPosition = false,
 			layoutDefaults = {
 				point = anchor and anchor.point or "CENTER",
 				relativePoint = anchor and anchor.relativePoint or "CENTER",
@@ -3578,8 +3591,9 @@ local function registerEditModeBars()
 				specCfg[barType] = specCfg[barType] or {}
 				local bcfg = specCfg[barType]
 				bcfg.anchor = bcfg.anchor or {}
-				if not frame._eqolEditModeHydrated then
-					frame._eqolEditModeHydrated = true
+				local hydrationToken = tostring(addon.db) .. ":" .. tostring(frameId)
+				if frame._eqolEditModeHydratedToken ~= hydrationToken then
+					frame._eqolEditModeHydratedToken = hydrationToken
 					local seedAnchor = bcfg.anchor or {}
 					local seedRelativeFrame = seedAnchor.relativeFrame or "UIParent"
 					if seedRelativeFrame == "UIParent" then
@@ -3587,6 +3601,7 @@ local function registerEditModeBars()
 						data.relativePoint = seedAnchor.relativePoint or data.relativePoint or anchor and anchor.relativePoint or data.point
 						data.x = seedAnchor.x ~= nil and seedAnchor.x or (data.x ~= nil and data.x or (anchor and anchor.x or 0))
 						data.y = seedAnchor.y ~= nil and seedAnchor.y or (data.y ~= nil and data.y or (anchor and anchor.y or 0))
+						syncEditModeLayoutFromAnchor()
 					end
 					data.width = bcfg.width or data.width or widthDefault or frame:GetWidth() or 200
 					data.height = bcfg.height or data.height or heightDefault or frame:GetHeight() or 20

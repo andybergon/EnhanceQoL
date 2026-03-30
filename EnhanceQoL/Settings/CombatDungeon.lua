@@ -32,6 +32,8 @@ local combatLogInstanceMap = {
 local LEGACY_NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY = "experimentalNameplateAuraClickthrough"
 local NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY = "nameplateAuraClickthrough"
 local NAMEPLATE_MOB_COLORS_DB_KEY = "nameplateMobColors"
+local NAMEPLATE_MOB_COLORS_DUNGEONS_DB_KEY = "nameplateMobColorsInDungeons"
+local NAMEPLATE_MOB_COLORS_OUTSIDE_DUNGEONS_DB_KEY = "nameplateMobColorsOutsideDungeons"
 local NAMEPLATE_MOB_COLOR_BOSS_DB_KEY = "nameplateMobColorBoss"
 local NAMEPLATE_MOB_COLOR_MINIBOSS_DB_KEY = "nameplateMobColorMiniboss"
 local NAMEPLATE_MOB_COLOR_CASTER_DB_KEY = "nameplateMobColorCaster"
@@ -46,6 +48,7 @@ local nameplateMobColorHooksInstalled = false
 local nameplateMobColorsActive = false
 local nameplateMobColorState = {
 	isActive = false,
+	contextKey = nil,
 	lastLFGInstanceID = nil,
 	referenceLevel = nil,
 	lieutenantLevel = nil,
@@ -61,6 +64,8 @@ addon.constants = addon.constants or {}
 addon.constants.DEFAULT_NAMEPLATE_FEATURE_KEYS = {
 	auraClickthrough = NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY,
 	mobColors = NAMEPLATE_MOB_COLORS_DB_KEY,
+	mobColorsInDungeons = NAMEPLATE_MOB_COLORS_DUNGEONS_DB_KEY,
+	mobColorsOutsideDungeons = NAMEPLATE_MOB_COLORS_OUTSIDE_DUNGEONS_DB_KEY,
 	mobColorBoss = NAMEPLATE_MOB_COLOR_BOSS_DB_KEY,
 	mobColorMiniboss = NAMEPLATE_MOB_COLOR_MINIBOSS_DB_KEY,
 	mobColorCaster = NAMEPLATE_MOB_COLOR_CASTER_DB_KEY,
@@ -281,28 +286,86 @@ end
 
 local function isNameplateMobColorsActive() return nameplateMobColorsActive == true end
 
-local function updateNameplateMobColorContext(forceRefresh)
-	local isFeatureEnabled = isNameplateMobColorsActive()
+local function isNameplateMobColorScopeEnabled(dbKey, defaultValue)
+	if not addon.db then return defaultValue and true or false end
+	local value = addon.db[dbKey]
+	if value == nil then return defaultValue and true or false end
+	return value == true
+end
+
+local function isNameplateMobColorPvpContext(instanceType, zonePvpType)
+	if instanceType == "pvp" or instanceType == "arena" then return true end
+	return zonePvpType == "arena" or zonePvpType == "combat" or zonePvpType == "ffapvp"
+end
+
+local function getNameplateMobColorContext()
 	local _, instanceType, _, _, _, _, _, _, _, lfgDungeonID = GetInstanceInfo()
 	if isSecretValue(instanceType) then instanceType = nil end
 	if isSecretValue(lfgDungeonID) then lfgDungeonID = nil end
+	if type(instanceType) ~= "string" or instanceType == "" then instanceType = "none" end
 
-	if not isFeatureEnabled then
+	local zonePvpType
+	if C_PvP and type(C_PvP.GetZonePVPInfo) == "function" then
+		zonePvpType = C_PvP.GetZonePVPInfo()
+		if isSecretValue(zonePvpType) then zonePvpType = nil end
+	end
+
+	local allowInDungeons = isNameplateMobColorScopeEnabled(NAMEPLATE_MOB_COLORS_DUNGEONS_DB_KEY, true)
+	local allowOutsideDungeons = isNameplateMobColorScopeEnabled(NAMEPLATE_MOB_COLORS_OUTSIDE_DUNGEONS_DB_KEY, false)
+	local isDungeon = instanceType == "party"
+	local isPvp = isNameplateMobColorPvpContext(instanceType, zonePvpType)
+	local isAllowedByScope = (isDungeon and allowInDungeons) or ((not isDungeon) and allowOutsideDungeons)
+
+	return {
+		instanceType = instanceType,
+		lfgDungeonID = lfgDungeonID,
+		zonePvpType = zonePvpType,
+		isDungeon = isDungeon,
+		isPvp = isPvp,
+		isAllowed = isAllowedByScope and not isPvp,
+	}
+end
+
+local function isPlayerControlledNameplateUnit(unit)
+	if not isNameplateUnitToken(unit) then return false end
+
+	local isPlayerUnit = type(UnitIsPlayer) == "function" and UnitIsPlayer(unit) or false
+	if isSecretValue(isPlayerUnit) then isPlayerUnit = false end
+	if isPlayerUnit then return true end
+
+	local isPlayerControlled = type(UnitPlayerControlled) == "function" and UnitPlayerControlled(unit) or false
+	if isSecretValue(isPlayerControlled) then isPlayerControlled = false end
+	return isPlayerControlled == true
+end
+
+local function updateNameplateMobColorContext(forceRefresh)
+	local isFeatureEnabled = isNameplateMobColorsActive()
+	local context = getNameplateMobColorContext()
+	local contextKey = table.concat({
+		context.instanceType or "none",
+		tostring(context.lfgDungeonID or 0),
+		context.zonePvpType or "",
+		context.isAllowed and "1" or "0",
+	}, "|")
+
+	if not isFeatureEnabled or not context.isAllowed then
 		nameplateMobColorState.isActive = false
-		nameplateMobColorState.lastLFGInstanceID = lfgDungeonID
+		nameplateMobColorState.contextKey = contextKey
+		nameplateMobColorState.lastLFGInstanceID = context.lfgDungeonID
 		nameplateMobColorState.referenceLevel = nil
 		nameplateMobColorState.lieutenantLevel = nil
 		return
 	end
 
-	if not forceRefresh and nameplateMobColorState.isActive == true and nameplateMobColorState.lastLFGInstanceID == lfgDungeonID and nameplateMobColorState.referenceLevel ~= nil then return end
+	if not forceRefresh and nameplateMobColorState.contextKey == contextKey and nameplateMobColorState.isActive == true then return end
 
 	nameplateMobColorState.isActive = true
-	nameplateMobColorState.lastLFGInstanceID = lfgDungeonID
+	nameplateMobColorState.contextKey = contextKey
+	nameplateMobColorState.lastLFGInstanceID = context.lfgDungeonID
 	nameplateMobColorState.lieutenantLevel = nil
 
 	local referenceLevel
-	if lfgDungeonID and instanceType == "party" and type(_G.GetMaximumExpansionLevel) == "function" and type(_G.GetMaxLevelForExpansionLevel) == "function" then
+	if context.lfgDungeonID and context.isDungeon and type(_G.GetMaximumExpansionLevel) == "function" and type(_G.GetMaxLevelForExpansionLevel) == "function" then
 		local maximumExpansionLevel = _G.GetMaximumExpansionLevel()
 		if not isSecretValue(maximumExpansionLevel) then
 			referenceLevel = _G.GetMaxLevelForExpansionLevel(maximumExpansionLevel)
@@ -345,6 +408,7 @@ local function computeNameplateMobColor(unit)
 	if not nameplateMobColorState.isActive then return nil end
 	if not isNameplateUnitToken(unit) then return nil end
 	if isNeutralUnit(unit) then return nil end
+	if isPlayerControlledNameplateUnit(unit) then return nil end
 
 	local canAttack = UnitCanAttack("player", unit)
 	if isSecretValue(canAttack) or not canAttack then return nil end
@@ -749,6 +813,8 @@ function addon.functions.initDungeonFrame()
 	addon.functions.InitDBValue("enableChatIMRaiderIO", false)
 	addon.functions.InitDBValue(NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY, false)
 	addon.functions.InitDBValue(NAMEPLATE_MOB_COLORS_DB_KEY, false)
+	addon.functions.InitDBValue(NAMEPLATE_MOB_COLORS_DUNGEONS_DB_KEY, true)
+	addon.functions.InitDBValue(NAMEPLATE_MOB_COLORS_OUTSIDE_DUNGEONS_DB_KEY, false)
 	addon.functions.InitDBValue(NAMEPLATE_MOB_COLOR_BOSS_DB_KEY, NAMEPLATE_MOB_COLOR_DEFAULTS[NAMEPLATE_MOB_COLOR_BOSS_DB_KEY])
 	addon.functions.InitDBValue(NAMEPLATE_MOB_COLOR_MINIBOSS_DB_KEY, NAMEPLATE_MOB_COLOR_DEFAULTS[NAMEPLATE_MOB_COLOR_MINIBOSS_DB_KEY])
 	addon.functions.InitDBValue(NAMEPLATE_MOB_COLOR_CASTER_DB_KEY, NAMEPLATE_MOB_COLOR_DEFAULTS[NAMEPLATE_MOB_COLOR_CASTER_DB_KEY])

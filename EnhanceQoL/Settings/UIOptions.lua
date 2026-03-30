@@ -1467,6 +1467,38 @@ local function createNameplatesCategory()
 
 	local function areMobColorsEnabled() return mobColorsToggle and mobColorsToggle.setting and mobColorsToggle.setting:GetValue() == true end
 
+	local function refreshNameplateMobColorScope()
+		if addon.functions.RefreshDefaultNameplateMobColors then addon.functions.RefreshDefaultNameplateMobColors() end
+	end
+
+	addon.functions.SettingsCreateCheckbox(category, {
+		var = DEFAULT_NAMEPLATE_FEATURE_KEYS.mobColorsInDungeons,
+		text = L["nameplateMobColorsInDungeons"] or "Apply in dungeons",
+		desc = L["nameplateMobColorsInDungeonsDesc"],
+		func = function(value)
+			addon.db[DEFAULT_NAMEPLATE_FEATURE_KEYS.mobColorsInDungeons] = value and true or false
+			refreshNameplateMobColorScope()
+		end,
+		parent = true,
+		element = mobColorsToggle.element,
+		parentCheck = areMobColorsEnabled,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateCheckbox(category, {
+		var = DEFAULT_NAMEPLATE_FEATURE_KEYS.mobColorsOutsideDungeons,
+		text = L["nameplateMobColorsOutsideDungeons"] or "Also apply outside dungeons",
+		desc = L["nameplateMobColorsOutsideDungeonsDesc"],
+		func = function(value)
+			addon.db[DEFAULT_NAMEPLATE_FEATURE_KEYS.mobColorsOutsideDungeons] = value and true or false
+			refreshNameplateMobColorScope()
+		end,
+		parent = true,
+		element = mobColorsToggle.element,
+		parentCheck = areMobColorsEnabled,
+		parentSection = expandable,
+	})
+
 	local function createNameplateMobColorPicker(var, text)
 		addon.functions.SettingsCreateColorPicker(category, {
 			var = var,

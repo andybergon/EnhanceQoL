@@ -1070,6 +1070,106 @@ function GF.CountCsvTokens(value)
 	return count
 end
 
+function GF.TrimCsvToken(token)
+	local normalized = tostring(token or "")
+	normalized = normalized:gsub("^%s+", "")
+	normalized = normalized:gsub("%s+$", "")
+	return normalized
+end
+
+function GF.GetSelectedRaidGroups(cfg)
+	local selected = {}
+	local count = 0
+	local hasNumericFilter = false
+
+	if cfg and type(cfg.groupFilter) == "string" and cfg.groupFilter ~= "" then
+		for token in cfg.groupFilter:gmatch("[^,]+") do
+			local group = tonumber(GF.TrimCsvToken(token))
+			if group and group >= 1 and group <= 8 and not selected[group] then
+				selected[group] = true
+				count = count + 1
+				hasNumericFilter = true
+			end
+		end
+	end
+
+	if not hasNumericFilter then
+		for group = 1, 8 do
+			selected[group] = true
+		end
+		return selected, 8
+	end
+
+	return selected, count
+end
+
+function GF.IsRaidGroupShown(cfg, group)
+	group = tonumber(group)
+	if not group or group < 1 or group > 8 then return false end
+	local selected = GF.GetSelectedRaidGroups(cfg)
+	return selected[group] == true
+end
+
+function GF.BuildRaidGroupFilter(selected, cfg)
+	if type(selected) ~= "table" then return nil, 8 end
+
+	local ordering = (cfg and cfg.groupingOrder) or (GFH and GFH.GROUP_ORDER) or "1,2,3,4,5,6,7,8"
+	local orderedGroups, seen = {}, {}
+	if type(ordering) == "string" and ordering ~= "" then
+		for token in ordering:gmatch("[^,]+") do
+			local group = tonumber(GF.TrimCsvToken(token))
+			if group and group >= 1 and group <= 8 and not seen[group] then
+				seen[group] = true
+				orderedGroups[#orderedGroups + 1] = group
+			end
+		end
+	end
+	for group = 1, 8 do
+		if not seen[group] then orderedGroups[#orderedGroups + 1] = group end
+	end
+
+	local values = {}
+	for _, group in ipairs(orderedGroups) do
+		if selected[group] then values[#values + 1] = tostring(group) end
+	end
+
+	if #values >= 8 then return nil, #values end
+	if #values == 0 then return nil, 0 end
+	return table.concat(values, ","), #values
+end
+
+function GF.SetRaidGroupShown(cfg, group, shown)
+	group = tonumber(group)
+	if type(cfg) ~= "table" or not group or group < 1 or group > 8 then return false end
+
+	local selected, count = GF.GetSelectedRaidGroups(cfg)
+	shown = shown == true
+
+	if shown then
+		if selected[group] then return true, cfg.groupFilter, count end
+		selected[group] = true
+		count = count + 1
+	else
+		if not selected[group] then return true, cfg.groupFilter, count end
+		if count <= 1 then return false, cfg.groupFilter, count end
+		selected[group] = nil
+		count = count - 1
+	end
+
+	local filter, selectedCount = GF.BuildRaidGroupFilter(selected, cfg)
+	cfg.groupFilter = filter
+	return true, filter, selectedCount
+end
+
+function GF.SyncRaidGroupFilterEditModeValues(editModeId, cfg)
+	if not (EditMode and EditMode.SetValue and editModeId) then return end
+	EditMode:SetValue(editModeId, "groupFilter", cfg and cfg.groupFilter or nil, nil, true)
+	local selected = GF.GetSelectedRaidGroups(cfg)
+	for group = 1, 8 do
+		EditMode:SetValue(editModeId, "raidGroup" .. group, selected[group] == true, nil, true)
+	end
+end
+
 function GF.ComputeCenterGrowthOffsetFromSpan(growth, span, scale)
 	local _, baseGrowth = GF.ResolveUnitGrowthDirection(growth, "DOWN")
 	span = max(0, tonumber(span) or 0)
@@ -13315,6 +13415,21 @@ local function buildEditModeSettings(kind, editModeId)
 		end
 		return mode
 	end
+	local function isRaidGroupFilterShown() return kind == "raid" and getGroupByValue() == "GROUP" end
+	local function updateRaidGroupFilter(group, value)
+		local cfg = getCfg(kind)
+		if not cfg then return end
+		local changed = GF.SetRaidGroupShown(cfg, group, value and true or false)
+		if not changed then
+			if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then addon.EditModeLib.internal:RefreshSettingValues() end
+			return
+		end
+		GF.SyncRaidGroupFilterEditModeValues(editModeId, cfg)
+		GF:ApplyHeaderAttributes(kind)
+		if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
+		if kind == "raid" then GF:RefreshGroupIndicators() end
+		if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then addon.EditModeLib.internal:RefreshSettingValues() end
+	end
 	local function applyGroupByPreset(value)
 		local cfg = getCfg(kind)
 		if not cfg then return end
@@ -13330,7 +13445,7 @@ local function buildEditModeSettings(kind, editModeId)
 		if EditMode and EditMode.SetValue then
 			EditMode:SetValue(editModeId, "groupBy", cfg.groupBy, nil, true)
 			EditMode:SetValue(editModeId, "groupingOrder", cfg.groupingOrder, nil, true)
-			EditMode:SetValue(editModeId, "groupFilter", cfg.groupFilter, nil, true)
+			GF.SyncRaidGroupFilterEditModeValues(editModeId, cfg)
 			local sortMethodValue = resolveSortMethod(cfg)
 			if sortMethodValue == "NAMELIST" then sortMethodValue = "CUSTOM" end
 			EditMode:SetValue(editModeId, "sortMethod", sortMethodValue or "INDEX", nil, true)
@@ -23097,6 +23212,33 @@ local function buildEditModeSettings(kind, editModeId)
 			isEnabled = function() return isGroupIndicatorSettingsEnabled() end,
 			isShown = function() return isGroupIndicatorShown() end,
 		}
+		settings[#settings + 1] = {
+			name = "",
+			kind = SettingType.Divider,
+			parentId = "raid",
+			isShown = function() return isRaidGroupFilterShown() end,
+		}
+		for group = 1, 8 do
+			local raidGroup = group
+			settings[#settings + 1] = {
+				name = string.format(L["UFGroupShowRaidGroup"] or "Show group %d", raidGroup),
+				kind = SettingType.Checkbox,
+				field = "raidGroup" .. raidGroup,
+				parentId = "raid",
+				default = true,
+				get = function()
+					local cfg = getCfg(kind)
+					return GF.IsRaidGroupShown(cfg, raidGroup)
+				end,
+				set = function(_, value) updateRaidGroupFilter(raidGroup, value) end,
+				isShown = function() return isRaidGroupFilterShown() end,
+				isEnabled = function()
+					local cfg = getCfg(kind)
+					local selected, count = GF.GetSelectedRaidGroups(cfg)
+					return count > 1 or selected[raidGroup] ~= true
+				end,
+			}
+		end
 	end
 
 	if kind == "party" or raidLikeKind then
@@ -24098,6 +24240,9 @@ local function applyEditModeData(kind, data)
 		if kind == "mt" and data.playerFirst ~= nil then cfg.playerFirst = data.playerFirst and true or false end
 		if kind == "raid" then
 			local custom = GFH.EnsureCustomSortConfig(cfg)
+			local selectedRaidGroups
+			local selectedRaidGroupCount
+			local raidGroupSelectionChanged = false
 			if data.customSortEnabled ~= nil then
 				custom.enabled = data.customSortEnabled and true or false
 				if custom.enabled then
@@ -24116,6 +24261,33 @@ local function applyEditModeData(kind, data)
 				end
 			end
 			if data.customSortPlayerFirstInRole ~= nil then custom.playerFirstInRole = data.customSortPlayerFirstInRole and true or false end
+			if data.groupFilter ~= nil then
+				local groupFilter = data.groupFilter
+				if groupFilter == "" then groupFilter = nil end
+				cfg.groupFilter = groupFilter
+			else
+				for group = 1, 8 do
+					local field = data["raidGroup" .. group]
+					if field ~= nil then
+						if not selectedRaidGroups then
+							selectedRaidGroups, selectedRaidGroupCount = GF.GetSelectedRaidGroups(cfg)
+						end
+						raidGroupSelectionChanged = true
+						if field then
+							if not selectedRaidGroups[group] then
+								selectedRaidGroups[group] = true
+								selectedRaidGroupCount = selectedRaidGroupCount + 1
+							end
+						elseif selectedRaidGroups[group] and selectedRaidGroupCount > 1 then
+							selectedRaidGroups[group] = nil
+							selectedRaidGroupCount = selectedRaidGroupCount - 1
+						end
+					end
+				end
+				if raidGroupSelectionChanged then
+					cfg.groupFilter = GF.BuildRaidGroupFilter(selectedRaidGroups, cfg)
+				end
+			end
 		end
 		if data.unitsPerColumn ~= nil then
 			local v = clampNumber(data.unitsPerColumn, 1, 10, cfg.unitsPerColumn or 5)
@@ -24319,6 +24491,14 @@ function GF:EnsureEditMode()
 				customSortEnabled = resolveSortMethod(cfg) == "NAMELIST",
 				customSortSeparateMeleeRanged = (cfg.customSort and cfg.customSort.separateMeleeRanged) == true,
 				customSortPlayerFirstInRole = (cfg.customSort and cfg.customSort.playerFirstInRole) == true,
+				raidGroup1 = GF.IsRaidGroupShown(cfg, 1),
+				raidGroup2 = GF.IsRaidGroupShown(cfg, 2),
+				raidGroup3 = GF.IsRaidGroupShown(cfg, 3),
+				raidGroup4 = GF.IsRaidGroupShown(cfg, 4),
+				raidGroup5 = GF.IsRaidGroupShown(cfg, 5),
+				raidGroup6 = GF.IsRaidGroupShown(cfg, 6),
+				raidGroup7 = GF.IsRaidGroupShown(cfg, 7),
+				raidGroup8 = GF.IsRaidGroupShown(cfg, 8),
 				showName = (cfg.text and cfg.text.showName) ~= false,
 				nameClassColor = (cfg.text and cfg.text.useClassColor) ~= false,
 				nameAnchor = (cfg.text and cfg.text.nameAnchor) or (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.nameAnchor) or "LEFT",

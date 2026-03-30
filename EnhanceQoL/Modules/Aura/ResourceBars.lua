@@ -2671,33 +2671,20 @@ local function SnapFractionToSpan(bar, span, frac)
 	return physicalOffset / s
 end
 
--- Pull saved Edit Mode layout coords into empty anchors.
-local function backfillAnchorFromLayout(anchor, barType)
+-- One-time migration path from old Edit Mode position storage into spec anchors.
+local function backfillAnchorFromLayout(anchor, barType, specIndex)
 	if not anchor or (anchor.x ~= nil and anchor.y ~= nil) then return end
 	if anchor.relativeFrame and anchor.relativeFrame ~= "" and anchor.relativeFrame ~= "UIParent" then return end
-	local editMode = addon and addon.EditMode
-	if not editMode or not editMode.GetLayoutData then return end
-	local layoutName = (editMode.GetActiveLayoutName and editMode:GetActiveLayoutName()) or editMode.activeLayout
-	local frameId = ResourceBars.GetEditModeFrameId(barType, nil, addon.variables and addon.variables.unitSpec)
-	local data = editMode:GetLayoutData(frameId, layoutName)
+	local store = addon and addon.db and addon.db.editModeData
+	local frameId = ResourceBars.GetEditModeFrameId(barType, nil, specIndex)
+	local data = store and store[frameId]
+	if type(data) ~= "table" or data.x == nil or data.y == nil then data = nil end
 	if (not data or data.x == nil or data.y == nil) and ResourceBars.GetEditModeLegacyFrameId then
 		local legacyId = ResourceBars.GetEditModeLegacyFrameId(barType)
 		if legacyId and legacyId ~= frameId then
-			local legacy = editMode:GetLayoutData(legacyId, layoutName)
+			local legacy = store and store[legacyId]
 			if legacy and legacy.x ~= nil and legacy.y ~= nil then
 				data = legacy
-				-- Seed spec-specific layout from legacy class-wide data once.
-				if editMode.EnsureLayoutData then
-					local target = editMode:EnsureLayoutData(frameId, layoutName)
-					if target then
-						target.point = target.point or legacy.point
-						target.relativePoint = target.relativePoint or legacy.relativePoint or legacy.point
-						target.x = legacy.x
-						target.y = legacy.y
-						if legacy.width ~= nil and target.width == nil then target.width = legacy.width end
-						if legacy.height ~= nil and target.height == nil then target.height = legacy.height end
-					end
-				end
 			end
 		end
 	end
@@ -3058,7 +3045,23 @@ function getAnchor(name, spec)
 		anchor.matchEssentialWidth = nil
 	end
 	if (anchor.relativeFrame or "UIParent") == "UIParent" then anchor.matchRelativeWidth = nil end
-	backfillAnchorFromLayout(anchor, name)
+	backfillAnchorFromLayout(anchor, name, spec)
+	do
+		local editMode = addon and addon.EditMode
+		local frameId = ResourceBars.GetEditModeFrameId and ResourceBars.GetEditModeFrameId(name, nil, spec)
+		local legacyId = ResourceBars.GetEditModeLegacyFrameId and ResourceBars.GetEditModeLegacyFrameId(name)
+		local store = addon and addon.db and addon.db.editModeData
+		local function clear(id)
+			if not id or id == "" then return end
+			if editMode and editMode.ClearStoredPosition then
+				editMode:ClearStoredPosition(id)
+			elseif type(store) == "table" then
+				store[id] = nil
+			end
+		end
+		clear(frameId)
+		if legacyId and legacyId ~= frameId then clear(legacyId) end
+	end
 	return anchor
 end
 
