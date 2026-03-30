@@ -282,6 +282,7 @@ local COSMETIC_BAR_KEYS = {
 	"healAbsorbSample",
 	"healAbsorbReverseFill",
 	"healAbsorbOppositeSide",
+	"absorbTextMode",
 	"reverseFill",
 	"verticalFill",
 	"smoothFill",
@@ -421,6 +422,51 @@ function ResourceBars.FormatBarTextByStyle(style, currentText, maxText, percentT
 	if style == "CURPERCENT" then return currentText .. " - " .. percentText end
 	if style == "CURMAXPERCENT" then return currentText .. " / " .. maxText .. " - " .. percentText end
 	return currentText .. " / " .. maxText
+end
+
+function ResourceBars.FormatAbsorbText(mode, absorbAmount, healAbsorbAmount, useShort)
+	if not mode or mode == "NONE" then return nil end
+	if issecretvalue and (issecretvalue(absorbAmount) or issecretvalue(healAbsorbAmount)) then return nil end
+	absorbAmount = absorbAmount or 0
+	healAbsorbAmount = healAbsorbAmount or 0
+	local parts = {}
+	if (mode == "ABSORB_ONLY" or mode == "BOTH") and absorbAmount > 0 then
+		parts[#parts + 1] = "+" .. formatNumber(absorbAmount, useShort)
+	end
+	if (mode == "HEALABSORB_ONLY" or mode == "BOTH") and healAbsorbAmount > 0 then
+		parts[#parts + 1] = "-" .. formatNumber(healAbsorbAmount, useShort)
+	end
+	if #parts == 0 then return nil end
+	return "(" .. table.concat(parts, " ") .. ")"
+end
+
+-- Use the HealPrediction calculator to get untainted absorb values (same approach as TotalAbsorbTracker and UF_GroupFrames)
+do
+	local calculator
+	local function ensureCalculator()
+		if calculator then return calculator end
+		if not (CreateUnitHealPredictionCalculator and UnitGetDetailedHealPrediction) then return nil end
+		calculator = CreateUnitHealPredictionCalculator()
+		return calculator
+	end
+
+	function ResourceBars.GetCleanAbsorbValues()
+		local calc = ensureCalculator()
+		if calc and UnitExists and UnitExists("player") then
+			if calc.ResetPredictedValues then calc:ResetPredictedValues() end
+			if calc.SetDamageAbsorbClampMode and Enum and Enum.UnitDamageAbsorbClampMode then
+				calc:SetDamageAbsorbClampMode(Enum.UnitDamageAbsorbClampMode.MaximumHealth)
+			end
+			UnitGetDetailedHealPrediction("player", "player", calc)
+			local absorb = (calc.GetTotalDamageAbsorbs and calc:GetTotalDamageAbsorbs()) or (calc.GetDamageAbsorbs and calc:GetDamageAbsorbs()) or 0
+			local healAbsorb = (calc.GetHealAbsorbs and calc:GetHealAbsorbs()) or 0
+			return absorb, healAbsorb
+		end
+		-- Fallback to direct API (may be tainted)
+		local a = UnitGetTotalAbsorbs and UnitGetTotalAbsorbs("player") or 0
+		local h = UnitGetTotalHealAbsorbs and UnitGetTotalHealAbsorbs("player") or 0
+		return a, h
+	end
 end
 
 local function isSpellKnownSafe(spellId)
@@ -3060,6 +3106,16 @@ function updateHealthBar(evt)
 				end
 			else
 				local text = ResourceBars.FormatBarTextByStyle(style, formatNumber(curHealth, useShortNumbers), formatNumber(maxHealth, useShortNumbers), percentStr)
+				do
+					local absorbTextMode = settings.absorbTextMode
+					if absorbTextMode and absorbTextMode ~= "NONE" then
+						local absVal, healAbsVal = ResourceBars.GetCleanAbsorbValues()
+						if settings.absorbSample then absVal = maxHealth * 0.3 end
+						if settings.healAbsorbSample then healAbsVal = maxHealth * 0.3 end
+						local suffix = ResourceBars.FormatAbsorbText(absorbTextMode, absVal, healAbsVal, useShortNumbers)
+						if suffix then text = text .. " " .. suffix end
+					end
+				end
 				if not addon.variables.isMidnight and healthBar._lastText ~= text then
 					healthBar.text:SetText(text)
 					healthBar._lastText = text

@@ -2215,6 +2215,46 @@ local function registerEditModeBars()
 					default = false,
 				}
 
+				if barType == "HEALTH" then
+					local absorbTextOptions = {
+						{ key = "NONE", label = NONE },
+						{ key = "ABSORB_ONLY", label = L["Show absorb amount"] or "Show absorb amount" },
+						{ key = "HEALABSORB_ONLY", label = L["Show heal absorb amount"] or "Show heal absorb amount" },
+						{ key = "BOTH", label = L["Show both absorb amounts"] or "Show both absorb amounts" },
+					}
+					settingsList[#settingsList + 1] = {
+						name = L["Absorb text"] or "Absorb text",
+						kind = settingType.Dropdown,
+						height = 180,
+						field = "absorbTextMode",
+						parentId = "textsettings",
+						get = function()
+							local c = curSpecCfg()
+							return (c and c.absorbTextMode) or "NONE"
+						end,
+						set = function(_, value)
+							local c = curSpecCfg()
+							if not c then return end
+							c.absorbTextMode = value
+							queueRefresh()
+						end,
+						generator = function(_, root)
+							for _, entry in ipairs(absorbTextOptions) do
+								root:CreateRadio(entry.label, function()
+									local c = curSpecCfg()
+									return ((c and c.absorbTextMode) or "NONE") == entry.key
+								end, function()
+									local c = curSpecCfg()
+									if not c then return end
+									c.absorbTextMode = entry.key
+									queueRefresh()
+								end)
+							end
+						end,
+						default = "NONE",
+					}
+				end
+
 				settingsList[#settingsList + 1] = {
 					name = HUD_EDIT_MODE_SETTING_OBJECTIVE_TRACKER_TEXT_SIZE,
 					kind = settingType.Slider,
