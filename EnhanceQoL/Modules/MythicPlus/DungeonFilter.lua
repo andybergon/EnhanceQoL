@@ -23,6 +23,44 @@ local BR_CLASSES = { DRUID = true, WARLOCK = true, DEATHKNIGHT = true, PALADIN =
 local playerIsLust
 local playerIsBR
 
+-- Auto-refresh search results
+local autoRefreshTicker
+
+local function getAutoRefreshInterval()
+	return addon.db and addon.db.lfgAutoRefreshInterval or 15
+end
+
+local function stopAutoRefresh()
+	if autoRefreshTicker then
+		autoRefreshTicker:Cancel()
+		autoRefreshTicker = nil
+	end
+end
+
+local function startAutoRefresh()
+	stopAutoRefresh()
+	if not addon.db or not addon.db.lfgAutoRefresh then return end
+	local interval = getAutoRefreshInterval()
+	autoRefreshTicker = C_Timer.NewTicker(interval, function()
+		if InCombatLockdown() then return end
+		if addon.functions.isRestrictedContent and addon.functions.isRestrictedContent() then return end
+		local panel = LFGListFrame and LFGListFrame.SearchPanel
+		if not panel or not panel:IsShown() then
+			stopAutoRefresh()
+			return
+		end
+		if panel.SearchButton and panel.SearchButton.Click then
+			panel.SearchButton:Click()
+		elseif LFGListSearchPanel_DoSearch and type(LFGListSearchPanel_DoSearch) == "function" then
+			LFGListSearchPanel_DoSearch(panel)
+		end
+	end)
+end
+
+-- Exported so settings can restart with new interval
+addon.MythicPlus.functions.startAutoRefresh = startAutoRefresh
+addon.MythicPlus.functions.stopAutoRefresh = stopAutoRefresh
+
 local function ensureDungeonFilterDB()
 	if not addon.db then return end
 	addon.db["mythicPlusDungeonFilters"] = addon.db["mythicPlusDungeonFilters"] or {}
@@ -56,8 +94,7 @@ local function EQOL_AddLFGEntries(owner, root, ctx)
 	local panel = LFGListFrame.SearchPanel
 	if panel.categoryID ~= 2 then return end
 
-	root:CreateTitle("")
-
+	root:CreateDivider()
 	root:CreateTitle(addonName)
 	root:CreateCheckbox(L["Partyfit"], function() return pDb["partyFit"] end, function()
 		pDb["partyFit"] = not pDb["partyFit"]
@@ -83,6 +120,26 @@ local function EQOL_AddLFGEntries(owner, root, ctx)
 		root:CreateCheckbox((L["NoSameSpec"]):format(addon.variables.unitSpecName .. " " .. select(1, UnitClass("player"))), function() return pDb["NoSameSpec"] end, function()
 			pDb["NoSameSpec"] = not pDb["NoSameSpec"]
 			RefreshVisibleEntries()
+		end)
+	end
+	-- Auto-refresh
+	local intervalLabel = string.format("%s (%ds)", L["lfgAutoRefresh"] or "Auto-refresh search results", getAutoRefreshInterval())
+	root:CreateCheckbox(intervalLabel, function() return addon.db and addon.db.lfgAutoRefresh end, function()
+		addon.db.lfgAutoRefresh = not addon.db.lfgAutoRefresh
+		if addon.db.lfgAutoRefresh then
+			startAutoRefresh()
+		else
+			stopAutoRefresh()
+		end
+	end)
+
+	local intervals = { 5, 10, 15, 20, 30, 45, 60 }
+	local currentInterval = getAutoRefreshInterval()
+	for _, secs in ipairs(intervals) do
+		local label = "  " .. secs .. "s"
+		root:CreateRadio(label, function() return currentInterval == secs end, function()
+			addon.db.lfgAutoRefreshInterval = secs
+			if addon.db.lfgAutoRefresh then startAutoRefresh() end
 		end)
 	end
 end
@@ -366,5 +423,17 @@ function addon.MythicPlus.functions.InitDungeonFilter()
 			RefreshVisibleEntries()
 		end)
 		resetButton._eqolDungeonFilterHook = true
+	end
+
+	-- Start/stop auto-refresh when search panel shows/hides
+	local searchPanel = LFGListFrame and LFGListFrame.SearchPanel
+	if searchPanel and searchPanel.HookScript and not searchPanel._eqolAutoRefreshHook then
+		searchPanel:HookScript("OnShow", function()
+			if addon.db and addon.db.lfgAutoRefresh then startAutoRefresh() end
+		end)
+		searchPanel:HookScript("OnHide", function()
+			stopAutoRefresh()
+		end)
+		searchPanel._eqolAutoRefreshHook = true
 	end
 end

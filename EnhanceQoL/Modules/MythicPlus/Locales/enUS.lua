@@ -119,6 +119,7 @@ L["BloodlustAvailable"] = "Bloodlust available"
 L["NoBloodlust"] = "No Bloodlust in Group"
 L["BattleResAvailable"] = "Battle Res available"
 L["NoSameSpec"] = "No %s in Group"
+L["lfgAutoRefresh"] = "Auto-refresh search results"
 
 L["mythicPlusEnableObjectiveTracker"] = "Automate Objective Tracker"
 L["mythicPlusEnableObjectiveTrackerDesc"] = "At the start of a Mythic+ run, automatically hide / collapse all objective tracker blocks."
