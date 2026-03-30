@@ -27,6 +27,7 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | Cooldown panel passive trinket glow fix | Fork-only | — | `main` | `GetItemUseSpellID` checked `C_Item.GetItemSpell` which returns spells for "Equip:" effects too; now verifies "Use:" via tooltip |
 | Class buff reminder "nearby only" filter | Fork-only | — | `main` | Only count group members in buff cast range (`IsSpellInRange`) for missing buff counts; falls back to visibility (~100yd) for AoE buffs like Battle Shout |
 | Absorb text on health bar | Fork-only | — | `main` | Shows absorb/heal-absorb amounts as text suffix on health bar; dropdown with None/Absorb/Heal Absorb/Both; taint-safe via `issecretvalue` guard |
+| Tooltip widget set taint fix | Fork-only | — | `main` | Early-return for unhandled tooltip types + pcall wrapper on `GameTooltip_ClearWidgetSet` to suppress LayoutFrame taint errors |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
 This file and `CLAUDE.md` are also fork-only (project docs for Claude Code).
