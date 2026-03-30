@@ -1170,10 +1170,11 @@ if TooltipDataProcessor then
 
 		if issecretvalue and issecretvalue(data.type) then return end
 
-		local restricted = addon.functions.isRestrictedContent and addon.functions.isRestrictedContent(true)
-		local id, name, _, timeLimit, kind
+		local kind = addon.Tooltip.variables.kindsByID[tonumber(data.type)]
+		if not kind then return end
 
-		kind = addon.Tooltip.variables.kindsByID[tonumber(data.type)]
+		local restricted = addon.functions.isRestrictedContent and addon.functions.isRestrictedContent(true)
+		local id, name
 		if restricted and kind ~= "unit" then return end
 
 		if kind == "spell" then
@@ -1267,6 +1268,19 @@ end
 local function registerTooltipHooks()
 	if addon.Tooltip.variables.hooksInitialized then return end
 	addon.Tooltip.variables.hooksInitialized = true
+
+	-- Wrap GameTooltip_ClearWidgetSet to suppress taint errors from widget layout cleanup.
+	-- Addon code in tooltip processing callbacks (TooltipDataProcessor, HookScript) can taint
+	-- widget frame dimensions. Blizzard's cleanup then fails comparing tainted values in
+	-- LayoutFrame.lua. The error is harmless (widget count is typically 0), so we suppress it.
+	if GameTooltip_ClearWidgetSet then
+		local origClear = GameTooltip_ClearWidgetSet
+		GameTooltip_ClearWidgetSet = function(...)
+			local ok, err = pcall(origClear, ...)
+			if not ok and type(err) == "string" and err:find("secret") then return end
+			if not ok then error(err, 0) end
+		end
+	end
 
 	-- Apply initial tooltip scale once the UI is ready
 	C_Timer.After(0, function()
