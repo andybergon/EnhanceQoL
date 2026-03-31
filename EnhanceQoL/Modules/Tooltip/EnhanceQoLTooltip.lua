@@ -1162,7 +1162,12 @@ if TooltipDataProcessor then
 		return true
 	end)
 	
-	TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, data)
+	-- Register for only the specific tooltip types we handle, NOT AllTypes.
+	-- AllTypes fires addon code for every tooltip (AreaPOI, PvPBrawl, etc.), tainting the
+	-- execution context even on early-return. This breaks GameTooltip_AddWidgetSet's widget
+	-- processing chain (GetStringHeight, GetWidth, GetUnscaledFrameRect all return secret
+	-- numbers in tainted contexts). Specific-type registration avoids taint for unhandled types.
+	local function tooltipPostCall(tooltip, data)
 		if not addon.db then return end
 		if not data or not data.type then return end
 		if not IsTooltipMutable(tooltip) then return end
@@ -1211,7 +1216,18 @@ if TooltipDataProcessor then
 			checkCurrency(tooltip, id)
 			return
 		end
-	end)
+	end
+
+	local E = Enum.TooltipDataType
+	for _, dataType in ipairs({
+		E.Item, E.Spell, E.Unit, E.Corpse, E.Currency, E.BattlePet,
+		E.UnitAura, E.AzeriteEssence, E.CompanionPet,
+		E.EnhancedConduit, E.RecipeRankInfo, E.Totem, E.Toy, E.Macro,
+	}) do
+		if dataType ~= nil then
+			TooltipDataProcessor.AddTooltipPostCall(dataType, tooltipPostCall)
+		end
+	end
 end
 
 local function IsUnitTooltip(tt)
@@ -1268,14 +1284,22 @@ local function registerTooltipHooks()
 	if addon.Tooltip.variables.hooksInitialized then return end
 	addon.Tooltip.variables.hooksInitialized = true
 
-	-- Wrap GameTooltip_ClearWidgetSet to suppress taint errors from widget layout cleanup.
-	-- Addon code in tooltip processing callbacks (TooltipDataProcessor, HookScript) can taint
-	-- widget frame dimensions. Blizzard's cleanup then fails comparing tainted values in
-	-- LayoutFrame.lua. The error is harmless (widget count is typically 0), so we suppress it.
-	if GameTooltip_ClearWidgetSet then
-		local origClear = GameTooltip_ClearWidgetSet
-		GameTooltip_ClearWidgetSet = function(...)
-			local ok, err = pcall(origClear, ...)
+	-- NOTE: GameTooltip_ClearWidgetSet and GameTooltip_AddWidgetSet are NOT wrapped here.
+	-- Previous pcall wrappers on these globals tainted ALL callers (including Blizzard's
+	-- AreaPOI/event handlers), causing cascading secret-number errors in widget processing.
+	-- The root fix is specific-type TooltipDataProcessor registration (above), which prevents
+	-- taint for unhandled tooltip types. ClearWidgetSet no longer needs wrapping because it
+	-- runs before our callback fires (during tooltip content clearing, before post-call).
+
+	-- Wrap UIWidgetTemplateTextWithStateMixin:Setup to suppress taint errors.
+	-- In tainted execution contexts, GetStringHeight() returns a secret number, causing
+	-- arithmetic errors in Blizzard's widget height calculation (textHeight - 1).
+	-- The widget still displays with its template default height; text content is unaffected
+	-- since SetText runs before the error point.
+	if UIWidgetTemplateTextWithStateMixin and UIWidgetTemplateTextWithStateMixin.Setup then
+		local origWidgetSetup = UIWidgetTemplateTextWithStateMixin.Setup
+		UIWidgetTemplateTextWithStateMixin.Setup = function(self, ...)
+			local ok, err = pcall(origWidgetSetup, self, ...)
 			if not ok and type(err) == "string" and err:find("secret") then return end
 			if not ok then error(err, 0) end
 		end

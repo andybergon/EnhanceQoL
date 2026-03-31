@@ -27,7 +27,8 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | Cooldown panel passive trinket glow fix | Fork-only | — | `main` | `GetItemUseSpellID` checked `C_Item.GetItemSpell` which returns spells for "Equip:" effects too; now verifies "Use:" via tooltip |
 | Class buff reminder "nearby only" filter | Fork-only | — | `main` | Only count group members in buff cast range (`IsSpellInRange`) for missing buff counts; falls back to visibility (~100yd) for AoE buffs like Battle Shout |
 | Absorb text on health bar | Fork-only | — | `main` | Shows absorb/heal-absorb amounts as text suffix on health bar; dropdown with None/Absorb/Heal Absorb/Both; taint-safe via `issecretvalue` guard |
-| Tooltip widget set taint fix | Fork-only | — | `main` | Early-return for unhandled tooltip types + pcall wrapper on `GameTooltip_ClearWidgetSet` to suppress LayoutFrame taint errors |
+| Tooltip widget set taint fix | Fork-only | — | `main` | Specific-type `TooltipDataProcessor` registration instead of `AllTypes` to avoid tainting unhandled tooltip types (AreaPOI, events) |
+| UIWidget TextWithState taint fix | Fork-only | — | `main` | pcall wrapper on `UIWidgetTemplateTextWithStateMixin:Setup` to suppress `GetStringHeight` secret number errors |
 | LFG search auto-refresh | Fork-only | — | `main` | Auto-refresh toggle + interval selector (5–60s) in filter dropdown; only runs while search panel is open |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
