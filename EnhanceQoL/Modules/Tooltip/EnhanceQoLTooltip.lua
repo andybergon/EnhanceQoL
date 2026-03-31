@@ -8,6 +8,7 @@ else
 end
 
 local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Tooltip")
+local WHITE_FONT_COLOR = _G.WHITE_FONT_COLOR
 
 local frameLoad = CreateFrame("Frame")
 
@@ -1161,7 +1162,7 @@ if TooltipDataProcessor then
 		tooltip:AddLine(SELL_PRICE .. ": " .. GetMoneyString(lineData.price), WHITE_FONT_COLOR:GetRGB())
 		return true
 	end)
-	
+
 	TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, data)
 		if not addon.db then return end
 		if not data or not data.type then return end
