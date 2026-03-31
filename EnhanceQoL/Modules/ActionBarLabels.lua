@@ -696,6 +696,19 @@ local function EnsureModifierShortcutPatterns()
 	return modifierShortcutPatterns
 end
 
+local keyShortcutPatterns
+local function EnsureKeyShortcutPatterns()
+	if keyShortcutPatterns then return keyShortcutPatterns end
+	keyShortcutPatterns = {}
+	local function addKeyShortcut(globalKey, replacement, fallback)
+		local text = GetGlobalUpper(globalKey, fallback)
+		if text and text ~= "" then table.insert(keyShortcutPatterns, { pattern = EscapePattern(text), replacement = replacement }) end
+	end
+	addKeyShortcut("KEY_SPACE", "SP", "SPACEBAR")
+	addKeyShortcut("KEY_BACKSPACE", "BS", "BACKSPACE")
+	return keyShortcutPatterns
+end
+
 local function ShortenHotkeyText(text)
 	if type(text) ~= "string" or text == "" then return text end
 	local isMinusKeybind
@@ -706,6 +719,9 @@ local function ShortenHotkeyText(text)
 		short = short:gsub(data.pattern, data.replacement)
 	end
 	for _, data in ipairs(EnsureModifierShortcutPatterns()) do
+		short = short:gsub(data.pattern, data.replacement)
+	end
+	for _, data in ipairs(EnsureKeyShortcutPatterns()) do
 		short = short:gsub(data.pattern, data.replacement)
 	end
 	for _, repl in ipairs(HOTKEY_SHORT_REPLACEMENTS) do

@@ -2634,7 +2634,7 @@ function UF.ExportProfile(scopeKey, profileName)
 
 	local payload = {
 		kind = UF_PROFILE_SHARE_KIND,
-		version = 2,
+		version = 3,
 		frames = {},
 		groupFrames = {},
 	}
@@ -2645,6 +2645,18 @@ function UF.ExportProfile(scopeKey, profileName)
 		if not hasUnitFrames and not hasGroupFrames then return nil, "EMPTY" end
 		if hasUnitFrames then payload.frames = CopyTable(frameCfg) end
 		if hasGroupFrames then payload.groupFrames = CopyTable(groupCfg) end
+		local guid = UFProfileManager and UFProfileManager._getCurrentPlayerGUID and UFProfileManager._getCurrentPlayerGUID()
+		local specMappings = guid and db.ufProfileSpecKeys and db.ufProfileSpecKeys[guid]
+		if type(specMappings) == "table" then
+			local exportedMappings = {}
+			for specKey, mappedProfile in pairs(specMappings) do
+				local specID = tonumber(specKey)
+				if specID and specID > 0 and type(mappedProfile) == "string" and mappedProfile ~= "" then
+					exportedMappings[specID] = mappedProfile
+				end
+			end
+			if next(exportedMappings) then payload.specMappings = exportedMappings end
+		end
 	elseif isGroupScopeKey(scopeKey) then
 		local src = type(groupCfg) == "table" and groupCfg[scopeKey] or nil
 		if type(src) ~= "table" then return nil, "SCOPE_EMPTY" end
@@ -2687,6 +2699,7 @@ function UF.ImportProfile(encoded, scopeKey)
 	if data.kind ~= UF_PROFILE_SHARE_KIND then return false, "WRONG_KIND" end
 	local sourceFrames = type(data.frames) == "table" and data.frames or nil
 	local sourceGroupFrames = type(data.groupFrames) == "table" and data.groupFrames or nil
+	local sourceSpecMappings = type(data.specMappings) == "table" and data.specMappings or nil
 	if not sourceFrames and not sourceGroupFrames then return false, "NO_FRAMES" end
 
 	addon.db = addon.db or {}
@@ -2725,6 +2738,14 @@ function UF.ImportProfile(encoded, scopeKey)
 			end
 		end
 		if #applied == 0 then return false, "NO_FRAMES" end
+		if sourceSpecMappings and UFProfileManager and UFProfileManager.SetSpecMapping then
+			for specKey, mappedProfile in pairs(sourceSpecMappings) do
+				local specID = tonumber(specKey)
+				if specID and specID > 0 and type(mappedProfile) == "string" and mappedProfile ~= "" then
+					UFProfileManager.SetSpecMapping(specID, mappedProfile)
+				end
+			end
+		end
 	else
 		local key = scopeKey
 		local source
