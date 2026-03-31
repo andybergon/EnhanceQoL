@@ -1,6 +1,15 @@
 # Changelog
 
-## [9.12.0] - 2026-03-27
+## [9.12.0-beta2] - 2026-03-31
+
+### 🐛 Fixed
+
+- Profile export/import missing specialization assignments on Unit Frame settings
+- Actionbar labels missed to shorten `Backspace` and `Space`
+
+---
+
+## [9.12.0-beta1] - 2026-03-30
 
 ### ✨ Added
 
