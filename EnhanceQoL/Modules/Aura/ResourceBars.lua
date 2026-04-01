@@ -5993,7 +5993,7 @@ end
 local function eventHandler(self, event, unit, arg1)
 	if event == "UNIT_DISPLAYPOWER" and unit == "player" then
 		setPowerbars()
-	elseif event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
+	elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
 		ResourceBars.SyncRuntimeSpecContext()
 		scheduleSpecRefresh()
 		if scheduleRelativeFrameWidthSync then scheduleRelativeFrameWidthSync() end
@@ -6148,7 +6148,11 @@ function ResourceBars.EnableResourceBars()
 	frameAnchor:RegisterEvent("PLAYER_DEAD")
 	frameAnchor:RegisterEvent("PLAYER_ALIVE")
 	frameAnchor:RegisterEvent("PLAYER_UNGHOST")
-	frameAnchor:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+	if frameAnchor.RegisterUnitEvent then
+		frameAnchor:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
+	else
+		frameAnchor:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	end
 	frameAnchor:RegisterEvent("TRAIT_CONFIG_UPDATED")
 	frameAnchor:RegisterEvent("CLIENT_SCENE_OPENED")
 	frameAnchor:RegisterEvent("CLIENT_SCENE_CLOSED")

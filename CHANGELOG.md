@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.12.0-beta3] - 2026-04-01
+
+### 🐛 Fixed
+
+- Group Frames / Resource Bars: Registered `PLAYER_SPECIALIZATION_CHANGED` as a player-scoped unit event so spec-switch updates stay scoped correctly.
+
+---
+
 ## [9.12.0-beta2] - 2026-03-31
 
 ### 🐛 Fixed

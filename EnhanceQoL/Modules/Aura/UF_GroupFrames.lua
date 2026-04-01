@@ -25035,7 +25035,11 @@ registerFeatureEvents = function(frame)
 		frame:RegisterEvent("UNIT_NAME_UPDATE")
 		frame:RegisterEvent("PARTY_LEADER_CHANGED")
 		frame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
-		frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+		if frame.RegisterUnitEvent then
+			frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
+		else
+			frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+		end
 		frame:RegisterEvent("PLAYER_TALENT_UPDATE")
 		frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 		frame:RegisterEvent("SPELLS_CHANGED")
