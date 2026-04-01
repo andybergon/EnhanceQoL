@@ -6177,11 +6177,21 @@ function UF.getHealthPercentCurveColor(st, unit, hc, defH, maxR, maxG, maxB, max
 	return extractCurveColorRGBA(color)
 end
 
+local applyBossEditSample
+
 local function updateHealth(cfg, unit)
 	cfg = cfg or (states[unit] and states[unit].cfg) or ensureDB(unit)
 	if cfg and cfg.enabled == false then return end
 	local st = states[unit]
 	if not st or not st.health or not st.frame then return end
+	if addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode() and isBossUnit(unit) then
+		local idx = tonumber(type(unit) == "string" and unit:match("^boss(%d+)$") or nil)
+		if idx then
+			applyBossEditSample(idx, cfg)
+			st._healthTextDirty = nil
+			return
+		end
+	end
 	ensureBossBarsVisible(unit, st)
 	local info = UNITS[unit]
 	local allowAbsorb = not (info and info.disableAbsorb)
@@ -6351,6 +6361,14 @@ local function updatePower(cfg, unit)
 	if cfg and cfg.enabled == false then return end
 	local st = states[unit]
 	if not st then return end
+	if addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode() and isBossUnit(unit) then
+		local idx = tonumber(type(unit) == "string" and unit:match("^boss(%d+)$") or nil)
+		if idx then
+			applyBossEditSample(idx, cfg)
+			st._powerTextDirty = nil
+			return
+		end
+	end
 	local bar = st.power
 	local secondaryBar = st.secondaryPower
 	if not bar and not secondaryBar then return end
@@ -7917,6 +7935,13 @@ local function updateNameAndLevel(cfg, unit, levelOverride)
 	if not st then return end
 	cfg = cfg or st.cfg or ensureDB(unit)
 	if cfg and cfg.enabled == false then return end
+	if addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode() and isBossUnit(unit) then
+		local idx = tonumber(type(unit) == "string" and unit:match("^boss(%d+)$") or nil)
+		if idx then
+			applyBossEditSample(idx, cfg)
+			return
+		end
+	end
 	if st.nameText then
 		local scfg = cfg.status or {}
 		local defStatus = (defaultsFor(unit) and defaultsFor(unit).status) or {}
@@ -8238,7 +8263,7 @@ local function hideBossFrames(forceHide)
 	end
 end
 
-local function applyBossEditSample(idx, cfg)
+applyBossEditSample = function(idx, cfg)
 	cfg = cfg or ensureDB("boss")
 	local unit = "boss" .. idx
 	local st = states[unit]
@@ -8251,18 +8276,18 @@ local function applyBossEditSample(idx, cfg)
 	local cdef = cfg.cast or def.cast or {}
 	local hideClassText = UF.ShouldHideClassificationText(cfg, unit)
 	local interpolation = getSmoothInterpolation(cfg, def)
+	local sampleHealthCur = 580000
+	local sampleHealthMax = 1000000
+	local sampleHealthPercent = 58
+	local samplePowerCur = 73
+	local samplePowerMax = 100
+	local samplePowerPercent = 73
+	local sampleLevelText = hideClassText and "" or "??"
 
-	local cur = UnitHealth("player") or 1
-	local maxv = UnitHealthMax("player") or cur or 1
-	local percentVal = getHealthPercent("player", cur, maxv)
-	st.health:SetMinMaxValues(0, maxv)
-	st.health:SetValue(cur, interpolation)
+	st.health:SetMinMaxValues(0, sampleHealthMax)
+	st.health:SetValue(sampleHealthCur, interpolation)
 	local baseR, baseG, baseB, baseA = UF.resolveHealthBaseColor(unit, hc, defH)
 	local sampleR, sampleG, sampleB, sampleA = baseR, baseG, baseB, baseA
-	local cr, cg, cb, ca = UF.getHealthPercentCurveColor(st, "player", hc, defH, baseR, baseG, baseB, baseA)
-	if cr then
-		sampleR, sampleG, sampleB, sampleA = cr, cg, cb, ca
-	end
 	st.health:SetStatusBarColor(sampleR or 0, sampleG or 0.8, sampleB or 0, sampleA or 1)
 	local leftMode = hc.textLeft or "PERCENT"
 	local centerMode = hc.textCenter or "NONE"
@@ -8272,16 +8297,26 @@ local function applyBossEditSample(idx, cfg)
 	local delimiter3 = UFHelper.getTextDelimiterTertiary(hc, defH, delimiter, delimiter2)
 	local hidePercentSymbol = hc.hidePercentSymbol == true
 	local roundPercent = hc.roundPercent == true
-	local levelText
-	if UFHelper.textModeUsesLevel(leftMode) or UFHelper.textModeUsesLevel(centerMode) or UFHelper.textModeUsesLevel(rightMode) then
-		levelText = UFHelper.getUnitLevelText("player", nil, hideClassText)
-	end
+	local levelText = sampleLevelText
 	if st.healthTextLeft then
 		if leftMode == "NONE" then
 			st.healthTextLeft:SetText("")
 		else
 			st.healthTextLeft:SetText(
-				UFHelper.formatText(leftMode, cur, maxv, hc.useShortNumbers ~= false, percentVal, delimiter, delimiter2, delimiter3, hidePercentSymbol, levelText, nil, roundPercent)
+				UFHelper.formatText(
+					leftMode,
+					sampleHealthCur,
+					sampleHealthMax,
+					hc.useShortNumbers ~= false,
+					sampleHealthPercent,
+					delimiter,
+					delimiter2,
+					delimiter3,
+					hidePercentSymbol,
+					levelText,
+					nil,
+					roundPercent
+				)
 			)
 		end
 	end
@@ -8290,7 +8325,20 @@ local function applyBossEditSample(idx, cfg)
 			st.healthTextCenter:SetText("")
 		else
 			st.healthTextCenter:SetText(
-				UFHelper.formatText(centerMode, cur, maxv, hc.useShortNumbers ~= false, percentVal, delimiter, delimiter2, delimiter3, hidePercentSymbol, levelText, nil, roundPercent)
+				UFHelper.formatText(
+					centerMode,
+					sampleHealthCur,
+					sampleHealthMax,
+					hc.useShortNumbers ~= false,
+					sampleHealthPercent,
+					delimiter,
+					delimiter2,
+					delimiter3,
+					hidePercentSymbol,
+					levelText,
+					nil,
+					roundPercent
+				)
 			)
 		end
 	end
@@ -8299,7 +8347,20 @@ local function applyBossEditSample(idx, cfg)
 			st.healthTextRight:SetText("")
 		else
 			st.healthTextRight:SetText(
-				UFHelper.formatText(rightMode, cur, maxv, hc.useShortNumbers ~= false, percentVal, delimiter, delimiter2, delimiter3, hidePercentSymbol, levelText, nil, roundPercent)
+				UFHelper.formatText(
+					rightMode,
+					sampleHealthCur,
+					sampleHealthMax,
+					hc.useShortNumbers ~= false,
+					sampleHealthPercent,
+					delimiter,
+					delimiter2,
+					delimiter3,
+					hidePercentSymbol,
+					levelText,
+					nil,
+					roundPercent
+				)
 			)
 		end
 	end
@@ -8307,15 +8368,11 @@ local function applyBossEditSample(idx, cfg)
 	local powerEnabled = pcfg.enabled ~= false
 	if st.power then
 		if powerEnabled then
-			local enumId, token = getMainPower("player")
-			local pCur = UnitPower("player", enumId or 0) or 0
-			local pMax = UnitPowerMax("player", enumId or 0) or 0
-			local pPercent = getPowerPercent("player", enumId or 0, pCur, pMax)
-			st.power:SetMinMaxValues(0, pMax > 0 and pMax or 1)
-			st.power:SetValue(pCur, interpolation)
-			local pr, pg, pb, pa = UFHelper.getPowerColor(enumId, token)
+			st.power:SetMinMaxValues(0, samplePowerMax)
+			st.power:SetValue(samplePowerCur, interpolation)
+			local pr, pg, pb, pa = UFHelper.getPowerColor(0, "MANA")
 			st.power:SetStatusBarColor(pr or 0.1, pg or 0.45, pb or 1, pa or 1)
-			if st.power.SetStatusBarDesaturated then st.power:SetStatusBarDesaturated(UFHelper.isPowerDesaturated(enumId, token)) end
+			if st.power.SetStatusBarDesaturated then st.power:SetStatusBarDesaturated(UFHelper.isPowerDesaturated(0, "MANA")) end
 			local pLeftMode = pcfg.textLeft or "PERCENT"
 			local pCenterMode = pcfg.textCenter or "NONE"
 			local pRightMode = pcfg.textRight or "CURMAX"
@@ -8325,15 +8382,25 @@ local function applyBossEditSample(idx, cfg)
 			local pHidePercentSymbol = pcfg.hidePercentSymbol == true
 			local pRoundPercent = pcfg.roundPercent == true
 			local pLevelText = levelText
-			if not pLevelText and (UFHelper.textModeUsesLevel(pLeftMode) or UFHelper.textModeUsesLevel(pCenterMode) or UFHelper.textModeUsesLevel(pRightMode)) then
-				pLevelText = UFHelper.getUnitLevelText("player", nil, hideClassText)
-			end
 			if st.powerTextLeft then
 				if pLeftMode == "NONE" then
 					st.powerTextLeft:SetText("")
 				else
 					st.powerTextLeft:SetText(
-						UFHelper.formatText(pLeftMode, pCur, pMax, pcfg.useShortNumbers ~= false, pPercent, pDelimiter, pDelimiter2, pDelimiter3, pHidePercentSymbol, pLevelText, nil, pRoundPercent)
+						UFHelper.formatText(
+							pLeftMode,
+							samplePowerCur,
+							samplePowerMax,
+							pcfg.useShortNumbers ~= false,
+							samplePowerPercent,
+							pDelimiter,
+							pDelimiter2,
+							pDelimiter3,
+							pHidePercentSymbol,
+							pLevelText,
+							nil,
+							pRoundPercent
+						)
 					)
 				end
 			end
@@ -8342,7 +8409,20 @@ local function applyBossEditSample(idx, cfg)
 					st.powerTextCenter:SetText("")
 				else
 					st.powerTextCenter:SetText(
-						UFHelper.formatText(pCenterMode, pCur, pMax, pcfg.useShortNumbers ~= false, pPercent, pDelimiter, pDelimiter2, pDelimiter3, pHidePercentSymbol, pLevelText, nil, pRoundPercent)
+						UFHelper.formatText(
+							pCenterMode,
+							samplePowerCur,
+							samplePowerMax,
+							pcfg.useShortNumbers ~= false,
+							samplePowerPercent,
+							pDelimiter,
+							pDelimiter2,
+							pDelimiter3,
+							pHidePercentSymbol,
+							pLevelText,
+							nil,
+							pRoundPercent
+						)
 					)
 				end
 			end
@@ -8351,7 +8431,20 @@ local function applyBossEditSample(idx, cfg)
 					st.powerTextRight:SetText("")
 				else
 					st.powerTextRight:SetText(
-						UFHelper.formatText(pRightMode, pCur, pMax, pcfg.useShortNumbers ~= false, pPercent, pDelimiter, pDelimiter2, pDelimiter3, pHidePercentSymbol, pLevelText, nil, pRoundPercent)
+						UFHelper.formatText(
+							pRightMode,
+							samplePowerCur,
+							samplePowerMax,
+							pcfg.useShortNumbers ~= false,
+							samplePowerPercent,
+							pDelimiter,
+							pDelimiter2,
+							pDelimiter3,
+							pHidePercentSymbol,
+							pLevelText,
+							nil,
+							pRoundPercent
+						)
 					)
 				end
 			end
@@ -8366,7 +8459,7 @@ local function applyBossEditSample(idx, cfg)
 	end
 	if st.nameText then st.nameText:SetText((L["UFBossFrame"] or "Boss Frame") .. " " .. idx) end
 	if st.levelText then
-		st.levelText:SetText("??")
+		st.levelText:SetText(sampleLevelText ~= "" and sampleLevelText or "??")
 		st.levelText:Show()
 	end
 	if st.castBar and cdef.enabled ~= false then UF.SetSampleCast(unit) end
@@ -8915,6 +9008,16 @@ function UF.UpdateUnitTexts(unit, force)
 	end
 
 	local inEdit = addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode()
+	if inEdit and isBossUnit(unit) then
+		local idx = tonumber(type(unit) == "string" and unit:match("^boss(%d+)$") or nil)
+		if idx then
+			applyBossEditSample(idx, cfg)
+			st._healthTextDirty = nil
+			st._powerTextDirty = nil
+			st._secondaryPowerTextDirty = nil
+			return
+		end
+	end
 	local exists = UnitExists and UnitExists(unit)
 	if not exists and not inEdit then
 		if st.healthTextLeft then st.healthTextLeft:SetText("") end
