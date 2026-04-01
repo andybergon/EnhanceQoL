@@ -4058,7 +4058,7 @@ Bars.AppendBarStandaloneDetailHeaders = function(settings, ctx)
 		defaultCollapsed = true,
 		isShown = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) ~= Bars.BAR_MODE.STACKS
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
 		end,
 	}
 	settings[#settings + 1] = {
@@ -4350,7 +4350,25 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarShowValueText"] or "Show value",
 		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowValueText", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarShowValueText"] or "Show value",
+		kind = SettingType.Checkbox,
 		parentId = "eqolCooldownPanelStandaloneBarCooldown",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
 			return getStoredBoolean(currentEntry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
@@ -4541,8 +4559,39 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarValueAnchor"] or "Value anchor",
 		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		height = 160,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return Bars.NormalizeTextAnchor(currentEntry and currentEntry.barValueAnchor, Bars.DEFAULTS.barValueAnchor)
+		end,
+		set = function(_, value) Bars.SetTextAnchorWithFreshOffsets(panelId, entryId, "barValueAnchor", "barValueOffsetX", "barValueOffsetY", value, Bars.DEFAULTS.barValueAnchor) end,
+		generator = function(_, root)
+			for _, option in ipairs(Bars.GetBarTextAnchorOptions()) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return Bars.NormalizeTextAnchor(currentEntry and currentEntry.barValueAnchor, Bars.DEFAULTS.barValueAnchor) == option.value
+				end, function() Bars.SetTextAnchorWithFreshOffsets(panelId, entryId, "barValueAnchor", "barValueOffsetX", "barValueOffsetY", option.value, Bars.DEFAULTS.barValueAnchor) end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueAnchor"] or "Value anchor",
+		kind = SettingType.Dropdown,
 		parentId = "eqolCooldownPanelStandaloneBarCooldown",
 		height = 160,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
 			return not (currentEntry and currentEntry.barShowValueText == true)
@@ -4564,11 +4613,38 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarValueOffsetX"] or "Value X",
 		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		minValue = BAR_OFFSET_MIN,
+		maxValue = BAR_OFFSET_MAX,
+		valueStep = 1,
+		allowInput = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarOffset(currentEntry and currentEntry.barValueOffsetX, Bars.DEFAULTS.barValueOffsetX)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueOffsetX", normalizeBarOffset(value, Bars.DEFAULTS.barValueOffsetX)) end,
+		formatter = function(value) return tostring(normalizeBarOffset(value, Bars.DEFAULTS.barValueOffsetX)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueOffsetX"] or "Value X",
+		kind = SettingType.Slider,
 		parentId = "eqolCooldownPanelStandaloneBarCooldown",
 		minValue = BAR_OFFSET_MIN,
 		maxValue = BAR_OFFSET_MAX,
 		valueStep = 1,
 		allowInput = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
 			return not (currentEntry and currentEntry.barShowValueText == true)
@@ -4583,11 +4659,38 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarValueOffsetY"] or "Value Y",
 		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		minValue = BAR_OFFSET_MIN,
+		maxValue = BAR_OFFSET_MAX,
+		valueStep = 1,
+		allowInput = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarOffset(currentEntry and currentEntry.barValueOffsetY, Bars.DEFAULTS.barValueOffsetY)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueOffsetY", normalizeBarOffset(value, Bars.DEFAULTS.barValueOffsetY)) end,
+		formatter = function(value) return tostring(normalizeBarOffset(value, Bars.DEFAULTS.barValueOffsetY)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueOffsetY"] or "Value Y",
+		kind = SettingType.Slider,
 		parentId = "eqolCooldownPanelStandaloneBarCooldown",
 		minValue = BAR_OFFSET_MIN,
 		maxValue = BAR_OFFSET_MAX,
 		valueStep = 1,
 		allowInput = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
 			return not (currentEntry and currentEntry.barShowValueText == true)
@@ -4683,8 +4786,39 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarValueFont"] or "Value font",
 		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		height = 220,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStandaloneBarFontValue(currentEntry and currentEntry.barValueFont)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueFont", value) end,
+		generator = function(_, root)
+			for _, option in ipairs(Helper.GetFontOptions(valueDefaultFontPath)) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return getStandaloneBarFontValue(currentEntry and currentEntry.barValueFont) == option.value
+				end, function() setEntryBarField(panelId, entryId, "barValueFont", option.value) end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueFont"] or "Value font",
+		kind = SettingType.Dropdown,
 		parentId = "eqolCooldownPanelStandaloneBarCooldown",
 		height = 220,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
 			return not (currentEntry and currentEntry.barShowValueText == true)
@@ -4706,8 +4840,39 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarValueStyle"] or "Value style",
 		kind = SettingType.Dropdown,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		height = 120,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarFontStyle(currentEntry and currentEntry.barValueStyle, valueDefaultFontStyle)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueStyle", Helper.NormalizeFontStyleChoice(value, valueDefaultFontStyle)) end,
+		generator = function(_, root)
+			for _, option in ipairs(Helper.FontStyleOptions) do
+				root:CreateRadio(option.label, function()
+					local currentEntry = getStandaloneBarContextEntry(ctx)
+					return normalizeBarFontStyle(currentEntry and currentEntry.barValueStyle, valueDefaultFontStyle) == option.value
+				end, function() setEntryBarField(panelId, entryId, "barValueStyle", option.value) end)
+			end
+		end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueStyle"] or "Value style",
+		kind = SettingType.Dropdown,
 		parentId = "eqolCooldownPanelStandaloneBarCooldown",
 		height = 120,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
 			return not (currentEntry and currentEntry.barShowValueText == true)
@@ -4729,11 +4894,38 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarValueSize"] or "Value size",
 		kind = SettingType.Slider,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		minValue = BAR_FONT_SIZE_MIN,
+		maxValue = BAR_FONT_SIZE_MAX,
+		valueStep = 1,
+		allowInput = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarFontSize(currentEntry and currentEntry.barValueSize, valueDefaultFontSize)
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueSize", Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, valueDefaultFontSize)) end,
+		formatter = function(value) return tostring(Helper.ClampInt(value, BAR_FONT_SIZE_MIN, BAR_FONT_SIZE_MAX, valueDefaultFontSize)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueSize"] or "Value size",
+		kind = SettingType.Slider,
 		parentId = "eqolCooldownPanelStandaloneBarCooldown",
 		minValue = BAR_FONT_SIZE_MIN,
 		maxValue = BAR_FONT_SIZE_MAX,
 		valueStep = 1,
 		allowInput = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
 			return not (currentEntry and currentEntry.barShowValueText == true)
@@ -4748,8 +4940,32 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarValueColor"] or "Value color",
 		kind = SettingType.Color,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		hasOpacity = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not (currentEntry and currentEntry.barShowValueText == true)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local color = Helper.NormalizeColor(currentEntry and currentEntry.barValueColor, Bars.DEFAULTS.barValueColor)
+			return { r = color[1], g = color[2], b = color[3], a = color[4] }
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barValueColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barValueColor)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarValueColor"] or "Value color",
+		kind = SettingType.Color,
 		parentId = "eqolCooldownPanelStandaloneBarCooldown",
 		hasOpacity = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
 			return not (currentEntry and currentEntry.barShowValueText == true)
@@ -4897,6 +5113,7 @@ local function buildBarStandaloneSettings(panelId, entryId)
 
 	Bars.AppendStandaloneSettingsById(settings, detailSettings, "eqolCooldownPanelStandaloneBarCharges")
 	Bars.AppendStandaloneSettingsByParent(settings, appearanceSettings, "eqolCooldownPanelStandaloneBarCharges")
+	Bars.AppendStandaloneSettingsByParent(settings, textSettings, "eqolCooldownPanelStandaloneBarCharges")
 
 	Bars.AppendStandaloneSettingsById(settings, detailSettings, "eqolCooldownPanelStandaloneBarCooldown")
 	Bars.AppendStandaloneSettingsByParent(settings, textSettings, "eqolCooldownPanelStandaloneBarCooldown")
