@@ -5927,7 +5927,9 @@ local function setAllHooks()
 	local function refreshSquareMinimapBorderForMedia(mediaType, mediaKey)
 		if mediaType ~= "border" then return end
 		if not (addon and addon.db and addon.functions and addon.functions.applySquareMinimapBorder) then return end
-		if normalizeSquareMinimapBorderTexture(addon.db.squareMinimapBorderTexture) ~= mediaKey then return end
+		local borderTexture = addon.db.squareMinimapBorderTexture
+		if type(borderTexture) ~= "string" or borderTexture == "" then borderTexture = "DEFAULT" end
+		if borderTexture ~= mediaKey then return end
 		addon.functions.applySquareMinimapBorder()
 	end
 
