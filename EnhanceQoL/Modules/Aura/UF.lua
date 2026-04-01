@@ -26,6 +26,27 @@ local UF_PROFILE_SHARE_KIND = "EQOL_UF_PROFILE"
 local smoothFill = Enum.StatusBarInterpolation.ExponentialEaseOut
 local TEXT_UPDATE_INTERVAL = 0.1
 UF._clientSceneActive = false
+local blizzBossKill = {
+	looseFrames = {},
+	parentHooks = {},
+}
+blizzBossKill.hiddenParent = CreateFrame("Frame", nil, UIParent)
+blizzBossKill.hiddenParent:SetAllPoints()
+blizzBossKill.hiddenParent:Hide()
+blizzBossKill.watcher = CreateFrame("Frame")
+blizzBossKill.watcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+blizzBossKill.watcher:SetScript("OnEvent", function()
+	for frame in next, blizzBossKill.looseFrames do
+		frame:SetParent(blizzBossKill.hiddenParent)
+	end
+	if table and table.wipe then
+		table.wipe(blizzBossKill.looseFrames)
+	else
+		for frame in pairs(blizzBossKill.looseFrames) do
+			blizzBossKill.looseFrames[frame] = nil
+		end
+	end
+end)
 
 local function getSmoothInterpolation(cfg, def)
 	if not smoothFill then return nil end
@@ -35,12 +56,66 @@ local function getSmoothInterpolation(cfg, def)
 	return nil
 end
 
-local throttleHook
+local function resetBlizzBossParent(self, parent)
+	if parent == blizzBossKill.hiddenParent then return end
+	if InCombatLockdown() and self.IsProtected and self:IsProtected() then
+		blizzBossKill.looseFrames[self] = true
+	else
+		self:SetParent(blizzBossKill.hiddenParent)
+	end
+end
+
+local function disableBlizzBossSubFrame(frame)
+	if not frame then return end
+	if frame.UnregisterAllEvents then frame:UnregisterAllEvents() end
+	if (not InCombatLockdown()) or (not frame.IsProtected) or (not frame:IsProtected()) then
+		if frame.Hide then frame:Hide() end
+	end
+end
+
+local function disableBlizzBossFrame(frame, doNotReparent)
+	if not frame then return end
+	if frame.UnregisterAllEvents then frame:UnregisterAllEvents() end
+	if frame.SetAlpha then frame:SetAlpha(0) end
+	if (not InCombatLockdown()) or (not frame.IsProtected) or (not frame:IsProtected()) then
+		if frame.Hide then frame:Hide() end
+	end
+	if not doNotReparent and frame.SetParent then
+		if InCombatLockdown() and frame.IsProtected and frame:IsProtected() then
+			blizzBossKill.looseFrames[frame] = true
+		else
+			frame:SetParent(blizzBossKill.hiddenParent)
+		end
+		if not blizzBossKill.parentHooks[frame] then
+			hooksecurefunc(frame, "SetParent", resetBlizzBossParent)
+			blizzBossKill.parentHooks[frame] = true
+		end
+	end
+	disableBlizzBossSubFrame(frame.healthBar or frame.healthbar or frame.HealthBar or (frame.HealthBarsContainer and frame.HealthBarsContainer.healthBar) or (frame.TargetFrameContent and frame.TargetFrameContent.TargetFrameContentMain and frame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer and frame.TargetFrameContent.TargetFrameContentMain.HealthBarsContainer.HealthBar))
+	disableBlizzBossSubFrame(frame.manabar or frame.ManaBar or (frame.TargetFrameContent and frame.TargetFrameContent.TargetFrameContentMain and frame.TargetFrameContent.TargetFrameContentMain.ManaBar))
+	disableBlizzBossSubFrame(frame.castBar or frame.spellbar or frame.CastingBarFrame)
+	disableBlizzBossSubFrame(frame.powerBarAlt or frame.PowerBarAlt)
+	disableBlizzBossSubFrame(frame.BuffFrame or frame.AurasFrame)
+	disableBlizzBossSubFrame(frame.petFrame or frame.PetFrame)
+	disableBlizzBossSubFrame(frame.totFrame)
+	disableBlizzBossSubFrame(frame.CcRemoverFrame)
+	disableBlizzBossSubFrame(frame.DebuffFrame)
+end
+
 local function DisableBossFrames()
-	BossTargetFrameContainer:SetAlpha(0)
-	BossTargetFrameContainer.Selection:SetAlpha(0)
-	if not throttleHook then
-		throttleHook = true
+	if not _G.BossTargetFrameContainer then return end
+	disableBlizzBossFrame(BossTargetFrameContainer)
+	if BossTargetFrameContainer.Selection then
+		BossTargetFrameContainer.Selection:SetAlpha(0)
+		if (not InCombatLockdown()) or (not BossTargetFrameContainer.Selection.IsProtected) or (not BossTargetFrameContainer.Selection:IsProtected()) then
+			BossTargetFrameContainer.Selection:Hide()
+		end
+	end
+	for i = 1, (_G.MAX_BOSS_FRAMES or 5) do
+		disableBlizzBossFrame(_G["Boss" .. i .. "TargetFrame"], true)
+	end
+	if blizzBossKill.throttleHook ~= true then
+		blizzBossKill.throttleHook = true
 		hooksecurefunc(BossTargetFrameContainer, "SetAlpha", function(self, parent)
 			if self:GetAlpha() ~= 0 then self:SetAlpha(0) end
 		end)
@@ -8645,10 +8720,6 @@ local generalEvents = {
 	"GROUP_ROSTER_UPDATE",
 	"PARTY_LEADER_CHANGED",
 	"PLAYER_FOCUS_CHANGED",
-	"INSTANCE_ENCOUNTER_ENGAGE_UNIT",
-	"UNIT_TARGETABLE_CHANGED",
-	"ENCOUNTER_START",
-	"ENCOUNTER_END",
 	"RAID_TARGET_UPDATE",
 	"SPELL_RANGE_CHECK_UPDATE",
 	"CLIENT_SCENE_OPENED",
@@ -10097,6 +10168,12 @@ local function ensureEventHandling()
 	if eventFrame.UnregisterAllEvents then eventFrame:UnregisterAllEvents() end
 	for _, evt in ipairs(generalEvents) do
 		eventFrame:RegisterEvent(evt)
+	end
+	if ensureDB("boss").enabled then
+		eventFrame:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
+		eventFrame:RegisterEvent("UNIT_TARGETABLE_CHANGED")
+		eventFrame:RegisterEvent("ENCOUNTER_START")
+		eventFrame:RegisterEvent("ENCOUNTER_END")
 	end
 	UF._registerUnitScopedEvents(anyPortraitEnabled())
 	syncTargetRangeFadeConfig(ensureDB(UNIT.TARGET), defaultsFor(UNIT.TARGET))

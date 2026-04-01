@@ -12,6 +12,7 @@
 ### 🐛 Fixed
 
 - Group Frames / Resource Bars: Registered `PLAYER_SPECIALIZATION_CHANGED` as a player-scoped unit event so spec-switch updates stay scoped correctly.
+- Unit Frames (Boss): Improved boss frame reliability in some encounters and fixed incorrect preview behavior in Edit Mode.
 
 ---
 
