@@ -103,6 +103,8 @@ Bars.DEFAULTS = Bars.DEFAULTS
 		barIconOffsetY = 0,
 		barChargesSegmented = false,
 		barChargesGap = 2,
+		barStacksSegmented = false,
+		barStackDividerColor = { 0.10, 0.10, 0.10, 0.95 },
 		barStackMax = 10,
 		barStackAnchor = "AUTO",
 		barStackFont = "",
@@ -577,6 +579,8 @@ Bars.ApplyNewBarStyleDefaults = function(entry)
 	if entry.barTexture == nil or normalizeBarTexture(entry.barTexture, BAR_TEXTURE_DEFAULT) == BAR_TEXTURE_DEFAULT then entry.barTexture = Bars.DEFAULTS.barTexture end
 	if safeNumber(entry.barIconSize) == nil or safeNumber(entry.barIconSize) <= 0 then entry.barIconSize = Bars.DEFAULTS.barIconSize end
 	if entry.barBorderEnabled == nil then entry.barBorderEnabled = Bars.DEFAULTS.barBorderEnabled end
+	if entry.barStacksSegmented == nil then entry.barStacksSegmented = Bars.DEFAULTS.barStacksSegmented end
+	if entry.barStackDividerColor == nil then entry.barStackDividerColor = Bars.DEFAULTS.barStackDividerColor end
 	if entry.barStackMax == nil then entry.barStackMax = Bars.DEFAULTS.barStackMax end
 	if entry.barStackAnchor == nil then entry.barStackAnchor = Bars.DEFAULTS.barStackAnchor end
 	if entry.barStackOffsetX == nil then entry.barStackOffsetX = Bars.DEFAULTS.barStackOffsetX end
@@ -814,6 +818,8 @@ normalizeBarEntry = function(entry)
 	entry.barIconOffsetY = normalizeBarIconOffset(entry.barIconOffsetY, Bars.DEFAULTS.barIconOffsetY)
 	entry.barChargesSegmented = getStoredBoolean(entry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented)
 	entry.barChargesGap = normalizeBarChargesGap(entry.barChargesGap, Bars.DEFAULTS.barChargesGap)
+	entry.barStacksSegmented = getStoredBoolean(entry, "barStacksSegmented", Bars.DEFAULTS.barStacksSegmented)
+	entry.barStackDividerColor = Helper.NormalizeColor(entry.barStackDividerColor, Bars.DEFAULTS.barStackDividerColor)
 	entry.barStackMax = Bars.NormalizeBarStackMax(entry.barStackMax, Bars.DEFAULTS.barStackMax)
 	entry.barStackAnchor = Bars.NormalizeTextAnchor(entry.barStackAnchor, Bars.DEFAULTS.barStackAnchor)
 	entry.barStackFont = normalizeBarFont(entry.barStackFont, Bars.DEFAULTS.barStackFont)
@@ -1244,6 +1250,79 @@ local function ensureBarSegment(frame, index)
 	return segment
 end
 
+Bars.EnsureBarDivider = function(frame, index)
+	if not frame then return nil end
+	frame.stackDividers = frame.stackDividers or {}
+	local divider = frame.stackDividers[index]
+	if divider then return divider end
+	local parent = frame.dividerOverlay or frame.body or frame
+	divider = parent:CreateTexture(nil, "ARTWORK")
+	divider:SetTexture("Interface\\Buttons\\WHITE8x8")
+	if divider.SetTexelSnappingBias then
+		divider:SetTexelSnappingBias(0)
+		divider:SetSnapToPixelGrid(false)
+	end
+	divider:Hide()
+	frame.stackDividers[index] = divider
+	return divider
+end
+
+Bars.HideUnusedBarDividers = function(frame, firstIndex)
+	if not frame then return end
+	if frame.dividerOverlay then frame.dividerOverlay:Hide() end
+	if not frame.stackDividers then return end
+	for index = firstIndex or 1, #frame.stackDividers do
+		local divider = frame.stackDividers[index]
+		if divider then divider:Hide() end
+	end
+end
+
+Bars.LayoutStackDividers = function(frame, orientation, stackMax, bodyWidth, bodyHeight, color, effectiveScale)
+	if not (frame and frame.dividerOverlay) then return end
+	local resolvedMax = Helper.ClampInt(stackMax, 1, 1000, 1)
+	local dividerCount = max(0, resolvedMax - 1)
+	if dividerCount <= 0 then
+		Bars.HideUnusedBarDividers(frame, 1)
+		return
+	end
+
+	local axisSize = orientation == BAR_ORIENTATION_VERTICAL and bodyHeight or bodyWidth
+	local maxVisibleDividers = max(0, floor(axisSize / 3) - 1)
+	if maxVisibleDividers <= 0 then
+		Bars.HideUnusedBarDividers(frame, 1)
+		return
+	end
+
+	local step = max(1, math.ceil(dividerCount / maxVisibleDividers))
+	local dividerColor = Helper.NormalizeColor(color, Bars.DEFAULTS.barStackDividerColor)
+	local dividerAlpha = min(1, max(dividerColor[4] or 1, 0))
+	local dividerThickness = max(pixelSnap(1, effectiveScale), 1)
+	local visibleIndex = 1
+
+	for boundary = 1, dividerCount, step do
+		local offset = pixelSnap((axisSize * boundary) / resolvedMax, effectiveScale)
+		if offset > 0 and offset < axisSize then
+			local divider = Bars.EnsureBarDivider(frame, visibleIndex)
+			divider:ClearAllPoints()
+			divider:SetColorTexture(dividerColor[1], dividerColor[2], dividerColor[3], dividerAlpha)
+			if orientation == BAR_ORIENTATION_VERTICAL then
+				divider:SetPoint("TOPLEFT", frame.dividerOverlay, "TOPLEFT", 0, -offset)
+				divider:SetPoint("TOPRIGHT", frame.dividerOverlay, "TOPRIGHT", 0, -offset)
+				divider:SetHeight(dividerThickness)
+			else
+				divider:SetPoint("TOPLEFT", frame.dividerOverlay, "TOPLEFT", offset, 0)
+				divider:SetPoint("BOTTOMLEFT", frame.dividerOverlay, "BOTTOMLEFT", offset, 0)
+				divider:SetWidth(dividerThickness)
+			end
+			divider:Show()
+			visibleIndex = visibleIndex + 1
+		end
+	end
+
+	Bars.HideUnusedBarDividers(frame, visibleIndex)
+	if visibleIndex > 1 then frame.dividerOverlay:Show() end
+end
+
 local function clearCooldownFrame(frame)
 	if not frame then return end
 	if frame.Clear then
@@ -1328,6 +1407,10 @@ local function ensureBarFrame(icon)
 	frame.fillBg:SetAllPoints(frame.fill)
 	frame.fillBg:SetTexture("Interface\\Buttons\\WHITE8x8")
 	frame.fillBg:SetVertexColor(0, 0, 0, 0.35)
+	frame.dividerOverlay = CreateFrame("Frame", nil, frame.body)
+	frame.dividerOverlay:SetAllPoints(frame.body)
+	frame.dividerOverlay:EnableMouse(false)
+	frame.dividerOverlay:Hide()
 
 	frame.iconOverlay = CreateFrame("Frame", nil, frame)
 	frame.iconOverlay:SetAllPoints(frame)
@@ -1367,6 +1450,7 @@ local function ensureBarFrame(icon)
 	frame.stackCount:Hide()
 
 	frame.segments = {}
+	frame.stackDividers = {}
 	frame._eqolBarState = nil
 	frame._eqolSegmentCount = 0
 	frame:Hide()
@@ -2384,6 +2468,8 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 		iconOffsetY = normalizeBarIconOffset(entry.barIconOffsetY, Bars.DEFAULTS.barIconOffsetY),
 		segmentedCharges = mode == Bars.BAR_MODE.CHARGES and getStoredBoolean(entry, "barChargesSegmented", Bars.DEFAULTS.barChargesSegmented),
 		chargesGap = normalizeBarChargesGap(entry.barChargesGap, Bars.DEFAULTS.barChargesGap),
+		segmentedStacks = mode == Bars.BAR_MODE.STACKS and getStoredBoolean(entry, "barStacksSegmented", Bars.DEFAULTS.barStacksSegmented),
+		stackDividerColor = Helper.NormalizeColor(entry.barStackDividerColor, Bars.DEFAULTS.barStackDividerColor),
 		stackMax = Bars.NormalizeBarStackMax(entry.barStackMax, Bars.DEFAULTS.barStackMax),
 		stackAnchor = Bars.NormalizeTextAnchor(entry.barStackAnchor, Bars.DEFAULTS.barStackAnchor),
 		stackFont = normalizeBarFont(entry.barStackFont, Bars.DEFAULTS.barStackFont),
@@ -2632,6 +2718,7 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 	local offsetY = normalizeBarOffset(state and state.barOffsetY, Bars.DEFAULTS.barOffsetY)
 	local orientation = normalizeBarOrientation(state and state.orientation, Bars.DEFAULTS.barOrientation)
 	local useChargeSegments = state.mode == Bars.BAR_MODE.CHARGES and state.segmentedCharges == true and safeNumber(state.maxCharges) == 2
+	local useStackDividers = state.mode == Bars.BAR_MODE.STACKS and state.segmentedStacks == true
 	local segmentCount = useChargeSegments and 2 or 0
 	local gap = useChargeSegments and normalizeBarChargesGap(state.chargesGap, Bars.DEFAULTS.barChargesGap) or 0
 	local segmentDirection = useChargeSegments and normalizeBarSegmentDirection(state.segmentDirection, Bars.DEFAULTS.barSegmentDirection) or BAR_ORIENTATION_HORIZONTAL
@@ -2716,9 +2803,13 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		barFrame.body:SetFrameLevel(barFrame:GetFrameLevel() + 1)
 	end
 	if barFrame.fill then barFrame.fill:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 1) end
+	if barFrame.dividerOverlay then
+		barFrame.dividerOverlay:SetFrameStrata(barFrame:GetFrameStrata())
+		barFrame.dividerOverlay:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 2)
+	end
 	if barFrame.borderOverlay then
 		barFrame.borderOverlay:SetFrameStrata(barFrame:GetFrameStrata())
-		barFrame.borderOverlay:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 2)
+		barFrame.borderOverlay:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 3)
 	end
 	if barFrame.iconOverlay then
 		barFrame.iconOverlay:SetFrameStrata(barFrame:GetFrameStrata())
@@ -2745,6 +2836,11 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 	barFrame.fill:ClearAllPoints()
 	barFrame.fill:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", 0, 0)
 	barFrame.fill:SetPoint("BOTTOMRIGHT", barFrame.body, "BOTTOMRIGHT", 0, 0)
+	if barFrame.dividerOverlay then
+		barFrame.dividerOverlay:ClearAllPoints()
+		barFrame.dividerOverlay:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", 0, 0)
+		barFrame.dividerOverlay:SetPoint("BOTTOMRIGHT", barFrame.body, "BOTTOMRIGHT", 0, 0)
+	end
 	if barFrame.borderOverlay then
 		if borderSize > 0 then
 			barFrame.borderOverlay:ClearAllPoints()
@@ -2783,6 +2879,7 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		valueDefaultFontPath, valueDefaultFontSize, valueDefaultFontStyle = CooldownPanels:GetCooldownFontDefaults(icon and icon:GetParent() or nil)
 	end
 	if useChargeSegments then
+		Bars.HideUnusedBarDividers(barFrame, 1)
 		local segmentAxisSize = segmentDirection == BAR_ORIENTATION_VERTICAL and bodyHeight or bodyWidth
 		local totalGapSize = max(segmentCount - 1, 0) * gap
 		local segmentPrimarySize = max(1, floor((segmentAxisSize - totalGapSize) / segmentCount))
@@ -2967,6 +3064,19 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 				barFrame.fill:SetMinMaxValues(0, 1)
 				setStatusBarImmediateValue(barFrame.fill, state.progress or 0)
 			end
+		end
+		if useStackDividers then
+			Bars.LayoutStackDividers(
+				barFrame,
+				orientation,
+				state.stackFillMax or state.stackMax,
+				bodyWidth,
+				bodyHeight,
+				state.stackDividerColor,
+				slotAnchor.GetEffectiveScale and slotAnchor:GetEffectiveScale() or nil
+			)
+		else
+			Bars.HideUnusedBarDividers(barFrame, 1)
 		end
 		Bars.ConfigureForwardHitHandle(barFrame.hitHandle, barFrame.body, icon and icon.layoutHandle or nil)
 		Bars.ConfigureFreeMoveHandle(barFrame.hitHandle, barFrame, icon)
@@ -4257,7 +4367,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		allowInput = true,
 		isShown = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.STACKS and getEntryResolvedType(currentEntry) == "CDM_AURA"
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.STACKS
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -4265,6 +4375,40 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		set = function(_, value) setEntryBarField(panelId, entryId, "barStackMax", Bars.NormalizeBarStackMax(value, Bars.DEFAULTS.barStackMax)) end,
 		formatter = function(value) return tostring(Bars.NormalizeBarStackMax(value, Bars.DEFAULTS.barStackMax)) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarStacksSegmented"] or "Segment stacks",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarStacks",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.STACKS
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barStacksSegmented", Bars.DEFAULTS.barStacksSegmented)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barStacksSegmented", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarStackDividerColor"] or "Divider color",
+		kind = SettingType.Color,
+		parentId = "eqolCooldownPanelStandaloneBarStacks",
+		hasOpacity = true,
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.STACKS
+		end,
+		disabled = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return not getStoredBoolean(currentEntry, "barStacksSegmented", Bars.DEFAULTS.barStacksSegmented)
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			local color = Helper.NormalizeColor(currentEntry and currentEntry.barStackDividerColor, Bars.DEFAULTS.barStackDividerColor)
+			return { r = color[1], g = color[2], b = color[3], a = color[4] }
+		end,
+		set = function(_, value) setEntryBarField(panelId, entryId, "barStackDividerColor", Helper.NormalizeColor(value, Bars.DEFAULTS.barStackDividerColor)) end,
 	}
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarStackAnchor"] or "Stack anchor",
