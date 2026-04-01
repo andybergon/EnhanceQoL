@@ -1300,25 +1300,35 @@ Bars.LayoutStackDividers = function(frame, orientation, stackMax, bodyWidth, bod
 	local dividerColor = Helper.NormalizeColor(color, Bars.DEFAULTS.barStackDividerColor)
 	local dividerAlpha = min(1, max(dividerColor[4] or 1, 0))
 	local dividerThickness = max(pixelSnap(1, effectiveScale), 1)
+	local overlayLeft = frame.dividerOverlay.GetLeft and frame.dividerOverlay:GetLeft() or nil
+	local overlayTop = frame.dividerOverlay.GetTop and frame.dividerOverlay:GetTop() or nil
 	local visibleIndex = 1
 
 	for boundary = 1, dividerCount, step do
-		local offset = pixelSnap((axisSize * boundary) / resolvedMax, effectiveScale)
-		if offset > 0 and offset < axisSize then
-			local divider = Bars.EnsureBarDivider(frame, visibleIndex)
-			divider:ClearAllPoints()
-			divider:SetColorTexture(dividerColor[1], dividerColor[2], dividerColor[3], dividerAlpha)
-			if orientation == BAR_ORIENTATION_VERTICAL then
-				divider:SetPoint("TOPLEFT", frame.dividerOverlay, "TOPLEFT", 0, -offset)
-				divider:SetPoint("TOPRIGHT", frame.dividerOverlay, "TOPRIGHT", 0, -offset)
+		local rawOffset = (axisSize * boundary) / resolvedMax
+		local divider = Bars.EnsureBarDivider(frame, visibleIndex)
+		local offset = nil
+		divider:ClearAllPoints()
+		divider:SetColorTexture(dividerColor[1], dividerColor[2], dividerColor[3], dividerAlpha)
+		if orientation == BAR_ORIENTATION_VERTICAL then
+			offset = overlayTop and (pixelSnap(overlayTop - rawOffset, effectiveScale) - overlayTop) or -pixelSnap(rawOffset, effectiveScale)
+			local appliedOffset = -offset
+			if appliedOffset > 0 and appliedOffset < axisSize then
+				divider:SetPoint("TOPLEFT", frame.dividerOverlay, "TOPLEFT", 0, offset)
+				divider:SetPoint("TOPRIGHT", frame.dividerOverlay, "TOPRIGHT", 0, offset)
 				divider:SetHeight(dividerThickness)
-			else
+				divider:Show()
+				visibleIndex = visibleIndex + 1
+			end
+		else
+			offset = overlayLeft and (pixelSnap(overlayLeft + rawOffset, effectiveScale) - overlayLeft) or pixelSnap(rawOffset, effectiveScale)
+			if offset > 0 and offset < axisSize then
 				divider:SetPoint("TOPLEFT", frame.dividerOverlay, "TOPLEFT", offset, 0)
 				divider:SetPoint("BOTTOMLEFT", frame.dividerOverlay, "BOTTOMLEFT", offset, 0)
 				divider:SetWidth(dividerThickness)
+				divider:Show()
+				visibleIndex = visibleIndex + 1
 			end
-			divider:Show()
-			visibleIndex = visibleIndex + 1
 		end
 	end
 
