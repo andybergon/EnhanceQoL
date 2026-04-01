@@ -22,6 +22,8 @@ local function isSettingEnabled(varName)
 end
 
 local function isSquareMinimapEnabledSetting() return isSettingEnabled("enableSquareMinimap") end
+local function isSquareMinimapBorderEnabledSetting() return isSquareMinimapEnabledSetting() and isSettingEnabled("enableSquareMinimapBorder") end
+local function isSquareMinimapBackgroundEnabledSetting() return isSquareMinimapEnabledSetting() and isSettingEnabled("enableSquareMinimapBackground") end
 
 local function isSquareMinimapStatsEnabledSetting() return isSquareMinimapEnabledSetting() and isSettingEnabled("enableSquareMinimapStats") end
 
@@ -39,6 +41,9 @@ local function getSettingSelectedValue(primary, secondary)
 end
 
 local squareMinimapStatsFontOrder = {}
+local squareMinimapBorderTextureOptions = {}
+local squareMinimapBorderTextureOrder = {}
+local squareMinimapBorderTextureCacheVersion = -1
 local squareMinimapStatsOutlineOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "MONOCHROMEOUTLINE" }
 local squareMinimapStatsOutlineOptions = {
 	NONE = L["fontOutlineNone"] or NONE,
@@ -63,6 +68,7 @@ local squareMinimapStatsTimeLeftClickActionOptions = {
 	calendar = L["Time left-click opens calendar"] or "Open calendar",
 	clock = L["Time left-click opens stopwatch"] or "Open stopwatch",
 }
+local wipeTable = _G.wipe or table.wipe
 
 local function getCachedFontMedia()
 	local names = addon.functions and addon.functions.GetLSMMediaNames and addon.functions.GetLSMMediaNames("font")
@@ -131,6 +137,43 @@ local function buildSquareMinimapStatsFontDropdown()
 		if key ~= globalFontKey then squareMinimapStatsFontOrder[#squareMinimapStatsFontOrder + 1] = key end
 	end
 	return list
+end
+
+local function buildSquareMinimapBorderTextureDropdown()
+	local version = (addon.functions and addon.functions.GetLSMMediaVersion and addon.functions.GetLSMMediaVersion("border")) or 0
+	if squareMinimapBorderTextureCacheVersion == version then return squareMinimapBorderTextureOptions end
+	squareMinimapBorderTextureCacheVersion = version
+
+	local map = {
+		DEFAULT = _G.DEFAULT or "Default",
+		SOLID = "Solid",
+	}
+	local mediaOptions = addon.functions and addon.functions.GetLSMMediaOptions and addon.functions.GetLSMMediaOptions("border") or {}
+	for i = 1, #mediaOptions do
+		local option = mediaOptions[i]
+		if option and type(option.value) == "string" and option.value ~= "" then map[option.value] = option.label or option.value end
+	end
+
+	local list, order = addon.functions.prepareListForDropdown(map)
+	wipeTable(squareMinimapBorderTextureOptions)
+	for key, value in pairs(list or {}) do
+		squareMinimapBorderTextureOptions[key] = value
+	end
+	wipeTable(squareMinimapBorderTextureOrder)
+	if squareMinimapBorderTextureOptions.DEFAULT then squareMinimapBorderTextureOrder[#squareMinimapBorderTextureOrder + 1] = "DEFAULT" end
+	if squareMinimapBorderTextureOptions.SOLID then squareMinimapBorderTextureOrder[#squareMinimapBorderTextureOrder + 1] = "SOLID" end
+	for i = 1, #(order or {}) do
+		local key = order[i]
+		if key ~= "DEFAULT" and key ~= "SOLID" then squareMinimapBorderTextureOrder[#squareMinimapBorderTextureOrder + 1] = key end
+	end
+	return squareMinimapBorderTextureOptions
+end
+
+local function normalizeSquareMinimapBorderTextureSelection(primary, secondary)
+	local selected = getSettingSelectedValue(primary, secondary)
+	local list = buildSquareMinimapBorderTextureDropdown()
+	if type(selected) == "string" and list[selected] then return selected end
+	return "DEFAULT"
 end
 
 addon.functions.SettingsCreateHeadline(cMapNav, L["MapBasics"] or "Map Basics", { parentSection = mapExpandable })
@@ -252,6 +295,60 @@ data = {
 				parentSection = mapExpandable,
 			},
 			{
+				var = "enableSquareMinimapBackground",
+				text = L["enableSquareMinimapBackground"] or "Enable square minimap background panel",
+				desc = L["enableSquareMinimapBackgroundDesc"] or "Adds a colored panel behind the square minimap. Increase the offset to create a shadow-like backdrop.",
+				func = function(key)
+					addon.db["enableSquareMinimapBackground"] = key
+					if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
+				end,
+				default = false,
+				sType = "checkbox",
+				parentCheck = isSquareMinimapEnabledSetting,
+				parent = true,
+				notify = "enableSquareMinimap",
+				parentSection = mapExpandable,
+			},
+			{
+				var = "squareMinimapBackgroundOffset",
+				text = L["squareMinimapBackgroundOffset"] or "Square minimap background offset",
+				parentCheck = isSquareMinimapBackgroundEnabledSetting,
+				get = function()
+					local value = tonumber(addon.db and addon.db.squareMinimapBackgroundOffset) or 8
+					if value < -30 then value = -30 end
+					if value > 30 then value = 30 end
+					return value
+				end,
+				set = function(value)
+					value = tonumber(value) or 0
+					if value < -30 then value = -30 end
+					if value > 30 then value = 30 end
+					addon.db["squareMinimapBackgroundOffset"] = value
+					if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
+				end,
+				min = -30,
+				max = 30,
+				step = 1,
+				parent = true,
+				default = 8,
+				sType = "slider",
+				parentSection = mapExpandable,
+			},
+			{
+				var = "squareMinimapBackgroundColor",
+				text = L["squareMinimapBackgroundColor"] or "Square minimap background color",
+				parentCheck = isSquareMinimapBackgroundEnabledSetting,
+				parent = true,
+				hasOpacity = true,
+				default = false,
+				sType = "colorpicker",
+				notify = "enableSquareMinimapBackground",
+				callback = function()
+					if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
+				end,
+				parentSection = mapExpandable,
+			},
+			{
 				var = "enableSquareMinimapBorder",
 				text = L["enableSquareMinimapBorder"],
 				desc = L["enableSquareMinimapBorderDesc"],
@@ -271,23 +368,41 @@ data = {
 				parentSection = mapExpandable,
 			},
 			{
+				var = "squareMinimapBorderTexture",
+				text = L["squareMinimapBorderTexture"] or "Square minimap border texture",
+				listFunc = buildSquareMinimapBorderTextureDropdown,
+				order = squareMinimapBorderTextureOrder,
+				parentCheck = isSquareMinimapBorderEnabledSetting,
+				get = function() return normalizeSquareMinimapBorderTextureSelection(addon.db and addon.db.squareMinimapBorderTexture, nil) end,
+				set = function(value, maybeValue)
+					addon.db["squareMinimapBorderTexture"] = normalizeSquareMinimapBorderTextureSelection(value, maybeValue)
+					if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
+				end,
+				default = "DEFAULT",
+				sType = "scrolldropdown",
+				parent = true,
+				notify = "enableSquareMinimapBorder",
+				parentSection = mapExpandable,
+			},
+			{
 				var = "squareMinimapBorderSize",
 				text = L["squareMinimapBorderSize"],
-				parentCheck = function()
-					return addon.SettingsLayout.elements["enableSquareMinimapBorder"]
-						and addon.SettingsLayout.elements["enableSquareMinimapBorder"].setting
-						and addon.SettingsLayout.elements["enableSquareMinimapBorder"].setting:GetValue() == true
-						and addon.SettingsLayout.elements["enableSquareMinimap"]
-						and addon.SettingsLayout.elements["enableSquareMinimap"].setting
-						and addon.SettingsLayout.elements["enableSquareMinimap"].setting:GetValue() == true
+				parentCheck = isSquareMinimapBorderEnabledSetting,
+				get = function()
+					local value = tonumber(addon.db and addon.db.squareMinimapBorderSize) or 1
+					if value < 1 then value = 1 end
+					if value > 60 then value = 60 end
+					return value
 				end,
-				get = function() return addon.db and addon.db.squareMinimapBorderSize or 1 end,
 				set = function(value)
+					value = math.floor((tonumber(value) or 1) + 0.5)
+					if value < 1 then value = 1 end
+					if value > 60 then value = 60 end
 					addon.db["squareMinimapBorderSize"] = value
 					if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
 				end,
 				min = 1,
-				max = 8,
+				max = 60,
 				step = 1,
 				parent = true,
 				default = 1,
@@ -295,21 +410,39 @@ data = {
 				parentSection = mapExpandable,
 			},
 			{
+				var = "squareMinimapBorderOffset",
+				text = L["squareMinimapBorderOffset"] or "Square minimap border offset",
+				parentCheck = isSquareMinimapBorderEnabledSetting,
+				get = function()
+					local value = tonumber(addon.db and addon.db.squareMinimapBorderOffset) or 0
+					if value < -30 then value = -30 end
+					if value > 30 then value = 30 end
+					return value
+				end,
+				set = function(value)
+					value = tonumber(value) or 0
+					if value < -30 then value = -30 end
+					if value > 30 then value = 30 end
+					addon.db["squareMinimapBorderOffset"] = value
+					if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
+				end,
+				min = -30,
+				max = 30,
+				step = 1,
+				parent = true,
+				default = 0,
+				sType = "slider",
+				parentSection = mapExpandable,
+			},
+			{
 				var = "squareMinimapBorderColor",
 				text = L["squareMinimapBorderColor"],
-				parentCheck = function()
-					return addon.SettingsLayout.elements["enableSquareMinimapBorder"]
-						and addon.SettingsLayout.elements["enableSquareMinimapBorder"].setting
-						and addon.SettingsLayout.elements["enableSquareMinimapBorder"].setting:GetValue() == true
-						and addon.SettingsLayout.elements["enableSquareMinimap"]
-						and addon.SettingsLayout.elements["enableSquareMinimap"].setting
-						and addon.SettingsLayout.elements["enableSquareMinimap"].setting:GetValue() == true
-				end,
+				parentCheck = isSquareMinimapBorderEnabledSetting,
 				parent = true,
 				hasOpacity = true,
 				default = false,
 				sType = "colorpicker",
-				notify = "enableSquareMinimap",
+				notify = "enableSquareMinimapBorder",
 				callback = function()
 					if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
 				end,

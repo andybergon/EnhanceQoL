@@ -10,6 +10,7 @@ local addonName, addon = ...
 
 local LDB = LibStub("LibDataBroker-1.1")
 local LDBIcon = LibStub("LibDBIcon-1.0")
+local LSM = LibStub("LibSharedMedia-3.0", true)
 local AceGUI = LibStub("AceGUI-3.0")
 
 addon.AceGUI = AceGUI
@@ -4001,7 +4002,12 @@ local function initUI()
 	addon.functions.InitDBValue("enableSquareMinimap", false)
 	addon.functions.InitDBValue("enableSquareMinimapBorder", false)
 	addon.functions.InitDBValue("enableSquareMinimapLayout", false)
+	addon.functions.InitDBValue("enableSquareMinimapBackground", false)
+	addon.functions.InitDBValue("squareMinimapBackgroundOffset", 8)
+	addon.functions.InitDBValue("squareMinimapBackgroundColor", { r = 0, g = 0, b = 0, a = 0.65 })
+	addon.functions.InitDBValue("squareMinimapBorderTexture", "DEFAULT")
 	addon.functions.InitDBValue("squareMinimapBorderSize", 1)
+	addon.functions.InitDBValue("squareMinimapBorderOffset", 0)
 	addon.functions.InitDBValue("squareMinimapBorderColor", { r = 0, g = 0, b = 0 })
 	addon.functions.InitDBValue("enableSquareMinimapStats", false)
 	addon.functions.InitDBValue("squareMinimapStatsFont", addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__")
@@ -4150,64 +4156,148 @@ local function initUI()
 	end
 	if addon.db["enableSquareMinimap"] then makeSquareMinimap() end
 
+	local SQUARE_MINIMAP_BORDER_DEFAULT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+	local SQUARE_MINIMAP_BORDER_SIZE_MIN = 1
+	local SQUARE_MINIMAP_BORDER_SIZE_MAX = 60
+	local SQUARE_MINIMAP_BORDER_OFFSET_MIN = -30
+	local SQUARE_MINIMAP_BORDER_OFFSET_MAX = 30
+	local SQUARE_MINIMAP_BACKGROUND_DEFAULT_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+	local SQUARE_MINIMAP_BACKGROUND_OFFSET_MIN = -30
+	local SQUARE_MINIMAP_BACKGROUND_OFFSET_MAX = 30
+
+	local function isLikelyMinimapBorderPath(value)
+		if type(value) ~= "string" or value == "" then return false end
+		if value:find("\\", 1, true) or value:find("/", 1, true) then return true end
+		return value:find("%.blp$", 1) or value:find("%.tga$", 1) or value:find("%.dds$", 1)
+	end
+
+	local function normalizeSquareMinimapBorderTexture(value)
+		if type(value) ~= "string" or value == "" then return "DEFAULT" end
+		return value
+	end
+
+	local function resolveSquareMinimapBorderTexture(value)
+		local key = normalizeSquareMinimapBorderTexture(value)
+		if key == "DEFAULT" or key == "SOLID" then return SQUARE_MINIMAP_BORDER_DEFAULT_TEXTURE end
+		if LSM and LSM.Fetch then
+			local texture = LSM:Fetch("border", key, true)
+			if texture then return texture end
+		end
+		if isLikelyMinimapBorderPath(key) then return key end
+		return SQUARE_MINIMAP_BORDER_DEFAULT_TEXTURE
+	end
+
+	local function normalizeSquareMinimapBorderSize(value)
+		local size = tonumber(value) or 1
+		size = math.floor(size + 0.5)
+		if size < SQUARE_MINIMAP_BORDER_SIZE_MIN then return SQUARE_MINIMAP_BORDER_SIZE_MIN end
+		if size > SQUARE_MINIMAP_BORDER_SIZE_MAX then return SQUARE_MINIMAP_BORDER_SIZE_MAX end
+		return size
+	end
+
+	local function normalizeSquareMinimapBorderOffset(value)
+		local offset = tonumber(value) or 0
+		if offset < SQUARE_MINIMAP_BORDER_OFFSET_MIN then return SQUARE_MINIMAP_BORDER_OFFSET_MIN end
+		if offset > SQUARE_MINIMAP_BORDER_OFFSET_MAX then return SQUARE_MINIMAP_BORDER_OFFSET_MAX end
+		return offset
+	end
+
+	local function normalizeSquareMinimapBackgroundOffset(value)
+		local offset = tonumber(value) or 0
+		if offset < SQUARE_MINIMAP_BACKGROUND_OFFSET_MIN then return SQUARE_MINIMAP_BACKGROUND_OFFSET_MIN end
+		if offset > SQUARE_MINIMAP_BACKGROUND_OFFSET_MAX then return SQUARE_MINIMAP_BACKGROUND_OFFSET_MAX end
+		return offset
+	end
+
+	function addon.functions.applySquareMinimapBackground()
+		if not Minimap then return end
+		local enableBackground = addon.db and addon.db["enableSquareMinimapBackground"]
+		local isSquare = addon.db and addon.db["enableSquareMinimap"]
+
+		if not addon.general.squareMinimapBackgroundFrame then
+			local parent = Minimap:GetParent() or Minimap
+			local f = CreateFrame("Frame", "EQOLMINIMAPBACKGROUND", parent, "BackdropTemplate")
+			f:SetFrameStrata(Minimap:GetFrameStrata() or "LOW")
+			f:SetFrameLevel(math.max(0, (Minimap:GetFrameLevel() or 1) - 1))
+			f:EnableMouse(false)
+			f:SetBackdrop({
+				bgFile = SQUARE_MINIMAP_BACKGROUND_DEFAULT_TEXTURE,
+				insets = { left = 0, right = 0, top = 0, bottom = 0 },
+			})
+			addon.general.squareMinimapBackgroundFrame = f
+		end
+
+		local f = addon.general.squareMinimapBackgroundFrame
+		local offset = normalizeSquareMinimapBackgroundOffset(addon.db and addon.db.squareMinimapBackgroundOffset)
+		local col = (addon.db and addon.db.squareMinimapBackgroundColor) or { r = 0, g = 0, b = 0, a = 0.65 }
+		local r = col.r or col[1] or 0
+		local g = col.g or col[2] or 0
+		local b = col.b or col[3] or 0
+		local a = col.a or col[4] or 0.65
+
+		if not (enableBackground and isSquare) or a <= 0 then
+			f:Hide()
+			return
+		end
+
+		f:SetFrameStrata(Minimap:GetFrameStrata() or "LOW")
+		f:SetFrameLevel(math.max(0, (Minimap:GetFrameLevel() or 1) - 1))
+		f:SetBackdropColor(r, g, b, a)
+		f:SetBackdropBorderColor(0, 0, 0, 0)
+		f:ClearAllPoints()
+		f:SetPoint("TOPLEFT", Minimap, "TOPLEFT", -offset, offset)
+		f:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", offset, -offset)
+		f:Show()
+	end
+
 	-- Border for square minimap
 	function addon.functions.applySquareMinimapBorder()
 		if not Minimap then return end
 		local enableBorder = addon.db and addon.db["enableSquareMinimapBorder"]
 		local isSquare = addon.db and addon.db["enableSquareMinimap"]
 
-		-- Ensure holder frame exists (above minimap texture, below buttons)
 		if not addon.general.squareMinimapBorderFrame then
-			local f = CreateFrame("Frame", "EQOLBORDER", Minimap)
-			f:SetFrameStrata("LOW") -- below MEDIUM buttons, above BACKGROUND
+			local f = CreateFrame("Frame", "EQOLBORDER", Minimap, "BackdropTemplate")
+			f:SetFrameStrata("LOW")
 			f:SetFrameLevel((Minimap:GetFrameLevel() or 2))
-			f:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 0, 0)
-			f:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", 0, 0)
-
-			-- Create 4 edge textures
-			f.tTop = f:CreateTexture(nil, "ARTWORK")
-			f.tBottom = f:CreateTexture(nil, "ARTWORK")
-			f.tLeft = f:CreateTexture(nil, "ARTWORK")
-			f.tRight = f:CreateTexture(nil, "ARTWORK")
+			f:EnableMouse(false)
 			addon.general.squareMinimapBorderFrame = f
 		end
 
 		local f = addon.general.squareMinimapBorderFrame
-		local size = (addon.db and addon.db.squareMinimapBorderSize) or 1
+		local texture = resolveSquareMinimapBorderTexture(addon.db and addon.db.squareMinimapBorderTexture)
+		local size = normalizeSquareMinimapBorderSize(addon.db and addon.db.squareMinimapBorderSize)
+		local offset = normalizeSquareMinimapBorderOffset(addon.db and addon.db.squareMinimapBorderOffset)
 		local col = (addon.db and addon.db.squareMinimapBorderColor) or { r = 0, g = 0, b = 0, a = 1 }
-
 		local r, g, b, a = col.r or 0, col.g or 0, col.b or 0, col.a or 1
 
-		-- Top
-		f.tTop:ClearAllPoints()
-		f.tTop:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-		f.tTop:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
-		f.tTop:SetHeight(size)
-		f.tTop:SetColorTexture(r, g, b, a)
-		-- Bottom
-		f.tBottom:ClearAllPoints()
-		f.tBottom:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
-		f.tBottom:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-		f.tBottom:SetHeight(size)
-		f.tBottom:SetColorTexture(r, g, b, a)
-		-- Left
-		f.tLeft:ClearAllPoints()
-		f.tLeft:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-		f.tLeft:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
-		f.tLeft:SetWidth(size)
-		f.tLeft:SetColorTexture(r, g, b, a)
-		-- Right
-		f.tRight:ClearAllPoints()
-		f.tRight:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
-		f.tRight:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-		f.tRight:SetWidth(size)
-		f.tRight:SetColorTexture(r, g, b, a)
-
-		if enableBorder and isSquare then
-			f:Show()
-		else
+		if not (enableBorder and isSquare) then
 			f:Hide()
+			return
 		end
+
+		local cache = f._squareMinimapBorderCache
+		if not cache then
+			cache = {}
+			f._squareMinimapBorderCache = cache
+		end
+		if cache.edgeFile ~= texture or cache.edgeSize ~= size then
+			f:SetBackdrop({
+				edgeFile = texture,
+				edgeSize = size,
+				insets = { left = 0, right = 0, top = 0, bottom = 0 },
+			})
+			cache.edgeFile = texture
+			cache.edgeSize = size
+		end
+
+		f:SetFrameLevel((Minimap:GetFrameLevel() or 2))
+		f:SetBackdropColor(0, 0, 0, 0)
+		f:SetBackdropBorderColor(r, g, b, a)
+		f:ClearAllPoints()
+		f:SetPoint("TOPLEFT", Minimap, "TOPLEFT", -offset, offset)
+		f:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", offset, -offset)
+		f:Show()
 	end
 
 	-- Fill square minimap corners when the housing static overlay is shown
@@ -4243,6 +4333,7 @@ local function initUI()
 
 	-- Apply border at startup
 	C_Timer.After(0, function()
+		if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
 		if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
 		if addon.functions.applySquareMinimapHousingBackdrop then addon.functions.applySquareMinimapHousingBackdrop() end
 	end)
@@ -5833,6 +5924,13 @@ local function setAllHooks()
 		reminder:RequestUpdate(true)
 	end
 
+	local function refreshSquareMinimapBorderForMedia(mediaType, mediaKey)
+		if mediaType ~= "border" then return end
+		if not (addon and addon.db and addon.functions and addon.functions.applySquareMinimapBorder) then return end
+		if normalizeSquareMinimapBorderTexture(addon.db.squareMinimapBorderTexture) ~= mediaKey then return end
+		addon.functions.applySquareMinimapBorder()
+	end
+
 	local function refreshGlobalFontConsumers()
 		if ActionBarLabels then
 			if ActionBarLabels.RefreshAllMacroNameVisibility then ActionBarLabels.RefreshAllMacroNameVisibility() end
@@ -5913,6 +6011,7 @@ local function setAllHooks()
 			refreshTotalAbsorbTrackerForMedia(mediaType, mediaKey)
 			refreshGCDBarForMedia(mediaType, mediaKey)
 			refreshClassBuffReminderForMedia(mediaType, mediaKey)
+			refreshSquareMinimapBorderForMedia(mediaType, mediaKey)
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.refreshBloodlustMedia then addon.MythicPlus.functions.refreshBloodlustMedia(mediaType, mediaKey) end
 		elseif mediaType == "font" then
 			refreshExperienceBarForMedia(mediaType, mediaKey)
