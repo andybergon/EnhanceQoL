@@ -4215,9 +4215,9 @@ local function initUI()
 		return farmHud:IsShown() and Minimap:GetParent() == farmHud
 	end
 
-	local function hookFarmHudSquareMinimapBackground()
-		addon.variables = addon.variables or {}
-		if addon.variables.squareMinimapFarmHudBackgroundHooked then return end
+		local function hookFarmHudSquareMinimapBackground()
+			addon.variables = addon.variables or {}
+			if addon.variables.squareMinimapFarmHudBackgroundHooked then return end
 
 		local farmHud = _G.FarmHud
 		if not farmHud or not farmHud.HookScript then return end
@@ -4229,8 +4229,9 @@ local function initUI()
 			if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
 		end)
 
-		addon.variables.squareMinimapFarmHudBackgroundHooked = true
-	end
+			addon.variables.squareMinimapFarmHudBackgroundHooked = true
+		end
+		addon.functions.hookFarmHudSquareMinimapBackground = hookFarmHudSquareMinimapBackground
 
 	function addon.functions.applySquareMinimapBackground()
 		if not Minimap then return end
@@ -4354,12 +4355,12 @@ local function initUI()
 		end
 	end
 
-	-- Apply border at startup
-	C_Timer.After(0, function()
-		hookFarmHudSquareMinimapBackground()
-		if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
-		if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
-		if addon.functions.applySquareMinimapHousingBackdrop then addon.functions.applySquareMinimapHousingBackdrop() end
+		-- Apply border at startup
+		C_Timer.After(0, function()
+			if addon.functions.hookFarmHudSquareMinimapBackground then addon.functions.hookFarmHudSquareMinimapBackground() end
+			if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
+			if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
+			if addon.functions.applySquareMinimapHousingBackdrop then addon.functions.applySquareMinimapHousingBackdrop() end
 	end)
 
 	function addon.functions.applyMinimapClusterClamp()
@@ -6381,11 +6382,11 @@ local eventHandlers = {
 			loadSubAddon("EnhanceQoLSharedMedia")
 
 			checkBagIgnoreJunk()
-		end
-		if arg1 == "FarmHud" then
-			hookFarmHudSquareMinimapBackground()
-			if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
-		end
+			end
+			if arg1 == "FarmHud" then
+				if addon.functions.hookFarmHudSquareMinimapBackground then addon.functions.hookFarmHudSquareMinimapBackground() end
+				if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
+			end
 		if arg1 == "Blizzard_ItemInteractionUI" then addon.functions.toggleInstantCatalystButton(addon.db["instantCatalystEnabled"]) end
 	end,
 	["CVAR_UPDATE"] = function(cvarName, value)
