@@ -4,6 +4,7 @@
 
 ### ✨ Added
 
+- Class Buff Reminder (Druid): Added party tracking for `Symbiotic Relationship`, so Druids now get reminded when the buff is missing.
 - Group Frames (Healer Buffs / Mistweaver Monk): Added PTR prep for `Coalescence` (`1292922`), including a fallback icon so the spell can already be configured before the live spell data exists in Retail.
 
 ### 🐛 Fixed

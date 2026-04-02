@@ -251,6 +251,18 @@ local SHAMAN_SPEC_ENHANCEMENT = 263
 local SHAMAN_SPEC_RESTORATION = 264
 local PALADIN_SPEC_HOLY = 65
 
+local DRUID_MARK_OF_THE_WILD_IDS = {
+	1126,
+}
+
+local DRUID_SYMBIOTIC_RELATIONSHIP_SELF_IDS = {
+	474754,
+}
+
+local DRUID_SYMBIOTIC_RELATIONSHIP_KNOWN_IDS = {
+	474750,
+}
+
 local HOLY_PALADIN_BEACON_OF_LIGHT_IDS = {
 	53563, -- Beacon of Light
 }
@@ -1408,6 +1420,50 @@ local function shamanRestorationEarthlivingHasUnitBuff(provider, unit, reminder)
 	return status and status.missing <= 0
 end
 
+local function druidRestorationGetSelfStatus(provider, reminder)
+	if type(provider) ~= "table" or type(reminder) ~= "table" then return buildSelfStatus(0, {}) end
+
+	local totalRequirements = 0
+	local missingEntries = {}
+	local shouldEvaluateGroupResponsibilities = reminder:ShouldEvaluateGroupResponsibilities(provider)
+
+	local markDisplaySpellId = normalizeSpellId(provider.markDisplaySpellId) or normalizeSpellId(provider.markSpellIds and provider.markSpellIds[1])
+	local trackMark = hasKnownSpellInList(provider.markKnownSpellIds or provider.markSpellIds)
+	local markMissingCount, markTotal = 0, 0
+	if trackMark and shouldEvaluateGroupResponsibilities then
+		markMissingCount, markTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.markSpellIds, true)
+	end
+	if shouldEvaluateGroupResponsibilities and markTotal > 0 then
+		totalRequirements = totalRequirements + 1
+		if markMissingCount > 0 then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(markDisplaySpellId, provider.markLabel or "Mark of the Wild", markMissingCount, markTotal) end
+	end
+
+	local trackSymbiotic = hasKnownSpellInList(provider.symbioticKnownSpellIds or provider.symbioticSpellIds)
+	if trackSymbiotic and reminder:GetGroupContext() == GROUP_CONTEXT_PARTY then
+		reminder.runtimeEligibleUnits = reminder.runtimeEligibleUnits or {}
+		local eligibleUnits = reminder:CollectOtherEligibleUnits(reminder.runtimeEligibleUnits, true)
+		if #eligibleUnits > 0 then
+			totalRequirements = totalRequirements + 1
+			if not reminder:UnitHasAnyAuraSpellId("player", provider.symbioticSpellIds) then
+				local symbioticDisplaySpellId = normalizeSpellId(provider.symbioticDisplaySpellId) or normalizeSpellId(provider.symbioticSpellIds and provider.symbioticSpellIds[1])
+				missingEntries[#missingEntries + 1] = makeSelfMissingEntry(symbioticDisplaySpellId, provider.symbioticLabel or "Symbiotic Relationship")
+			end
+		end
+	end
+
+	setProviderDisplaySpellId(
+		provider,
+		missingEntries[1] and missingEntries[1].spellId or markDisplaySpellId or normalizeSpellId(provider.symbioticDisplaySpellId) or normalizeSpellId(provider.displaySpellId)
+	)
+	return buildSelfStatus(totalRequirements, missingEntries)
+end
+
+local function druidRestorationHasUnitBuff(provider, unit, reminder)
+	if unit ~= "player" then return false end
+	local status = druidRestorationGetSelfStatus(provider, reminder)
+	return status and status.missing <= 0
+end
+
 local function evokerSupportGetSelfStatus(provider, reminder)
 	if type(provider) ~= "table" or type(reminder) ~= "table" then return buildSelfStatus(0, {}) end
 	if reminder:ShouldEvaluateGroupResponsibilities(provider) ~= true then return buildSelfStatus(0, {}) end
@@ -1742,6 +1798,34 @@ function Reminder:GetShamanProvider()
 	return PROVIDER_BY_CLASS.SHAMAN
 end
 
+function Reminder:GetDruidProvider()
+	self.druidRestorationProvider = self.druidRestorationProvider
+		or {
+			scope = PROVIDER_SCOPE_SELF,
+			spellIds = {
+				1126,
+				474754,
+			},
+			knownSpellIds = {
+				1126,
+				474750,
+			},
+			markSpellIds = DRUID_MARK_OF_THE_WILD_IDS,
+			markKnownSpellIds = DRUID_MARK_OF_THE_WILD_IDS,
+			markDisplaySpellId = 1126,
+			markLabel = PROVIDER_BY_CLASS.DRUID and PROVIDER_BY_CLASS.DRUID.fallbackName or "Mark of the Wild",
+			symbioticSpellIds = DRUID_SYMBIOTIC_RELATIONSHIP_SELF_IDS,
+			symbioticKnownSpellIds = DRUID_SYMBIOTIC_RELATIONSHIP_KNOWN_IDS,
+			symbioticDisplaySpellId = 474754,
+			symbioticLabel = "Symbiotic Relationship",
+			fallbackName = PROVIDER_BY_CLASS.DRUID and PROVIDER_BY_CLASS.DRUID.fallbackName or "Mark of the Wild",
+			hasUnitBuffFunc = druidRestorationHasUnitBuff,
+			getSelfStatusFunc = druidRestorationGetSelfStatus,
+		}
+
+	return self.druidRestorationProvider
+end
+
 function Reminder:GetFlaskOnlyProvider()
 	self.flaskOnlyProvider = self.flaskOnlyProvider
 		or {
@@ -1785,6 +1869,8 @@ function Reminder:RefreshProviderCache(force)
 		provider = self:GetEvokerSupportProvider()
 	elseif classToken == "SHAMAN" then
 		provider = self:GetShamanProvider()
+	elseif classToken == "DRUID" then
+		provider = self:GetDruidProvider()
 	else
 		provider = classToken and PROVIDER_BY_CLASS[classToken] or nil
 	end
