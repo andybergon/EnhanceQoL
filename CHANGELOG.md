@@ -1,5 +1,18 @@
 # Changelog
 
+## [9.12.0-beta4] - 2026-04-02
+
+### ✨ Added
+
+- Group Frames (Healer Buffs / Restoration Druid): Added `Symbiotic Relationship` (`474754`) to the healer-buff family list. Missing indicators now only show when the talent is learned, never on yourself, and only on one other eligible group member.
+- Group Frames (Healer Buffs / Mistweaver Monk): Added PTR prep for `Coalescence` (`1292922`), including a fallback icon so the spell can already be configured before the live spell data exists in Retail.
+
+### 🐛 Fixed
+
+- Square Minimap / FarmHud: Hid the optional square minimap background while FarmHud is active so the FarmHud overlay is no longer tinted by the background panel.
+
+---
+
 ## [9.12.0-beta3] - 2026-04-01
 
 ### ✨ Added
