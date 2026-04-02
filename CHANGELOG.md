@@ -4,7 +4,6 @@
 
 ### ✨ Added
 
-- Group Frames (Healer Buffs / Restoration Druid): Added `Symbiotic Relationship` (`474754`) to the healer-buff family list. Missing indicators now only show when the talent is learned, never on yourself, and only on one other eligible group member.
 - Group Frames (Healer Buffs / Mistweaver Monk): Added PTR prep for `Coalescence` (`1292922`), including a fallback icon so the spell can already be configured before the live spell data exists in Retail.
 
 ### 🐛 Fixed

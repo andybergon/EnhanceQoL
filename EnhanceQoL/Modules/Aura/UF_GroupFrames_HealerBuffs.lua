@@ -235,6 +235,7 @@ local FAMILY_DATA = {
 	{ id = "monk_renewing_mist", classToken = "MONK", spec = "Mistweaver", spellIds = { 119611 }, fallbackName = "Renewing Mist" },
 	{ id = "monk_enveloping_mist", classToken = "MONK", spec = "Mistweaver", spellIds = { 124682 }, fallbackName = "Enveloping Mist" },
 	{ id = "monk_aspect_of_harmony", classToken = "MONK", spec = "Mistweaver", spellIds = { 450769 }, fallbackName = "Aspect of Harmony" },
+	{ id = "monk_coalescence", classToken = "MONK", spec = "Mistweaver", spellIds = { 1292922 }, fallbackName = "Coalescence", fallbackIcon = 1360977 },
 	-- Restoration Shaman
 	{ id = "shaman_earth_shield", classToken = "SHAMAN", spec = "Restoration", spellIds = { 974, 383648 }, fallbackName = "Earth Shield" },
 	{ id = "shaman_riptide", classToken = "SHAMAN", spec = "Restoration", spellIds = { 61295 }, fallbackName = "Riptide" },
@@ -575,7 +576,7 @@ end
 local function ensureFamilyPresentation(family)
 	if not family then return nil, nil end
 	if not family._resolvedName then family._resolvedName = getSpellName(family.spellIds and family.spellIds[1]) or family.fallbackName or family.id end
-	if not family._resolvedIcon then family._resolvedIcon = getSpellTexture(family.spellIds and family.spellIds[1]) or 134400 end
+	if not family._resolvedIcon then family._resolvedIcon = getSpellTexture(family.spellIds and family.spellIds[1]) or family.fallbackIcon or 134400 end
 	return family._resolvedName, family._resolvedIcon
 end
 
