@@ -11,6 +11,7 @@
 - Cooldown Panels: Fixed charges, cooldown text, and stack text overrides in entries and subgroups sometimes snapping back visually after refreshes.
 - Cooldown Panels: Fixed fixed-slot dynamic groups sometimes laying out icons incorrectly when one configured spell was not currently visible.
 - Class Buff Reminder: Role-based hiding now falls back to the active specialization role when no group role is assigned, so solo role checks no longer default to `NONE`.
+- Locales: Added missing `enUS` AceLocale keys to avoid untranslated labels on non-English clients.
 
 ---
 
