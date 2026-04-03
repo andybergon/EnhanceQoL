@@ -7226,10 +7226,24 @@ local function applyIconLayout(frame, count, layout)
 		end
 		applyIconBorder(icon, layout)
 		if icon.count then
+			local r = countFontColor[1] or 1
+			local g = countFontColor[2] or 1
+			local b = countFontColor[3] or 1
+			local a = countFontColor[4] or 1
 			icon.count:ClearAllPoints()
 			icon.count:SetPoint(stackAnchor, icon, stackAnchor, stackX, stackY)
 			icon.count:SetFont(countFontPath, countFontSize, countFontStyle)
-			icon.count:SetTextColor(countFontColor[1] or 1, countFontColor[2] or 1, countFontColor[3] or 1, countFontColor[4] or 1)
+			icon.count:SetTextColor(r, g, b, a)
+			icon.count._eqolStackAnchor = stackAnchor
+			icon.count._eqolStackX = stackX
+			icon.count._eqolStackY = stackY
+			icon.count._eqolStackFont = countFontPath
+			icon.count._eqolStackFontSize = countFontSize
+			icon.count._eqolStackFontStyle = countFontStyle
+			icon.count._eqolStackColorR = r
+			icon.count._eqolStackColorG = g
+			icon.count._eqolStackColorB = b
+			icon.count._eqolStackColorA = a
 		end
 		if icon.charges then
 			local r = chargesFontColor[1] or 1
@@ -7272,10 +7286,24 @@ local function applyIconLayout(frame, count, layout)
 				local fontPath = Helper.ResolveFontPath(cooldownTextFont, defaults and defaults.font)
 				local fontSize = Helper.ClampInt(cooldownTextSize, 6, 64, defaults and defaults.size or 12)
 				local fontStyle = Helper.NormalizeFontStyle(cooldownTextStyle, defaults and defaults.style) or ""
+				local r = cooldownTextColor[1] or 1
+				local g = cooldownTextColor[2] or 1
+				local b = cooldownTextColor[3] or 1
+				local a = cooldownTextColor[4] or 1
 				fontString:SetFont(fontPath, fontSize, fontStyle)
 				fontString:ClearAllPoints()
 				fontString:SetPoint("CENTER", icon.cooldown, "CENTER", cooldownTextX, cooldownTextY)
-				fontString:SetTextColor(cooldownTextColor[1] or 1, cooldownTextColor[2] or 1, cooldownTextColor[3] or 1, cooldownTextColor[4] or 1)
+				fontString:SetTextColor(r, g, b, a)
+				fontString._eqolCooldownFont = fontPath
+				fontString._eqolCooldownFontSize = fontSize
+				fontString._eqolCooldownFontStyle = fontStyle
+				fontString._eqolCooldownAnchor = "CENTER"
+				fontString._eqolCooldownX = cooldownTextX
+				fontString._eqolCooldownY = cooldownTextY
+				fontString._eqolCooldownColorR = r
+				fontString._eqolCooldownColorG = g
+				fontString._eqolCooldownColorB = b
+				fontString._eqolCooldownColorA = a
 			end
 		end
 		CooldownPanels.UpdatePreviewGlowBorderLayout(icon, rowSize)

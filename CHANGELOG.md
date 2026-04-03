@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.12.0-beta7] - 2026-04-03
+
+### 🐛 Fixed
+
+- Cooldown Panels: Fixed charges, cooldown text, and stack text overrides in entries and subgroups sometimes snapping back visually after refreshes.
+
+---
+
 ## [9.12.0-beta6] - 2026-04-03
 
 ### 🐛 Fixed
