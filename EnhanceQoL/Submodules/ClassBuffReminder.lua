@@ -54,6 +54,7 @@ local DB_SHOW_IF_ONLY_PROVIDER = "classBuffReminderShowIfOnlyProvider"
 local DB_GLOW = "classBuffReminderGlow"
 local DB_GLOW_STYLE = "classBuffReminderGlowStyle"
 local DB_GLOW_INSET = "classBuffReminderGlowInset"
+local DB_GLOW_COLOR = "classBuffReminderGlowColor"
 local DB_SOUND_ON_MISSING = "classBuffReminderSoundOnMissing"
 local DB_MISSING_SOUND = "classBuffReminderMissingSound"
 local DB_DISPLAY_MODE = "classBuffReminderDisplayMode"
@@ -97,6 +98,7 @@ Reminder.defaults = Reminder.defaults
 		glow = true,
 		glowStyle = "MARCHING_ANTS",
 		glowInset = 0,
+		glowColor = { r = 0.95, g = 0.95, b = 0.2, a = 1 },
 		soundOnMissing = false,
 		missingSound = "",
 		displayMode = DISPLAY_MODE_ICON_ONLY,
@@ -123,6 +125,7 @@ Reminder.defaults = Reminder.defaults
 local defaults = Reminder.defaults
 if defaults.glowStyle == nil then defaults.glowStyle = "MARCHING_ANTS" end
 if defaults.glowInset == nil then defaults.glowInset = 0 end
+if type(defaults.glowColor) ~= "table" then defaults.glowColor = { r = 0.95, g = 0.95, b = 0.2, a = 1 } end
 if defaults.onlyOutOfCombat == nil then defaults.onlyOutOfCombat = false end
 if defaults.roleFilterEnabled == nil then defaults.roleFilterEnabled = false end
 if defaults.roleFilterContext == nil then defaults.roleFilterContext = "RAID_ONLY" end
@@ -957,11 +960,35 @@ function Reminder:DoesRoleFilterApplyToCurrentContext()
 	return context == GROUP_CONTEXT_PARTY or context == GROUP_CONTEXT_RAID
 end
 
+function Reminder:GetPlayerSpecRoleToken()
+	local role = addon.variables and addon.variables.unitRole or nil
+	if issecretvalue and issecretvalue(role) then role = nil end
+	role = normalizeGroupRole(role)
+	if role ~= "NONE" then return role end
+
+	if GetSpecializationRole and C_SpecializationInfo and C_SpecializationInfo.GetSpecialization then
+		local specIndex = C_SpecializationInfo.GetSpecialization()
+		if specIndex then
+			role = GetSpecializationRole(specIndex)
+			if issecretvalue and issecretvalue(role) then role = nil end
+			role = normalizeGroupRole(role)
+			if role ~= "NONE" then return role end
+		end
+	end
+
+	return "NONE"
+end
+
 function Reminder:GetPlayerRoleToken()
-	if not UnitGroupRolesAssigned then return "NONE" end
-	local role = UnitGroupRolesAssigned("player")
-	if issecretvalue and issecretvalue(role) then return "NONE" end
-	return normalizeGroupRole(role)
+	local role = nil
+	if UnitGroupRolesAssigned then
+		role = UnitGroupRolesAssigned("player")
+		if issecretvalue and issecretvalue(role) then role = nil end
+		role = normalizeGroupRole(role)
+	end
+
+	if role and role ~= "NONE" then return role end
+	return self:GetPlayerSpecRoleToken()
 end
 
 function Reminder:IsPlayerRoleHiddenBySettings()
@@ -1931,6 +1958,7 @@ function Reminder:GetGrowthDirection() return normalizeGrowthDirection(getValue(
 function Reminder:GetGlowStyle() return normalizeGlowStyle(getValue(DB_GLOW_STYLE, defaults.glowStyle)) end
 
 function Reminder:GetGlowInset() return normalizeGlowInset(getValue(DB_GLOW_INSET, defaults.glowInset)) end
+function Reminder:GetGlowColor() return normalizeColor(getValue(DB_GLOW_COLOR, defaults.glowColor), defaults.glowColor) end
 function Reminder:GetGrowthFromCenter() return getValue(DB_GROWTH_FROM_CENTER, defaults.growthFromCenter) == true end
 function Reminder:IsBorderEnabled() return getValue(DB_BORDER_ENABLED, defaults.borderEnabled) == true end
 function Reminder:GetBorderTextureKey() return normalizeBorderTexture(getValue(DB_BORDER_TEXTURE, defaults.borderTexture)) end
@@ -2845,13 +2873,19 @@ function Reminder:SetGlowShown(show)
 		self.glowShown = false
 		self.glowActiveStyle = nil
 		self.glowActiveInset = nil
+		self.glowActiveColorR = nil
+		self.glowActiveColorG = nil
+		self.glowActiveColorB = nil
+		self.glowActiveColorA = nil
 		return
 	end
 
 	local style = self:GetGlowStyle()
 	local inset = self:GetGlowInset()
+	local colorR, colorG, colorB, colorA = self:GetGlowColor()
 	local styleChanged = self.glowActiveStyle ~= style
 	local insetChanged = self.glowActiveInset ~= inset
+	local colorChanged = self.glowActiveColorR ~= colorR or self.glowActiveColorG ~= colorG or self.glowActiveColorB ~= colorB or self.glowActiveColorA ~= colorA
 	local targets = self:GetGlowTargets() or {}
 	local nextTargets = {}
 	for i = 1, #targets do
@@ -2867,7 +2901,12 @@ function Reminder:SetGlowShown(show)
 	end
 
 	for target in pairs(nextTargets) do
-		if styleChanged or insetChanged or not self.glowTargets[target] then Glow.Start(target, REMINDER_GLOW_KEY, style, { inset = inset }) end
+		if styleChanged or insetChanged or colorChanged or not self.glowTargets[target] then
+			Glow.Start(target, REMINDER_GLOW_KEY, style, {
+				inset = inset,
+				color = { colorR, colorG, colorB, colorA },
+			})
+		end
 		self.glowTargets[target] = true
 	end
 
@@ -2875,6 +2914,10 @@ function Reminder:SetGlowShown(show)
 	self.glowShown = hasGlow
 	self.glowActiveStyle = hasGlow and style or nil
 	self.glowActiveInset = hasGlow and inset or nil
+	self.glowActiveColorR = hasGlow and colorR or nil
+	self.glowActiveColorG = hasGlow and colorG or nil
+	self.glowActiveColorB = hasGlow and colorB or nil
+	self.glowActiveColorA = hasGlow and colorA or nil
 end
 
 function Reminder:HideSamplePreview()
@@ -3748,6 +3791,18 @@ function Reminder:RegisterEditMode()
 				get = function() return normalizeGlowInset(getValue(DB_GLOW_INSET, defaults.glowInset)) end,
 				set = function(_, value) setGlowInset(value) end,
 				formatter = function(value) return tostring(math.floor((tonumber(value) or defaults.glowInset or 0) + 0.5)) end,
+				isEnabled = function() return getValue(DB_GLOW, defaults.glow) == true end,
+			},
+			{
+				name = L["ClassBuffReminderGlowColor"] or "Glow color",
+				kind = SettingType.Color,
+				parentId = "classBuffs",
+				default = defaults.glowColor,
+				get = function()
+					local r, g, b, a = Reminder:GetGlowColor()
+					return { r = r, g = g, b = b, a = a }
+				end,
+				set = function(_, value) setColor("classBuffReminderGlowColor", value, defaults.glowColor) end,
 				isEnabled = function() return getValue(DB_GLOW, defaults.glow) == true end,
 			},
 			{

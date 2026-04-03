@@ -14818,6 +14818,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				local data = nil
 				local fixedGroup = nil
 				local fixedGroupCenterGrowth = false
+				local fixedGroupDynamicRuntimeIndex = nil
 				if fixedLayout then
 					fixedGroup = entry.fixedGroupId and fixedGroupById and fixedGroupById[entry.fixedGroupId] or nil
 					if fixedGroup then
@@ -14826,6 +14827,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 						else
 							local groupVisibleCount = (fixedGroupVisibleCounts[fixedGroup.id] or 0) + 1
 							fixedGroupVisibleCounts[fixedGroup.id] = groupVisibleCount
+							fixedGroupDynamicRuntimeIndex = groupVisibleCount
 							fixedGroupCenterGrowth = Helper.IsFixedGroupCenterGrowth and Helper.IsFixedGroupCenterGrowth(fixedGroup) == true
 							if not fixedGroupCenterGrowth then
 								targetIndex = fixedGroup._eqolDynamicTargetIndices and fixedGroup._eqolDynamicTargetIndices[groupVisibleCount] or nil
@@ -14867,7 +14869,12 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.liveGlowAllowed = entryLayout.hideGlowOutOfCombat ~= true or playerInCombat == true
 				data.entry = entry
 				data.entryId = entryId
-				data.fixedContext = nil
+				data.fixedContext = fixedGroupDynamicRuntimeIndex
+						and {
+							dynamicLocalIndex = fixedGroupDynamicRuntimeIndex,
+							dynamicCount = fixedGroupDynamicRuntimeIndex,
+						}
+					or nil
 				data.hideOnCooldown = entryHideOnCooldown == true
 				data.showOnCooldown = entryShowOnCooldown == true
 				data.resolvedType = resolvedType

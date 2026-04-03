@@ -21,6 +21,7 @@ local DB_SHOW_IF_ONLY_PROVIDER = "classBuffReminderShowIfOnlyProvider"
 local DB_GLOW = "classBuffReminderGlow"
 local DB_GLOW_STYLE = "classBuffReminderGlowStyle"
 local DB_GLOW_INSET = "classBuffReminderGlowInset"
+local DB_GLOW_COLOR = "classBuffReminderGlowColor"
 local DB_SOUND_ON_MISSING = "classBuffReminderSoundOnMissing"
 local DB_MISSING_SOUND = "classBuffReminderMissingSound"
 local DB_DISPLAY_MODE = "classBuffReminderDisplayMode"
@@ -63,6 +64,7 @@ local defaults = (Reminder and Reminder.defaults)
 		glow = true,
 		glowStyle = "MARCHING_ANTS",
 		glowInset = 0,
+		glowColor = { r = 0.95, g = 0.95, b = 0.2, a = 1 },
 		soundOnMissing = false,
 		missingSound = "",
 		displayMode = "ICON_ONLY",
@@ -87,6 +89,7 @@ local defaults = (Reminder and Reminder.defaults)
 	}
 if defaults.glowStyle == nil then defaults.glowStyle = "MARCHING_ANTS" end
 if defaults.glowInset == nil then defaults.glowInset = 0 end
+if type(defaults.glowColor) ~= "table" then defaults.glowColor = { r = 0.95, g = 0.95, b = 0.2, a = 1 } end
 if defaults.onlyOutOfCombat == nil then defaults.onlyOutOfCombat = false end
 if defaults.roleFilterEnabled == nil then defaults.roleFilterEnabled = false end
 if defaults.roleFilterContext == nil then defaults.roleFilterContext = "RAID_ONLY" end
@@ -186,6 +189,7 @@ function addon.functions.initClassBuffReminder()
 	init(DB_GLOW, defaults.glow)
 	init(DB_GLOW_STYLE, defaults.glowStyle)
 	init(DB_GLOW_INSET, defaults.glowInset)
+	init(DB_GLOW_COLOR, defaults.glowColor)
 	init(DB_SOUND_ON_MISSING, defaults.soundOnMissing)
 	init(DB_MISSING_SOUND, defaults.missingSound)
 	init(DB_DISPLAY_MODE, defaults.displayMode)
