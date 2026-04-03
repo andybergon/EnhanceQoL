@@ -19,6 +19,7 @@ L["Unit"] = "Unit"
 L["Spell"] = "Spell"
 L["Item"] = "Item"
 L["Buff_Debuff"] = "Buff/Debuff"
+L["Buff"] = "Buff"
 -- Buff
 L["TooltipBuffHideType"] = "Hide tooltip on Buff/Debuff"
 L["TooltipBuffHideInCombat"] = "Only hide it in combat"
