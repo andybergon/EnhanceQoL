@@ -2661,6 +2661,11 @@ function Reminder:EnsureSelfMissingIconFrames(requiredCount)
 			icon:SetTexture(ICON_MISSING)
 			iconFrame.icon = icon
 
+			local border = CreateFrame("Frame", nil, iconFrame, "BackdropTemplate")
+			border:EnableMouse(false)
+			border:Hide()
+			iconFrame.border = border
+
 			local countText = iconFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 			countText:SetPoint("CENTER", iconFrame, "CENTER", 0, 0)
 			countText:SetJustifyH("CENTER")
@@ -2711,6 +2716,11 @@ function Reminder:RenderSelfMissingIcons(missingEntries)
 	local growFromCenter = self:GetGrowthFromCenter()
 	local count = #missingEntries
 	local fontPath = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	local borderEnabled = self:IsBorderEnabled()
+	local borderTexture = self:GetBorderTextureKey()
+	local borderSize = self:GetBorderSize()
+	local borderOffset = self:GetBorderOffset()
+	local borderR, borderG, borderB, borderA = self:GetBorderColor()
 
 	local width, height
 	if direction == GROWTH_UP or direction == GROWTH_DOWN then
@@ -2762,6 +2772,25 @@ function Reminder:RenderSelfMissingIcons(missingEntries)
 
 		iconFrame:SetPoint("CENTER", container, "CENTER", x, y)
 		if iconFrame.icon then iconFrame.icon:SetTexture(texture) end
+		if iconFrame.border and iconFrame.border.SetBackdrop then
+			iconFrame.border:SetFrameStrata(iconFrame:GetFrameStrata())
+			iconFrame.border:SetFrameLevel((iconFrame:GetFrameLevel() or 0) + 1)
+			if borderEnabled then
+				iconFrame.border:SetBackdrop({
+					edgeFile = resolveBorderTexture(borderTexture),
+					edgeSize = borderSize,
+				})
+				iconFrame.border:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
+				iconFrame.border:SetBackdropColor(0, 0, 0, 0)
+				iconFrame.border:ClearAllPoints()
+				iconFrame.border:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", -borderOffset, borderOffset)
+				iconFrame.border:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", borderOffset, -borderOffset)
+				iconFrame.border:Show()
+			else
+				iconFrame.border:SetBackdrop(nil)
+				iconFrame.border:Hide()
+			end
+		end
 		if iconFrame.countText then
 			if iconFrame.countText.SetFont then iconFrame.countText:SetFont(fontPath, scaledXYTextSize, textOutlineFlags(xyTextOutline)) end
 			iconFrame.countText:SetTextColor(xyTextR, xyTextG, xyTextB, xyTextA)
@@ -2781,6 +2810,7 @@ function Reminder:RenderSelfMissingIcons(missingEntries)
 	end
 
 	if frame.iconHolder then frame.iconHolder:Hide() end
+	if frame.border then frame.border:Hide() end
 	container:Show()
 	frame:SetSize(width + 2, height + 2)
 	return true
