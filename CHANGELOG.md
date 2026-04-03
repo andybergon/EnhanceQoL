@@ -6,6 +6,7 @@
 
 - Cooldown Panels: Added a `Only show Panels of my Spec` option to the panel filter menu in the editor.
 - Class Buff Reminder: Added optional buff food tracking with a separate `Food` section and shared Buff Food Macro settings.
+- Class Buff Reminder: Added a global `Don't show in rested areas` option.
 - Data Panels (Pet Tracker): Added an optional pet reminder icon, configurable `Icon left / Text above / Text below` reminder layouts, and a `Hide while rested` option in the stream menu.
 
 ---
