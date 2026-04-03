@@ -7058,7 +7058,7 @@ function CooldownPanels:GetItemUseSpellID(itemID)
 	local _, spellId = Api.GetItemSpell(itemID)
 	spellId = tonumber(spellId)
 	if not spellId then
-		runtime.itemUseSpellCache[itemID] = false
+		-- Item data may not be loaded yet; don't cache, retry next refresh
 		return nil
 	end
 	-- C_Item.GetItemSpell returns spells for passive "Equip:" effects too.
@@ -7070,14 +7070,25 @@ function CooldownPanels:GetItemUseSpellID(itemID)
 		end
 		local usePrefix = ITEM_SPELL_TRIGGER_ONUSE or "Use: "
 		local found = false
+		local hasEquipPrefix = false
 		for _, line in pairs(tooltipData.lines) do
-			if line.leftText and line.leftText:find(usePrefix, 1, true) then
-				found = true
-				break
+			if line.leftText then
+				if line.leftText:find(usePrefix, 1, true) then
+					found = true
+					break
+				end
+				local equipPrefix = ITEM_SPELL_TRIGGER_ONEQUIP or "Equip: "
+				if line.leftText:find(equipPrefix, 1, true) then
+					hasEquipPrefix = true
+				end
 			end
 		end
 		if not found then
-			runtime.itemUseSpellCache[itemID] = false
+			-- Only cache false if tooltip is clearly complete (has Equip: but no Use:).
+			-- If neither prefix found, tooltip may still be loading.
+			if hasEquipPrefix then
+				runtime.itemUseSpellCache[itemID] = false
+			end
 			return nil
 		end
 	end
