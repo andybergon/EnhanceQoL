@@ -1996,6 +1996,20 @@ addon.functions.SettingsCreateCheckboxes(cMapNav, data)
 addon.functions.SettingsCreateHeadline(cMapNav, L["MinimapButtonBin"] or "Minimap Button Bin", { parentSection = mapExpandable })
 local buttonSinkSection = mapExpandable
 
+local function isButtonSinkSettingEnabled(key)
+	return addon.SettingsLayout.elements[key] and addon.SettingsLayout.elements[key].setting and addon.SettingsLayout.elements[key].setting:GetValue() == true
+end
+
+local function isMinimapButtonBinEnabled() return isButtonSinkSettingEnabled("enableMinimapButtonBin") end
+
+local function isButtonSinkIconModeEnabled() return isMinimapButtonBinEnabled() and isButtonSinkSettingEnabled("useMinimapButtonBinIcon") end
+
+local function isDetachedButtonSinkIconModeEnabled() return isMinimapButtonBinEnabled() and isButtonSinkSettingEnabled("useDetachedMinimapButtonBinIcon") end
+
+local function isButtonSinkHoverModeEnabled() return isMinimapButtonBinEnabled() and isButtonSinkSettingEnabled("useMinimapButtonBinMouseover") end
+
+local function isButtonSinkLauncherModeEnabled() return isButtonSinkIconModeEnabled() or isDetachedButtonSinkIconModeEnabled() end
+
 data = {
 	{
 		var = "enableMinimapButtonBin",
@@ -2015,24 +2029,82 @@ data = {
 				desc = L["useMinimapButtonBinIconDesc"],
 				func = function(key)
 					addon.db["useMinimapButtonBinIcon"] = key
-					if key then addon.db["useMinimapButtonBinMouseover"] = false end
+					if key then
+						addon.db["useMinimapButtonBinMouseover"] = false
+						addon.db["useDetachedMinimapButtonBinIcon"] = false
+					end
 					addon.functions.toggleButtonSink()
 				end,
 				default = false,
 				sType = "checkbox",
-				parentCheck = function()
-					return addon.SettingsLayout.elements["enableMinimapButtonBin"]
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting:GetValue() == true
-						and addon.SettingsLayout.elements["useMinimapButtonBinMouseover"]
-						and addon.SettingsLayout.elements["useMinimapButtonBinMouseover"].setting
-						and (
-							addon.SettingsLayout.elements["useMinimapButtonBinMouseover"].setting:GetValue() == false
-							or addon.SettingsLayout.elements["useMinimapButtonBinMouseover"].setting:GetValue() == nil
-						)
-				end,
+				parentCheck = function() return isMinimapButtonBinEnabled() and not isButtonSinkHoverModeEnabled() and not isDetachedButtonSinkIconModeEnabled() end,
 				parent = true,
 				notify = "enableMinimapButtonBin",
+				parentSection = buttonSinkSection,
+			},
+			{
+				var = "useDetachedMinimapButtonBinIcon",
+				text = L["useDetachedMinimapButtonBinIcon"],
+				desc = L["useDetachedMinimapButtonBinIconDesc"],
+				func = function(key)
+					addon.db["useDetachedMinimapButtonBinIcon"] = key
+					if key then
+						addon.db["useMinimapButtonBinMouseover"] = false
+						addon.db["useMinimapButtonBinIcon"] = false
+					end
+					addon.functions.toggleButtonSink()
+				end,
+				default = false,
+				sType = "checkbox",
+				parentCheck = function() return isMinimapButtonBinEnabled() and not isButtonSinkHoverModeEnabled() and not isButtonSinkIconModeEnabled() end,
+				parent = true,
+				notify = "enableMinimapButtonBin",
+				parentSection = buttonSinkSection,
+			},
+			{
+				var = "detachedButtonSinkScale",
+				text = L["detachedButtonSinkScale"],
+				desc = L["detachedButtonSinkScaleDesc"],
+				get = function() return addon.db and addon.db.detachedButtonSinkScale or 1 end,
+				set = function(value)
+					addon.db["detachedButtonSinkScale"] = value
+					if addon.functions.applyDetachedButtonSinkScale then addon.functions.applyDetachedButtonSinkScale() end
+				end,
+				min = 0.5,
+				max = 2.5,
+				step = 0.05,
+				parent = true,
+				default = 1,
+				sType = "slider",
+				parentCheck = isDetachedButtonSinkIconModeEnabled,
+				parentSection = buttonSinkSection,
+			},
+			{
+				var = "detachedButtonSinkMoveModifier",
+				text = L["detachedButtonSinkMoveModifier"],
+				desc = L["detachedButtonSinkMoveModifierDesc"],
+				list = {
+					NONE = L["detachedButtonSinkMoveModifier_None"],
+					ALT = L["detachedButtonSinkMoveModifier_Alt"],
+					SHIFT = L["detachedButtonSinkMoveModifier_Shift"],
+					CTRL = L["detachedButtonSinkMoveModifier_Ctrl"],
+				},
+				order = { "NONE", "ALT", "SHIFT", "CTRL" },
+				default = "ALT",
+				get = function() return addon.db and addon.db.detachedButtonSinkMoveModifier or "ALT" end,
+				set = function(value)
+					local valid = {
+						NONE = true,
+						ALT = true,
+						SHIFT = true,
+						CTRL = true,
+					}
+					if not valid[value] then value = "ALT" end
+					addon.db["detachedButtonSinkMoveModifier"] = value
+				end,
+				parent = true,
+				parentCheck = isDetachedButtonSinkIconModeEnabled,
+				sType = "dropdown",
 				parentSection = buttonSinkSection,
 			},
 			{
@@ -2079,14 +2151,7 @@ data = {
 					addon.db["buttonSinkAnchorPreference"] = value
 				end,
 				parent = true,
-				parentCheck = function()
-					return addon.SettingsLayout.elements["enableMinimapButtonBin"]
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting:GetValue() == true
-						and addon.SettingsLayout.elements["useMinimapButtonBinIcon"]
-						and addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting
-						and addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting:GetValue() == true
-				end,
+				parentCheck = isButtonSinkLauncherModeEnabled,
 				notify = "enableMinimapButtonBin",
 				sType = "dropdown",
 				parentSection = buttonSinkSection,
@@ -2101,14 +2166,7 @@ data = {
 				end,
 				default = false,
 				sType = "checkbox",
-				parentCheck = function()
-					return addon.SettingsLayout.elements["enableMinimapButtonBin"]
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting:GetValue() == true
-						and addon.SettingsLayout.elements["useMinimapButtonBinIcon"]
-						and addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting
-						and addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting:GetValue() == true
-				end,
+				parentCheck = isButtonSinkLauncherModeEnabled,
 				parent = true,
 				notify = "enableMinimapButtonBin",
 				parentSection = buttonSinkSection,
@@ -2119,19 +2177,15 @@ data = {
 				desc = L["useMinimapButtonBinMouseoverDesc"],
 				func = function(key)
 					addon.db["useMinimapButtonBinMouseover"] = key
-					if key then addon.db["useMinimapButtonBinIcon"] = false end
+					if key then
+						addon.db["useMinimapButtonBinIcon"] = false
+						addon.db["useDetachedMinimapButtonBinIcon"] = false
+					end
 					addon.functions.toggleButtonSink()
 				end,
 				default = false,
 				sType = "checkbox",
-				parentCheck = function()
-					return addon.SettingsLayout.elements["enableMinimapButtonBin"]
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting:GetValue() == true
-						and addon.SettingsLayout.elements["useMinimapButtonBinIcon"]
-						and addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting
-						and (addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting:GetValue() == false or addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting:GetValue() == nil)
-				end,
+				parentCheck = function() return isMinimapButtonBinEnabled() and not isButtonSinkIconModeEnabled() and not isDetachedButtonSinkIconModeEnabled() end,
 				parent = true,
 				notify = "enableMinimapButtonBin",
 				parentSection = buttonSinkSection,
@@ -2146,14 +2200,7 @@ data = {
 				end,
 				default = false,
 				sType = "checkbox",
-				parentCheck = function()
-					return addon.SettingsLayout.elements["enableMinimapButtonBin"]
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting
-						and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting:GetValue() == true
-						and addon.SettingsLayout.elements["useMinimapButtonBinMouseover"]
-						and addon.SettingsLayout.elements["useMinimapButtonBinMouseover"].setting
-						and addon.SettingsLayout.elements["useMinimapButtonBinMouseover"].setting:GetValue() == true
-				end,
+				parentCheck = function() return isMinimapButtonBinEnabled() and (isButtonSinkHoverModeEnabled() or isDetachedButtonSinkIconModeEnabled()) end,
 				parent = true,
 				notify = "enableMinimapButtonBin",
 				parentSection = buttonSinkSection,
@@ -2232,19 +2279,6 @@ data = {
 
 table.sort(data, function(a, b) return a.text < b.text end)
 addon.functions.SettingsCreateCheckboxes(cMapNav, data)
-
-local function isMinimapButtonBinEnabled()
-	return addon.SettingsLayout.elements["enableMinimapButtonBin"]
-		and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting
-		and addon.SettingsLayout.elements["enableMinimapButtonBin"].setting:GetValue() == true
-end
-
-local function isButtonSinkIconModeEnabled()
-	return isMinimapButtonBinEnabled()
-		and addon.SettingsLayout.elements["useMinimapButtonBinIcon"]
-		and addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting
-		and addon.SettingsLayout.elements["useMinimapButtonBinIcon"].setting:GetValue() == true
-end
 
 local function getIgnoreState(value)
 	if not value then return false end

@@ -3983,6 +3983,9 @@ local function initUI()
 	addon.functions.InitDBValue("enableMinimapButtonBin", false)
 	addon.functions.InitDBValue("frameVisibilityFadeStrength", 1)
 	addon.functions.InitDBValue("buttonsink", {})
+	addon.functions.InitDBValue("useDetachedMinimapButtonBinIcon", false)
+	addon.functions.InitDBValue("detachedButtonSinkScale", 1)
+	addon.functions.InitDBValue("detachedButtonSinkMoveModifier", "ALT")
 	addon.functions.InitDBValue("buttonSinkAnchorPreference", "AUTO")
 	addon.functions.InitDBValue("minimapButtonBinIconClickToggle", false)
 	addon.functions.InitDBValue("minimapButtonBinColumns", DEFAULT_BUTTON_SINK_COLUMNS)
@@ -3991,6 +3994,7 @@ local function initUI()
 	addon.functions.InitDBValue("enableLootspecQuickswitch", false)
 	addon.functions.InitDBValue("lootspec_quickswitch", {})
 	addon.functions.InitDBValue("minimapSinkHoleData", {})
+	addon.functions.InitDBValue("detachedButtonSinkData", {})
 	addon.functions.InitDBValue("hideQuickJoinToast", false)
 	addon.functions.InitDBValue("hideScreenshotStatus", false)
 	addon.functions.InitDBValue("showTrainAllButton", false)
@@ -4215,9 +4219,9 @@ local function initUI()
 		return farmHud:IsShown() and Minimap:GetParent() == farmHud
 	end
 
-		local function hookFarmHudSquareMinimapBackground()
-			addon.variables = addon.variables or {}
-			if addon.variables.squareMinimapFarmHudBackgroundHooked then return end
+	local function hookFarmHudSquareMinimapBackground()
+		addon.variables = addon.variables or {}
+		if addon.variables.squareMinimapFarmHudBackgroundHooked then return end
 
 		local farmHud = _G.FarmHud
 		if not farmHud or not farmHud.HookScript then return end
@@ -4229,9 +4233,9 @@ local function initUI()
 			if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
 		end)
 
-			addon.variables.squareMinimapFarmHudBackgroundHooked = true
-		end
-		addon.functions.hookFarmHudSquareMinimapBackground = hookFarmHudSquareMinimapBackground
+		addon.variables.squareMinimapFarmHudBackgroundHooked = true
+	end
+	addon.functions.hookFarmHudSquareMinimapBackground = hookFarmHudSquareMinimapBackground
 
 	function addon.functions.applySquareMinimapBackground()
 		if not Minimap then return end
@@ -4355,12 +4359,12 @@ local function initUI()
 		end
 	end
 
-		-- Apply border at startup
-		C_Timer.After(0, function()
-			if addon.functions.hookFarmHudSquareMinimapBackground then addon.functions.hookFarmHudSquareMinimapBackground() end
-			if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
-			if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
-			if addon.functions.applySquareMinimapHousingBackdrop then addon.functions.applySquareMinimapHousingBackdrop() end
+	-- Apply border at startup
+	C_Timer.After(0, function()
+		if addon.functions.hookFarmHudSquareMinimapBackground then addon.functions.hookFarmHudSquareMinimapBackground() end
+		if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
+		if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
+		if addon.functions.applySquareMinimapHousingBackdrop then addon.functions.applySquareMinimapHousingBackdrop() end
 	end)
 
 	function addon.functions.applyMinimapClusterClamp()
@@ -4716,9 +4720,121 @@ local function initUI()
 			or btnName == "ZygorGuidesViewerMapIcon"
 	end
 
+	local function isButtonSinkMinimapToggleEnabled() return addon.db and addon.db["useMinimapButtonBinIcon"] == true end
+
+	local function isButtonSinkDetachedToggleEnabled() return addon.db and addon.db["useDetachedMinimapButtonBinIcon"] == true end
+
+	local function getButtonSinkAnchorButton()
+		if addon.variables and addon.variables.buttonSinkDetachedToggle then return addon.variables.buttonSinkDetachedToggle end
+		if LDBIcon and LDBIcon.objects then return LDBIcon.objects[addonName .. "_ButtonSinkMap"] end
+	end
+
+	local function saveSimpleFramePoint(frame, dbKey)
+		if not frame or not dbKey or not addon.db then return end
+		addon.db[dbKey] = addon.db[dbKey] or {}
+		local point, _, _, xOfs, yOfs = frame:GetPoint()
+		addon.db[dbKey].point = point
+		addon.db[dbKey].x = xOfs
+		addon.db[dbKey].y = yOfs
+	end
+
+	local function restoreSimpleFramePoint(frame, dbKey, defaultPoint, defaultX, defaultY)
+		if not frame then return end
+		local data = addon.db and addon.db[dbKey] or nil
+		local point = data and data.point or defaultPoint or "CENTER"
+		local x = data and data.x or defaultX or 0
+		local y = data and data.y or defaultY or 0
+		frame:ClearAllPoints()
+		frame:SetPoint(point, UIParent, point, x, y)
+	end
+
+	local function migrateDetachedButtonSinkPointData(button)
+		if not button then return end
+		local data = addon.db and addon.db["detachedButtonSinkData"] or nil
+		if not data or data.point or type(data.centerX) ~= "number" or type(data.centerY) ~= "number" then return end
+		button:ClearAllPoints()
+		button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", data.centerX, data.centerY)
+		saveSimpleFramePoint(button, "detachedButtonSinkData")
+		data.centerX = nil
+		data.centerY = nil
+	end
+
+	local function getDetachedButtonSinkScale()
+		local scale = tonumber(addon.db and addon.db["detachedButtonSinkScale"]) or 1
+		if scale < 0.5 then
+			scale = 0.5
+		elseif scale > 3 then
+			scale = 3
+		end
+		return scale
+	end
+
+	local function getDetachedButtonSinkMoveModifier()
+		local modifier = addon.db and addon.db["detachedButtonSinkMoveModifier"] or "ALT"
+		modifier = type(modifier) == "string" and string.upper(modifier) or "ALT"
+		if modifier ~= "NONE" and modifier ~= "ALT" and modifier ~= "SHIFT" and modifier ~= "CTRL" then modifier = "ALT" end
+		return modifier
+	end
+
+	local function isDetachedButtonSinkMoveModifierActive()
+		local modifier = getDetachedButtonSinkMoveModifier()
+		if modifier == "NONE" then return true end
+		if modifier == "ALT" then return IsAltKeyDown() end
+		if modifier == "SHIFT" then return IsShiftKeyDown() end
+		if modifier == "CTRL" then return IsControlKeyDown() end
+		return false
+	end
+
+	local function canStartDetachedButtonDrag(mouseButton)
+		if addon.db["lockMinimapButtonBin"] then return false end
+		if mouseButton == "MiddleButton" then return true end
+		return mouseButton == "LeftButton" and isDetachedButtonSinkMoveModifierActive()
+	end
+
+	local function setDetachedButtonSinkScaleKeepingPosition(button, scale, persistPosition)
+		if not button or not button.SetScale then return end
+
+		local point, relativeTo, relativePoint, xOfs, yOfs = button:GetPoint(1)
+		local beforeX, beforeY = button:GetCenter()
+
+		button:SetScale(scale)
+
+		if not point or not beforeX or not beforeY then
+			if persistPosition then saveSimpleFramePoint(button, "detachedButtonSinkData") end
+			return
+		end
+
+		local afterX, afterY = button:GetCenter()
+		if not afterX or not afterY then
+			if persistPosition then saveSimpleFramePoint(button, "detachedButtonSinkData") end
+			return
+		end
+
+		local deltaX = beforeX - afterX
+		local deltaY = beforeY - afterY
+		if math.abs(deltaX) >= 0.01 or math.abs(deltaY) >= 0.01 then
+			local relative = relativeTo or UIParent
+			local relativeScale = (relative and relative.GetEffectiveScale and relative:GetEffectiveScale()) or (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+			if relativeScale == 0 then relativeScale = 1 end
+
+			button:ClearAllPoints()
+			button:SetPoint(point, relative, relativePoint or point, (xOfs or 0) + (deltaX / relativeScale), (yOfs or 0) + (deltaY / relativeScale))
+		end
+
+		if persistPosition then saveSimpleFramePoint(button, "detachedButtonSinkData") end
+	end
+
+	local function applyDetachedButtonSinkScale(button)
+		button = button or (addon.variables and addon.variables.buttonSinkDetachedToggle)
+		if not button then return end
+		setDetachedButtonSinkScaleKeepingPosition(button, getDetachedButtonSinkScale(), true)
+	end
+	addon.functions.applyDetachedButtonSinkScale = applyDetachedButtonSinkScale
+
 	local function hoverOutFrame()
-		if addon.variables.buttonSink and LDBIcon.objects[addonName .. "_ButtonSinkMap"] then
-			if not MouseIsOver(addon.variables.buttonSink) and not MouseIsOver(LDBIcon.objects[addonName .. "_ButtonSinkMap"]) then
+		local anchorButton = getButtonSinkAnchorButton()
+		if addon.variables.buttonSink and anchorButton then
+			if not MouseIsOver(addon.variables.buttonSink) and not MouseIsOver(anchorButton) then
 				addon.variables.buttonSink:Hide()
 			elseif addon.variables.buttonSink:IsShown() then
 				C_Timer.After(1, function() hoverOutFrame() end)
@@ -4828,6 +4944,19 @@ local function initUI()
 			addon.variables.buttonSink:Hide()
 			addon.variables.buttonSink = nil
 		end
+		if addon.variables.buttonSinkDetachedToggle then
+			addon.variables.buttonSinkDetachedToggle:SetScript("OnEnter", nil)
+			addon.variables.buttonSinkDetachedToggle:SetScript("OnLeave", nil)
+			addon.variables.buttonSinkDetachedToggle:SetScript("OnClick", nil)
+			addon.variables.buttonSinkDetachedToggle:SetScript("OnMouseDown", nil)
+			addon.variables.buttonSinkDetachedToggle:SetScript("OnMouseUp", nil)
+			addon.variables.buttonSinkDetachedToggle:SetScript("OnDragStart", nil)
+			addon.variables.buttonSinkDetachedToggle:SetScript("OnDragStop", nil)
+			addon.variables.buttonSinkDetachedToggle:SetScript("OnHide", nil)
+			addon.variables.buttonSinkDetachedToggle:Hide()
+			addon.variables.buttonSinkDetachedToggle:SetParent(nil)
+			addon.variables.buttonSinkDetachedToggle = nil
+		end
 		addon.functions.LayoutButtons()
 		if _G[addonName .. "_ButtonSinkMap"] then
 			_G[addonName .. "_ButtonSinkMap"]:SetParent(nil)
@@ -4870,6 +4999,88 @@ local function initUI()
 	end
 	addon.functions.applyButtonSinkAppearance = applyButtonSinkAppearance
 
+	local function createDetachedButtonSinkToggle()
+		local button = CreateFrame("Button", nil, UIParent)
+		button:SetFrameStrata("MEDIUM")
+		button:SetFrameLevel(8)
+		button:SetSize(31, 31)
+		button:SetMovable(true)
+		button:SetClampedToScreen(true)
+		button:EnableMouse(true)
+		button:RegisterForClicks("AnyUp")
+		button:RegisterForDrag("LeftButton", "MiddleButton")
+		button:SetHighlightTexture(136477)
+
+		local overlay = button:CreateTexture(nil, "OVERLAY")
+		overlay:SetSize(50, 50)
+		overlay:SetTexture(136430)
+		overlay:SetPoint("TOPLEFT", button, "TOPLEFT")
+
+		local background = button:CreateTexture(nil, "BACKGROUND")
+		background:SetSize(24, 24)
+		background:SetTexture(136467)
+		background:SetPoint("CENTER", button, "CENTER")
+
+		local icon = button:CreateTexture(nil, "ARTWORK")
+		icon:SetSize(18, 18)
+		icon:SetTexture("Interface\\AddOns\\" .. addonName .. "\\Icons\\SinkHole.tga")
+		icon:SetPoint("CENTER", button, "CENTER")
+		button.icon = icon
+
+		button:SetScale(getDetachedButtonSinkScale())
+		migrateDetachedButtonSinkPointData(button)
+		restoreSimpleFramePoint(button, "detachedButtonSinkData", "CENTER", 0, 0)
+
+		local function stopDetachedDrag(self)
+			if not self._eqolDragging then return end
+			self:StopMovingOrSizing()
+			self._eqolDragging = nil
+			self._eqolPressedButton = nil
+			saveSimpleFramePoint(self, "detachedButtonSinkData")
+			C_Timer.After(0, function()
+				if self then self._eqolSuppressClick = nil end
+			end)
+		end
+
+		button:SetScript("OnEnter", function(self)
+			if addon.db["minimapButtonBinIconClickToggle"] then return end
+			if not addon.variables.buttonSink then return end
+			positionBagFrame(addon.variables.buttonSink, self)
+			addon.variables.buttonSink:Show()
+		end)
+		button:SetScript("OnLeave", function()
+			if addon.db["minimapButtonBinIconClickToggle"] then return end
+			C_Timer.After(1, function() hoverOutFrame() end)
+		end)
+		button:SetScript("OnClick", function(self, mouseButton)
+			if self._eqolSuppressClick or addon.db["minimapButtonBinIconClickToggle"] ~= true then return end
+			if mouseButton and mouseButton ~= "LeftButton" then return end
+			if not addon.variables.buttonSink then return end
+			if addon.variables.buttonSink:IsShown() then
+				addon.variables.buttonSink:Hide()
+			else
+				positionBagFrame(addon.variables.buttonSink, self)
+				addon.variables.buttonSink:Show()
+			end
+		end)
+		button:SetScript("OnMouseDown", function(self, mouseButton) self._eqolPressedButton = mouseButton end)
+		button:SetScript("OnMouseUp", function(self, mouseButton)
+			if mouseButton == self._eqolPressedButton then self._eqolPressedButton = nil end
+			stopDetachedDrag(self)
+		end)
+		button:SetScript("OnDragStart", function(self)
+			if not canStartDetachedButtonDrag(self._eqolPressedButton) then return end
+			self._eqolSuppressClick = true
+			self._eqolDragging = true
+			if addon.variables.buttonSink then addon.variables.buttonSink:Hide() end
+			self:StartMoving()
+		end)
+		button:SetScript("OnDragStop", stopDetachedDrag)
+		button:SetScript("OnHide", stopDetachedDrag)
+
+		return button
+	end
+
 	local function firstStartButtonSink(counter)
 		if hookedATT then return end
 		if C_AddOns.IsAddOnLoadable("AllTheThings") then
@@ -4893,6 +5104,9 @@ local function initUI()
 	function addon.functions.toggleButtonSink()
 		if addon.db["enableMinimapButtonBin"] then
 			removeButtonSink()
+			local useMinimapToggle = isButtonSinkMinimapToggleEnabled()
+			local useDetachedToggle = isButtonSinkDetachedToggleEnabled()
+			local useLauncherToggle = useMinimapToggle or useDetachedToggle
 
 			firstStartButtonSink(0)
 			C_Timer.After(2, function()
@@ -4902,9 +5116,9 @@ local function initUI()
 			local buttonBag = CreateFrame("Frame", addonName .. "_ButtonSink", UIParent, "BackdropTemplate")
 			buttonBag:SetSize(150, 150)
 
-			if addon.db["useMinimapButtonBinIcon"] then
-				buttonBag:SetScript("OnLeave", function(self)
-					if addon.db["useMinimapButtonBinIcon"] and addon.db["minimapButtonBinIconClickToggle"] ~= true then C_Timer.After(1, function() hoverOutFrame() end) end
+			if useLauncherToggle then
+				buttonBag:SetScript("OnLeave", function()
+					if addon.db["minimapButtonBinIconClickToggle"] ~= true then C_Timer.After(1, function() hoverOutFrame() end) end
 				end)
 			else
 				if not addon.db["lockMinimapButtonBin"] then
@@ -4914,20 +5128,10 @@ local function initUI()
 					buttonBag:SetScript("OnDragStart", buttonBag.StartMoving)
 					buttonBag:SetScript("OnDragStop", function(self)
 						self:StopMovingOrSizing()
-						-- Position speichern
-						local point, _, _, xOfs, yOfs = self:GetPoint()
-						addon.db["minimapSinkHoleData"].point = point
-						addon.db["minimapSinkHoleData"].x = xOfs
-						addon.db["minimapSinkHoleData"].y = yOfs
+						saveSimpleFramePoint(self, "minimapSinkHoleData")
 					end)
 				end
-				buttonBag:SetPoint(
-					addon.db["minimapSinkHoleData"].point or "CENTER",
-					UIParent,
-					addon.db["minimapSinkHoleData"].point or "CENTER",
-					addon.db["minimapSinkHoleData"].x or 0,
-					addon.db["minimapSinkHoleData"].y or 0
-				)
+				restoreSimpleFramePoint(buttonBag, "minimapSinkHoleData", "CENTER", 0, 0)
 				if addon.db["useMinimapButtonBinMouseover"] then
 					buttonBag:SetScript("OnEnter", function(self) self:SetAlpha(1) end)
 					buttonBag:SetScript("OnLeave", function(self) hoverOutCheck(self) end)
@@ -4940,7 +5144,7 @@ local function initUI()
 			addon.functions.LayoutButtons()
 
 			-- create ButtonSink Button
-			if addon.db["useMinimapButtonBinIcon"] then
+			if useMinimapToggle then
 				local iconData = {
 					type = "launcher",
 					icon = "Interface\\AddOns\\" .. addonName .. "\\Icons\\SinkHole.tga" or "Interface\\ICONS\\INV_Misc_QuestionMark", -- irgendein Icon
@@ -4965,12 +5169,15 @@ local function initUI()
 						end
 					end,
 					OnLeave = function(self)
-						if addon.db["useMinimapButtonBinIcon"] and addon.db["minimapButtonBinIconClickToggle"] ~= true then C_Timer.After(1, function() hoverOutFrame() end) end
+						if addon.db["minimapButtonBinIconClickToggle"] ~= true then C_Timer.After(1, function() hoverOutFrame() end) end
 					end,
 				}
 				-- Registriere das Icon bei LibDBIcon
 				LDB:NewDataObject(addonName .. "_ButtonSinkMap", iconData)
 				LDBIcon:Register(addonName .. "_ButtonSinkMap", iconData, addon.db["buttonsink"])
+				buttonBag:Hide()
+			elseif useDetachedToggle then
+				addon.variables.buttonSinkDetachedToggle = createDetachedButtonSinkToggle()
 				buttonBag:Hide()
 			else
 				buttonBag:Show()
@@ -6382,11 +6589,11 @@ local eventHandlers = {
 			loadSubAddon("EnhanceQoLSharedMedia")
 
 			checkBagIgnoreJunk()
-			end
-			if arg1 == "FarmHud" then
-				if addon.functions.hookFarmHudSquareMinimapBackground then addon.functions.hookFarmHudSquareMinimapBackground() end
-				if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
-			end
+		end
+		if arg1 == "FarmHud" then
+			if addon.functions.hookFarmHudSquareMinimapBackground then addon.functions.hookFarmHudSquareMinimapBackground() end
+			if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
+		end
 		if arg1 == "Blizzard_ItemInteractionUI" then addon.functions.toggleInstantCatalystButton(addon.db["instantCatalystEnabled"]) end
 	end,
 	["CVAR_UPDATE"] = function(cvarName, value)

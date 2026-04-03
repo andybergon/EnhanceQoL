@@ -4,6 +4,7 @@
 
 ### ✨ Added
 
+- Minimap Button Sink: Added an optional detached toggle that can be placed freely on the screen instead of staying on the minimap, with optional size and move-key settings.
 - Resource Bars (Brewmaster / Stagger): Added an optional custom Stagger max value so the bar can scale beyond the default `100%`, for example up to `200%` or higher.
 - Resource Bars (Brewmaster / Stagger): Expanded the configurable extended Stagger color points from `2` to `4` with additional `Very high` and `Critical` thresholds/colors.
 - Mythic+ (Teleports / Hearthstones): Added `Lightcalled Hearthstone` to the available hearthstone list.
