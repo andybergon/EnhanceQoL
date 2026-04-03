@@ -13,6 +13,7 @@
 
 - Class Buff Reminder (Rogue): Fixed poison reminders not showing reliably when both poisons were missing.
 - Glow effects: Fixed some glows not showing reliably after login or other state changes.
+- Unit Frames / Castbar: Fixed a rare issue where cast-icon borders could cause errors during some casts.
 
 ### ❌ Removed
 

@@ -4991,25 +4991,43 @@ local function applyCastBorder(st, ccfg, defc)
 		local offset = borderCfg.offset
 		if offset == nil then offset = size end
 		offset = math.max(0, tonumber(offset) or 0)
+		local colorR, colorG, colorB, colorA = unpackColor(borderCfg.color, 0, 0, 0, 0.8)
+		local edgeFile = UFHelper.resolveBorderTexture(borderCfg.texture)
+		local cache = border._ufCastBorderCache
+		local styleChanged = not cache or cache.edgeFile ~= edgeFile or cache.edgeSize ~= size
+		local colorChanged = not cache
+			or cache.colorR ~= colorR
+			or cache.colorG ~= colorG
+			or cache.colorB ~= colorB
+			or cache.colorA ~= colorA
+
 		border:ClearAllPoints()
 		border:SetPoint("TOPLEFT", st.castBar, "TOPLEFT", -offset, offset)
 		border:SetPoint("BOTTOMRIGHT", st.castBar, "BOTTOMRIGHT", offset, -offset)
-		border:SetBackdrop({
-			bgFile = "Interface\\Buttons\\WHITE8x8",
-			edgeFile = UFHelper.resolveBorderTexture(borderCfg.texture),
-			edgeSize = size,
-			insets = { left = size, right = size, top = size, bottom = size },
-		})
-		border:SetBackdropColor(0, 0, 0, 0)
-		local color = borderCfg.color or { 0, 0, 0, 0.8 }
-		border:SetBackdropBorderColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
+		if styleChanged then
+			local style = {
+				bgFile = "Interface\\Buttons\\WHITE8x8",
+				edgeFile = edgeFile,
+				edgeSize = size,
+				insets = { left = size, right = size, top = size, bottom = size },
+			}
+			border._ufCastBorderStyle = style
+			border:SetBackdrop(style)
+			border:SetBackdropColor(0, 0, 0, 0)
+		end
+		if styleChanged or colorChanged then border:SetBackdropBorderColor(colorR, colorG, colorB, colorA) end
+		cache = cache or {}
+		cache.edgeFile = edgeFile
+		cache.edgeSize = size
+		cache.colorR = colorR
+		cache.colorG = colorG
+		cache.colorB = colorB
+		cache.colorA = colorA
+		border._ufCastBorderCache = cache
 		border:Show()
 	else
 		local border = st.castBorder
-		if border then
-			border:SetBackdrop(nil)
-			border:Hide()
-		end
+		if border then border:Hide() end
 	end
 end
 
@@ -5058,29 +5076,48 @@ function UF._applyCastIconBorder(st, ccfg, defc)
 	local enabled = type(borderCfg) == "table" and borderCfg.enabled
 	if enabled == nil and type(borderDef) == "table" then enabled = borderDef.enabled end
 
-	if enabled == true and st.castIcon:IsShown() then
+	if enabled == true then
 		local border = UF._ensureCastIconBorderFrame(st)
 		if not border then return end
 		local size, offset = UF._getCastIconBorderMetrics(borderCfg, borderDef)
+		local edgeFile = UFHelper.resolveBorderTexture((type(borderCfg) == "table" and borderCfg.texture) or (type(borderDef) == "table" and borderDef.texture))
+		local color = (type(borderCfg) == "table" and borderCfg.color) or (type(borderDef) == "table" and borderDef.color) or { 0, 0, 0, 0.8 }
+		local colorR, colorG, colorB, colorA = unpackColor(color, 0, 0, 0, 0.8)
+		local cache = border._ufCastIconBorderCache
+		local styleChanged = not cache or cache.edgeFile ~= edgeFile or cache.edgeSize ~= size
+		local colorChanged = not cache
+			or cache.colorR ~= colorR
+			or cache.colorG ~= colorG
+			or cache.colorB ~= colorB
+			or cache.colorA ~= colorA
+
 		border:ClearAllPoints()
 		border:SetPoint("TOPLEFT", st.castIcon, "TOPLEFT", -offset, offset)
 		border:SetPoint("BOTTOMRIGHT", st.castIcon, "BOTTOMRIGHT", offset, -offset)
-		border:SetBackdrop({
-			bgFile = "Interface\\Buttons\\WHITE8x8",
-			edgeFile = UFHelper.resolveBorderTexture((type(borderCfg) == "table" and borderCfg.texture) or (type(borderDef) == "table" and borderDef.texture)),
-			edgeSize = size,
-			insets = { left = size, right = size, top = size, bottom = size },
-		})
-		border:SetBackdropColor(0, 0, 0, 0)
-		local color = (type(borderCfg) == "table" and borderCfg.color) or (type(borderDef) == "table" and borderDef.color) or { 0, 0, 0, 0.8 }
-		border:SetBackdropBorderColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
-		border:Show()
+		if styleChanged then
+			local style = {
+				bgFile = "Interface\\Buttons\\WHITE8x8",
+				edgeFile = edgeFile,
+				edgeSize = size,
+				insets = { left = size, right = size, top = size, bottom = size },
+			}
+			border._ufCastIconBorderStyle = style
+			border:SetBackdrop(style)
+			border:SetBackdropColor(0, 0, 0, 0)
+		end
+		if styleChanged or colorChanged then border:SetBackdropBorderColor(colorR, colorG, colorB, colorA) end
+		cache = cache or {}
+		cache.edgeFile = edgeFile
+		cache.edgeSize = size
+		cache.colorR = colorR
+		cache.colorG = colorG
+		cache.colorB = colorB
+		cache.colorA = colorA
+		border._ufCastIconBorderCache = cache
+		border:SetShown(st.castIcon:IsShown())
 	else
 		local border = st.castIconBorder
-		if border then
-			border:SetBackdrop(nil)
-			border:Hide()
-		end
+		if border then border:Hide() end
 	end
 end
 
