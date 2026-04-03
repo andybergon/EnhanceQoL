@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.12.0-beta9] - 2026-04-03
+
+### ✨ Added
+
+- Mythic+ (Teleports / Hearthstones): Added `Preyseeker's Hearthstone` to the available hearthstone list.
+
+---
+
 ## [9.12.0-beta8] - 2026-04-03
 
 ### ✨ Added

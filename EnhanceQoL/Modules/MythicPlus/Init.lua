@@ -1066,6 +1066,9 @@ addon.MythicPlus.variables.portalCompendium = {
 -- Pre-Stage all icon to have less calls to LUA API
 local RANDOM_HS_ID = 999999
 local hearthstoneID = {
+	-- Midnight
+	{ isToy = true, id = 263933, spellID = 1270814 }, -- Preyseeker's Hearthstone
+
 	-- 11.2
 	{ isToy = true, icon = 133469, id = 245970, spellID = 1240219 }, -- P.O.S.T. Master's Express Hearthstone
 	{ isToy = true, icon = 5852174, id = 246565, spellID = 1242509 }, -- Cosmic Hearthstone
@@ -1138,6 +1141,7 @@ end
 local pendingHearthstoneItemLoads = {}
 local hearthstoneNameFallbackByID = {
 	[263489] = "Naaru's Enfold",
+	[263933] = "Preyseeker's Hearthstone",
 	[257736] = "Lightcalled Hearthstone",
 }
 
