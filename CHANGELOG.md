@@ -7,6 +7,10 @@
 - Resource Bars (Brewmaster / Stagger): Added an optional custom Stagger max value so the bar can scale beyond the default `100%`, for example up to `200%` or higher.
 - Resource Bars (Brewmaster / Stagger): Expanded the configurable extended Stagger color points from `2` to `4` with additional `Very high` and `Critical` thresholds/colors.
 
+### 🐛 Fixed
+
+- Class Buff Reminder (Rogue): Fixed poison reminders not showing reliably when both poisons were missing.
+
 ---
 
 ## [9.12.0-beta4] - 2026-04-02

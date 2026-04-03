@@ -1255,15 +1255,6 @@ local function getRoguePoisonPresence(provider, reminder)
 	local hasLethal = reminder:UnitHasAnyAuraSpellId("player", provider.lethalSpellIds)
 	local hasUtility = reminder:UnitHasAnyAuraSpellId("player", provider.utilitySpellIds)
 
-	-- Fallback for clients where poisons are only exposed as temporary enchants.
-	if not hasLethal and not hasUtility and GetWeaponEnchantInfo then
-		local hasMainHandEnchant, _, _, _, hasOffHandEnchant = GetWeaponEnchantInfo()
-		if hasMainHandEnchant and hasOffHandEnchant then
-			hasLethal = true
-			hasUtility = true
-		end
-	end
-
 	return hasLethal, hasUtility
 end
 
