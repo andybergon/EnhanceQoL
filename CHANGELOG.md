@@ -6,6 +6,7 @@
 
 - Resource Bars (Brewmaster / Stagger): Added an optional custom Stagger max value so the bar can scale beyond the default `100%`, for example up to `200%` or higher.
 - Resource Bars (Brewmaster / Stagger): Expanded the configurable extended Stagger color points from `2` to `4` with additional `Very high` and `Critical` thresholds/colors.
+- Mythic+ (Teleports / Hearthstones): Added `Lightcalled Hearthstone` to the available hearthstone list.
 
 ### 🐛 Fixed
 

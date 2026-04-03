@@ -1069,6 +1069,7 @@ local hearthstoneID = {
 	-- 11.2
 	{ isToy = true, icon = 133469, id = 245970, spellID = 1240219 }, -- P.O.S.T. Master's Express Hearthstone
 	{ isToy = true, icon = 5852174, id = 246565, spellID = 1242509 }, -- Cosmic Hearthstone
+	{ isToy = true, icon = 135981, id = 257736, spellID = 1261979 }, -- Lightcalled Hearthstone
 
 	--TWW
 	{ isToy = true, icon = 4622300, id = 235016, spellID = 1217281 }, -- Redeployment Module
@@ -1137,6 +1138,7 @@ end
 local pendingHearthstoneItemLoads = {}
 local hearthstoneNameFallbackByID = {
 	[263489] = "Naaru's Enfold",
+	[257736] = "Lightcalled Hearthstone",
 }
 
 local function normalizeHearthstoneName(name)
