@@ -876,13 +876,6 @@ addon.variables.cvarOptions = {
 		description = addon.L["WholeChatWindowClickable"],
 		category = "cvarCategoryMovementInput",
 	},
-	["enableMouseoverCast"] = {
-		trueValue = "1",
-		falseValue = "0",
-		description = addon.L["enableMouseoverCast"],
-		persistent = true,
-		category = "cvarCategoryUtility",
-	},
 	["ShowClassColorInNameplate"] = {
 		trueValue = "1",
 		falseValue = "0",

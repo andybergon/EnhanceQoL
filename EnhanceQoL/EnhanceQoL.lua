@@ -584,6 +584,30 @@ local function MigrateLegacyVisibilityFlags()
 	MigrateLegacyVisibilityFlag("hideDebuffFrame", "unitframeSettingDebuffFrame")
 end
 
+local function CleanupRemovedCVarOverrides()
+	if not addon.db then return end
+
+	local overrides = addon.db.cvarOverrides
+	if type(overrides) ~= "table" then return end
+
+	local cvarOptions = addon.variables and addon.variables.cvarOptions
+	if type(cvarOptions) ~= "table" then return end
+
+	local staleKeys
+	for cvarKey in pairs(overrides) do
+		if cvarOptions[cvarKey] == nil then
+			staleKeys = staleKeys or {}
+			staleKeys[#staleKeys + 1] = cvarKey
+		end
+	end
+
+	if not staleKeys then return end
+
+	for _, cvarKey in ipairs(staleKeys) do
+		overrides[cvarKey] = nil
+	end
+end
+
 local function StopFrameFade(target)
 	local group = target and target.EQOL_FadeGroup
 	if group and group.Stop then group:Stop() end
@@ -2743,6 +2767,8 @@ addon.functions.setCVarValue = setCVarValue
 
 local function initializePersistentCVars()
 	if not addon.db then return end
+
+	CleanupRemovedCVarOverrides()
 
 	local overrides = addon.db.cvarOverrides or {}
 	addon.db.cvarOverrides = overrides

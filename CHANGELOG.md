@@ -12,6 +12,11 @@
 ### 🐛 Fixed
 
 - Class Buff Reminder (Rogue): Fixed poison reminders not showing reliably when both poisons were missing.
+- Glow effects: Fixed some glows not showing reliably after login or other state changes.
+
+### ❌ Removed
+
+- Mouse & Accessibility: Removed the separate `Enable Mouseover Cast` option.
 
 ---
 
