@@ -7202,10 +7202,24 @@ local function applyIconLayout(frame, count, layout)
 			icon.count:SetTextColor(countFontColor[1] or 1, countFontColor[2] or 1, countFontColor[3] or 1, countFontColor[4] or 1)
 		end
 		if icon.charges then
+			local r = chargesFontColor[1] or 1
+			local g = chargesFontColor[2] or 1
+			local b = chargesFontColor[3] or 1
+			local a = chargesFontColor[4] or 1
 			icon.charges:ClearAllPoints()
 			icon.charges:SetPoint(chargesAnchor, icon, chargesAnchor, chargesX, chargesY)
 			icon.charges:SetFont(chargesPath, chargesSize, chargesStyle)
-			icon.charges:SetTextColor(chargesFontColor[1] or 1, chargesFontColor[2] or 1, chargesFontColor[3] or 1, chargesFontColor[4] or 1)
+			icon.charges:SetTextColor(r, g, b, a)
+			icon.charges._eqolChargesAnchor = chargesAnchor
+			icon.charges._eqolChargesX = chargesX
+			icon.charges._eqolChargesY = chargesY
+			icon.charges._eqolChargesFont = chargesPath
+			icon.charges._eqolChargesFontSize = chargesSize
+			icon.charges._eqolChargesFontStyle = chargesStyle
+			icon.charges._eqolChargesColorR = r
+			icon.charges._eqolChargesColorG = g
+			icon.charges._eqolChargesColorB = b
+			icon.charges._eqolChargesColorA = a
 		end
 		if icon.keybind then
 			icon.keybind:ClearAllPoints()

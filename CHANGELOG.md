@@ -1,5 +1,13 @@
 # Changelog
 
+## [9.12.0-beta6] - 2026-04-03
+
+### 🐛 Fixed
+
+- Cooldown Panels: Fixed entry-level charges overrides sometimes snapping back to the panel style after changing another charges setting like color, size, or placement.
+
+---
+
 ## [9.12.0-beta5] - 2026-04-03
 
 ### ✨ Added
