@@ -19,8 +19,6 @@ CooldownPanels.Bars = CooldownPanels.Bars or {}
 local Bars = CooldownPanels.Bars
 if Bars._eqolSupplementLoaded == true then return end
 Bars._eqolSupplementLoaded = true
-Bars._eqolDebugEnabled = true
-Bars._eqolTraceChargeSpellId = Bars._eqolTraceChargeSpellId or 51505
 
 local CreateFrame = CreateFrame
 local GetTime = GetTime
@@ -217,296 +215,6 @@ local function safeNumber(value)
 		if numeric ~= nil and numeric == numeric and numeric ~= math.huge and numeric ~= -math.huge then return numeric end
 	end
 	return nil
-end
-
-local function getDebugText(value)
-	if type(value) ~= "string" then return nil end
-	if isSecretValue(value) then return "<secret:string>" end
-	return value
-end
-
-local function getBarsDebugStore()
-	local root = nil
-	if CooldownPanels.GetRoot then
-		root = CooldownPanels:GetRoot()
-	elseif CooldownPanels.EnsureDB then
-		root = CooldownPanels:EnsureDB()
-	end
-	if type(root) ~= "table" then return nil end
-	if type(root._eqolBarsDebug) ~= "table" then root._eqolBarsDebug = {
-		enabled = true,
-		maxEntries = 4000,
-		nextIndex = 1,
-		count = 0,
-		seq = 0,
-		logs = {},
-	} end
-	local store = root._eqolBarsDebug
-	if store.enabled == nil then store.enabled = true end
-	if type(store.maxEntries) ~= "number" or store.maxEntries < 100 then store.maxEntries = 4000 end
-	if type(store.nextIndex) ~= "number" or store.nextIndex < 1 then store.nextIndex = 1 end
-	if type(store.count) ~= "number" or store.count < 0 then store.count = 0 end
-	if type(store.seq) ~= "number" or store.seq < 0 then store.seq = 0 end
-	if type(store.logs) ~= "table" then store.logs = {} end
-	return store
-end
-
-local function getDebugValue(value)
-	if value == nil then return nil end
-	if isSecretValue(value) then return "<secret:" .. type(value) .. ">" end
-	local valueType = type(value)
-	if valueType == "boolean" or valueType == "number" or valueType == "string" then return value end
-	return "<" .. valueType .. ">"
-end
-
-function Bars.GetChargeTraceCaptureStore()
-	local db = _G.EnhanceQoLDB
-	if type(db) ~= "table" then return nil end
-	if type(db._temp) ~= "table" then db._temp = {} end
-	if type(db._temp.chargeBarTrace) ~= "table" then db._temp.chargeBarTrace = {
-		enabled = false,
-		maxEntries = 1200,
-		nextIndex = 1,
-		count = 0,
-		seq = 0,
-		logs = {},
-	} end
-	local store = db._temp.chargeBarTrace
-	if type(store.maxEntries) ~= "number" or store.maxEntries < 100 then store.maxEntries = 1200 end
-	if type(store.nextIndex) ~= "number" or store.nextIndex < 1 then store.nextIndex = 1 end
-	if type(store.count) ~= "number" or store.count < 0 then store.count = 0 end
-	if type(store.seq) ~= "number" or store.seq < 0 then store.seq = 0 end
-	if type(store.logs) ~= "table" then store.logs = {} end
-	return store
-end
-
-function Bars.ClearChargeTraceCaptureLogs(store)
-	if type(store) ~= "table" then return end
-	store.nextIndex = 1
-	store.count = 0
-	store.seq = 0
-	store.logs = {}
-end
-
-function Bars.DoesChargeTraceCaptureMatch(store, payload)
-	if type(store) ~= "table" or store.enabled ~= true or type(payload) ~= "table" then return false end
-	local targetSpellId = tonumber(store.spellId)
-	if not targetSpellId then return false end
-	local spellId = tonumber(payload.spellId)
-	local baseSpellId = tonumber(payload.baseSpellId)
-	local effectiveSpellId = tonumber(payload.effectiveSpellId)
-	if targetSpellId ~= spellId and targetSpellId ~= baseSpellId and targetSpellId ~= effectiveSpellId then return false end
-	if store.entryKey ~= nil and payload.entryKey ~= nil and tostring(store.entryKey) ~= tostring(payload.entryKey) then return false end
-	return true
-end
-
-function Bars.AppendChargeTraceCapture(stage, payload)
-	local store = Bars.GetChargeTraceCaptureStore()
-	if not Bars.DoesChargeTraceCaptureMatch(store, payload) then return end
-	local entry = {
-		seq = (store.seq or 0) + 1,
-		t = (Api.GetTime and Api.GetTime()) or GetTime() or 0,
-		stage = tostring(stage or "?"),
-		combat = InCombatLockdown and InCombatLockdown() == true or false,
-	}
-	store.seq = entry.seq
-	for key, value in pairs(payload) do
-		entry[key] = getDebugValue(value)
-	end
-	local index = store.nextIndex or 1
-	store.logs[index] = entry
-	index = index + 1
-	if index > store.maxEntries then index = 1 end
-	store.nextIndex = index
-	store.count = min((store.count or 0) + 1, store.maxEntries)
-end
-
-function Bars.IsChargeTraceCaptureActive(spellId, entryKey)
-	local store = Bars.GetChargeTraceCaptureStore()
-	if not (store and store.enabled == true) then return false end
-	local targetSpellId = tonumber(store.spellId)
-	if spellId ~= nil and targetSpellId ~= tonumber(spellId) then return false end
-	if entryKey ~= nil and store.entryKey ~= nil and tostring(store.entryKey) ~= tostring(entryKey) then return false end
-	return true
-end
-
-function Bars.SetChargeTraceCapture(enabled, payload)
-	local store = Bars.GetChargeTraceCaptureStore()
-	if not store then return false end
-	if enabled == true then
-		local spellId = payload and tonumber(payload.spellId) or nil
-		if not spellId then return false end
-		store.previousTraceSpellId = Bars._eqolTraceChargeSpellId
-		store.enabled = true
-		store.spellId = spellId
-		store.entryKey = payload and payload.entryKey or nil
-		store.panelId = payload and payload.panelId or nil
-		store.entryId = payload and payload.entryId or nil
-		store.startedAt = (Api.GetTime and Api.GetTime()) or GetTime() or 0
-		store.stoppedAt = nil
-		Bars.ClearChargeTraceCaptureLogs(store)
-		Bars._eqolTraceChargeSpellId = spellId
-		if Bars.EnsureChargeDurationPoller then Bars.EnsureChargeDurationPoller():Show() end
-		Bars.AppendChargeTraceCapture("captureStart", {
-			spellId = spellId,
-			entryKey = store.entryKey,
-			panelId = store.panelId,
-			entryId = store.entryId,
-		})
-		print("EQOL charge trace enabled spellId=" .. tostring(spellId) .. " entryId=" .. tostring(store.entryId) .. " saved=EnhanceQoLDB._temp.chargeBarTrace.logs")
-		return true
-	end
-	Bars.AppendChargeTraceCapture("captureStop", {
-		spellId = store.spellId,
-		entryKey = store.entryKey,
-		panelId = store.panelId,
-		entryId = store.entryId,
-	})
-	store.enabled = false
-	store.stoppedAt = (Api.GetTime and Api.GetTime()) or GetTime() or 0
-	if Bars._eqolChargeDurationPoller then
-		Bars._eqolChargeDurationPoller._eqolElapsed = 0
-		Bars._eqolChargeDurationPoller:Hide()
-	end
-	if store.previousTraceSpellId ~= nil then Bars._eqolTraceChargeSpellId = store.previousTraceSpellId end
-	print("EQOL charge trace disabled spellId=" .. tostring(store.spellId) .. " logs=" .. tostring(store.count or 0))
-	return true
-end
-
-local function writeBarsDebug(stage, payload)
-	if Bars._eqolDebugEnabled ~= true then
-		Bars.AppendChargeTraceCapture(stage, payload)
-		return
-	end
-	local store = getBarsDebugStore()
-	if not (store and store.enabled == true) then
-		Bars.AppendChargeTraceCapture(stage, payload)
-		return
-	end
-	local entry = {
-		seq = (store.seq or 0) + 1,
-		t = (Api.GetTime and Api.GetTime()) or GetTime() or 0,
-		stage = tostring(stage or "?"),
-		combat = InCombatLockdown and InCombatLockdown() == true or false,
-	}
-	store.seq = entry.seq
-	if type(payload) == "table" then
-		for key, value in pairs(payload) do
-			entry[key] = getDebugValue(value)
-		end
-	end
-	local index = store.nextIndex or 1
-	store.logs[index] = entry
-	index = index + 1
-	if index > store.maxEntries then index = 1 end
-	store.nextIndex = index
-	store.count = min((store.count or 0) + 1, store.maxEntries)
-	Bars.AppendChargeTraceCapture(stage, payload)
-end
-
-function Bars.ShouldTraceChargeSpell(spellId, baseSpellId, effectiveSpellId)
-	local target = tonumber(Bars._eqolTraceChargeSpellId)
-	if not target then return false end
-	return tonumber(spellId) == target or tonumber(baseSpellId) == target or tonumber(effectiveSpellId) == target
-end
-
-function Bars.TraceChargeDebug(stage, payload)
-	if type(payload) ~= "table" then return end
-	if not Bars.ShouldTraceChargeSpell(payload.spellId, payload.baseSpellId, payload.effectiveSpellId) then return end
-	writeBarsDebug(stage, payload)
-end
-
-function Bars.PrintChargeTrace(stage, order, payload)
-	if type(stage) ~= "string" or type(order) ~= "table" or type(payload) ~= "table" then return end
-	local parts = { stage }
-	for i = 1, #order do
-		local key = order[i]
-		local value = getDebugValue(payload[key])
-		parts[#parts + 1] = tostring(key) .. "=" .. tostring(value)
-	end
-	print(table.concat(parts, " "))
-end
-
-function Bars.PrintChargeTraceOnce(entryKey, stage, order, payload)
-	if type(payload) ~= "table" then return end
-	if not Bars.ShouldTraceChargeSpell(payload.spellId, payload.baseSpellId, payload.effectiveSpellId) then return end
-	Bars.AppendChargeTraceCapture(stage, payload)
-	local runtime = getRuntimeState()
-	local cache = runtime.chargeTraceLastPrintByEntryKey or {}
-	runtime.chargeTraceLastPrintByEntryKey = cache
-	local resolvedEntryKey = entryKey or payload.entryKey or tostring(payload.spellId or "nil")
-	local parts = { stage }
-	for i = 1, #order do
-		local key = order[i]
-		local value = getDebugValue(payload[key])
-		parts[#parts + 1] = tostring(key) .. "=" .. tostring(value)
-	end
-	local line = table.concat(parts, " ")
-	if cache[resolvedEntryKey] == line then return end
-	cache[resolvedEntryKey] = line
-	print(line)
-end
-
-Bars.BuildTextFrameDebugSnapshot = function(fontString, textRole)
-	if not fontString then return nil end
-	local point, relativeTo, relativePoint, x, y = nil, nil, nil, nil, nil
-	if fontString.GetPoint then
-		point, relativeTo, relativePoint, x, y = fontString:GetPoint(1)
-	end
-	return {
-		role = textRole,
-		point = point,
-		relativePoint = relativePoint,
-		relativeToName = relativeTo and relativeTo.GetName and relativeTo:GetName() or nil,
-		x = x,
-		y = y,
-		width = fontString.GetWidth and fontString:GetWidth() or nil,
-		stringWidth = fontString.GetStringWidth and fontString:GetStringWidth() or nil,
-		shown = fontString.IsShown and fontString:IsShown() or nil,
-		text = fontString.GetText and getDebugText(fontString:GetText()) or nil,
-	}
-end
-
-Bars.WritePendingTextAnchorTrace = function(barFrame, state, icon, phase)
-	if not (barFrame and state and state.traceTextAnchors == true) then return end
-	local label = Bars.BuildTextFrameDebugSnapshot(barFrame.label, "LABEL") or {}
-	local value = Bars.BuildTextFrameDebugSnapshot(barFrame.value, "VALUE") or {}
-	local stack = Bars.BuildTextFrameDebugSnapshot(barFrame.stackCount, "STACK") or {}
-	local staticText = icon and icon.staticText and Bars.BuildTextFrameDebugSnapshot(icon.staticText, "ICON_STATIC") or nil
-	local countText = icon and icon.count and Bars.BuildTextFrameDebugSnapshot(icon.count, "ICON_COUNT") or nil
-	local chargesText = icon and icon.charges and Bars.BuildTextFrameDebugSnapshot(icon.charges, "ICON_CHARGES") or nil
-	writeBarsDebug("traceTextAnchorState", {
-		panelId = state.panelId,
-		entryId = state.entryId,
-		phase = phase,
-		labelPoint = label.point,
-		labelRelativePoint = label.relativePoint,
-		labelX = label.x,
-		labelY = label.y,
-		labelWidth = label.width,
-		labelShown = label.shown == true,
-		labelText = label.text,
-		valuePoint = value.point,
-		valueRelativePoint = value.relativePoint,
-		valueX = value.x,
-		valueY = value.y,
-		valueWidth = value.width,
-		valueShown = value.shown == true,
-		valueText = value.text,
-		stackPoint = stack.point,
-		stackRelativePoint = stack.relativePoint,
-		stackX = stack.x,
-		stackY = stack.y,
-		stackWidth = stack.width,
-		stackShown = stack.shown == true,
-		stackText = stack.text,
-		iconStaticShown = staticText and staticText.shown == true or false,
-		iconStaticText = staticText and staticText.text or nil,
-		iconCountShown = countText and countText.shown == true or false,
-		iconCountText = countText and countText.text or nil,
-		iconChargesShown = chargesText and chargesText.shown == true or false,
-		iconChargesText = chargesText and chargesText.text or nil,
-	})
 end
 
 local function isSafeLessThan(a, b)
@@ -891,9 +599,7 @@ getRuntimeState = function()
 			chargePhaseByEntryKey = {},
 			chargeEmptyDurationObjectByEntryKey = {},
 			pendingChargeTimerHandoffByEntryKey = {},
-			chargeTraceLastPrintByEntryKey = {},
 			recentChargeSpellcastAtBySpellId = {},
-			pendingTextAnchorTraceByEntryKey = {},
 		}
 	return CooldownPanels.runtime.cooldownPanelBars
 end
@@ -915,31 +621,6 @@ Bars.EnsureChargeSpellcastWatcher = function()
 		if overrideSpellId and overrideSpellId ~= spellId then cache[overrideSpellId] = now end
 	end)
 	Bars._eqolChargeSpellcastWatcher = frame
-	return frame
-end
-
-function Bars.EnsureChargeDurationPoller()
-	if Bars._eqolChargeDurationPoller then return Bars._eqolChargeDurationPoller end
-	local frame = CreateFrame("Frame")
-	frame:Hide()
-	frame._eqolElapsed = 0
-	frame:SetScript("OnUpdate", function(self, elapsed)
-		self._eqolElapsed = (self._eqolElapsed or 0) + (elapsed or 0)
-		if self._eqolElapsed < 0.05 then return end
-		self._eqolElapsed = 0
-		local store = Bars.GetChargeTraceCaptureStore()
-		if not (store and store.enabled == true) then
-			self:Hide()
-			return
-		end
-		local spellId = tonumber(store.spellId)
-		if not (spellId and C_Spell and C_Spell.GetSpellChargeDuration) then return end
-		local durationObject = C_Spell.GetSpellChargeDuration(spellId)
-		local remaining = nil
-		if durationObject and type(durationObject.GetRemainingDuration) == "function" then remaining = durationObject:GetRemainingDuration(Api.DurationModifierRealTime) end
-		print("EQOL_CHARGE_DURATION_POLL", "spellId", spellId, "remaining", remaining)
-	end)
-	Bars._eqolChargeDurationPoller = frame
 	return frame
 end
 
@@ -1741,28 +1422,6 @@ Bars.StopFreeMove = function(commit)
 			(move.anchorBaseY or 0) + (move.currentOffsetY or move.startOffsetY or 0)
 		)
 	end
-	writeBarsDebug("barFreeMoveStop", {
-		panelId = move.panelId,
-		entryId = move.entryId,
-		committed = commit == true,
-		startOffsetX = move.startOffsetX,
-		startOffsetY = move.startOffsetY,
-		currentOffsetX = move.currentOffsetX,
-		currentOffsetY = move.currentOffsetY,
-		anchorPoint = move.anchorPoint,
-		relativePoint = move.relativePoint,
-		anchorBaseX = move.anchorBaseX,
-		anchorBaseY = move.anchorBaseY,
-		anchorFrameName = move.anchorFrame and move.anchorFrame.GetName and move.anchorFrame:GetName() or nil,
-		anchorFrameLeft = move.anchorFrame and move.anchorFrame.GetLeft and move.anchorFrame:GetLeft() or nil,
-		anchorFrameTop = move.anchorFrame and move.anchorFrame.GetTop and move.anchorFrame:GetTop() or nil,
-		barLeft = move.barFrame and move.barFrame.GetLeft and move.barFrame:GetLeft() or nil,
-		barRight = move.barFrame and move.barFrame.GetRight and move.barFrame:GetRight() or nil,
-		barTop = move.barFrame and move.barFrame.GetTop and move.barFrame:GetTop() or nil,
-		barBottom = move.barFrame and move.barFrame.GetBottom and move.barFrame:GetBottom() or nil,
-		barWidth = move.barFrame and move.barFrame.GetWidth and move.barFrame:GetWidth() or nil,
-		barHeight = move.barFrame and move.barFrame.GetHeight and move.barFrame:GetHeight() or nil,
-	})
 	runtime.barFreeMove = nil
 	if commit == true and move.panelId and move.entryId then
 		local targetOffsetX = normalizeBarOffset(move.currentOffsetX, move.startOffsetX or Bars.DEFAULTS.barOffsetX)
@@ -1809,29 +1468,6 @@ Bars.StartFreeMove = function(hitHandle, barFrame, icon)
 		currentOffsetX = normalizeBarOffset(state.barOffsetX, Bars.DEFAULTS.barOffsetX),
 		currentOffsetY = normalizeBarOffset(state.barOffsetY, Bars.DEFAULTS.barOffsetY),
 	}
-	writeBarsDebug("barFreeMoveStart", {
-		panelId = panelId,
-		entryId = entryId,
-		label = state and getDebugText(state.label) or nil,
-		iconEntryId = icon and normalizeId(icon.entryId) or nil,
-		slotColumn = Helper.NormalizeSlotCoordinate(icon and (icon._eqolPreviewCellColumn or icon._eqolLayoutSlotColumn) or nil),
-		slotRow = Helper.NormalizeSlotCoordinate(icon and (icon._eqolPreviewCellRow or icon._eqolLayoutSlotRow) or nil),
-		startOffsetX = runtime.barFreeMove.startOffsetX,
-		startOffsetY = runtime.barFreeMove.startOffsetY,
-		anchorPoint = runtime.barFreeMove.anchorPoint,
-		relativePoint = runtime.barFreeMove.relativePoint,
-		anchorBaseX = runtime.barFreeMove.anchorBaseX,
-		anchorBaseY = runtime.barFreeMove.anchorBaseY,
-		anchorFrameName = runtime.barFreeMove.anchorFrame and runtime.barFreeMove.anchorFrame.GetName and runtime.barFreeMove.anchorFrame:GetName() or nil,
-		anchorFrameLeft = runtime.barFreeMove.anchorFrame and runtime.barFreeMove.anchorFrame.GetLeft and runtime.barFreeMove.anchorFrame:GetLeft() or nil,
-		anchorFrameTop = runtime.barFreeMove.anchorFrame and runtime.barFreeMove.anchorFrame.GetTop and runtime.barFreeMove.anchorFrame:GetTop() or nil,
-		barLeft = barFrame and barFrame.GetLeft and barFrame:GetLeft() or nil,
-		barRight = barFrame and barFrame.GetRight and barFrame:GetRight() or nil,
-		barTop = barFrame and barFrame.GetTop and barFrame:GetTop() or nil,
-		barBottom = barFrame and barFrame.GetBottom and barFrame:GetBottom() or nil,
-		barWidth = barFrame and barFrame.GetWidth and barFrame:GetWidth() or nil,
-		barHeight = barFrame and barFrame.GetHeight and barFrame:GetHeight() or nil,
-	})
 	hitHandle:SetScript("OnUpdate", function(self)
 		local activeRuntime = getRuntimeState()
 		local move = activeRuntime and activeRuntime.barFreeMove or nil
@@ -1939,91 +1575,6 @@ local function ensureModeButton(icon)
 	return button
 end
 
-function Bars.RefreshChargeTraceButtonVisual(button)
-	if not button then return end
-	local active = Bars.IsChargeTraceCaptureActive(button.spellId, button.entryKey)
-	button._eqolChargeTraceActive = active == true
-	if button.SetBackdropColor then
-		if active then
-			button:SetBackdropColor(0.08, 0.40, 0.08, 0.92)
-			button:SetBackdropBorderColor(0.35, 1, 0.35, 0.95)
-		else
-			button:SetBackdropColor(0, 0, 0, 0.82)
-			button:SetBackdropBorderColor(0.95, 0.82, 0.25, 0.95)
-		end
-	end
-	if button.text and button.text.SetText then button.text:SetText(active and "REC" or "TR") end
-end
-
-function Bars.EnsureChargeTraceButton(barFrame)
-	if barFrame._eqolChargeTraceButton then return barFrame._eqolChargeTraceButton end
-	local button = CreateFrame("Button", nil, barFrame, "BackdropTemplate")
-	button:SetSize(28, 14)
-	button:SetBackdrop({
-		bgFile = "Interface\\Buttons\\WHITE8x8",
-		edgeFile = "Interface\\Buttons\\WHITE8x8",
-		edgeSize = 1,
-	})
-	button:SetFrameStrata(barFrame:GetFrameStrata())
-	button:SetFrameLevel((barFrame:GetFrameLevel() or 0) + 60)
-	button:RegisterForClicks("LeftButtonUp")
-	button.text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	button.text:SetPoint("CENTER")
-	button.text:SetTextColor(1, 0.95, 0.75, 1)
-	button:SetScript("OnClick", function(self)
-		local wasActive = Bars.IsChargeTraceCaptureActive(self.spellId, self.entryKey)
-		if wasActive then
-			Bars.SetChargeTraceCapture(false)
-		else
-			Bars.SetChargeTraceCapture(true, {
-				spellId = self.spellId,
-				entryKey = self.entryKey,
-				panelId = self.panelId,
-				entryId = self.entryId,
-			})
-		end
-		Bars.RefreshChargeTraceButtonVisual(self)
-		if self.panelId and CooldownPanels.RefreshPanel then CooldownPanels:RefreshPanel(self.panelId) end
-	end)
-	button:SetScript("OnEnter", function(self)
-		if not (_G.GameTooltip and _G.GameTooltip.SetOwner) then return end
-		_G.GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		_G.GameTooltip:SetText("Charge Trace", 1, 0.95, 0.75)
-		_G.GameTooltip:AddLine("Click to toggle capture for this charges bar.", 0.85, 0.85, 0.85, true)
-		_G.GameTooltip:AddLine("Saved to EnhanceQoLDB._temp.chargeBarTrace.logs", 0.65, 0.85, 1, true)
-		_G.GameTooltip:AddLine("SpellId: " .. tostring(self.spellId), 0.85, 0.85, 0.85, true)
-		_G.GameTooltip:Show()
-	end)
-	button:SetScript("OnLeave", function()
-		if _G.GameTooltip_Hide then
-			_G.GameTooltip_Hide()
-		elseif _G.GameTooltip and _G.GameTooltip.Hide then
-			_G.GameTooltip:Hide()
-		end
-	end)
-	button:Hide()
-	barFrame._eqolChargeTraceButton = button
-	return button
-end
-
-function Bars.ConfigureChargeTraceButton(barFrame, state)
-	local button = barFrame and Bars.EnsureChargeTraceButton(barFrame) or nil
-	if not button then return end
-	local eligible = type(state) == "table" and state.preview ~= true and state.mode == Bars.BAR_MODE.CHARGES and safeNumber(state.maxCharges) == 2 and safeNumber(state.spellId) ~= nil
-	if not eligible then
-		button:Hide()
-		return
-	end
-	button:ClearAllPoints()
-	button:SetPoint("BOTTOMRIGHT", barFrame, "TOPRIGHT", 0, 2)
-	button.panelId = state.panelId
-	button.entryId = state.entryId
-	button.entryKey = state.entryKey
-	button.spellId = safeNumber(state.spellId)
-	Bars.RefreshChargeTraceButtonVisual(button)
-	button:Show()
-end
-
 local function hideBarPresentation(icon)
 	local barFrame = icon and icon._eqolBarsFrame or nil
 	if barFrame then
@@ -2031,7 +1582,6 @@ local function hideBarPresentation(icon)
 		local move = runtime and runtime.barFreeMove or nil
 		if move and move.barFrame == barFrame then Bars.StopFreeMove(false) end
 		stopBarAnimation(barFrame)
-		if barFrame._eqolChargeTraceButton then barFrame._eqolChargeTraceButton:Hide() end
 		barFrame._eqolBarState = nil
 		Bars.ClearBarValueTextUpdater(barFrame)
 		hideBarHitHandle(barFrame)
@@ -2289,59 +1839,14 @@ sweepChargeDurationObjects = function(state)
 	if cooldownRemaining ~= nil and cooldownRemaining <= 0 then state.cooldownDurationObject = nil end
 end
 
-function Bars.SetStatusBarTraceContext(statusBar, state, role)
-	if not statusBar then return end
-	if type(state) ~= "table" then
-		statusBar._eqolTraceCaptureSpellId = nil
-		statusBar._eqolTraceCaptureEntryKey = nil
-		statusBar._eqolTraceCaptureEntryId = nil
-		statusBar._eqolTraceCapturePanelId = nil
-		statusBar._eqolTraceCaptureRole = nil
-		return
-	end
-	statusBar._eqolTraceCaptureSpellId = safeNumber(state.spellId)
-	statusBar._eqolTraceCaptureEntryKey = state.entryKey
-	statusBar._eqolTraceCaptureEntryId = state.entryId
-	statusBar._eqolTraceCapturePanelId = state.panelId
-	statusBar._eqolTraceCaptureRole = role
-end
-
-function Bars.RecordChargeStatusBarMutation(stage, statusBar, extra)
-	if not statusBar then return end
-	local spellId = safeNumber(statusBar._eqolTraceCaptureSpellId)
-	if not Bars.IsChargeTraceCaptureActive(spellId, statusBar._eqolTraceCaptureEntryKey) then return end
-	local payload = {
-		spellId = spellId,
-		entryKey = statusBar._eqolTraceCaptureEntryKey,
-		entryId = statusBar._eqolTraceCaptureEntryId,
-		panelId = statusBar._eqolTraceCapturePanelId,
-		role = statusBar._eqolTraceCaptureRole,
-	}
-	if type(extra) == "table" then
-		for key, value in pairs(extra) do
-			payload[key] = value
-		end
-	end
-	Bars.AppendChargeTraceCapture(stage, payload)
-end
-
 setStatusBarImmediateValue = function(statusBar, value)
 	if not statusBar then return end
-	Bars.RecordChargeStatusBarMutation("statusBarImmediateBefore", statusBar, {
-		value = clamp(value or 0, 0, 1),
-		prevTimer = statusBar._eqolTimerDurationObject ~= nil,
-		prevTimerKey = type(statusBar._eqolTimerDurationKey) == "string" and statusBar._eqolTimerDurationKey or nil,
-	})
 	if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
 	if statusBar.SetValue then statusBar:SetValue(clamp(value or 0, 0, 1), BAR_STATUS_INTERPOLATION_IMMEDIATE) end
 	if statusBar.SetToTargetValue then statusBar:SetToTargetValue() end
 	statusBar._eqolTimerDurationObject = nil
 	statusBar._eqolTimerDurationKey = nil
 	statusBar._eqolTimerDirection = nil
-	Bars.RecordChargeStatusBarMutation("statusBarImmediateAfter", statusBar, {
-		value = clamp(value or 0, 0, 1),
-		prevTimer = false,
-	})
 end
 
 Bars.SetStatusBarRangedValue = function(statusBar, value, maxValue)
@@ -2366,13 +1871,6 @@ setStatusBarTimerDuration = function(statusBar, durationObject, cacheKey, direct
 	if not (statusBar and durationObject and statusBar.SetTimerDuration) then return false end
 	local appliedKey = cacheKey or durationObject
 	local appliedDirection = direction or BAR_STATUS_TIMER_DIRECTION_ELAPSED
-	Bars.RecordChargeStatusBarMutation("statusBarTimerBefore", statusBar, {
-		cacheKey = type(appliedKey) == "string" and appliedKey or nil,
-		direction = appliedDirection,
-		prevTimer = statusBar._eqolTimerDurationObject ~= nil,
-		prevTimerKey = type(statusBar._eqolTimerDurationKey) == "string" and statusBar._eqolTimerDurationKey or nil,
-		changed = statusBar._eqolTimerDurationKey ~= appliedKey or statusBar._eqolTimerDirection ~= appliedDirection or statusBar._eqolTimerDurationObject ~= durationObject,
-	})
 	if statusBar._eqolTimerDurationKey ~= appliedKey or statusBar._eqolTimerDirection ~= appliedDirection or statusBar._eqolTimerDurationObject ~= durationObject then
 		if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
 		statusBar:SetTimerDuration(durationObject, BAR_STATUS_INTERPOLATION_IMMEDIATE, appliedDirection)
@@ -2380,12 +1878,6 @@ setStatusBarTimerDuration = function(statusBar, durationObject, cacheKey, direct
 		statusBar._eqolTimerDurationKey = appliedKey
 		statusBar._eqolTimerDirection = appliedDirection
 	end
-	Bars.RecordChargeStatusBarMutation("statusBarTimerAfter", statusBar, {
-		cacheKey = type(appliedKey) == "string" and appliedKey or nil,
-		direction = appliedDirection,
-		prevTimer = statusBar._eqolTimerDurationObject ~= nil,
-		prevTimerKey = type(statusBar._eqolTimerDurationKey) == "string" and statusBar._eqolTimerDurationKey or nil,
-	})
 	return true
 end
 
@@ -2613,105 +2105,6 @@ refreshChargeBarRuntimeState = function(state, icon)
 	state.rechargeRate = rechargeRate
 	state.rechargeProgress = rechargeProgress or 0
 	state.animate = state.chargeInfoActive == true or state.lastNonGCDCooldownActive == true or ((rechargeStart and rechargeDuration and rechargeDuration > 0) and true or false)
-	if state.preview ~= true then
-		if maxCharges == 2 and chargePhase == "FULL" and (state.previousChargePhase ~= "FULL" or cooldownGCD == true or chargeApiIsActive == true or cachedCooldownActiveBefore == true) then
-			Bars.PrintChargeTraceOnce(state.entryKey, "EQOL_CHARGE_PHASE_ALERT", {
-				"spellId",
-				"entryId",
-				"prevPhase",
-				"phase",
-				"chargeIsActive",
-				"cooldownIsActive",
-				"cooldownEnabled",
-				"isOnGCD",
-				"nonGCDCooldownActive",
-				"gcdCooldownActive",
-				"cachedBefore",
-				"cacheObjBefore",
-				"cachedAfter",
-				"cacheObjAfter",
-				"syntheticPartial",
-				"chargeInfoActive",
-				"chargeObj",
-				"cooldownObj",
-			}, {
-				spellId = state.spellId,
-				entryId = state.entryId,
-				entryKey = state.entryKey,
-				prevPhase = state.previousChargePhase,
-				phase = chargePhase,
-				chargeIsActive = chargeApiIsActive == true,
-				cooldownIsActive = cooldownApiIsActive == true,
-				cooldownEnabled = cooldownEnabled == true,
-				isOnGCD = cooldownGCD == true,
-				nonGCDCooldownActive = nonGCDCooldownActive == true,
-				gcdCooldownActive = gcdCooldownActive == true,
-				cachedBefore = cachedCooldownActiveBefore == true,
-				cacheObjBefore = cachedCooldownDurationBefore == true,
-				cachedAfter = cachedCooldownActive == true,
-				cacheObjAfter = cachedCooldownDurationObject ~= nil,
-				syntheticPartial = syntheticPartialHandoff == true,
-				chargeInfoActive = state.chargeInfoActive == true,
-				chargeObj = state.chargeDurationObject ~= nil,
-				cooldownObj = state.cooldownDurationObject ~= nil or state.lastNonGCDCooldownDurationObject ~= nil,
-			})
-		end
-		writeBarsDebug("refreshChargeState", {
-			panelId = state.panelId,
-			entryId = state.entryId,
-			spellId = state.spellId,
-			entryKey = state.entryKey,
-			iconChargeText = icon and icon.charges and icon.charges.GetText and getDebugText(icon.charges:GetText()) or nil,
-			iconCooldownText = getCooldownText(icon),
-			displayedCharges = displayedCharges,
-			maxCharges = maxCharges,
-			chargesInfoIsActive = chargesInfo and chargesInfo.isActive,
-			chargeApiIsActive = chargeApiIsActive,
-			cooldownApiIsActive = cooldownApiIsActive,
-			chargeInfoActive = chargeInfoActive == true,
-			chargeDurationObject = chargeDurationObject ~= nil,
-			chargeDurationObjectRefreshed = chargeDurationObjectRefreshed == true,
-			chargeRemaining = chargeRemaining,
-			cooldownApiIsActive = cooldownIsActive,
-			cooldownInfoActive = cooldownInfoActive == true,
-			cooldownGCD = cooldownGCD == true,
-			rawCooldownDurationObject = rawCooldownDurationObject ~= nil,
-			rawCooldownRemaining = getDurationObjectRemaining(rawCooldownDurationObject),
-			cachedCooldownActive = cachedCooldownActive == true,
-			cachedCooldownRemaining = getDurationObjectRemaining(cachedCooldownDurationObject),
-			syntheticPartialHandoff = syntheticPartialHandoff == true,
-			recentChargeSpend = recentChargeSpend == true,
-			previousChargePhase = state.previousChargePhase,
-			chargePhase = chargePhase,
-			rechargeStart = rechargeStart,
-			rechargeDuration = rechargeDuration,
-			rechargeProgress = rechargeProgress,
-		})
-		Bars.TraceChargeDebug("trace51505_refreshChargeState", {
-			panelId = state.panelId,
-			entryId = state.entryId,
-			entryKey = state.entryKey,
-			spellId = state.spellId,
-			iconChargeText = icon and icon.charges and icon.charges.GetText and icon.charges:GetText() or nil,
-			displayedCharges = displayedCharges,
-			maxCharges = maxCharges,
-			chargesInfoIsActive = chargesInfo and chargesInfo.isActive,
-			chargeApiIsActive = chargeApiIsActive,
-			cooldownApiIsActive = cooldownApiIsActive,
-			chargeInfoActive = chargeInfoActive == true,
-			cooldownApiIsActive = cooldownIsActive,
-			cooldownInfoActive = cooldownInfoActive == true,
-			cooldownGCD = cooldownGCD == true,
-			chargeDurationObject = chargeDurationObject ~= nil,
-			chargeDurationObjectRefreshed = chargeDurationObjectRefreshed == true,
-			rawCooldownDurationObject = rawCooldownDurationObject ~= nil,
-			cachedCooldownActive = cachedCooldownActive == true,
-			syntheticPartialHandoff = syntheticPartialHandoff == true,
-			recentChargeSpend = recentChargeSpend == true,
-			previousChargePhase = state.previousChargePhase,
-			chargePhase = chargePhase,
-		})
-	end
 	return state
 end
 
@@ -2804,24 +2197,6 @@ getChargeSegmentDescriptors = function(state, segmentCount)
 		else
 			if state.chargeInfoActive == true and state.chargeDurationObject ~= nil then descriptors[2].durationObject = state.chargeDurationObject end
 		end
-		if state.preview ~= true then
-			writeBarsDebug("chargeDescriptors", {
-				panelId = state.panelId,
-				entryId = state.entryId,
-				spellId = state.spellId,
-				displayedCharges = state.currentCharges,
-				maxCharges = state.maxCharges,
-				chargePhase = phase,
-				cooldownActive = state.lastNonGCDCooldownActive == true,
-				chargeActive = state.chargeInfoActive == true and state.chargeDurationObject ~= nil,
-				seg1Value = descriptors[1].value,
-				seg1Timer = descriptors[1].durationObject ~= nil,
-				seg1Remaining = getDurationObjectRemaining(descriptors[1].durationObject),
-				seg2Value = descriptors[2].value,
-				seg2Timer = descriptors[2].durationObject ~= nil,
-				seg2Remaining = getDurationObjectRemaining(descriptors[2].durationObject),
-			})
-		end
 		return descriptors
 	end
 
@@ -2889,7 +2264,6 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 		stackFillValue = nil,
 		stackFillMax = nil,
 		entryKey = entryKey,
-		traceTextAnchors = barsRuntime and barsRuntime.pendingTextAnchorTraceByEntryKey and barsRuntime.pendingTextAnchorTraceByEntryKey[entryKey] == true or false,
 		configuredSpan = normalizeBarSpan(entry.barSpan, Bars.DEFAULTS.barSpan),
 		barWidth = normalizeBarWidth(entry.barWidth, Bars.DEFAULTS.barWidth),
 		barHeight = normalizeBarHeight(entry.barHeight, Bars.DEFAULTS.barHeight),
@@ -2940,25 +2314,6 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 		valueColor = Helper.NormalizeColor(entry.barValueColor, Bars.DEFAULTS.barValueColor),
 		spellId = resolvedSpellId,
 	}
-	if layoutEditActive then
-		writeBarsDebug("buildBarTextState", {
-			panelId = panelId,
-			entryId = entryId,
-			mode = mode,
-			labelAnchor = state.labelAnchor,
-			labelOffsetX = state.labelOffsetX,
-			labelOffsetY = state.labelOffsetY,
-			valueAnchor = state.valueAnchor,
-			valueOffsetX = state.valueOffsetX,
-			valueOffsetY = state.valueOffsetY,
-			stackAnchor = state.stackAnchor,
-			stackOffsetX = state.stackOffsetX,
-			stackOffsetY = state.stackOffsetY,
-			showLabel = state.showLabel == true,
-			showValueText = state.showValueText == true,
-			showStacks = state.showStacks == true,
-		})
-	end
 
 	if preview then
 		if mode == Bars.BAR_MODE.COOLDOWN then
@@ -3143,6 +2498,220 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 	return state
 end
 
+local function layoutChargeSegmentsIntoBar(
+	barFrame,
+	icon,
+	state,
+	segmentCount,
+	gap,
+	segmentDirection,
+	segmentReverse,
+	bodyWidth,
+	bodyHeight,
+	borderTexturePath,
+	borderSize,
+	borderOffset,
+	borderColor,
+	backgroundColor,
+	fillTexturePath,
+	fillColor,
+	orientation
+)
+	Bars.HideUnusedBarDividers(barFrame, 1)
+	local segmentAxisSize = segmentDirection == BAR_ORIENTATION_VERTICAL and bodyHeight or bodyWidth
+	local totalGapSize = max(segmentCount - 1, 0) * gap
+	local segmentPrimarySize = max(1, floor((segmentAxisSize - totalGapSize) / segmentCount))
+	local remainingPixels = max(0, segmentAxisSize - ((segmentPrimarySize * segmentCount) + totalGapSize))
+	Bars.HideForwardHitHandle(barFrame.hitHandle)
+	barFrame.fill:Hide()
+	barFrame.fillBg:Hide()
+	if barFrame.borderOverlay then barFrame.borderOverlay:Hide() end
+
+	for index = 1, segmentCount do
+		local segment = ensureBarSegment(barFrame, index)
+		local visualIndex = segmentReverse and (segmentCount - index + 1) or index
+		local extraPixel = index <= remainingPixels and 1 or 0
+		local primarySize = segmentPrimarySize + extraPixel
+		local primaryOffset = (visualIndex - 1) * (segmentPrimarySize + gap) + min(visualIndex - 1, remainingPixels)
+		segment:ClearAllPoints()
+		if segmentDirection == BAR_ORIENTATION_VERTICAL then
+			segment:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", 0, -primaryOffset)
+			segment:SetSize(bodyWidth, primarySize)
+		else
+			segment:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", primaryOffset, 0)
+			segment:SetSize(primarySize, bodyHeight)
+		end
+		segment:SetFrameStrata(barFrame:GetFrameStrata())
+		segment:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 1)
+		applyBackdropFrame(segment, borderTexturePath, borderSize)
+		segment:SetBackdropColor(0, 0, 0, 0)
+		segment:SetBackdropBorderColor(0, 0, 0, 0)
+		applyStatusBarTexture(segment.fill, fillTexturePath)
+		applyStatusBarOrientation(segment.fill, orientation)
+		segment.fill:SetFrameLevel(segment:GetFrameLevel() + 1)
+		segment.fill:ClearAllPoints()
+		segment.fill:SetPoint("TOPLEFT", segment, "TOPLEFT", 0, 0)
+		segment.fill:SetPoint("BOTTOMRIGHT", segment, "BOTTOMRIGHT", 0, 0)
+		segment.fillBg:SetTexture(fillTexturePath)
+		segment.fillBg:SetVertexColor(backgroundColor[1], backgroundColor[2], backgroundColor[3], backgroundColor[4])
+		segment.fill:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4])
+		if segment.borderOverlay then
+			segment.borderOverlay:SetFrameStrata(barFrame:GetFrameStrata())
+			segment.borderOverlay:SetFrameLevel(segment:GetFrameLevel() + 2)
+			if borderSize > 0 then
+				segment.borderOverlay:ClearAllPoints()
+				segment.borderOverlay:SetPoint("TOPLEFT", segment, "TOPLEFT", -borderOffset, borderOffset)
+				segment.borderOverlay:SetPoint("BOTTOMRIGHT", segment, "BOTTOMRIGHT", borderOffset, -borderOffset)
+				applyBackdropFrame(segment.borderOverlay, borderTexturePath, borderSize)
+				segment.borderOverlay:SetBackdropColor(0, 0, 0, 0)
+				segment.borderOverlay:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+				segment.borderOverlay:Show()
+			else
+				segment.borderOverlay:Hide()
+			end
+		end
+		Bars.ConfigureForwardHitHandle(segment.hitHandle, segment, icon and icon.layoutHandle or nil)
+		Bars.ConfigureFreeMoveHandle(segment.hitHandle, barFrame, icon)
+		segment:Show()
+	end
+
+	hideUnusedBarSegments(barFrame, segmentCount + 1)
+	barFrame._eqolSegmentCount = segmentCount
+
+	local chargePhase = state.renderChargePhase or state.chargePhase
+	local freezeChargeRender = state.freezeChargeRender == true
+	local gateDurationObject = chargePhase == "EMPTY" and state.chargeDurationObject or nil
+	local gateCooldown = ensureBarCooldownGate(barFrame)
+	local gateCacheKey = table.concat({
+		"gate",
+		tostring(state.entryKey or state.entryId or "nil"),
+		tostring(chargePhase or "nil"),
+		tostring(safeNumber(state.maxCharges) or "nil"),
+		tostring(gateDurationObject ~= nil),
+	}, ":")
+	local gateActive = barFrame._eqolChargeGateActive == true
+	if freezeChargeRender ~= true then
+		setCooldownFrameDuration(gateCooldown, gateDurationObject, gateCacheKey)
+		gateActive = chargePhase == "EMPTY" and gateDurationObject ~= nil
+		local previousGateActive = barFrame._eqolChargeGateActive == true
+		if gateActive ~= previousGateActive then
+			if gateActive then
+				barFrame._eqolSegment1Generation = (barFrame._eqolSegment1Generation or 0) + 1
+			else
+				barFrame._eqolSegment2Generation = (barFrame._eqolSegment2Generation or 0) + 1
+			end
+			barFrame._eqolChargeGateActive = gateActive
+		end
+	end
+
+	for index = 1, segmentCount do
+		local segment = barFrame.segments and barFrame.segments[index] or nil
+		if segment and segment.fill then
+			if freezeChargeRender ~= true and segment.fill.Show then segment.fill:Show() end
+			if freezeChargeRender == true then
+				-- keep current visual state while runtime waits for handoff
+			elseif chargePhase == "EMPTY" then
+				if index == 1 and gateDurationObject then
+					setStatusBarTimerDuration(
+						segment.fill,
+						gateDurationObject,
+						table.concat({
+							"seg1",
+							tostring(state.entryKey or state.entryId or "nil"),
+							tostring(barFrame._eqolSegment1Generation or 0),
+							tostring(chargePhase or "nil"),
+						}, ":")
+					)
+				else
+					setStatusBarImmediateValue(segment.fill, 0)
+				end
+			elseif chargePhase == "PARTIAL" then
+				if index == 1 then
+					setStatusBarImmediateValue(segment.fill, 1)
+				elseif state.deferChargeTimerHandoff == true then
+					setStatusBarImmediateValue(segment.fill, 0)
+					if segment.fill.Hide then segment.fill:Hide() end
+				elseif state.chargeInfoActive == true and state.chargeDurationObject ~= nil then
+					setStatusBarTimerDuration(
+						segment.fill,
+						state.chargeDurationObject,
+						table.concat({
+							"seg2",
+							tostring(state.entryKey or state.entryId or "nil"),
+							tostring(barFrame._eqolSegment2Generation or 0),
+							tostring(chargePhase or "nil"),
+						}, ":")
+					)
+				else
+					setStatusBarImmediateValue(segment.fill, 0)
+				end
+			else
+				setStatusBarImmediateValue(segment.fill, 1)
+			end
+			local fillTexture = segment.fill.GetStatusBarTexture and segment.fill:GetStatusBarTexture() or nil
+			if freezeChargeRender ~= true and fillTexture and fillTexture.SetAlpha then fillTexture:SetAlpha(1) end
+		end
+	end
+end
+
+local function layoutBarTextElement(
+	barFrame,
+	orientation,
+	textWidth,
+	fontString,
+	text,
+	role,
+	fontPath,
+	fontSize,
+	fontStyle,
+	fontColor,
+	defaultFontPath,
+	defaultFontSize,
+	defaultFontStyle,
+	anchor,
+	offsetX,
+	offsetY
+)
+	applyFontStringStyle(fontString, fontPath, fontSize, fontStyle, fontColor, defaultFontPath, defaultFontSize, defaultFontStyle)
+	local resolvedAnchor = Bars.GetResolvedTextAnchor(anchor, orientation, role)
+	local point, relativePoint, justifyH = Bars.GetTextAnchorConfig(anchor, orientation, role)
+	local insetX = offsetX or 0
+	local insetY = offsetY or 0
+	local justifyV = "MIDDLE"
+	local textValue = text or ""
+	local appliedWidth = textWidth
+	local textInset = 4
+
+	fontString:ClearAllPoints()
+	if fontString.SetWordWrap then fontString:SetWordWrap(false) end
+	if fontString.SetMaxLines then fontString:SetMaxLines(1) end
+	fontString:SetWidth(0)
+	fontString:SetText(textValue)
+	if resolvedAnchor == Bars.TEXT_ANCHOR.LEFT or resolvedAnchor == Bars.TEXT_ANCHOR.RIGHT or resolvedAnchor == Bars.TEXT_ANCHOR.CENTER then
+		local stringWidth = safeNumber(fontString.GetStringWidth and fontString:GetStringWidth() or nil) or textWidth
+		appliedWidth = max(1, min(textWidth, stringWidth + 2))
+	end
+	fontString:SetWidth(appliedWidth)
+	if resolvedAnchor == Bars.TEXT_ANCHOR.LEFT then
+		fontString:SetPoint("LEFT", barFrame.textOverlay, "LEFT", textInset + insetX, insetY)
+	elseif resolvedAnchor == Bars.TEXT_ANCHOR.RIGHT then
+		fontString:SetPoint("RIGHT", barFrame.textOverlay, "RIGHT", -textInset + insetX, insetY)
+	elseif resolvedAnchor == Bars.TEXT_ANCHOR.TOP then
+		insetY = insetY - textInset
+		justifyV = "TOP"
+		fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
+	elseif resolvedAnchor == Bars.TEXT_ANCHOR.BOTTOM then
+		insetY = insetY + textInset
+		justifyV = "BOTTOM"
+		fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
+	else
+		fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
+	end
+	fontString:SetJustifyH(justifyH)
+	if fontString.SetJustifyV then fontString:SetJustifyV(justifyV) end
+	fontString:Show()
+end
+
 layoutBarFrame = function(barFrame, icon, span, layout, state)
 	if not (barFrame and icon) then return end
 	local slotAnchor = icon.slotAnchor or icon
@@ -3171,7 +2740,6 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 	local borderTexturePath = state and state.borderTexture or resolveBarBorderTexture(Bars.DEFAULTS.barBorderTexture)
 	applyStatusBarTexture(barFrame.fill, fillTexturePath)
 	applyStatusBarOrientation(barFrame.fill, orientation)
-	Bars.SetStatusBarTraceContext(barFrame.fill, state, "bar")
 	barFrame.fillBg:SetTexture(fillTexturePath)
 
 	local fillColor = Helper.NormalizeColor(state and state.fillColor, getDefaultBarColorForMode(state and state.mode or Bars.BAR_MODE.COOLDOWN))
@@ -3321,310 +2889,25 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		valueDefaultFontPath, valueDefaultFontSize, valueDefaultFontStyle = CooldownPanels:GetCooldownFontDefaults(icon and icon:GetParent() or nil)
 	end
 	if useChargeSegments then
-		Bars.HideUnusedBarDividers(barFrame, 1)
-		local segmentAxisSize = segmentDirection == BAR_ORIENTATION_VERTICAL and bodyHeight or bodyWidth
-		local totalGapSize = max(segmentCount - 1, 0) * gap
-		local segmentPrimarySize = max(1, floor((segmentAxisSize - totalGapSize) / segmentCount))
-		local remainingPixels = max(0, segmentAxisSize - ((segmentPrimarySize * segmentCount) + totalGapSize))
-		Bars.HideForwardHitHandle(barFrame.hitHandle)
-		barFrame.fill:Hide()
-		barFrame.fillBg:Hide()
-		if barFrame.borderOverlay then barFrame.borderOverlay:Hide() end
-		for index = 1, segmentCount do
-			local segment = ensureBarSegment(barFrame, index)
-			local visualIndex = segmentReverse and (segmentCount - index + 1) or index
-			local extraPixel = index <= remainingPixels and 1 or 0
-			local primarySize = segmentPrimarySize + extraPixel
-			local primaryOffset = (visualIndex - 1) * (segmentPrimarySize + gap) + min(visualIndex - 1, remainingPixels)
-			segment:ClearAllPoints()
-			if segmentDirection == BAR_ORIENTATION_VERTICAL then
-				segment:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", 0, -primaryOffset)
-				segment:SetSize(bodyWidth, primarySize)
-			else
-				segment:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", primaryOffset, 0)
-				segment:SetSize(primarySize, bodyHeight)
-			end
-			segment:SetFrameStrata(barFrame:GetFrameStrata())
-			segment:SetFrameLevel((barFrame.body and barFrame.body:GetFrameLevel() or barFrame:GetFrameLevel()) + 1)
-			applyBackdropFrame(segment, borderTexturePath, borderSize)
-			segment:SetBackdropColor(0, 0, 0, 0)
-			segment:SetBackdropBorderColor(0, 0, 0, 0)
-			applyStatusBarTexture(segment.fill, fillTexturePath)
-			applyStatusBarOrientation(segment.fill, orientation)
-			segment.fill:SetFrameLevel(segment:GetFrameLevel() + 1)
-			segment.fill:ClearAllPoints()
-			segment.fill:SetPoint("TOPLEFT", segment, "TOPLEFT", 0, 0)
-			segment.fill:SetPoint("BOTTOMRIGHT", segment, "BOTTOMRIGHT", 0, 0)
-			segment.fillBg:SetTexture(fillTexturePath)
-			segment.fillBg:SetVertexColor(backgroundColor[1], backgroundColor[2], backgroundColor[3], backgroundColor[4])
-			segment.fill:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4])
-			if segment.borderOverlay then
-				segment.borderOverlay:SetFrameStrata(barFrame:GetFrameStrata())
-				segment.borderOverlay:SetFrameLevel(segment:GetFrameLevel() + 2)
-				if borderSize > 0 then
-					segment.borderOverlay:ClearAllPoints()
-					segment.borderOverlay:SetPoint("TOPLEFT", segment, "TOPLEFT", -borderOffset, borderOffset)
-					segment.borderOverlay:SetPoint("BOTTOMRIGHT", segment, "BOTTOMRIGHT", borderOffset, -borderOffset)
-					applyBackdropFrame(segment.borderOverlay, borderTexturePath, borderSize)
-					segment.borderOverlay:SetBackdropColor(0, 0, 0, 0)
-					segment.borderOverlay:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
-					segment.borderOverlay:Show()
-				else
-					segment.borderOverlay:Hide()
-				end
-			end
-			Bars.ConfigureForwardHitHandle(segment.hitHandle, segment, icon and icon.layoutHandle or nil)
-			Bars.ConfigureFreeMoveHandle(segment.hitHandle, barFrame, icon)
-			segment:Show()
-		end
-		hideUnusedBarSegments(barFrame, segmentCount + 1)
-		barFrame._eqolSegmentCount = segmentCount
-		local chargePhase = state.renderChargePhase or state.chargePhase
-		local freezeChargeRender = state.freezeChargeRender == true
-		local gateDurationObject = chargePhase == "EMPTY" and state.chargeDurationObject or nil
-		local gateCooldown = ensureBarCooldownGate(barFrame)
-		local gateCacheKey = table.concat({
-			"gate",
-			tostring(state.entryKey or state.entryId or "nil"),
-			tostring(chargePhase or "nil"),
-			tostring(safeNumber(state.maxCharges) or "nil"),
-			tostring(gateDurationObject ~= nil),
-		}, ":")
-		local gateActive = barFrame._eqolChargeGateActive == true
-		if freezeChargeRender ~= true then
-			setCooldownFrameDuration(gateCooldown, gateDurationObject, gateCacheKey)
-			gateActive = chargePhase == "EMPTY" and gateDurationObject ~= nil
-			local previousGateActive = barFrame._eqolChargeGateActive == true
-			if gateActive ~= previousGateActive then
-				if gateActive then
-					barFrame._eqolSegment1Generation = (barFrame._eqolSegment1Generation or 0) + 1
-				else
-					barFrame._eqolSegment2Generation = (barFrame._eqolSegment2Generation or 0) + 1
-				end
-				barFrame._eqolChargeGateActive = gateActive
-			end
-		end
-		local segment1Alpha = nil
-		local segment2Alpha = nil
-		local segment1Mode = nil
-		local segment2Mode = nil
-		for index = 1, segmentCount do
-			local segment = barFrame.segments and barFrame.segments[index] or nil
-			if segment and segment.fill then
-				local segmentDurationObject = nil
-				if freezeChargeRender ~= true and segment.fill.Show then segment.fill:Show() end
-				Bars.SetStatusBarTraceContext(segment.fill, state, index == 1 and "segment1" or "segment2")
-				if freezeChargeRender == true then
-					if index == 1 then
-						segment1Mode = "frozen"
-					else
-						segment2Mode = "frozen"
-					end
-				elseif chargePhase == "EMPTY" then
-					if index == 1 and gateDurationObject then
-						segmentDurationObject = gateDurationObject
-						if index == 1 then
-							segment1Mode = "timer-charge"
-						else
-							segment2Mode = "timer-charge"
-						end
-						setStatusBarTimerDuration(
-							segment.fill,
-							gateDurationObject,
-							table.concat({
-								"seg1",
-								tostring(state.entryKey or state.entryId or "nil"),
-								tostring(barFrame._eqolSegment1Generation or 0),
-								tostring(chargePhase or "nil"),
-							}, ":")
-						)
-					else
-						if index == 1 then
-							segment1Mode = "empty"
-						else
-							segment2Mode = "empty"
-						end
-						setStatusBarImmediateValue(segment.fill, 0)
-					end
-				elseif chargePhase == "PARTIAL" then
-					if index == 1 then
-						segment1Mode = "full"
-						setStatusBarImmediateValue(segment.fill, 1)
-					elseif state.deferChargeTimerHandoff == true then
-						segment2Mode = "deferred-empty"
-						setStatusBarImmediateValue(segment.fill, 0)
-						if segment.fill.Hide then segment.fill:Hide() end
-					elseif state.chargeInfoActive == true and state.chargeDurationObject ~= nil then
-						segmentDurationObject = state.chargeDurationObject
-						segment2Mode = "timer-charge"
-						if state.preview ~= true and Bars.IsChargeTraceCaptureActive(state.spellId, state.entryKey) then
-							local chargeInfo = state.chargesInfo
-							local remaining = nil
-							local isZero = nil
-							local chargeIsActive = nil
-							local chargeIsEnabled = nil
-							if type(state.chargeDurationObject.GetRemainingDuration) == "function" then remaining = state.chargeDurationObject:GetRemainingDuration(Api.DurationModifierRealTime) end
-							if type(state.chargeDurationObject.IsZero) == "function" then isZero = state.chargeDurationObject:IsZero() end
-							if chargeInfo ~= nil then
-								chargeIsActive = chargeInfo.isActive
-								chargeIsEnabled = chargeInfo.isEnabled
-							end
-							print(
-								"EQOL_CHARGE_PARTIAL_OBJ",
-								"spellId",
-								state.spellId,
-								"entryId",
-								state.entryId,
-								"prevPhase",
-								state.previousChargePhase,
-								"phase",
-								chargePhase,
-								"isOnGCD",
-								state.cooldownGCD == true,
-								"refreshed",
-								state.chargeDurationObjectRefreshed == true,
-								"chargeIsActive",
-								chargeIsActive,
-								"chargeIsEnabled",
-								chargeIsEnabled,
-								"remaining",
-								remaining,
-								"isZero",
-								isZero
-							)
-						end
-						setStatusBarTimerDuration(
-							segment.fill,
-							state.chargeDurationObject,
-							table.concat({
-								"seg2",
-								tostring(state.entryKey or state.entryId or "nil"),
-								tostring(barFrame._eqolSegment2Generation or 0),
-								tostring(chargePhase or "nil"),
-							}, ":")
-						)
-					else
-						segment2Mode = "empty"
-						setStatusBarImmediateValue(segment.fill, 0)
-					end
-				else
-					if index == 1 then
-						segment1Mode = "full"
-					else
-						segment2Mode = "full"
-					end
-					setStatusBarImmediateValue(segment.fill, 1)
-				end
-				if state.preview ~= true and Bars.IsChargeTraceCaptureActive(state.spellId, state.entryKey) then
-					local segmentRemaining = nil
-					local segmentIsZero = nil
-					if segmentDurationObject and type(segmentDurationObject.GetRemainingDuration) == "function" then
-						segmentRemaining = segmentDurationObject:GetRemainingDuration(Api.DurationModifierRealTime)
-					end
-					if segmentDurationObject and type(segmentDurationObject.IsZero) == "function" then segmentIsZero = segmentDurationObject:IsZero() end
-					print(
-						"EQOL_CHARGE_SEGMENT",
-						"bar",
-						index,
-						"phase",
-						chargePhase,
-						"mode",
-						index == 1 and segment1Mode or segment2Mode,
-						"visible",
-						segment.fill.IsShown and segment.fill:IsShown() or true,
-						"deferred",
-						state.deferChargeTimerHandoff == true,
-						"hasObj",
-						segmentDurationObject ~= nil,
-						"remaining",
-						segmentRemaining,
-						"isZero",
-						segmentIsZero
-					)
-				end
-				local fillTexture = segment.fill.GetStatusBarTexture and segment.fill:GetStatusBarTexture() or nil
-				if freezeChargeRender ~= true and fillTexture and fillTexture.SetAlpha then fillTexture:SetAlpha(1) end
-				local alpha = fillTexture and fillTexture.GetAlpha and fillTexture:GetAlpha() or nil
-				if index == 1 then
-					segment1Alpha = alpha
-				elseif index == 2 then
-					segment2Alpha = alpha
-				end
-			end
-		end
-		if state.preview ~= true then
-			if
-				safeNumber(state.maxCharges) == 2
-				and segment1Mode == "full"
-				and segment2Mode == "full"
-				and (chargePhase ~= "FULL" or state.previousChargePhase ~= "FULL" or state.cooldownGCD == true)
-			then
-				Bars.PrintChargeTraceOnce(state.entryKey, "EQOL_CHARGE_RENDER_ALERT", {
-					"spellId",
-					"entryId",
-					"prevPhase",
-					"phase",
-					"isOnGCD",
-					"gateActive",
-					"syntheticPartial",
-					"chargeInfoActive",
-					"cooldownActive",
-					"seg1",
-					"seg2",
-					"gateObj",
-					"chargeObj",
-				}, {
-					spellId = state.spellId,
-					entryId = state.entryId,
-					entryKey = state.entryKey,
-					prevPhase = state.previousChargePhase,
-					phase = chargePhase,
-					isOnGCD = state.cooldownGCD == true,
-					gateActive = gateActive == true,
-					syntheticPartial = state.syntheticPartialHandoff == true,
-					chargeInfoActive = state.chargeInfoActive == true,
-					cooldownActive = state.lastNonGCDCooldownActive == true,
-					seg1 = segment1Mode,
-					seg2 = segment2Mode,
-					gateObj = gateDurationObject ~= nil,
-					chargeObj = state.chargeDurationObject ~= nil,
-				})
-			end
-			writeBarsDebug("layoutChargeSegments", {
-				panelId = state.panelId,
-				entryId = state.entryId,
-				spellId = state.spellId,
-				displayedCharges = state.currentCharges,
-				maxCharges = state.maxCharges,
-				cooldownGCD = state.cooldownGCD == true,
-				lastNonGCDCooldownActive = state.lastNonGCDCooldownActive == true,
-				chargePhase = chargePhase,
-				freezeChargeRender = freezeChargeRender == true,
-				gateActive = gateActive == true,
-				segmentReverse = segmentReverse == true,
-				seg1Alpha = segment1Alpha,
-				seg2Alpha = segment2Alpha,
-				iconChargeText = icon and icon.charges and icon.charges.GetText and getDebugText(icon.charges:GetText()) or nil,
-				iconCooldownText = getCooldownText(icon),
-			})
-			Bars.TraceChargeDebug("trace51505_layoutChargeSegments", {
-				panelId = state.panelId,
-				entryId = state.entryId,
-				entryKey = state.entryKey,
-				spellId = state.spellId,
-				chargePhase = chargePhase,
-				iconChargeText = icon and icon.charges and icon.charges.GetText and icon.charges:GetText() or nil,
-				maxCharges = state.maxCharges,
-				cooldownGCD = state.cooldownGCD == true,
-				chargeInfoActive = state.chargeInfoActive == true,
-				cooldownInfoActive = state.cooldownInfoActive == true,
-				freezeChargeRender = freezeChargeRender == true,
-				gateActive = gateActive == true,
-				gateDurationObject = gateDurationObject ~= nil,
-				seg1Alpha = segment1Alpha,
-				seg2Alpha = segment2Alpha,
-			})
-		end
+		layoutChargeSegmentsIntoBar(
+			barFrame,
+			icon,
+			state,
+			segmentCount,
+			gap,
+			segmentDirection,
+			segmentReverse,
+			bodyWidth,
+			bodyHeight,
+			borderTexturePath,
+			borderSize,
+			borderOffset,
+			borderColor,
+			backgroundColor,
+			fillTexturePath,
+			fillColor,
+			orientation
+		)
 	else
 		hideUnusedBarSegments(barFrame, 1)
 		barFrame._eqolSegmentCount = 0
@@ -3665,76 +2948,12 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		Bars.ConfigureFreeMoveHandle(barFrame.hitHandle, barFrame, icon)
 	end
 
-	local textInset = 4
-	local textWidth = max(1, bodyWidth - (textInset * 2))
-	local function layoutBarText(fontString, text, role, fontPath, fontSize, fontStyle, fontColor, defaultFontPath, defaultFontSize, defaultFontStyle, anchor, offsetX, offsetY)
-		applyFontStringStyle(fontString, fontPath, fontSize, fontStyle, fontColor, defaultFontPath, defaultFontSize, defaultFontStyle)
-		local resolvedAnchor = Bars.GetResolvedTextAnchor(anchor, orientation, role)
-		local point, relativePoint, justifyH = Bars.GetTextAnchorConfig(anchor, orientation, role)
-		local insetX = offsetX or 0
-		local insetY = offsetY or 0
-		local justifyV = "MIDDLE"
-		local textValue = text or ""
-		local appliedWidth = textWidth
-		fontString:ClearAllPoints()
-		if fontString.SetWordWrap then fontString:SetWordWrap(false) end
-		if fontString.SetMaxLines then fontString:SetMaxLines(1) end
-		fontString:SetWidth(0)
-		fontString:SetText(textValue)
-		if resolvedAnchor == Bars.TEXT_ANCHOR.LEFT or resolvedAnchor == Bars.TEXT_ANCHOR.RIGHT or resolvedAnchor == Bars.TEXT_ANCHOR.CENTER then
-			local stringWidth = safeNumber(fontString.GetStringWidth and fontString:GetStringWidth() or nil) or textWidth
-			appliedWidth = max(1, min(textWidth, stringWidth + 2))
-		end
-		fontString:SetWidth(appliedWidth)
-		if resolvedAnchor == Bars.TEXT_ANCHOR.LEFT then
-			fontString:SetPoint("LEFT", barFrame.textOverlay, "LEFT", textInset + insetX, insetY)
-		elseif resolvedAnchor == Bars.TEXT_ANCHOR.RIGHT then
-			fontString:SetPoint("RIGHT", barFrame.textOverlay, "RIGHT", -textInset + insetX, insetY)
-		elseif resolvedAnchor == Bars.TEXT_ANCHOR.TOP then
-			insetY = insetY - textInset
-			justifyV = "TOP"
-			fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
-		elseif resolvedAnchor == Bars.TEXT_ANCHOR.BOTTOM then
-			insetY = insetY + textInset
-			justifyV = "BOTTOM"
-			fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
-		else
-			fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
-		end
-		fontString:SetJustifyH(justifyH)
-		if fontString.SetJustifyV then fontString:SetJustifyV(justifyV) end
-		fontString:Show()
-		if state and state.panelId and CooldownPanels.IsPanelLayoutEditActive and CooldownPanels:IsPanelLayoutEditActive(state.panelId) then
-			local currentPoint, relativeTo, currentRelativePoint, currentX, currentY = fontString.GetPoint and fontString:GetPoint(1) or nil, nil, nil, nil, nil
-			if fontString.GetPoint then
-				currentPoint, relativeTo, currentRelativePoint, currentX, currentY = fontString:GetPoint(1)
-			end
-			writeBarsDebug("layoutBarText", {
-				panelId = state.panelId,
-				entryId = state.entryId,
-				role = role,
-				anchor = anchor,
-				resolvedAnchor = resolvedAnchor,
-				justifyH = justifyH,
-				justifyV = justifyV,
-				requestedPoint = point,
-				requestedRelativePoint = relativePoint,
-				offsetX = offsetX,
-				offsetY = offsetY,
-				appliedPoint = currentPoint,
-				appliedRelativePoint = currentRelativePoint,
-				appliedX = currentX,
-				appliedY = currentY,
-				relativeToName = relativeTo and relativeTo.GetName and relativeTo:GetName() or nil,
-				width = fontString.GetWidth and fontString:GetWidth() or nil,
-				appliedWidth = appliedWidth,
-				stringWidth = fontString.GetStringWidth and fontString:GetStringWidth() or nil,
-				text = getDebugText(text),
-			})
-		end
-	end
+	local textWidth = max(1, bodyWidth - 8)
 	if state.showLabel and state.label then
-		layoutBarText(
+		layoutBarTextElement(
+			barFrame,
+			orientation,
+			textWidth,
 			barFrame.label,
 			state.label,
 			"LABEL",
@@ -3753,7 +2972,10 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		barFrame.label:Hide()
 	end
 	if state.showValueText and state.valueText then
-		layoutBarText(
+		layoutBarTextElement(
+			barFrame,
+			orientation,
+			textWidth,
 			barFrame.value,
 			state.valueText,
 			"VALUE",
@@ -3772,7 +2994,10 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		barFrame.value:Hide()
 	end
 	if state.showStacks and state.stackDisplayText then
-		layoutBarText(
+		layoutBarTextElement(
+			barFrame,
+			orientation,
+			textWidth,
 			barFrame.stackCount,
 			state.stackDisplayText,
 			"STACK",
@@ -3794,76 +3019,6 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 	barFrame:SetAlpha(icon:GetAlpha())
 	barFrame._eqolBarState = state
 	barFrame:Show()
-	Bars.ConfigureChargeTraceButton(barFrame, state)
-	if state and state.traceTextAnchors == true then
-		Bars.WritePendingTextAnchorTrace(barFrame, state, icon, "immediate")
-		if C_Timer and C_Timer.After then
-			C_Timer.After(0, function()
-				if barFrame and barFrame._eqolBarState == state then Bars.WritePendingTextAnchorTrace(barFrame, state, icon, "after0") end
-			end)
-			C_Timer.After(0.05, function()
-				if barFrame and barFrame._eqolBarState == state then Bars.WritePendingTextAnchorTrace(barFrame, state, icon, "after005") end
-				local runtime = getRuntimeState()
-				if runtime and runtime.pendingTextAnchorTraceByEntryKey and state.entryKey then runtime.pendingTextAnchorTraceByEntryKey[state.entryKey] = nil end
-			end)
-		end
-	end
-	if state and state.panelId and CooldownPanels.IsPanelLayoutEditActive and CooldownPanels:IsPanelLayoutEditActive(state.panelId) then
-		writeBarsDebug("layoutBarFrame", {
-			panelId = state.panelId,
-			entryId = state.entryId,
-			label = getDebugText(state.label),
-			mode = state.mode,
-			preview = state.preview == true,
-			iconEntryId = icon and normalizeId(icon.entryId) or nil,
-			slotColumn = Helper.NormalizeSlotCoordinate(icon and (icon._eqolPreviewCellColumn or icon._eqolLayoutSlotColumn) or nil),
-			slotRow = Helper.NormalizeSlotCoordinate(icon and (icon._eqolPreviewCellRow or icon._eqolLayoutSlotRow) or nil),
-			offsetX = offsetX,
-			offsetY = offsetY,
-			configuredWidth = configuredWidth,
-			resolvedWidth = resolvedWidth,
-			width = width,
-			height = height,
-			frameWidth = frameWidth,
-			frameHeight = frameHeight,
-			bodyWidth = bodyWidth,
-			bodyHeight = bodyHeight,
-			span = span,
-			orientation = orientation,
-			useChargeSegments = useChargeSegments == true,
-			segmentDirection = segmentDirection,
-			segmentReverse = segmentReverse == true,
-			anchorPoint = anchorPoint,
-			relativePoint = relativePoint,
-			anchorBaseX = anchorBaseX,
-			anchorBaseY = anchorBaseY,
-			anchorFrameName = anchorFrame and anchorFrame.GetName and anchorFrame:GetName() or nil,
-			anchorFrameLeft = anchorFrame and anchorFrame.GetLeft and anchorFrame:GetLeft() or nil,
-			anchorFrameTop = anchorFrame and anchorFrame.GetTop and anchorFrame:GetTop() or nil,
-			parentName = parent and parent.GetName and parent:GetName() or nil,
-			parentLeft = parent and parent.GetLeft and parent:GetLeft() or nil,
-			parentTop = parent and parent.GetTop and parent:GetTop() or nil,
-			barLeft = barFrame.GetLeft and barFrame:GetLeft() or nil,
-			barRight = barFrame.GetRight and barFrame:GetRight() or nil,
-			barTop = barFrame.GetTop and barFrame:GetTop() or nil,
-			barBottom = barFrame.GetBottom and barFrame:GetBottom() or nil,
-			barWidth = barFrame.GetWidth and barFrame:GetWidth() or nil,
-			barHeight = barFrame.GetHeight and barFrame:GetHeight() or nil,
-			bodyLeft = barFrame.body and barFrame.body.GetLeft and barFrame.body:GetLeft() or nil,
-			bodyRight = barFrame.body and barFrame.body.GetRight and barFrame.body:GetRight() or nil,
-			bodyTop = barFrame.body and barFrame.body.GetTop and barFrame.body:GetTop() or nil,
-			bodyBottom = barFrame.body and barFrame.body.GetBottom and barFrame.body:GetBottom() or nil,
-			labelAnchor = state.labelAnchor,
-			valueAnchor = state.valueAnchor,
-			stackAnchor = state.stackAnchor,
-			labelOffsetX = state.labelOffsetX,
-			labelOffsetY = state.labelOffsetY,
-			valueOffsetX = state.valueOffsetX,
-			valueOffsetY = state.valueOffsetY,
-			stackOffsetX = state.stackOffsetX,
-			stackOffsetY = state.stackOffsetY,
-		})
-	end
 end
 
 refreshPanelContext = function(panelId)
@@ -3985,46 +3140,17 @@ end
 
 local function setEntryBarField(panelId, entryId, field, value)
 	mutateBarEntry(panelId, entryId, function(entry) entry[field] = value end)
-	if
-		field == "barLabelAnchor"
-		or field == "barValueAnchor"
-		or field == "barStackAnchor"
-		or field == "barLabelOffsetX"
-		or field == "barLabelOffsetY"
-		or field == "barValueOffsetX"
-		or field == "barValueOffsetY"
-		or field == "barStackOffsetX"
-		or field == "barStackOffsetY"
-	then
-		writeBarsDebug("setBarTextField", {
-			panelId = panelId,
-			entryId = entryId,
-			field = field,
-			value = value,
-		})
-	end
 end
 
 Bars.SetTextAnchorWithFreshOffsets = function(panelId, entryId, anchorField, offsetXField, offsetYField, value, fallback)
 	local normalized = Bars.NormalizeTextAnchor(value, fallback)
 	panelId = normalizeId(panelId)
 	entryId = normalizeId(entryId)
-	local runtime = getRuntimeState()
-	runtime.pendingTextAnchorTraceByEntryKey = runtime.pendingTextAnchorTraceByEntryKey or {}
-	runtime.pendingTextAnchorTraceByEntryKey[Helper.GetEntryKey(panelId, entryId)] = true
 	mutateBarEntry(panelId, entryId, function(entry)
 		entry[anchorField] = normalized
 		entry[offsetXField] = 0
 		entry[offsetYField] = 0
 	end)
-	writeBarsDebug("setBarTextAnchor", {
-		panelId = panelId,
-		entryId = entryId,
-		field = anchorField,
-		value = normalized,
-		resetXField = offsetXField,
-		resetYField = offsetYField,
-	})
 end
 
 local function showBarModeMenu(owner, panelId, entryId)
@@ -4216,7 +3342,6 @@ end
 local originalUpdateRuntimeIcons = CooldownPanels.UpdateRuntimeIcons
 function CooldownPanels:UpdateRuntimeIcons(panelId)
 	originalUpdateRuntimeIcons(self, panelId)
-	writeBarsDebug("updateRuntimeIcons", { panelId = panelId })
 	applyBarsToPanel(panelId, false)
 end
 
