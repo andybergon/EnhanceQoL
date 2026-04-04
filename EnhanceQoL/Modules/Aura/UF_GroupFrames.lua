@@ -1954,6 +1954,7 @@ local DEFAULTS = {
 		auras = {
 			buff = {
 				anchorPoint = "BOTTOMRIGHT",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFont = "__EQOL_GLOBAL_FONT__",
 				cooldownFontOutline = "OUTLINE",
@@ -1990,6 +1991,7 @@ local DEFAULTS = {
 			},
 			debuff = {
 				anchorPoint = "TOPLEFT",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFont = "__EQOL_GLOBAL_FONT__",
 				cooldownFontOutline = "OUTLINE",
@@ -2027,6 +2029,7 @@ local DEFAULTS = {
 			enabled = true,
 			externals = {
 				anchorPoint = "CENTER",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFont = "__EQOL_GLOBAL_FONT__",
 				cooldownFontOutline = "OUTLINE",
@@ -2713,6 +2716,7 @@ local DEFAULTS = {
 		auras = {
 			buff = {
 				anchorPoint = "TOPLEFT",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 8,
@@ -2748,6 +2752,7 @@ local DEFAULTS = {
 			},
 			debuff = {
 				anchorPoint = "BOTTOMLEFT",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 8,
@@ -2783,6 +2788,7 @@ local DEFAULTS = {
 			enabled = true,
 			externals = {
 				anchorPoint = "CENTER",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 12,
@@ -3450,6 +3456,7 @@ local DEFAULTS = {
 		auras = {
 			buff = {
 				anchorPoint = "TOPLEFT",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 8,
@@ -3485,6 +3492,7 @@ local DEFAULTS = {
 			},
 			debuff = {
 				anchorPoint = "BOTTOMLEFT",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 8,
@@ -3520,6 +3528,7 @@ local DEFAULTS = {
 			enabled = false,
 			externals = {
 				anchorPoint = "CENTER",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 12,
@@ -4061,6 +4070,7 @@ local DEFAULTS = {
 		auras = {
 			buff = {
 				anchorPoint = "TOPLEFT",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 8,
@@ -4096,6 +4106,7 @@ local DEFAULTS = {
 			},
 			debuff = {
 				anchorPoint = "BOTTOMLEFT",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 8,
@@ -4131,6 +4142,7 @@ local DEFAULTS = {
 			enabled = false,
 			externals = {
 				anchorPoint = "CENTER",
+				anchorOutside = false,
 				cooldownAnchor = "CENTER",
 				cooldownFontOutline = "OUTLINE",
 				cooldownFontSize = 12,
@@ -6667,6 +6679,26 @@ function GF:LayoutButton(self)
 end
 
 local GROW_DIRS = { "UP", "DOWN", "LEFT", "RIGHT" }
+GF._oppositeAuraAnchorPoints = {
+	TOPLEFT = "BOTTOMRIGHT",
+	TOP = "BOTTOM",
+	TOPRIGHT = "BOTTOMLEFT",
+	LEFT = "RIGHT",
+	CENTER = "CENTER",
+	RIGHT = "LEFT",
+	BOTTOMLEFT = "TOPRIGHT",
+	BOTTOM = "TOP",
+	BOTTOMRIGHT = "TOPLEFT",
+}
+
+function GF.GetAuraGridBasePoint(primary, secondary)
+	local primaryHorizontal = primary == "LEFT" or primary == "RIGHT"
+	local horizontalDir = primaryHorizontal and primary or secondary
+	local verticalDir = primaryHorizontal and secondary or primary
+	local xSign = (horizontalDir == "RIGHT") and 1 or -1
+	local ySign = (verticalDir == "UP") and 1 or -1
+	return (ySign == 1 and "BOTTOM" or "TOP") .. (xSign == 1 and "LEFT" or "RIGHT")
+end
 
 local function parseAuraGrowth(growth)
 	if not growth or growth == "" then return end
@@ -6715,6 +6747,13 @@ local function resolveAuraGrowth(anchorPoint, growth, growthX, growthY)
 		primary, secondary = parseAuraGrowth(fallback)
 	end
 	return anchor, primary, secondary
+end
+
+function GF.ResolveAuraContainerBoundaryPoint(anchorPoint, anchorOutside, primary, secondary, owner)
+	local anchor = tostring(anchorPoint or "TOPLEFT"):upper()
+	if anchorOutside ~= true then return anchor end
+	if owner and owner._eqolGroupKind == "party" and primary and secondary then return GF.GetAuraGridBasePoint(primary, secondary) end
+	return (GF._oppositeAuraAnchorPoints and GF._oppositeAuraAnchorPoints[anchor]) or anchor
 end
 
 local function growthPairToString(primary, secondary)
@@ -6887,7 +6926,7 @@ local function positionAuraButton(btn, container, primary, secondary, index, per
 	local verticalDir = primaryHorizontal and secondary or primary
 	local xSign = (horizontalDir == "RIGHT") and 1 or -1
 	local ySign = (verticalDir == "UP") and 1 or -1
-	local basePoint = (ySign == 1 and "BOTTOM" or "TOP") .. (xSign == 1 and "LEFT" or "RIGHT")
+	local basePoint = GF.GetAuraGridBasePoint(primary, secondary)
 	local scale = GFH.GetEffectiveScale(container)
 	local step = size + spacing
 	local x = roundToPixel(col * step * xSign, scale)
@@ -7650,6 +7689,8 @@ function GF:LayoutAuras(self)
 			st._auraLayoutKey[kindKey] = nil
 		else
 			local anchorPoint, primary, secondary = resolveAuraGrowth(typeCfg.anchorPoint, typeCfg.growth, typeCfg.growthX, typeCfg.growthY)
+			local anchorOutside = typeCfg.anchorOutside == true
+			local containerPoint = GF.ResolveAuraContainerBoundaryPoint(anchorPoint, anchorOutside, primary, secondary, self)
 			local size = (tonumber(typeCfg.size) or 16) * contentScale
 			local spacing = (tonumber(typeCfg.spacing) or 2) * contentScale
 			local perRow = tonumber(typeCfg.perRow) or tonumber(typeCfg.max) or 6
@@ -7663,9 +7704,29 @@ function GF:LayoutAuras(self)
 			x = roundToPixel(x, scale)
 			y = roundToPixel(y, scale)
 
-			local key = anchorPoint .. "|" .. tostring(primary) .. "|" .. tostring(secondary) .. "|" .. size .. "|" .. spacing .. "|" .. perRow .. "|" .. maxCount .. "|" .. x .. "|" .. y
+			local key = anchorPoint
+				.. "|"
+				.. tostring(anchorOutside)
+				.. "|"
+				.. tostring(primary)
+				.. "|"
+				.. tostring(secondary)
+				.. "|"
+				.. size
+				.. "|"
+				.. spacing
+				.. "|"
+				.. perRow
+				.. "|"
+				.. maxCount
+				.. "|"
+				.. x
+				.. "|"
+				.. y
 			local layout = st._auraLayout[kindKey] or {}
 			layout.anchorPoint = anchorPoint
+			layout.containerPoint = containerPoint
+			layout.anchorOutside = anchorOutside
 			layout.primary = primary
 			layout.secondary = secondary
 			layout.size = size
@@ -7682,7 +7743,7 @@ function GF:LayoutAuras(self)
 				local container = ensureAuraContainer(st, meta.containerKey)
 				if container then
 					container:ClearAllPoints()
-					container:SetPoint(anchorPoint, parent, anchorPoint, x, y)
+					container:SetPoint(containerPoint, parent, anchorPoint, x, y)
 					updateAuraContainerSize(container, anchorPoint, maxCount, maxCount, perRow, size, spacing, primary)
 					if container.SetClipsChildren then container:SetClipsChildren(false) end
 				end
@@ -20762,6 +20823,25 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
+			name = L["Anchor outside frame"] or "Anchor outside frame",
+			kind = SettingType.Checkbox,
+			field = "buffAnchorOutside",
+			parentId = "buffs",
+			get = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				return ac.buff.anchorOutside == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				ac.buff.anchorOutside = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "buffAnchorOutside", ac.buff.anchorOutside, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isShown = function() return kind == "party" end,
+		},
+		{
 			name = L["Buff growth direction"] or "Buff growth direction",
 			kind = SettingType.Dropdown,
 			field = "buffGrowth",
@@ -21335,6 +21415,25 @@ local function buildEditModeSettings(kind, editModeId)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "debuffAnchor", value, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
+		},
+		{
+			name = L["Anchor outside frame"] or "Anchor outside frame",
+			kind = SettingType.Checkbox,
+			field = "debuffAnchorOutside",
+			parentId = "debuffs",
+			get = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				return ac.debuff.anchorOutside == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				ac.debuff.anchorOutside = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "debuffAnchorOutside", ac.debuff.anchorOutside, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isShown = function() return kind == "party" end,
 		},
 		{
 			name = L["Debuff growth direction"] or "Debuff growth direction",
@@ -21930,6 +22029,25 @@ local function buildEditModeSettings(kind, editModeId)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "externalAnchor", value, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
+		},
+		{
+			name = L["Anchor outside frame"] or "Anchor outside frame",
+			kind = SettingType.Checkbox,
+			field = "externalAnchorOutside",
+			parentId = "externals",
+			get = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				return ac.externals.anchorOutside == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				ac.externals.anchorOutside = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "externalAnchorOutside", ac.externals.anchorOutside, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isShown = function() return kind == "party" end,
 		},
 		{
 			name = L["External growth direction"] or "External growth direction",
@@ -24656,6 +24774,7 @@ local function applyEditModeData(kind, data)
 	local ac = ensureAuraConfig(cfg)
 	if data.buffsEnabled ~= nil then ac.buff.enabled = data.buffsEnabled and true or false end
 	if data.buffAnchor ~= nil then ac.buff.anchorPoint = data.buffAnchor end
+	if data.buffAnchorOutside ~= nil then ac.buff.anchorOutside = data.buffAnchorOutside and true or false end
 	if data.buffGrowth ~= nil then
 		applyAuraGrowth(ac.buff, data.buffGrowth)
 	elseif data.buffGrowthX ~= nil or data.buffGrowthY ~= nil then
@@ -24692,6 +24811,7 @@ local function applyEditModeData(kind, data)
 
 	if data.debuffsEnabled ~= nil then ac.debuff.enabled = data.debuffsEnabled and true or false end
 	if data.debuffAnchor ~= nil then ac.debuff.anchorPoint = data.debuffAnchor end
+	if data.debuffAnchorOutside ~= nil then ac.debuff.anchorOutside = data.debuffAnchorOutside and true or false end
 	if data.debuffGrowth ~= nil then
 		applyAuraGrowth(ac.debuff, data.debuffGrowth)
 	elseif data.debuffGrowthX ~= nil or data.debuffGrowthY ~= nil then
@@ -24728,6 +24848,7 @@ local function applyEditModeData(kind, data)
 
 	if data.externalsEnabled ~= nil then ac.externals.enabled = data.externalsEnabled and true or false end
 	if data.externalAnchor ~= nil then ac.externals.anchorPoint = data.externalAnchor end
+	if data.externalAnchorOutside ~= nil then ac.externals.anchorOutside = data.externalAnchorOutside and true or false end
 	if data.externalGrowth ~= nil then
 		applyAuraGrowth(ac.externals, data.externalGrowth)
 	elseif data.externalGrowthX ~= nil or data.externalGrowthY ~= nil then
@@ -25387,6 +25508,7 @@ function GF:EnsureEditMode()
 				privateAurasDurationOffsetY = paDuration.offsetY or defPrivateDuration.offsetY or 0,
 				buffsEnabled = ac.buff.enabled == true,
 				buffAnchor = buffAnchor,
+				buffAnchorOutside = ac.buff.anchorOutside == true,
 				buffGrowth = buffGrowth,
 				buffOffsetX = ac.buff.x or 0,
 				buffOffsetY = ac.buff.y or 0,
@@ -25411,6 +25533,7 @@ function GF:EnsureEditMode()
 				buffStackOutline = ac.buff.countFontOutline or defBuff.countFontOutline or "OUTLINE",
 				debuffsEnabled = ac.debuff.enabled == true,
 				debuffAnchor = debuffAnchor,
+				debuffAnchorOutside = ac.debuff.anchorOutside == true,
 				debuffGrowth = debuffGrowth,
 				debuffOffsetX = ac.debuff.x or 0,
 				debuffOffsetY = ac.debuff.y or 0,
@@ -25435,6 +25558,7 @@ function GF:EnsureEditMode()
 				debuffStackOutline = ac.debuff.countFontOutline or defDebuff.countFontOutline or "OUTLINE",
 				externalsEnabled = ac.externals.enabled == true,
 				externalAnchor = externalAnchor,
+				externalAnchorOutside = ac.externals.anchorOutside == true,
 				externalGrowth = externalGrowth,
 				externalOffsetX = ac.externals.x or 0,
 				externalOffsetY = ac.externals.y or 0,
