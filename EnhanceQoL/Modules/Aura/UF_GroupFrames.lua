@@ -246,6 +246,38 @@ function GF.ScaleOffset(offset, factor)
 	}
 end
 
+GF.IsCenteredHorizontalAnchor = GF.IsCenteredHorizontalAnchor or function(point)
+	if type(point) ~= "string" then return false end
+	return not point:find("LEFT", 1, true) and not point:find("RIGHT", 1, true)
+end
+
+GF.GetCenteredFontStringHalfPixelOffset = GF.GetCenteredFontStringHalfPixelOffset or function(fs)
+	if not (fs and fs.GetStringWidth and Pixel and Pixel.GetPixelToUIUnitFactor) then return 0 end
+	local width = tonumber(fs:GetStringWidth()) or 0
+	if width <= 0 then return 0 end
+	local scale = (Pixel.GetScale and Pixel.GetScale(fs)) or (fs.GetEffectiveScale and fs:GetEffectiveScale()) or 1
+	scale = tonumber(scale) or 1
+	if scale <= 0 then scale = 1 end
+	local factor = Pixel.GetPixelToUIUnitFactor()
+	local widthPixels = floor(((width * scale) / factor) + 0.5)
+	if widthPixels <= 0 or (widthPixels % 2) == 0 then return 0 end
+	return (factor / scale) * 0.5
+end
+
+function GF.ApplyCenteredNameTextNudge(st)
+	local fs = st and st.nameText
+	local anchor = st and st._eqolNameAnchorState
+	if not (fs and anchor and anchor.centered and anchor.relativeTo) then
+		if st then st._eqolNameCenterNudgeX = nil end
+		return
+	end
+	local nudgeX = GF.GetCenteredFontStringHalfPixelOffset(fs)
+	if st._eqolNameCenterNudgeX == nudgeX then return end
+	st._eqolNameCenterNudgeX = nudgeX
+	fs:ClearAllPoints()
+	fs:SetPoint(anchor.point, anchor.relativeTo, anchor.relativePoint, anchor.x + nudgeX, anchor.y)
+end
+
 function GF.GetScaledBarTextConfig(cfgSection, factor)
 	if factor == nil or factor == 1 or type(cfgSection) ~= "table" then return cfgSection end
 	return {
@@ -1669,13 +1701,25 @@ local function applyStatusTextAnchor(st, anchor, offset, scale, parent, fs)
 	if not target then return end
 	local point, relPoint, justify = resolveStatusTextAnchor(anchor)
 	local off = offset or {}
+	local anchorX, anchorY
+	if Pixel and Pixel.Round then
+		anchorX = Pixel.Round(off.x or 0, target)
+		anchorY = Pixel.Round(off.y or 0, target)
+	else
+		anchorX = roundToPixel(off.x or 0, scale)
+		anchorY = roundToPixel(off.y or 0, scale)
+	end
 	target:ClearAllPoints()
 	if Pixel and Pixel.SetPoint then
 		Pixel.SetPoint(target, point, parent, relPoint, off.x or 0, off.y or 0)
 	else
-		target:SetPoint(point, parent, relPoint, roundToPixel(off.x or 0, scale), roundToPixel(off.y or 0, scale))
+		target:SetPoint(point, parent, relPoint, anchorX, anchorY)
 	end
 	if justify and target.SetJustifyH then target:SetJustifyH(justify) end
+	if GFH and GFH.SetCenteredFontStringAnchorState then
+		GFH.SetCenteredFontStringAnchorState(target, point, parent, relPoint, anchorX, anchorY, justify == "CENTER" and GFH.IsCenteredHorizontalAnchor and GFH.IsCenteredHorizontalAnchor(point))
+	end
+	if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(target) end
 end
 
 local function applyGroupIndicatorAnchor(fs, anchor, offset, scale, parent)
@@ -1688,13 +1732,25 @@ local function applyGroupIndicatorAnchor(fs, anchor, offset, scale, parent)
 	end
 	local _, _, justify = resolveStatusTextAnchor(anchor)
 	local off = offset or {}
+	local anchorX, anchorY
+	if Pixel and Pixel.Round then
+		anchorX = Pixel.Round(off.x or 0, fs)
+		anchorY = Pixel.Round(off.y or 0, fs)
+	else
+		anchorX = roundToPixel(off.x or 0, scale)
+		anchorY = roundToPixel(off.y or 0, scale)
+	end
 	fs:ClearAllPoints()
 	if Pixel and Pixel.SetPoint then
 		Pixel.SetPoint(fs, point, parent, relPoint, off.x or 0, off.y or 0)
 	else
-		fs:SetPoint(point, parent, relPoint, roundToPixel(off.x or 0, scale), roundToPixel(off.y or 0, scale))
+		fs:SetPoint(point, parent, relPoint, anchorX, anchorY)
 	end
 	if justify and fs.SetJustifyH then fs:SetJustifyH(justify) end
+	if GFH and GFH.SetCenteredFontStringAnchorState then
+		GFH.SetCenteredFontStringAnchorState(fs, point, parent, relPoint, anchorX, anchorY, justify == "CENTER" and GFH.IsCenteredHorizontalAnchor and GFH.IsCenteredHorizontalAnchor(point))
+	end
+	if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(fs) end
 end
 
 local function stopDispelGlow(frame, effect, st)
@@ -1753,6 +1809,7 @@ local function setTextSlot(st, fs, cacheKey, mode, cur, maxv, useShort, percentV
 		if last ~= "" then
 			st[cacheKey] = ""
 			fs:SetText("")
+			if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(fs) end
 		end
 		return
 	end
@@ -1765,11 +1822,13 @@ local function setTextSlot(st, fs, cacheKey, mode, cur, maxv, useShort, percentV
 	if issecretvalue and issecretvalue(text) then
 		fs:SetText(text)
 		st[cacheKey] = nil
+		if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(fs) end
 		return
 	end
 	if last ~= text then
 		st[cacheKey] = text
 		fs:SetText(text)
+		if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(fs) end
 	end
 end
 
@@ -6307,6 +6366,8 @@ function GF:LayoutButton(self)
 			nameX, nameY = roundToPixel(nameX, scale), roundToPixel(nameY, scale)
 		end
 		local nameMaxChars = tonumber(tc.nameMaxChars) or 0
+		st._eqolNameAnchorState = nil
+		st._eqolNameCenterNudgeX = nil
 		st.nameText:ClearAllPoints()
 		if nameMaxChars <= 0 then
 			local vert = "CENTER"
@@ -6334,11 +6395,21 @@ function GF:LayoutButton(self)
 				st.nameText:SetPoint(rightPoint, nameAnchorFrame, rightPoint, rightX, rightY)
 			end
 		else
+				local centeredNameAnchor = GF.IsCenteredHorizontalAnchor and GF.IsCenteredHorizontalAnchor(nameAnchor)
+			st._eqolNameAnchorState = {
+				centered = centeredNameAnchor,
+				point = nameAnchor,
+				relativeTo = nameAnchorFrame,
+				relativePoint = nameAnchor,
+				x = nameX,
+				y = nameY,
+			}
 			if Pixel and Pixel.SetPoint then
 				Pixel.SetPoint(st.nameText, nameAnchor, nameAnchorFrame, nameAnchor, nameX, nameY)
 			else
 				st.nameText:SetPoint(nameAnchor, nameAnchorFrame, nameAnchor, nameX, nameY)
 			end
+				if centeredNameAnchor and GF.ApplyCenteredNameTextNudge then GF.ApplyCenteredNameTextNudge(st) end
 		end
 		local justify = "CENTER"
 		if nameAnchor and nameAnchor:find("LEFT") then
@@ -8321,6 +8392,7 @@ function GF:UpdateName(self)
 		fs:SetText(displayName)
 		st._lastName = displayName
 	end
+	if fs == st.nameText and GF.ApplyCenteredNameTextNudge then GF.ApplyCenteredNameTextNudge(st) end
 
 	local r, g, b, a = 1, 1, 1, 1
 	local nameMode = sc.nameColorMode
@@ -8496,10 +8568,11 @@ function GF:UpdateStatusText(self)
 			local style = resolveStatusTextStyle(cfg, def, hc)
 			GF.ApplyScaledFont(self, statusFs, style.font, style.fontSize or 12, style.fontOutline, cfg)
 			applyStatusTextAnchor(st, style.anchor, GF.ScaleOffset(style.offset, contentScale), scale, GF.GetLayoutAnchorFrame(st, self) or self, statusFs)
-			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
-			statusFs:SetText(statusTag)
-			statusFs:SetTextColor(r, g, b, a)
-			statusFs:Show()
+				local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
+				statusFs:SetText(statusTag)
+				if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(statusFs) end
+				statusFs:SetTextColor(r, g, b, a)
+				statusFs:Show()
 		else
 			statusFs:SetText("")
 			statusFs:Hide()
@@ -8511,10 +8584,11 @@ function GF:UpdateStatusText(self)
 			local style = resolveGroupNumberStyle(cfg, def, hc)
 			if UFHelper and UFHelper.applyFont then UFHelper.applyFont(groupFs, style.font, style.fontSize or 12, style.fontOutline) end
 			applyStatusTextAnchor(st, style.anchor, style.offset, scale, GF.GetLayoutAnchorFrame(st, self) or self, groupFs)
-			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
-			groupFs:SetText(groupTag)
-			groupFs:SetTextColor(r, g, b, a)
-			groupFs:Show()
+				local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
+				groupFs:SetText(groupTag)
+				if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(groupFs) end
+				groupFs:SetTextColor(r, g, b, a)
+				groupFs:Show()
 		else
 			groupFs:SetText("")
 			groupFs:Hide()
@@ -8689,10 +8763,11 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 				if fs.SetDrawLayer then fs:SetDrawLayer("OVERLAY", 7) end
 				if UFHelper and UFHelper.applyFont then UFHelper.applyFont(fs, style.font, style.fontSize or 12, style.fontOutline) end
 				applyGroupIndicatorAnchor(fs, style.anchor, style.offset, scale, anchorTarget)
-				local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
-				fs:SetText(formatGroupNumber(subgroup, format))
-				fs:SetTextColor(r, g, b, a)
-				fs:Show()
+					local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
+					fs:SetText(formatGroupNumber(subgroup, format))
+					if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(fs) end
+					fs:SetTextColor(r, g, b, a)
+					fs:Show()
 				used[subgroup] = true
 			else
 				fs:SetText("")

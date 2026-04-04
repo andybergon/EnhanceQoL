@@ -2908,13 +2908,27 @@ function H.applyNameCharLimit(st, scfg, defStatus)
 	if maxChars <= 0 then
 		if st.nameText.SetMaxLines then st.nameText:SetMaxLines(1) end
 		if st.nameText.SetWordWrap then st.nameText:SetWordWrap(false) end
-		st.nameText:SetWidth(0)
+		if st._eqolNameTextWidth ~= 0 then
+			st.nameText:SetWidth(0)
+			st._eqolNameTextWidth = 0
+		end
 		return
 	end
 	if st.nameText.SetMaxLines then st.nameText:SetMaxLines(1) end
 	if st.nameText.SetWordWrap then st.nameText:SetWordWrap(false) end
 	local width = H.getNameLimitWidth(scfg and scfg.font, scfg and scfg.fontSize or 14, scfg and scfg.fontOutline or "OUTLINE", maxChars)
-	if width and width > 0 then st.nameText:SetWidth(width) end
+	if width and width > 0 then
+		local snappedWidth = width
+		local scale = (st.nameText.GetEffectiveScale and st.nameText:GetEffectiveScale()) or (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+		if PixelUtil and PixelUtil.GetNearestPixelSize then
+			-- Centered name regions blur easily on odd pixel widths; keep the width on an even pixel count.
+			snappedWidth = PixelUtil.GetNearestPixelSize(width * 0.5, scale, 1) * 2
+		end
+		if st._eqolNameTextWidth ~= snappedWidth then
+			st.nameText:SetWidth(snappedWidth)
+			st._eqolNameTextWidth = snappedWidth
+		end
+	end
 end
 
 function H.truncateTextToWidth(fontPath, fontSize, fontOutline, text, maxWidth)
