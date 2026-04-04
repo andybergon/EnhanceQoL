@@ -290,6 +290,13 @@ Bars.GetCooldownValueText = function(icon, durationObject, startTime, duration, 
 	return getCooldownText(icon)
 end
 
+Bars.GetLiveBarValueText = function(state)
+	if type(state) ~= "table" or state.showValueText ~= true then return nil end
+	if state.mode ~= Bars.BAR_MODE.COOLDOWN then return nil end
+	if state.fillDurationObject == nil and (safeNumber(state.duration) or 0) <= 0 then return nil end
+	return Bars.GetCooldownValueText(state.icon, state.fillDurationObject, state.startTime, state.duration, state.rate)
+end
+
 Bars.ResolveStackDisplay = function(panelId, entryId, resolvedType, icon, runtimeData)
 	local displayText = nil
 	local rawValue = nil
@@ -1628,22 +1635,36 @@ end
 
 Bars.ClearBarValueTextUpdater = function(barFrame)
 	if not barFrame then return end
-	barFrame._eqolValueTextProvider = nil
+	barFrame._eqolValueTextDynamic = nil
 	barFrame._eqolValueTextElapsed = nil
 	if barFrame:GetScript("OnUpdate") then barFrame:SetScript("OnUpdate", nil) end
 end
 
+function Bars.OnBarValueTextUpdate(self, elapsed)
+	if not (self and self._eqolValueTextDynamic and self._eqolBarState and self.value) then return end
+	self._eqolValueTextElapsed = (self._eqolValueTextElapsed or 0) + (elapsed or 0)
+	if self._eqolValueTextElapsed < 0.05 then return end
+	self._eqolValueTextElapsed = 0
+	local text = Bars.GetLiveBarValueText(self._eqolBarState)
+	if text ~= nil and text ~= "" then
+		self.value:SetText(text)
+		if self.value.Show and self.value.IsShown and not self.value:IsShown() then self.value:Show() end
+	else
+		self.value:SetText("")
+	end
+end
+
 Bars.ConfigureBarValueTextUpdater = function(barFrame, state)
 	if not barFrame then return end
-	local provider = state and state.showValueText and state.liveValueTextProvider or nil
-	if type(provider) ~= "function" then
+	local useDynamicText = state and state.showValueText == true and Bars.GetLiveBarValueText(state) ~= nil
+	if useDynamicText ~= true then
 		Bars.ClearBarValueTextUpdater(barFrame)
 		return
 	end
 
-	barFrame._eqolValueTextProvider = provider
+	barFrame._eqolValueTextDynamic = true
 	barFrame._eqolValueTextElapsed = 0
-	local initialText = provider()
+	local initialText = Bars.GetLiveBarValueText(state)
 	if barFrame.value then
 		if initialText ~= nil and initialText ~= "" then
 			barFrame.value:SetText(initialText)
@@ -1652,19 +1673,7 @@ Bars.ConfigureBarValueTextUpdater = function(barFrame, state)
 			barFrame.value:SetText("")
 		end
 	end
-	barFrame:SetScript("OnUpdate", function(self, elapsed)
-		if not (self._eqolValueTextProvider and self.value) then return end
-		self._eqolValueTextElapsed = (self._eqolValueTextElapsed or 0) + (elapsed or 0)
-		if self._eqolValueTextElapsed < 0.05 then return end
-		self._eqolValueTextElapsed = 0
-		local text = self._eqolValueTextProvider()
-		if text ~= nil and text ~= "" then
-			self.value:SetText(text)
-			if self.value.Show and self.value.IsShown and not self.value:IsShown() then self.value:Show() end
-		else
-			self.value:SetText("")
-		end
-	end)
+	barFrame:SetScript("OnUpdate", Bars.OnBarValueTextUpdate)
 end
 
 local function showEditorBarDragPreview(panelId, panel, entryId, entry, sourceIcon)
@@ -2305,7 +2314,6 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 		entryId = entryId,
 		fillDurationObject = nil,
 		timerDirection = BAR_STATUS_TIMER_DIRECTION_ELAPSED,
-		liveValueTextProvider = nil,
 		stackFillValue = nil,
 		stackFillMax = nil,
 		entryKey = entryKey,
@@ -2409,7 +2417,6 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 					state.duration = safeNumber(duration)
 					state.rate = safeNumber(rate) or 1
 					state.fillDurationObject = durationObject
-					state.liveValueTextProvider = function() return Bars.GetCooldownValueText(icon, durationObject, startTime, duration, rate) end
 				else
 					progress = 1
 				end
@@ -2454,7 +2461,6 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 				cooldownValueVisible = true
 				state.fillDurationObject = durationObject
 				state.timerDirection = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
-				state.liveValueTextProvider = function() return durationToText(getDurationObjectRemaining(durationObject)) end
 				state.startTime = safeNumber(runtimeData.cooldownStart)
 				state.duration = safeNumber(runtimeData.cooldownDuration)
 				state.rate = safeNumber(runtimeData.cooldownRate) or 1
@@ -2470,16 +2476,6 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 				animate = fallbackProgress ~= nil and fallbackProgress < 1 or false
 				cooldownValueVisible = valueText ~= nil
 				state.timerDirection = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
-				state.liveValueTextProvider = fallbackProgress
-						and function()
-							local remaining = max(
-								0,
-								(safeNumber(runtimeData.cooldownDuration) or 0)
-									- (((Api.GetTime and Api.GetTime()) or GetTime()) - (safeNumber(runtimeData.cooldownStart) or 0)) * (safeNumber(runtimeData.cooldownRate) or 1)
-							)
-							return durationToText(remaining)
-						end
-					or nil
 				state.startTime = safeNumber(runtimeData.cooldownStart)
 				state.duration = safeNumber(runtimeData.cooldownDuration)
 				state.rate = safeNumber(runtimeData.cooldownRate) or 1
@@ -2492,7 +2488,6 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 			stackDisplayText = select(1, Bars.ResolveStackDisplay(panelId, entryId, resolvedType, icon, runtimeData))
 			state.stackDisplayText = stackDisplayText
 		end
-		state.sourceText = function() return getCooldownText(icon) end
 	elseif mode == Bars.BAR_MODE.CHARGES then
 		local spellId = resolvedSpellId
 		if spellId and CooldownPanels.GetCachedSpellChargesInfo then
@@ -3308,24 +3303,38 @@ local function applyBarsToPanel(panelId, preview)
 
 	local layoutEditActive = CooldownPanels.IsPanelLayoutEditActive and CooldownPanels:IsPanelLayoutEditActive(panelId) or false
 	local effectivePreview = preview == true or layoutEditActive == true
+	local entries = panel.entries or nil
+	local boundsColumns = fixedLayout and cache and cache.boundsColumns or 0
+	local reservedOwnerByIndex = layoutEditActive and fixedLayout and cache and cache._eqolBarsReservedOwnerByIndex or nil
+	local anchorCellByEntryId = fixedLayout and cache and cache._eqolBarsAnchorCellByEntryId or nil
+	local effectiveSpanByEntryId = fixedLayout and cache and cache._eqolBarsEffectiveSpanByEntryId or nil
 	for _, icon in ipairs(frame.icons) do
 		local entryId = normalizeId(icon.entryId)
 		local slotColumn = Helper.NormalizeSlotCoordinate(icon._eqolPreviewCellColumn or icon._eqolLayoutSlotColumn)
 		local slotRow = Helper.NormalizeSlotCoordinate(icon._eqolPreviewCellRow or icon._eqolLayoutSlotRow)
-		local entry = entryId and panel.entries and panel.entries[entryId] or nil
+		local entry = entryId and entries and entries[entryId] or nil
 		local displayMode = entry and normalizeDisplayMode(entry.displayMode, Bars.DEFAULTS.displayMode) or Bars.DISPLAY_MODE.BUTTON
 		local reservedOwnerId = nil
-		if not entryId and fixedLayout and slotColumn and slotRow then reservedOwnerId = select(1, getReservedOwnerForCell(panel, slotColumn, slotRow, nil, cache)) end
-		local reservedEntry = reservedOwnerId and panel.entries and panel.entries[reservedOwnerId] or nil
-		local barFrame = ensureBarFrame(icon)
-		local showBar = entry and displayMode == Bars.DISPLAY_MODE.BAR and fixedLayout and isAnchorCell(panel, entryId, slotColumn, slotRow, cache)
+		if reservedOwnerByIndex and boundsColumns > 0 and not entryId and slotColumn and slotRow then
+			reservedOwnerId = reservedOwnerByIndex[((slotRow - 1) * boundsColumns) + slotColumn]
+		end
+		local reservedEntry = reservedOwnerId and entries and entries[reservedOwnerId] or nil
+		local anchorCell = entryId and anchorCellByEntryId and anchorCellByEntryId[entryId] or nil
+		local showBar = entry
+			and displayMode == Bars.DISPLAY_MODE.BAR
+			and fixedLayout
+			and anchorCell ~= nil
+			and anchorCell.column == slotColumn
+			and anchorCell.row == slotRow
 		local showReservedGhost = layoutEditActive and fixedLayout and not entry and reservedOwnerId and reservedEntry
+		local barFrame = icon._eqolBarsFrame
 
 		if showBar then
 			icon._eqolBarsReservedOwnerId = nil
 			icon._eqolBarsReservedSlot = nil
+			if not barFrame then barFrame = ensureBarFrame(icon) end
 			local state = buildBarState(panelId, entryId, entry, icon, effectivePreview, icon._eqolRuntimeData)
-			local span = getEffectiveBarSpan(panel, entryId, cache)
+			local span = entryId and effectiveSpanByEntryId and effectiveSpanByEntryId[entryId] or 1
 			if state then
 				applyNativeSuppression(icon)
 				layoutBarFrame(barFrame, icon, span, panel.layout, state)

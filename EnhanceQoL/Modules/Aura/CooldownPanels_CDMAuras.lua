@@ -1838,7 +1838,6 @@ end
 function CDMAuras:HandleTargetChanged()
 	local runtime = getRuntime()
 	runtime.targetEpoch = (runtime.targetEpoch or 0) + 1
-	self:InvalidateScan()
 	clearTrackedUnitAuraIndex("target")
 	refreshAllTrackedPanels("target")
 end
@@ -1859,7 +1858,6 @@ function CDMAuras:HandleResetEvent(event, ...)
 end
 
 function CDMAuras:HandleTotemUpdate()
-	self:InvalidateScan()
 	refreshAllTrackedPanels("player")
 end
 
