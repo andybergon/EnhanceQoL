@@ -1148,7 +1148,15 @@ function Reminder:InvalidateWeaponBuffCache()
 	self.preparedWeaponBuffCandidateData = nil
 end
 
-function Reminder:InvalidatePlayerAuraPresenceSnapshot() self.playerAuraPresenceSnapshot = nil end
+function Reminder:InvalidateSelfProviderStatus()
+	self.selfProviderStatusProvider = nil
+	self.selfProviderStatus = nil
+end
+
+function Reminder:InvalidatePlayerAuraPresenceSnapshot()
+	self.playerAuraPresenceSnapshot = nil
+	self:InvalidateSelfProviderStatus()
+end
 
 function Reminder:PrepareConsumableCandidateAuraData(candidates, fallbackLabel)
 	local prepared = {
@@ -1328,10 +1336,65 @@ local function nowSeconds()
 	return 0
 end
 
+function Reminder:GetFoodBagCacheVersion()
+	if addon.functions and addon.functions.getFoodBagItemCountCacheVersion then return tonumber(addon.functions.getFoodBagItemCountCacheVersion()) or 0 end
+	return 0
+end
+
+function Reminder:GetExpectedFlaskSharedSelection(specId)
+	local db = addon.db or {}
+	local funcs = addon.Flasks and addon.Flasks.functions or nil
+	local normalizeType = funcs and funcs.normalizeTypeKey or nil
+	local selectedPreference = "useRole"
+	local selectedRoleKey = nil
+	local selectedType = "none"
+
+	if db.flaskPreferredBySpec and specId and db.flaskPreferredBySpec[specId] ~= nil then selectedPreference = db.flaskPreferredBySpec[specId] end
+	if selectedPreference == "useRole" then
+		local roleFunc = funcs and (funcs.getEffectiveRoleBucketForSpec or funcs.getRoleBucketForSpec) or nil
+		if type(roleFunc) == "function" then selectedRoleKey = roleFunc(specId) end
+		local roleSelection = db.flaskPreferredByRole and selectedRoleKey and db.flaskPreferredByRole[selectedRoleKey] or nil
+		if type(normalizeType) == "function" then selectedType = normalizeType(roleSelection) else selectedType = roleSelection or "none" end
+	else
+		if type(normalizeType) == "function" then selectedType = normalizeType(selectedPreference) else selectedType = selectedPreference or "none" end
+	end
+
+	if type(selectedType) ~= "string" or selectedType == "" then selectedType = "none" end
+	return selectedType, selectedRoleKey, selectedPreference
+end
+
+function Reminder:GetExpectedFoodSharedSelection(specId)
+	local db = addon.db or {}
+	local funcs = addon.BuffFoods and addon.BuffFoods.functions or nil
+	local normalizeType = funcs and funcs.normalizeTypeKey or nil
+	local selectedPreference = "useRole"
+	local selectedRoleKey = nil
+	local selectedType = "none"
+
+	if db.buffFoodPreferredBySpec and specId and db.buffFoodPreferredBySpec[specId] ~= nil then selectedPreference = db.buffFoodPreferredBySpec[specId] end
+	if selectedPreference == "useRole" then
+		local roleFunc = funcs and funcs.getRoleBucketForSpec or nil
+		if type(roleFunc) == "function" then selectedRoleKey = roleFunc(specId) end
+		local roleSelection = db.buffFoodPreferredByRole and selectedRoleKey and db.buffFoodPreferredByRole[selectedRoleKey] or nil
+		if type(normalizeType) == "function" then selectedType = normalizeType(roleSelection) else selectedType = roleSelection or "none" end
+	else
+		if type(normalizeType) == "function" then selectedType = normalizeType(selectedPreference) else selectedType = selectedPreference or "none" end
+	end
+
+	if type(selectedType) ~= "string" or selectedType == "" then selectedType = "none" end
+	return selectedType, selectedRoleKey, selectedPreference
+end
+
 function Reminder:GetSharedFlaskCandidates(specId)
 	if type(specId) ~= "number" then return nil, nil, false end
 	if not addon.Flasks then return nil, nil, false end
 	if addon.Flasks.lastSpecID ~= specId then return nil, nil, false end
+	if tonumber(addon.Flasks.lastBagVersion) ~= self:GetFoodBagCacheVersion() then return nil, nil, false end
+
+	local expectedType, expectedRoleKey, expectedPreference = self:GetExpectedFlaskSharedSelection(specId)
+	if addon.Flasks.lastSelectedType ~= expectedType then return nil, nil, false end
+	if addon.Flasks.lastSelectedRole ~= expectedRoleKey then return nil, nil, false end
+	if addon.Flasks.lastSelectedPreference ~= expectedPreference then return nil, nil, false end
 
 	local selectedType = addon.Flasks.lastSelectedType
 	if type(selectedType) ~= "string" then selectedType = nil end
@@ -1347,6 +1410,12 @@ function Reminder:GetSharedFoodCandidates(specId)
 	if type(specId) ~= "number" then return nil, nil, false end
 	if not addon.BuffFoods then return nil, nil, false end
 	if addon.BuffFoods.lastSpecID ~= specId then return nil, nil, false end
+	if tonumber(addon.BuffFoods.lastBagVersion) ~= self:GetFoodBagCacheVersion() then return nil, nil, false end
+
+	local expectedType, expectedRoleKey, expectedPreference = self:GetExpectedFoodSharedSelection(specId)
+	if addon.BuffFoods.lastSelectedType ~= expectedType then return nil, nil, false end
+	if addon.BuffFoods.lastSelectedRole ~= expectedRoleKey then return nil, nil, false end
+	if addon.BuffFoods.lastSelectedPreference ~= expectedPreference then return nil, nil, false end
 
 	local selectedType = addon.BuffFoods.lastSelectedType
 	if type(selectedType) ~= "string" then selectedType = nil end
@@ -2187,6 +2256,7 @@ function Reminder:GetShamanEnhancementProvider()
 			skyfuryDisplaySpellId = 462854,
 			skyfuryLabel = PROVIDER_BY_CLASS.SHAMAN.fallbackName or "Skyfury",
 			fallbackName = "Weapon Imbues",
+			tracksExternalUnitAuras = true,
 			hasUnitBuffFunc = shamanEnhancementImbuesHasUnitBuff,
 			getSelfStatusFunc = shamanEnhancementGetSelfStatus,
 		}
@@ -2240,6 +2310,7 @@ function Reminder:GetShamanRestorationProvider()
 			skyfuryDisplaySpellId = 462854,
 			skyfuryLabel = PROVIDER_BY_CLASS.SHAMAN.fallbackName or "Skyfury",
 			fallbackName = "Earthliving Weapon",
+			tracksExternalUnitAuras = true,
 			hasUnitBuffFunc = shamanRestorationEarthlivingHasUnitBuff,
 			getSelfStatusFunc = shamanRestorationGetSelfStatus,
 		}
@@ -2281,6 +2352,7 @@ function Reminder:GetDruidProvider()
 			symbioticDisplaySpellId = 474754,
 			symbioticLabel = "Symbiotic Relationship",
 			fallbackName = PROVIDER_BY_CLASS.DRUID and PROVIDER_BY_CLASS.DRUID.fallbackName or "Mark of the Wild",
+			tracksExternalUnitAuras = true,
 			hasUnitBuffFunc = druidRestorationHasUnitBuff,
 			getSelfStatusFunc = druidRestorationGetSelfStatus,
 		}
@@ -2414,6 +2486,7 @@ function Reminder:InvalidateProviderAvailabilityCache()
 	self.activeProvider = nil
 	self.hasProviderCached = nil
 	self.runtimeProviderValid = nil
+	self:InvalidateSelfProviderStatus()
 	self:InvalidateGroupMissingState()
 end
 
@@ -3574,6 +3647,7 @@ end
 
 function Reminder:InvalidateRosterCache()
 	self:ClearPendingAuraUpdates()
+	self:InvalidateSelfProviderStatus()
 	self.rosterUnitsValid = nil
 	self.rosterUnitsVersion = (tonumber(self.rosterUnitsVersion) or 0) + 1
 	self:InvalidateGroupMissingState()
@@ -3706,18 +3780,14 @@ end
 
 function Reminder:ComputeMissing(provider)
 	if provider and provider.scope == PROVIDER_SCOPE_SELF then
-		self.selfProviderStatusProvider = nil
-		self.selfProviderStatus = nil
 		if not canEvaluateUnit("player") then return 0, 0 end
 
-		local status = self:GetSelfProviderStatus(provider, true)
+		local status = self:GetSelfProviderStatus(provider, false)
 		if status then return status.missing, status.total end
 
 		if self:UnitHasProviderBuff("player", provider) then return 0, 1 end
 		return 1, 1
 	end
-	self.selfProviderStatusProvider = nil
-	self.selfProviderStatus = nil
 
 	local state = self:GetGroupMissingState(provider)
 	if not state then return 0, 0 end
@@ -3996,6 +4066,10 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	end
 
 	if event == "PLAYER_ROLES_ASSIGNED" or event == "ROLE_CHANGED_INFORM" then
+		self:InvalidateSelfProviderStatus()
+		self:InvalidateFlaskCache()
+		self:InvalidateFoodCache()
+		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(true)
 		return
 	end
@@ -4039,6 +4113,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 
 	if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_TALENT_UPDATE" or event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_TALENT_GROUP_CHANGED" or event == "SPELLS_CHANGED" then
 		self:InvalidateProviderAvailabilityCache()
+		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
 		self:InvalidateWeaponBuffCache()
@@ -4048,6 +4123,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 
 	if event == "UNIT_INVENTORY_CHANGED" then
 		if unit == "player" then
+			self:InvalidateSelfProviderStatus()
 			self:InvalidateFlaskCache()
 			self:InvalidateFoodCache()
 			self:InvalidateWeaponBuffCache()
@@ -4057,6 +4133,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	end
 
 	if event == "PLAYER_EQUIPMENT_CHANGED" then
+		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
 		self:InvalidateWeaponBuffCache()
@@ -4065,6 +4142,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	end
 
 	if event == "BAG_UPDATE_DELAYED" then
+		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
 		self:InvalidateWeaponBuffCache()
@@ -4074,6 +4152,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 
 	if event == "PLAYER_LEVEL_UP" then
 		self:InvalidateProviderAvailabilityCache()
+		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
 		self:InvalidateWeaponBuffCache()
@@ -4097,6 +4176,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 			return
 		end
 		if provider and provider.scope == PROVIDER_SCOPE_SELF then
+			if not isPlayerUnit(unit) and provider.tracksExternalUnitAuras == true then self:InvalidateSelfProviderStatus() end
 			if isPlayerUnit(unit) or provider.tracksExternalUnitAuras == true then self:RequestUpdate(false) end
 			return
 		end

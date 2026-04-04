@@ -409,6 +409,8 @@ local function getEffectiveRoleBucketForSpec(specID)
 	return nil
 end
 
+function addon.Flasks.functions.getEffectiveRoleBucketForSpec(specID) return getEffectiveRoleBucketForSpec(specID) end
+
 function addon.Flasks.functions.getTypeDisplayName(typeKey)
 	local entries = addon.Flasks and addon.Flasks.typeFlasks and addon.Flasks.typeFlasks[typeKey]
 	if type(entries) == "table" then
@@ -509,8 +511,10 @@ end
 function addon.Flasks.functions.updateAllowedFlasks(specID)
 	local resolvedSpecID = specID or getCurrentSpecID()
 	local candidates, selectedType, selectedRoleKey, selectedPreference = addon.Flasks.functions.getAvailableCandidatesForSpec(resolvedSpecID)
+	local bagVersion = addon.functions and addon.functions.getFoodBagItemCountCacheVersion and addon.functions.getFoodBagItemCountCacheVersion() or 0
 	addon.Flasks.filteredFlasks = candidates
 	addon.Flasks.lastSpecID = resolvedSpecID
+	addon.Flasks.lastBagVersion = bagVersion
 	addon.Flasks.lastSelectedType = selectedType
 	addon.Flasks.lastSelectedRole = selectedRoleKey
 	addon.Flasks.lastSelectedPreference = selectedPreference

@@ -278,30 +278,37 @@ local function finishSlotAnalysisPass(activeKeys)
 	wipeMap(activeKeys)
 end
 
-local function getSlotAnalysisSignature(bagInfo, itemLink)
+local function getSlotAnalysisState(bagInfo, itemLink)
 	local itemID = bagInfo and bagInfo.itemID or 0
 	local quality = bagInfo and bagInfo.quality or 0
-	local stackCount = bagInfo and bagInfo.stackCount or 0
-	local hasNoValue = bagInfo and bagInfo.hasNoValue == true and 1 or 0
+	local hasNoValue = bagInfo and bagInfo.hasNoValue == true or false
 	local link = itemLink or (bagInfo and bagInfo.hyperlink) or ""
-	return table.concat({
-		tostring(slotAnalysisCacheVersion),
-		tostring(itemID),
-		tostring(quality),
-		tostring(stackCount),
-		tostring(hasNoValue),
-		tostring(link),
-	}, "\001")
+	return itemID, quality, hasNoValue, link
 end
 
 local function getSlotAnalysisEntry(bag, slot, bagInfo, itemLink, activeKeys)
 	local key = bag .. "_" .. slot
 	if activeKeys then activeKeys[key] = true end
-	local signature = getSlotAnalysisSignature(bagInfo, itemLink)
+	local itemID, quality, hasNoValue, link = getSlotAnalysisState(bagInfo, itemLink)
 	local cached = slotAnalysisCache[key]
-	if cached and cached.signature == signature then return cached end
+	if
+		cached
+		and cached.cacheVersion == slotAnalysisCacheVersion
+		and cached.itemID == itemID
+		and cached.quality == quality
+		and cached.hasNoValue == hasNoValue
+		and cached.itemLink == link
+	then
+		return cached
+	end
 	tooltipCache[key] = nil
-	cached = { signature = signature }
+	cached = {
+		cacheVersion = slotAnalysisCacheVersion,
+		itemID = itemID,
+		quality = quality,
+		hasNoValue = hasNoValue,
+		itemLink = link,
+	}
 	slotAnalysisCache[key] = cached
 	return cached
 end
@@ -342,6 +349,20 @@ local function getCachedTooltipInfo(cached, bag, slot, quality, bagInfo, itemLin
 		cached.isIgnoredUpgradeTrack = isIgnoredUpgradeTrack
 	end
 	return cached.bType, cached.canUpgrade, cached.isIgnoredUpgradeTrack
+end
+
+local function shouldReadTooltipUpgradeInfo(quality)
+	local tabName = quality and addon.Vendor.variables.tabNames[quality] or nil
+	if not tabName or not addon.db then return false end
+	if addon.db["vendor" .. tabName .. "IgnoreUpgradable"] then return true end
+	if addon.db["vendor" .. tabName .. "IgnoreHeroicTrack"] then return true end
+	if addon.db["vendor" .. tabName .. "IgnoreMythTrack"] then return true end
+	return false
+end
+
+local function shouldReadTooltipInfo(quality, bindType)
+	if shouldReadTooltipUpgradeInfo(quality) then return true end
+	return type(bindType) ~= "number"
 end
 
 local function createDestroyEntry(bag, slot, itemID, itemName, info)
@@ -1186,9 +1207,11 @@ local function lookupItems()
 							if isItemInEquipmentSet(bag, slot, quality) then
 								-- Keep items that are assigned to an equipment set.
 							elseif quality == 0 and addon.Vendor.variables.itemQualityFilter[quality] then
-								local bType = select(1, getCachedTooltipInfo(cached, bag, slot, quality, bagInfo, itemLink))
 								local effectiveBindType = bindType or 0
-								if bType and effectiveBindType < bType then effectiveBindType = bType end
+								if shouldReadTooltipInfo(quality, bindType) then
+									local bType = select(1, getCachedTooltipInfo(cached, bag, slot, quality, bagInfo, itemLink))
+									if bType and effectiveBindType < bType then effectiveBindType = bType end
+								end
 								local bindFilter = addon.Vendor.variables.itemBindTypeQualityFilter[quality]
 								if bindFilter and bindFilter[effectiveBindType] then table.insert(itemsToSell, { bag = bag, slot = slot, itemID = itemID }) end
 							elseif classID == 4 and subclassID == 5 and not C_TransmogCollection.PlayerHasTransmog(itemID) then
@@ -1198,9 +1221,15 @@ local function lookupItems()
 								if expTable and expTable[expansionID] then table.insert(itemsToSell, { bag = bag, slot = slot, itemID = itemID }) end
 							elseif addon.Vendor.variables.itemQualityFilter[quality] then
 								local effectiveILvl = getCachedDetailedItemLevel(cached, itemLink)
-								local bType, canUpgrade, isIgnoredUpgradeTrack = getCachedTooltipInfo(cached, bag, slot, quality, bagInfo, itemLink)
 								local effectiveBindType = bindType or 0
-								if bType and effectiveBindType < bType then effectiveBindType = bType end
+								local canUpgrade = false
+								local isIgnoredUpgradeTrack = false
+								if shouldReadTooltipInfo(quality, bindType) then
+									local bType, tooltipCanUpgrade, tooltipIgnoredUpgradeTrack = getCachedTooltipInfo(cached, bag, slot, quality, bagInfo, itemLink)
+									if bType and effectiveBindType < bType then effectiveBindType = bType end
+									canUpgrade = tooltipCanUpgrade == true
+									isIgnoredUpgradeTrack = tooltipIgnoredUpgradeTrack == true
+								end
 								if
 									addon.Vendor.variables.itemTypeFilter[classID]
 									and (not addon.Vendor.variables.itemSubTypeFilter[classID] or (addon.Vendor.variables.itemSubTypeFilter[classID] and addon.Vendor.variables.itemSubTypeFilter[classID][subclassID]))

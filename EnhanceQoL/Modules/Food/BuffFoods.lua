@@ -384,8 +384,10 @@ end
 function addon.BuffFoods.functions.updateAllowedBuffFoods(specID)
 	local resolvedSpecID = specID or getCurrentSpecID()
 	local candidates, selectedType, selectedRoleKey, selectedPreference = addon.BuffFoods.functions.getAvailableCandidatesForSpec(resolvedSpecID)
+	local bagVersion = addon.functions and addon.functions.getFoodBagItemCountCacheVersion and addon.functions.getFoodBagItemCountCacheVersion() or 0
 	addon.BuffFoods.filteredBuffFoods = candidates
 	addon.BuffFoods.lastSpecID = resolvedSpecID
+	addon.BuffFoods.lastBagVersion = bagVersion
 	addon.BuffFoods.lastSelectedType = selectedType
 	addon.BuffFoods.lastSelectedRole = selectedRoleKey
 	addon.BuffFoods.lastSelectedPreference = selectedPreference

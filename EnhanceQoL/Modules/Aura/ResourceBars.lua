@@ -3426,12 +3426,23 @@ local function syncBarWidthWithAnchor(pType)
 end
 
 local function syncRelativeFrameWidths()
-	local changed = false
-	if healthBar then changed = syncBarWidthWithAnchor("HEALTH") or changed end
-	for pType, bar in pairs(powerbar) do
-		if bar then changed = syncBarWidthWithAnchor(pType) or changed end
+	local changedAny = false
+	local passLimit = 1
+	for _ in pairs(powerbar or {}) do
+		passLimit = passLimit + 1
 	end
-	return changed
+
+	for _ = 1, passLimit do
+		local changedThisPass = false
+		if healthBar then changedThisPass = syncBarWidthWithAnchor("HEALTH") or changedThisPass end
+		for pType, bar in pairs(powerbar or {}) do
+			if bar then changedThisPass = syncBarWidthWithAnchor(pType) or changedThisPass end
+		end
+		changedAny = changedAny or changedThisPass
+		if not changedThisPass then break end
+	end
+
+	return changedAny
 end
 
 ResourceBars.SyncRelativeFrameWidths = syncRelativeFrameWidths
@@ -3450,6 +3461,7 @@ local pendingHookRetries = {}
 ensureRelativeFrameHooks = function(frameName)
 	if not frameName or frameName == "UIParent" then return end
 	local foundFrame = false
+	local hookedAny = false
 	for _, targetName in ipairs(ResourceBars.GetRelativeFrameHookTargets(frameName)) do
 		local frame = _G[targetName]
 		if frame then
@@ -3458,11 +3470,17 @@ ensureRelativeFrameHooks = function(frameName)
 				local okSize = pcall(frame.HookScript, frame, "OnSizeChanged", handleRelativeFrameGeometryChanged)
 				local okShow = pcall(frame.HookScript, frame, "OnShow", handleRelativeFrameGeometryChanged)
 				local okHide = pcall(frame.HookScript, frame, "OnHide", handleRelativeFrameGeometryChanged)
-				if okSize or okShow or okHide then widthMatchHookedFrames[targetName] = true end
+				if okSize or okShow or okHide then
+					widthMatchHookedFrames[targetName] = true
+					hookedAny = true
+				end
 			end
 		end
 	end
-	if foundFrame then return end
+	if foundFrame then
+		if hookedAny then handleRelativeFrameGeometryChanged() end
+		return
+	end
 	if not foundFrame then
 		if After and not pendingHookRetries[frameName] then
 			pendingHookRetries[frameName] = true
