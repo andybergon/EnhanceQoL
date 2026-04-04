@@ -492,10 +492,9 @@ end
 
 function CooldownPanels:GetTrustedReadyUnavailable(spellId)
 	local querySpellId = self:GetReadySoundQuerySpellId(spellId)
-	if not (querySpellId and C_Spell and C_Spell.GetSpellCooldown) then return false end
-	local info = C_Spell.GetSpellCooldown(querySpellId)
-	if type(info) ~= "table" then return false end
-	return info.isActive == true and info.isOnGCD == false
+	if not querySpellId then return false end
+	local _, _, _, _, isOnGCD, isActive = self:GetCachedSpellCooldownInfo(querySpellId)
+	return isActive == true and isOnGCD == false
 end
 
 function CooldownPanels:EnsureStaticSpellVariantGroupsLoaded()
@@ -5384,6 +5383,113 @@ function CooldownPanels:ResolveEntryIconVisualLayout(layout, entry, baseSize)
 	return cache.size, cache.offsetX, cache.offsetY
 end
 
+CooldownPanels._eqolFixedVisualCacheUtil = CooldownPanels._eqolFixedVisualCacheUtil or {}
+
+function CooldownPanels._eqolFixedVisualCacheUtil.ClearSparseTable(tbl)
+	if type(tbl) ~= "table" then return end
+	for key in pairs(tbl) do
+		tbl[key] = nil
+	end
+end
+
+function CooldownPanels._eqolFixedVisualCacheUtil.Prepare(frame, panel, fixedGridColumns)
+	if not frame then return nil end
+	local cache = frame._eqolFixedVisualCache
+	if type(cache) ~= "table" then
+		cache = {}
+		frame._eqolFixedVisualCache = cache
+	end
+	cache.panel = panel
+	cache.fixedGridColumns = fixedGridColumns
+	cache.slotCenterX = cache.slotCenterX or {}
+	cache.slotCenterY = cache.slotCenterY or {}
+	cache.slotCenterMissing = cache.slotCenterMissing or {}
+	cache.orderedCellsByGroupId = cache.orderedCellsByGroupId or {}
+	cache.dynamicPlacementsByGroupId = cache.dynamicPlacementsByGroupId or {}
+	CooldownPanels._eqolFixedVisualCacheUtil.ClearSparseTable(cache.slotCenterX)
+	CooldownPanels._eqolFixedVisualCacheUtil.ClearSparseTable(cache.slotCenterY)
+	CooldownPanels._eqolFixedVisualCacheUtil.ClearSparseTable(cache.slotCenterMissing)
+	CooldownPanels._eqolFixedVisualCacheUtil.ClearSparseTable(cache.orderedCellsByGroupId)
+	CooldownPanels._eqolFixedVisualCacheUtil.ClearSparseTable(cache.dynamicPlacementsByGroupId)
+	return cache
+end
+
+function CooldownPanels._eqolFixedVisualCacheUtil.GetSlotCenter(cache, icons, fixedGridColumns, column, row)
+	column = Helper.NormalizeSlotCoordinate(column)
+	row = Helper.NormalizeSlotCoordinate(row)
+	if not (icons and fixedGridColumns > 0 and column and row) then return nil, nil end
+	local index = ((row - 1) * fixedGridColumns) + column
+
+	if cache and cache.slotCenterX and cache.slotCenterY and cache.slotCenterMissing then
+		if cache.slotCenterMissing[index] then return nil, nil end
+		local cachedX = cache.slotCenterX[index]
+		local cachedY = cache.slotCenterY[index]
+		if cachedX ~= nil and cachedY ~= nil then return cachedX, cachedY end
+		local icon = icons[index]
+		local slot = icon and (icon.slotAnchor or icon) or nil
+		if not (slot and slot.GetCenter) then
+			cache.slotCenterMissing[index] = true
+			return nil, nil
+		end
+		local x, y = slot:GetCenter()
+		if not (x and y) then
+			cache.slotCenterMissing[index] = true
+			return nil, nil
+		end
+		cache.slotCenterX[index] = x
+		cache.slotCenterY[index] = y
+		return x, y
+	end
+
+	local icon = icons[index]
+	local slot = icon and (icon.slotAnchor or icon) or nil
+	if not (slot and slot.GetCenter) then return nil, nil end
+	local x, y = slot:GetCenter()
+	if not (x and y) then return nil, nil end
+	return x, y
+end
+
+function CooldownPanels._eqolFixedVisualCacheUtil.GetOrderedCells(cache, group)
+	if type(group) ~= "table" then return nil end
+	if not (cache and cache.orderedCellsByGroupId) then return Helper.GetFixedGroupOrderedCells and Helper.GetFixedGroupOrderedCells(group) or nil end
+	local key = tostring(group.id or "")
+	local cached = cache.orderedCellsByGroupId[key]
+	if cached ~= nil then
+		if cached == false then return nil end
+		return cached
+	end
+	cached = Helper.GetFixedGroupOrderedCells and Helper.GetFixedGroupOrderedCells(group) or nil
+	cache.orderedCellsByGroupId[key] = cached or false
+	return cached
+end
+
+function CooldownPanels._eqolFixedVisualCacheUtil.GetDynamicPlacement(cache, group, index, count)
+	if type(group) ~= "table" then return nil end
+	if not (cache and cache.dynamicPlacementsByGroupId) then
+		return Helper.GetFixedGroupDynamicPlacement and Helper.GetFixedGroupDynamicPlacement(group, index, count) or nil
+	end
+	local key = tostring(group.id or "")
+	local groupCache = cache.dynamicPlacementsByGroupId[key]
+	if type(groupCache) ~= "table" then
+		groupCache = {}
+		cache.dynamicPlacementsByGroupId[key] = groupCache
+	end
+	local countKey = tostring(count or 0)
+	local countCache = groupCache[countKey]
+	if type(countCache) ~= "table" then
+		countCache = {}
+		groupCache[countKey] = countCache
+	end
+	local cached = countCache[index]
+	if cached ~= nil then
+		if cached == false then return nil end
+		return cached
+	end
+	cached = Helper.GetFixedGroupDynamicPlacement and Helper.GetFixedGroupDynamicPlacement(group, index, count) or nil
+	countCache[index] = cached or false
+	return cached
+end
+
 function CooldownPanels:ResolveFixedGroupSlotSpacingOffset(panel, frame, entry, layout, fixedGridColumns, slotColumn, slotRow, visualSize, fixedContext)
 	if not (panel and frame and entry and layout) then return 0, 0 end
 	if not Helper.IsFixedLayout(panel.layout) then return 0, 0 end
@@ -5397,6 +5503,8 @@ function CooldownPanels:ResolveFixedGroupSlotSpacingOffset(panel, frame, entry, 
 	if not groupId then return 0, 0 end
 	local group = CooldownPanels.GetFixedGroupById(panel, groupId)
 	if not group then return 0, 0 end
+	local frameCache = frame and frame._eqolFixedVisualCache or nil
+	local cacheUtil = CooldownPanels._eqolFixedVisualCacheUtil
 
 	local baseSpacing = Helper.ClampInt(panel.layout and panel.layout.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS.spacing)
 	local targetSpacing = Helper.ClampInt(layout and layout.spacing, 0, Helper.SPACING_RANGE or 200, baseSpacing)
@@ -5426,7 +5534,7 @@ function CooldownPanels:ResolveFixedGroupSlotSpacingOffset(panel, frame, entry, 
 			end
 		end
 		if placementCount and placementCount > 0 and placementIndex and placementIndex > 0 then
-			placement = Helper.GetFixedGroupDynamicPlacement(group, placementIndex, placementCount)
+			placement = cacheUtil.GetDynamicPlacement(frameCache, group, placementIndex, placementCount)
 			if placement then
 				slotColumn = Helper.NormalizeSlotCoordinate(placement.column, slotColumn)
 				slotRow = Helper.NormalizeSlotCoordinate(placement.row, slotRow)
@@ -5440,16 +5548,7 @@ function CooldownPanels:ResolveFixedGroupSlotSpacingOffset(panel, frame, entry, 
 
 	local icons = frame.icons or nil
 	local function getSlotCenter(column, row)
-		column = Helper.NormalizeSlotCoordinate(column)
-		row = Helper.NormalizeSlotCoordinate(row)
-		if not (icons and fixedGridColumns > 0 and column and row) then return nil, nil end
-		local index = ((row - 1) * fixedGridColumns) + column
-		local icon = icons[index]
-		local slot = icon and (icon.slotAnchor or icon) or nil
-		if not (slot and slot.GetCenter) then return nil, nil end
-		local x, y = slot:GetCenter()
-		if not (x and y) then return nil, nil end
-		return x, y
+		return cacheUtil.GetSlotCenter(frameCache, icons, fixedGridColumns, column, row)
 	end
 
 	if centerGrowth and placement then
@@ -5474,11 +5573,11 @@ function CooldownPanels:ResolveFixedGroupSlotSpacingOffset(panel, frame, entry, 
 	local anchorColumn = group.column
 	local anchorRow = group.row
 	if not CooldownPanels.IsFixedGroupStatic(group) and Helper.GetFixedGroupDynamicPlacement and placementCount and placementCount > 0 then
-		local anchorPlacement = Helper.GetFixedGroupDynamicPlacement(group, 1, placementCount)
+		local anchorPlacement = cacheUtil.GetDynamicPlacement(frameCache, group, 1, placementCount)
 		anchorColumn = anchorPlacement and anchorPlacement.column or anchorColumn
 		anchorRow = anchorPlacement and anchorPlacement.row or anchorRow
 	elseif not CooldownPanels.IsFixedGroupStatic(group) then
-		local orderedCells = Helper.GetFixedGroupOrderedCells and Helper.GetFixedGroupOrderedCells(group) or nil
+		local orderedCells = cacheUtil.GetOrderedCells(frameCache, group)
 		local anchorCell = orderedCells and orderedCells[1] or nil
 		anchorColumn = anchorCell and anchorCell.column or anchorColumn
 		anchorRow = anchorCell and anchorCell.row or anchorRow
@@ -5487,16 +5586,8 @@ function CooldownPanels:ResolveFixedGroupSlotSpacingOffset(panel, frame, entry, 
 	anchorRow = Helper.NormalizeSlotCoordinate(anchorRow)
 	if not (anchorColumn and anchorRow) then return 0, 0 end
 
-	local anchorIndex = ((anchorRow - 1) * fixedGridColumns) + anchorColumn
-	local currentIndex = ((slotRow - 1) * fixedGridColumns) + slotColumn
-	local anchorIcon = icons and icons[anchorIndex] or nil
-	local currentIcon = icons and icons[currentIndex] or nil
-	local anchorSlot = anchorIcon and (anchorIcon.slotAnchor or anchorIcon) or nil
-	local currentSlot = currentIcon and (currentIcon.slotAnchor or currentIcon) or nil
-	if not (anchorSlot and currentSlot and anchorSlot.GetCenter and currentSlot.GetCenter) then return 0, 0 end
-
-	local anchorX, anchorY = anchorSlot:GetCenter()
-	local currentX, currentY = currentSlot:GetCenter()
+	local anchorX, anchorY = getSlotCenter(anchorColumn, anchorRow)
+	local currentX, currentY = getSlotCenter(slotColumn, slotRow)
 	if not (anchorX and anchorY and currentX and currentY) then return 0, 0 end
 
 	local desiredDeltaX = (slotColumn - anchorColumn) * desiredStep
@@ -14493,6 +14584,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	local fixedGroupVisibleCounts = fixedLayout and {} or nil
 	local fixedCenterGroupVisibleData = fixedLayout and {} or nil
 	local effectiveLayoutCache = {}
+	local fixedVisualCache = nil
 	if fixedLayout then
 		if fixedLayoutCache then
 			fixedSlotCount = fixedLayoutCache.slotCount or 0
@@ -14518,6 +14610,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				end
 			end
 		end
+		fixedVisualCache = CooldownPanels._eqolFixedVisualCacheUtil.Prepare(frame, panel, fixedGridColumns)
 	end
 	local editGridColumns
 	if layoutEditActive and not fixedLayout then
@@ -14979,6 +15072,8 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.cooldownIsActive = cooldownIsActive
 				data.cooldownRate = cooldownRate or 1
 				data.cooldownGCD = cooldownGCD == true
+				data.cdmAuraLabel = cdmAuraData and cdmAuraData.buffName or nil
+				data.cdmAuraRawApplications = cdmAuraData and cdmAuraData.rawApplications or nil
 				data.cdmAuraActive = cdmAuraData and cdmAuraData.active == true
 				data.cdmAuraInactiveDesaturate = cdmAuraData and cdmAuraData.inactiveDesaturate == true
 					or cdmAuraAlwaysShowMode == (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.DESATURATE or "DESATURATE")
@@ -15005,7 +15100,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			if fixedGroup and totalCount > 0 then
 				for localIndex = 1, totalCount do
 					local centerData = centerList[localIndex]
-					local placement = Helper.GetFixedGroupDynamicPlacement and Helper.GetFixedGroupDynamicPlacement(fixedGroup, localIndex, totalCount) or nil
+					local placement = CooldownPanels._eqolFixedVisualCacheUtil.GetDynamicPlacement(fixedVisualCache, fixedGroup, localIndex, totalCount)
 					local column = Helper.NormalizeSlotCoordinate(placement and placement.column)
 					local row = Helper.NormalizeSlotCoordinate(placement and placement.row)
 					local centerTargetIndex = column and row and fixedGridColumns > 0 and (((row - 1) * fixedGridColumns) + column) or nil
@@ -15073,6 +15168,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		end
 		if not data then
 			icon.entryId = nil
+			icon._eqolRuntimeData = nil
 			if not layoutEditActive and icon._eqolRuntimeEmpty == true then
 				CooldownPanels:HideEditorGhostIcon(icon)
 				icon:Hide()
@@ -15124,6 +15220,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			icon._eqolRuntimeEmpty = nil
 			icon:Show()
 			icon.entryId = data.entryId
+			icon._eqolRuntimeData = data
 			icon._eqolPreviewCellColumn = slotColumn
 			icon._eqolPreviewCellRow = slotRow
 			if layoutEditActive then
@@ -18742,7 +18839,11 @@ refreshPanelsForCharges = function()
 
 	if panelsToRefresh then
 		for panelId in pairs(panelsToRefresh) do
-			if CooldownPanels:GetPanel(panelId) then CooldownPanels:RefreshPanel(panelId) end
+			if CooldownPanels.RequestPanelRefresh then
+				CooldownPanels:RequestPanelRefresh(panelId)
+			elseif CooldownPanels:GetPanel(panelId) then
+				CooldownPanels:RefreshPanel(panelId)
+			end
 		end
 		return true
 	end
@@ -19372,7 +19473,11 @@ local function ensureUpdateFrame()
 			local itemUsesPanels = runtime and runtime.itemUsesPanels
 			if itemUsesPanels and next(itemUsesPanels) then updateItemCountCache(true) end
 			for panelId in pairs(itemPanels) do
-				if CooldownPanels:GetPanel(panelId) then CooldownPanels:RefreshPanel(panelId) end
+				if CooldownPanels.RequestPanelRefresh then
+					CooldownPanels:RequestPanelRefresh(panelId)
+				elseif CooldownPanels:GetPanel(panelId) then
+					CooldownPanels:RefreshPanel(panelId)
+				end
 			end
 			return
 		end

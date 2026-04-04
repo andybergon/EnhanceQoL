@@ -698,6 +698,20 @@ local function appendFixedGroupRange(target, firstValue, count, ascending)
 	return target
 end
 
+local fixedGroupOrderedCellsCache = setmetatable({}, { __mode = "k" })
+local fixedGroupDynamicPlacementCache = setmetatable({}, { __mode = "k" })
+
+local function getFixedGroupPlacementSignature(columns, rows, originColumn, originRow, startPoint, direction)
+	return table.concat({
+		tostring(columns),
+		tostring(rows),
+		tostring(originColumn),
+		tostring(originRow),
+		tostring(startPoint),
+		tostring(direction),
+	}, ":")
+end
+
 function Helper.GetFixedGroupOrderedCells(group)
 	local cells = {}
 	if type(group) ~= "table" then return cells end
@@ -709,6 +723,9 @@ function Helper.GetFixedGroupOrderedCells(group)
 
 	local startPoint = Helper.NormalizeFixedGroupStartPoint(group.dynamicStartPoint, "TOPLEFT")
 	local direction = Helper.NormalizeFixedGroupDynamicDirection(startPoint, group.dynamicDirection, nil)
+	local signature = getFixedGroupPlacementSignature(columns, rows, originColumn, originRow, startPoint, direction)
+	local cached = fixedGroupOrderedCellsCache[group]
+	if cached and cached.signature == signature and type(cached.cells) == "table" then return cached.cells end
 	local centerGrowth = direction == "CENTER"
 	local horizontalFirst = centerGrowth or direction == "RIGHT" or direction == "LEFT"
 	local topToBottom = centerGrowth and startPoint ~= "BOTTOM" or direction == "DOWN" or (horizontalFirst and (startPoint == "TOPLEFT" or startPoint == "TOPRIGHT"))
@@ -738,6 +755,10 @@ function Helper.GetFixedGroupOrderedCells(group)
 		end
 	end
 
+	fixedGroupOrderedCellsCache[group] = {
+		signature = signature,
+		cells = cells,
+	}
 	return cells
 end
 
@@ -765,6 +786,25 @@ function Helper.GetFixedGroupDynamicPlacement(group, localIndex, itemCount)
 
 	local startPoint = Helper.NormalizeFixedGroupStartPoint(group.dynamicStartPoint, "TOPLEFT")
 	local direction = Helper.NormalizeFixedGroupDynamicDirection(startPoint, group.dynamicDirection, nil)
+	local signature = getFixedGroupPlacementSignature(columns, rows, originColumn, originRow, startPoint, direction)
+	local dynamicCache = fixedGroupDynamicPlacementCache[group]
+	if not dynamicCache or dynamicCache.signature ~= signature then
+		dynamicCache = {
+			signature = signature,
+			counts = {},
+		}
+		fixedGroupDynamicPlacementCache[group] = dynamicCache
+	end
+	local countCache = dynamicCache.counts[count]
+	if type(countCache) ~= "table" then
+		countCache = {}
+		dynamicCache.counts[count] = countCache
+	end
+	local cached = countCache[index]
+	if cached ~= nil then
+		if cached == false then return nil end
+		return cached
+	end
 	if direction == "CENTER" and (startPoint == "TOP" or startPoint == "BOTTOM") then
 		local zeroIndex = index - 1
 		local rowIndex = math.floor(zeroIndex / columns)
@@ -776,7 +816,7 @@ function Helper.GetFixedGroupDynamicPlacement(group, localIndex, itemCount)
 		local baseStart = math.floor(startOffset)
 		local fractionalStart = startOffset - baseStart
 		local row = startPoint == "BOTTOM" and (originRow + rows - 1 - rowIndex) or (originRow + rowIndex)
-		return {
+		local placement = {
 			column = originColumn + baseStart + columnIndex,
 			row = row,
 			offsetSlotsX = fractionalStart,
@@ -787,12 +827,17 @@ function Helper.GetFixedGroupDynamicPlacement(group, localIndex, itemCount)
 			count = count,
 			index = index,
 		}
+		countCache[index] = placement
+		return placement
 	end
 
 	local orderedCells = Helper.GetFixedGroupOrderedCells(group)
 	local cell = orderedCells[index]
-	if not cell then return nil end
-	return {
+	if not cell then
+		countCache[index] = false
+		return nil
+	end
+	local placement = {
 		column = cell.column,
 		row = cell.row,
 		offsetSlotsX = 0,
@@ -800,6 +845,8 @@ function Helper.GetFixedGroupDynamicPlacement(group, localIndex, itemCount)
 		count = count,
 		index = index,
 	}
+	countCache[index] = placement
+	return placement
 end
 
 function Helper.NormalizeFixedGroupId(value)

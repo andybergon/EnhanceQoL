@@ -753,15 +753,19 @@ local function clearAuraMapping(runtime, key, state, clearTrackedAura)
 end
 
 local function registerAuraMapping(runtime, key, state, auraID, auraUnit)
-	if not state then return end
+	if not state then return false end
 	auraUnit = normalizeTrackedUnit(auraUnit)
-	if auraID and state.mappedAuraInstanceID == auraID and state.mappedAuraUnit == auraUnit then return end
+	local mapped = auraUnit and auraID and runtime.auraEntries[auraUnit] and runtime.auraEntries[auraUnit][auraID] or nil
+	local mappingRegistered = mapped and mapped[key] == true or false
+	local changed = state.mappedAuraInstanceID ~= auraID or state.mappedAuraUnit ~= auraUnit or not mappingRegistered
+	if auraID and state.mappedAuraInstanceID == auraID and state.mappedAuraUnit == auraUnit and mappingRegistered then return false end
 	clearAuraMapping(runtime, key, state, false)
-	if not (auraID and auraUnit) then return end
+	if not (auraID and auraUnit) then return changed end
 	runtime.auraEntries[auraUnit][auraID] = runtime.auraEntries[auraUnit][auraID] or {}
 	runtime.auraEntries[auraUnit][auraID][key] = true
 	state.mappedAuraInstanceID = auraID
 	state.mappedAuraUnit = auraUnit
+	return changed
 end
 
 local function unregisterFrameBinding(runtime, key, frame)
@@ -1062,35 +1066,69 @@ local function frameHasPandemicState(frame)
 	return ok and shown == true
 end
 
+local function clearTrackedAuraState(runtime, key, state)
+	if not state then return false end
+	local hadTrackedState = state.trackedAuraInstanceID ~= nil or state.trackedAuraUnit ~= nil or state.pandemicActive ~= nil or state.targetAuraEpoch ~= nil
+	local hadMappedState = state.mappedAuraInstanceID ~= nil or state.mappedAuraUnit ~= nil
+	clearAuraMapping(runtime, key, state, false)
+	state.trackedAuraInstanceID = nil
+	state.trackedAuraUnit = nil
+	state.pandemicActive = nil
+	state.targetAuraEpoch = nil
+	return hadTrackedState or hadMappedState
+end
+
 function CDMAuras:HandleFrameAuraMutation(frame, wasCleared)
 	if not frame then return end
 	local runtime = getRuntime()
 	local keys = runtime.frameEntries[frame]
 	if not keys then return end
 	local auraData, auraUnit, newAuraID = getFrameAuraData(frame)
+	local normalizedAuraUnit = normalizeTrackedUnit(auraUnit)
 	local refreshedPanels = {}
 
 	for key in pairs(keys) do
 		local state = runtime.entryStates[key]
 		if state then
+			local changed = false
 			local _, entry = getPanelEntry(state.panelId, state.entryId)
 			if not entry or entry.type ~= ENTRY_TYPE then
 				clearEntryState(key, state, true)
-			elseif wasCleared then
-				clearAuraMapping(runtime, key, state, false)
-				state.trackedAuraInstanceID = nil
-				state.trackedAuraUnit = nil
-				state.pandemicActive = nil
-				state.targetAuraEpoch = nil
-			elseif newAuraID and isFrameShowingTrackedSpell(frame, state, state.trackUnit or auraUnit) then
-				state.trackUnit = normalizeTrackedUnit(auraUnit) or state.trackUnit
-				state.trackedAuraInstanceID = newAuraID
-				state.trackedAuraUnit = auraUnit or state.trackedAuraUnit
-				state.pandemicActive = normalizeTrackedUnit(auraUnit) == "target" and frameHasPandemicState(frame) or nil
-				if normalizeTrackedUnit(auraUnit) == "target" then state.targetAuraEpoch = runtime.targetEpoch or 0 end
-				registerAuraMapping(runtime, key, state, newAuraID, auraUnit)
+				changed = true
+			else
+				local frameMatchesTrackedSpell = newAuraID and isFrameShowingTrackedSpell(frame, state, state.trackUnit or auraUnit) or false
+				if wasCleared or (newAuraID and not frameMatchesTrackedSpell) or (not newAuraID and not auraData) then
+					changed = clearTrackedAuraState(runtime, key, state)
+				elseif frameMatchesTrackedSpell then
+					local nextTrackUnit = normalizedAuraUnit or state.trackUnit
+					local nextTrackedAuraUnit = auraUnit or state.trackedAuraUnit
+					local nextPandemicActive = normalizedAuraUnit == "target" and frameHasPandemicState(frame) or nil
+					local nextTargetAuraEpoch = normalizedAuraUnit == "target" and (runtime.targetEpoch or 0) or nil
+
+					if state.trackUnit ~= nextTrackUnit then
+						state.trackUnit = nextTrackUnit
+						changed = true
+					end
+					if state.trackedAuraInstanceID ~= newAuraID then
+						state.trackedAuraInstanceID = newAuraID
+						changed = true
+					end
+					if state.trackedAuraUnit ~= nextTrackedAuraUnit then
+						state.trackedAuraUnit = nextTrackedAuraUnit
+						changed = true
+					end
+					if state.pandemicActive ~= nextPandemicActive then
+						state.pandemicActive = nextPandemicActive
+						changed = true
+					end
+					if state.targetAuraEpoch ~= nextTargetAuraEpoch then
+						state.targetAuraEpoch = nextTargetAuraEpoch
+						changed = true
+					end
+					if registerAuraMapping(runtime, key, state, newAuraID, auraUnit) then changed = true end
+				end
 			end
-			refreshedPanels[state.panelId] = true
+			if changed then refreshedPanels[state.panelId] = true end
 		end
 	end
 
@@ -1733,14 +1771,10 @@ local function refreshAllTrackedPanels(unit)
 	end
 end
 
-local function clearTrackedUnitAuras(unit)
+local function clearTrackedUnitAuraIndex(unit)
 	unit = normalizeTrackedUnit(unit)
 	if not unit then return end
 	local runtime = getRuntime()
-	for _, state in pairs(runtime.entryStates) do
-		local trackedUnit = normalizeTrackedUnit(state.trackUnit) or normalizeTrackedUnit(state.trackedAuraUnit) or normalizeTrackedUnit(state.mappedAuraUnit)
-		if trackedUnit == unit then clearAuraMapping(runtime, getEntryKey(state.panelId, state.entryId), state, true) end
-	end
 	wipe(runtime.auraEntries[unit])
 end
 
@@ -1805,7 +1839,7 @@ function CDMAuras:HandleTargetChanged()
 	local runtime = getRuntime()
 	runtime.targetEpoch = (runtime.targetEpoch or 0) + 1
 	self:InvalidateScan()
-	clearTrackedUnitAuras("target")
+	clearTrackedUnitAuraIndex("target")
 	refreshAllTrackedPanels("target")
 end
 

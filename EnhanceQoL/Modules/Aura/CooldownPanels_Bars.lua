@@ -294,7 +294,7 @@ Bars.ResolveStackDisplay = function(panelId, entryId, resolvedType, icon, runtim
 	local displayText = nil
 	local rawValue = nil
 	if resolvedType == "CDM_AURA" then
-		rawValue = runtimeData and runtimeData.rawApplications or nil
+		rawValue = runtimeData and (runtimeData.rawApplications or runtimeData.cdmAuraRawApplications) or nil
 		displayText = Helper.NormalizeDisplayCount and Helper.NormalizeDisplayCount(runtimeData and runtimeData.stackCount or nil) or getTextValue(runtimeData and runtimeData.stackCount or nil)
 	else
 		local entryKey = Helper.GetEntryKey(panelId, entryId)
@@ -1931,19 +1931,57 @@ local function getChargeCooldownCache(entryKey)
 	return activeByKey, durationByKey, activeByKey[entryKey] == true, durationByKey[entryKey]
 end
 
-refreshChargeBarRuntimeState = function(state, icon)
+Bars._eqolRuntimeReuseUtil = Bars._eqolRuntimeReuseUtil or {}
+
+function Bars._eqolRuntimeReuseUtil.GetBarRuntimeData(icon, runtimeDataOverride, resolvedType, preview)
+	if preview == true then return nil end
+	local runtimeData = type(runtimeDataOverride) == "table" and runtimeDataOverride or (icon and type(icon._eqolRuntimeData) == "table" and icon._eqolRuntimeData or nil)
+	if type(runtimeData) ~= "table" then return nil end
+	if resolvedType and runtimeData.resolvedType and runtimeData.resolvedType ~= resolvedType then return nil end
+	return runtimeData
+end
+
+function Bars._eqolRuntimeReuseUtil.HasCooldownRuntimeData(runtimeData)
+	if type(runtimeData) ~= "table" then return false end
+	return runtimeData.cooldownEnabled ~= nil
+		or runtimeData.cooldownIsActive ~= nil
+		or runtimeData.cooldownDurationObject ~= nil
+		or runtimeData.cooldownGCD == true
+		or (safeNumber(runtimeData.cooldownDuration) or 0) > 0
+end
+
+function Bars._eqolRuntimeReuseUtil.HasChargeRuntimeData(runtimeData)
+	if type(runtimeData) ~= "table" then return false end
+	return type(runtimeData.chargesInfo) == "table"
+		or runtimeData.chargeDurationObject ~= nil
+		or Bars._eqolRuntimeReuseUtil.HasCooldownRuntimeData(runtimeData)
+end
+
+refreshChargeBarRuntimeState = function(state, icon, runtimeData)
 	if type(state) ~= "table" then return state end
 	local spellId = safeNumber(state.spellId)
 	if not spellId then return state end
+	local runtimeReuseUtil = Bars._eqolRuntimeReuseUtil
+	local reusableRuntimeData = runtimeReuseUtil.HasChargeRuntimeData(runtimeData) and runtimeData or nil
 
-	local chargesInfo = CooldownPanels.GetCachedSpellChargesInfo and CooldownPanels:GetCachedSpellChargesInfo(spellId) or nil
-	local chargeDurationObject = CooldownPanels.GetCachedSpellChargeDurationObject and CooldownPanels:GetCachedSpellChargeDurationObject(spellId) or nil
-	local rawCooldownDurationObject = CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil
+	local chargesInfo = reusableRuntimeData and reusableRuntimeData.chargesInfo
+		or (CooldownPanels.GetCachedSpellChargesInfo and CooldownPanels:GetCachedSpellChargesInfo(spellId) or nil)
+	local chargeDurationObject = reusableRuntimeData and reusableRuntimeData.chargeDurationObject
+		or (CooldownPanels.GetCachedSpellChargeDurationObject and CooldownPanels:GetCachedSpellChargeDurationObject(spellId) or nil)
+	local rawCooldownDurationObject = reusableRuntimeData and reusableRuntimeData.cooldownDurationObject
+		or (CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil)
 	local cooldownDurationObject = rawCooldownDurationObject
 	local cooldownRemaining = getDurationObjectRemaining(cooldownDurationObject)
 
 	local cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD, cooldownIsActive = 0, 0, false, 1, nil, false
-	if CooldownPanels.GetCachedSpellCooldownInfo then
+	if reusableRuntimeData and runtimeReuseUtil.HasCooldownRuntimeData(reusableRuntimeData) then
+		cooldownStart = reusableRuntimeData.cooldownStart
+		cooldownDuration = reusableRuntimeData.cooldownDuration
+		cooldownEnabled = reusableRuntimeData.cooldownEnabled
+		cooldownRate = reusableRuntimeData.cooldownRate
+		cooldownGCD = reusableRuntimeData.cooldownGCD
+		cooldownIsActive = reusableRuntimeData.cooldownIsActive
+	elseif CooldownPanels.GetCachedSpellCooldownInfo then
 		cooldownStart, cooldownDuration, cooldownEnabled, cooldownRate, cooldownGCD, cooldownIsActive = CooldownPanels:GetCachedSpellCooldownInfo(spellId)
 	end
 	local chargeApiIsActive = nil
@@ -2229,7 +2267,7 @@ getChargeSegmentDescriptors = function(state, segmentCount)
 	return descriptors
 end
 
-buildBarState = function(panelId, entryId, entry, icon, preview)
+buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOverride)
 	if not entry then return nil end
 	local displayMode = normalizeDisplayMode(entry.displayMode, Bars.DEFAULTS.displayMode)
 	if displayMode ~= Bars.DISPLAY_MODE.BAR then return nil end
@@ -2238,6 +2276,8 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 	if not supportsBarMode(entry, mode) then return nil end
 
 	local resolvedType, macro = getEntryResolvedType(entry)
+	local runtimeReuseUtil = Bars._eqolRuntimeReuseUtil
+	local reusableRuntimeData = runtimeReuseUtil.GetBarRuntimeData(icon, runtimeDataOverride, resolvedType, preview)
 	local resolvedSpellId = resolvedType == "SPELL" and getResolvedSpellId(entry, macro) or nil
 	local layoutEditActive = panelId and CooldownPanels.IsPanelLayoutEditActive and CooldownPanels:IsPanelLayoutEditActive(panelId) or false
 	local label = getEntryLabel(entry)
@@ -2348,8 +2388,17 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 		if resolvedType == "SPELL" then
 			local spellId = resolvedSpellId
 			if spellId and CooldownPanels.GetCachedSpellCooldownInfo then
-				local durationObject = CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil
-				local startTime, duration, enabled, rate, cooldownGCD, isActive = CooldownPanels:GetCachedSpellCooldownInfo(spellId)
+				local durationObject = reusableRuntimeData and reusableRuntimeData.cooldownDurationObject or nil
+				local startTime = reusableRuntimeData and reusableRuntimeData.cooldownStart or nil
+				local duration = reusableRuntimeData and reusableRuntimeData.cooldownDuration or nil
+				local enabled = reusableRuntimeData and reusableRuntimeData.cooldownEnabled or nil
+				local rate = reusableRuntimeData and reusableRuntimeData.cooldownRate or nil
+				local cooldownGCD = reusableRuntimeData and reusableRuntimeData.cooldownGCD or nil
+				local isActive = reusableRuntimeData and reusableRuntimeData.cooldownIsActive or nil
+				if not runtimeReuseUtil.HasCooldownRuntimeData(reusableRuntimeData) then
+					durationObject = CooldownPanels.GetCachedSpellCooldownDurationObject and CooldownPanels:GetCachedSpellCooldownDurationObject(spellId) or nil
+					startTime, duration, enabled, rate, cooldownGCD, isActive = CooldownPanels:GetCachedSpellCooldownInfo(spellId)
+				end
 				local cooldownActive = CooldownPanels.IsSpellCooldownInfoActive and CooldownPanels.IsSpellCooldownInfoActive(isActive, enabled, startTime, duration) and cooldownGCD ~= true
 				if cooldownActive then
 					progress = getCooldownProgress(startTime, duration, rate) or getDurationObjectElapsedProgress(durationObject) or 0
@@ -2384,26 +2433,32 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 					progress = 1
 				end
 			end
-		elseif resolvedType == "CDM_AURA" and CooldownPanels.CDMAuras and CooldownPanels.CDMAuras.BuildRuntimeData then
-			runtimeData = CooldownPanels.CDMAuras:BuildRuntimeData(panelId, entryId, entry, nil, nil)
-			if runtimeData and runtimeData.buffName then
-				state.label = runtimeData.buffName
-				state.texture = runtimeData.iconTextureID or state.texture
+		elseif resolvedType == "CDM_AURA" then
+			runtimeData = reusableRuntimeData
+			if not runtimeData and CooldownPanels.CDMAuras and CooldownPanels.CDMAuras.BuildRuntimeData then
+				runtimeData = CooldownPanels.CDMAuras:BuildRuntimeData(panelId, entryId, entry, nil, nil)
 			end
-			if runtimeData and runtimeData.durationActive == true and runtimeData.cooldownDurationObject ~= nil then
-				local remaining = getDurationObjectRemaining(runtimeData.cooldownDurationObject)
-				local total = getDurationObjectTotal(runtimeData.cooldownDurationObject)
+			if runtimeData and (runtimeData.buffName or runtimeData.cdmAuraLabel) then
+				state.label = runtimeData.buffName or runtimeData.cdmAuraLabel
+				state.texture = runtimeData.iconTextureID or runtimeData.icon or state.texture
+			end
+			local durationObject = runtimeData and (runtimeData.cooldownDurationObject or runtimeData.cdmAuraDurationObject) or nil
+			local auraActive = runtimeData and ((runtimeData.active == true) or (runtimeData.cdmAuraActive == true)) or false
+			local durationActive = runtimeData and (runtimeData.durationActive == true or durationObject ~= nil) or false
+			if runtimeData and durationActive and durationObject ~= nil then
+				local remaining = getDurationObjectRemaining(durationObject)
+				local total = getDurationObjectTotal(durationObject)
 				progress = (remaining and total and total > 0) and clamp(remaining / total, 0, 1) or 0
-				valueText = durationToText(getDurationObjectRemaining(runtimeData.cooldownDurationObject))
+				valueText = durationToText(getDurationObjectRemaining(durationObject))
 				animate = true
 				cooldownValueVisible = true
-				state.fillDurationObject = runtimeData.cooldownDurationObject
+				state.fillDurationObject = durationObject
 				state.timerDirection = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
-				state.liveValueTextProvider = function() return durationToText(getDurationObjectRemaining(runtimeData.cooldownDurationObject)) end
+				state.liveValueTextProvider = function() return durationToText(getDurationObjectRemaining(durationObject)) end
 				state.startTime = safeNumber(runtimeData.cooldownStart)
 				state.duration = safeNumber(runtimeData.cooldownDuration)
 				state.rate = safeNumber(runtimeData.cooldownRate) or 1
-			elseif runtimeData and runtimeData.active == true then
+			elseif runtimeData and auraActive then
 				local fallbackProgress = getCooldownProgress(runtimeData.cooldownStart, runtimeData.cooldownDuration, runtimeData.cooldownRate)
 				local fallbackRemaining = max(
 					0,
@@ -2442,17 +2497,20 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 		local spellId = resolvedSpellId
 		if spellId and CooldownPanels.GetCachedSpellChargesInfo then
 			state.entryKey = entryKey
-			refreshChargeBarRuntimeState(state, icon)
+			refreshChargeBarRuntimeState(state, icon, reusableRuntimeData)
 			progress = getChargeBarProgress(state)
 			valueText = getChargeBarValueText(icon, state.currentCharges, state.maxCharges)
 			animate = state.animate == true
 		end
 	else
-		if resolvedType == "CDM_AURA" and CooldownPanels.CDMAuras and CooldownPanels.CDMAuras.BuildRuntimeData then
-			runtimeData = CooldownPanels.CDMAuras:BuildRuntimeData(panelId, entryId, entry, nil, nil)
-			if runtimeData and runtimeData.buffName then
-				state.label = runtimeData.buffName
-				state.texture = runtimeData.iconTextureID or state.texture
+		if resolvedType == "CDM_AURA" then
+			runtimeData = reusableRuntimeData
+			if not runtimeData and CooldownPanels.CDMAuras and CooldownPanels.CDMAuras.BuildRuntimeData then
+				runtimeData = CooldownPanels.CDMAuras:BuildRuntimeData(panelId, entryId, entry, nil, nil)
+			end
+			if runtimeData and (runtimeData.buffName or runtimeData.cdmAuraLabel) then
+				state.label = runtimeData.buffName or runtimeData.cdmAuraLabel
+				state.texture = runtimeData.iconTextureID or runtimeData.icon or state.texture
 			end
 			local stackDisplayText, stackValue, rawStackValue = Bars.ResolveStackDisplay(panelId, entryId, resolvedType, icon, runtimeData)
 			state.stackDisplayText = stackDisplayText or (stackValue ~= nil and tostring(stackValue) or nil)
@@ -3266,7 +3324,7 @@ local function applyBarsToPanel(panelId, preview)
 		if showBar then
 			icon._eqolBarsReservedOwnerId = nil
 			icon._eqolBarsReservedSlot = nil
-			local state = buildBarState(panelId, entryId, entry, icon, effectivePreview)
+			local state = buildBarState(panelId, entryId, entry, icon, effectivePreview, icon._eqolRuntimeData)
 			local span = getEffectiveBarSpan(panel, entryId, cache)
 			if state then
 				applyNativeSuppression(icon)
