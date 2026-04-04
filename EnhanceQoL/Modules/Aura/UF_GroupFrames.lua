@@ -46,6 +46,36 @@ local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
 
 local function textureOptions() return GFH.TextureOptions(LSM) end
 local function fontOptions() return GFH.FontOptions(LSM) end
+function GF.FontOptionsWithDefault()
+	return fontOptions()
+end
+function GF.GlobalFontConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
+	return "__EQOL_GLOBAL_FONT__"
+end
+function GF.DropdownOptionLabel(options, value, fallback)
+	local list = type(options) == "function" and options() or options
+	if type(list) == "table" then
+		for _, option in ipairs(list) do
+			if option.value == value then return option.label or option.text or fallback end
+		end
+	end
+	return fallback
+end
+function GF.DropdownRadioGenerator(options)
+	return function(_, root, data)
+		local list = type(options) == "function" and options() or options
+		if type(list) ~= "table" then return end
+		for _, option in ipairs(list) do
+			local label = option.label or option.text or tostring(option.value or "")
+			root:CreateRadio(label, function() return data.get and data.get() == option.value end, function()
+				if data.set then data.set(nil, option.value) end
+				data.customDefaultText = label
+				if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
+			end)
+		end
+	end
+end
 local function borderOptions()
 	local list = {}
 	local seen = {}
@@ -3271,7 +3301,7 @@ local DEFAULTS = {
 			},
 			levelColorMode = "CUSTOM",
 			levelEnabled = false,
-			levelFont = "Friz Quadrata TT",
+			levelFont = "__EQOL_GLOBAL_FONT__",
 			levelFontOutline = "OUTLINE",
 			levelFontSize = 12,
 			levelOffset = {
@@ -16006,35 +16036,26 @@ local function buildEditModeSettings(kind, editModeId)
 			field = "nameFont",
 			height = FONT_DROPDOWN_SCROLL_HEIGHT,
 			parentId = "text",
+			default = GF.GlobalFontConfigKey(),
+			customDefaultText = (function()
+				local cfg = getCfg(kind)
+				local tc = cfg and cfg.text or {}
+				return GF.DropdownOptionLabel(GF.FontOptionsWithDefault, tc.font or GF.GlobalFontConfigKey(), DEFAULT or "Default")
+			end)(),
 			get = function()
 				local cfg = getCfg(kind)
 				local tc = cfg and cfg.text or {}
-				return tc.font or (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.font) or nil
+				return tc.font or GF.GlobalFontConfigKey()
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
 				cfg.text = cfg.text or {}
-				cfg.text.font = value
+				cfg.text.font = (value ~= nil and value ~= "") and value or GF.GlobalFontConfigKey()
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "nameFont", cfg.text.font, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
-			generator = function(_, root)
-				for _, option in ipairs(fontOptions()) do
-					root:CreateRadio(option.label, function()
-						local cfg = getCfg(kind)
-						local tc = cfg and cfg.text or {}
-						return (tc.font or (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.font) or nil) == option.value
-					end, function()
-						local cfg = getCfg(kind)
-						if not cfg then return end
-						cfg.text = cfg.text or {}
-						cfg.text.font = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "nameFont", option.value, nil, true) end
-						GF:ApplyHeaderAttributes(kind)
-					end)
-				end
-			end,
+			generator = GF.DropdownRadioGenerator(GF.FontOptionsWithDefault),
 			isEnabled = function()
 				local cfg = getCfg(kind)
 				local tc = cfg and cfg.text or {}
@@ -16086,7 +16107,12 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "nameStrata",
 			parentId = "text",
-			values = GF._FRAME_STRATA_OPTIONS_WITH_DEFAULT,
+			default = "",
+			customDefaultText = (function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				return GF.DropdownOptionLabel(GF._FRAME_STRATA_OPTIONS_WITH_DEFAULT, GF.NormalizeFrameStrataToken(sc.nameStrata) or "", DEFAULT or "Default")
+			end)(),
 			get = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}
@@ -16100,6 +16126,7 @@ local function buildEditModeSettings(kind, editModeId)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "nameStrata", cfg.status.nameStrata or "", nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
+			generator = GF.DropdownRadioGenerator(GF._FRAME_STRATA_OPTIONS_WITH_DEFAULT),
 			isEnabled = function()
 				local cfg = getCfg(kind)
 				local tc = cfg and cfg.text or {}
@@ -17634,39 +17661,26 @@ local function buildEditModeSettings(kind, editModeId)
 			field = "levelFont",
 			height = FONT_DROPDOWN_SCROLL_HEIGHT,
 			parentId = "level",
+			default = GF.GlobalFontConfigKey(),
+			customDefaultText = (function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				return GF.DropdownOptionLabel(GF.FontOptionsWithDefault, sc.levelFont or GF.GlobalFontConfigKey(), DEFAULT or "Default")
+			end)(),
 			get = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}
-				local tc = cfg and cfg.text or {}
-				local hc = cfg and cfg.health or {}
-				return sc.levelFont or tc.font or hc.font or nil
+				return sc.levelFont or GF.GlobalFontConfigKey()
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
 				cfg.status = cfg.status or {}
-				cfg.status.levelFont = value
+				cfg.status.levelFont = (value ~= nil and value ~= "") and value or GF.GlobalFontConfigKey()
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "levelFont", cfg.status.levelFont, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
-			generator = function(_, root)
-				for _, option in ipairs(fontOptions()) do
-					root:CreateRadio(option.label, function()
-						local cfg = getCfg(kind)
-						local sc = cfg and cfg.status or {}
-						local tc = cfg and cfg.text or {}
-						local hc = cfg and cfg.health or {}
-						return (sc.levelFont or tc.font or hc.font or nil) == option.value
-					end, function()
-						local cfg = getCfg(kind)
-						if not cfg then return end
-						cfg.status = cfg.status or {}
-						cfg.status.levelFont = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "levelFont", option.value, nil, true) end
-						GF:ApplyHeaderAttributes(kind)
-					end)
-				end
-			end,
+			generator = GF.DropdownRadioGenerator(GF.FontOptionsWithDefault),
 			isEnabled = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}
@@ -17748,7 +17762,12 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "levelStrata",
 			parentId = "level",
-			values = GF._FRAME_STRATA_OPTIONS_WITH_DEFAULT,
+			default = "",
+			customDefaultText = (function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				return GF.DropdownOptionLabel(GF._FRAME_STRATA_OPTIONS_WITH_DEFAULT, GF.NormalizeFrameStrataToken(sc.levelStrata) or "", DEFAULT or "Default")
+			end)(),
 			get = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}
@@ -17762,6 +17781,7 @@ local function buildEditModeSettings(kind, editModeId)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "levelStrata", cfg.status.levelStrata or "", nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
+			generator = GF.DropdownRadioGenerator(GF._FRAME_STRATA_OPTIONS_WITH_DEFAULT),
 			isEnabled = function()
 				local cfg = getCfg(kind)
 				local sc = cfg and cfg.status or {}
@@ -24010,7 +24030,7 @@ local function applyEditModeData(kind, data)
 	end
 	if data.nameFont ~= nil then
 		cfg.text = cfg.text or {}
-		cfg.text.font = data.nameFont
+		cfg.text.font = (type(data.nameFont) == "string" and data.nameFont ~= "") and data.nameFont or GF.GlobalFontConfigKey()
 	end
 	if data.nameFontOutline ~= nil then
 		cfg.text = cfg.text or {}
@@ -24266,7 +24286,7 @@ local function applyEditModeData(kind, data)
 	if data.levelColorMode ~= nil then cfg.status.levelColorMode = data.levelColorMode end
 	if data.levelColor ~= nil then cfg.status.levelColor = data.levelColor end
 	if data.levelFontSize ~= nil then cfg.status.levelFontSize = data.levelFontSize end
-	if data.levelFont ~= nil then cfg.status.levelFont = data.levelFont end
+	if data.levelFont ~= nil then cfg.status.levelFont = (type(data.levelFont) == "string" and data.levelFont ~= "") and data.levelFont or GF.GlobalFontConfigKey() end
 	if data.levelFontOutline ~= nil then cfg.status.levelFontOutline = data.levelFontOutline end
 	if data.levelAnchor ~= nil then cfg.status.levelAnchor = data.levelAnchor end
 	if data.levelStrata ~= nil then cfg.status.levelStrata = GF.NormalizeFrameStrataToken(data.levelStrata) end
@@ -25054,7 +25074,7 @@ function GF:EnsureEditMode()
 				nameNoEllipsis = (cfg.text and cfg.text.nameNoEllipsis ~= nil) and (cfg.text.nameNoEllipsis == true)
 					or ((cfg.text == nil or cfg.text.nameNoEllipsis == nil) and (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.nameNoEllipsis) == true),
 				nameFontSize = (cfg.text and cfg.text.fontSize) or (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.fontSize) or 12,
-				nameFont = (cfg.text and cfg.text.font) or (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.font) or nil,
+				nameFont = (cfg.text and cfg.text.font) or GF.GlobalFontConfigKey(),
 				nameFontOutline = (cfg.text and cfg.text.fontOutline) or (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.fontOutline) or "OUTLINE",
 				nameStrata = GF.NormalizeFrameStrataToken(sc.nameStrata) or "",
 				nameFrameLevelOffset = sc.nameFrameLevelOffset or 5,
@@ -25115,7 +25135,7 @@ function GF:EnsureEditMode()
 				levelColorMode = sc.levelColorMode or "CUSTOM",
 				levelColor = sc.levelColor or { 1, 0.85, 0, 1 },
 				levelFontSize = sc.levelFontSize or (cfg.text and cfg.text.fontSize) or (cfg.health and cfg.health.fontSize) or 12,
-				levelFont = sc.levelFont or (cfg.text and cfg.text.font) or (cfg.health and cfg.health.font) or nil,
+				levelFont = sc.levelFont or GF.GlobalFontConfigKey(),
 				levelFontOutline = sc.levelFontOutline or (cfg.text and cfg.text.fontOutline) or (cfg.health and cfg.health.fontOutline) or "OUTLINE",
 				levelAnchor = sc.levelAnchor or "RIGHT",
 				levelStrata = GF.NormalizeFrameStrataToken(sc.levelStrata) or "",

@@ -9,8 +9,10 @@
 ### 🐛 Fixed
 
 - Group Frames / Auras: Fixed centered buff and debuff layouts drifting off-center when the visible aura count used fewer rows or columns than the configured max.
+- Group Frames / Status Text: Fixed empty `Name`/`Level` strata dropdowns and restored `Use global font config` as the default selection for `Name`/`Level` font dropdowns.
 - Chat History / Copy Chat: Fixed longer copied chat logs being cut off in the copy dialog, so older lines are no longer truncated and the full visible filtered history can be selected.
 - Group Finder / Mythic+ Score Panel: Fixed an occasional Blizzard UI error when opening the score panel or updating it next to Group Finder tooltips.
+- Resource Bars: Fixed chained `Use relative width` anchors sometimes resolving in the wrong order after zone or instance transitions, which could break segmented bars like Paladin `Holy Power`.
 
 ---
 
