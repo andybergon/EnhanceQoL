@@ -3460,7 +3460,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		editBox:SetJustifyH("LEFT")
 		editBox:SetJustifyV("TOP")
 		editBox:SetTextColor(1, 1, 1, 1)
-		editBox:SetMaxLetters(100000)
+		editBox:SetMaxLetters(0)
 		editBox:ClearAllPoints()
 		editBox:SetPoint("TOPLEFT", scroll, "TOPLEFT", 0, -10)
 		editBox:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", 0, -10)
@@ -3484,6 +3484,9 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 			if self.scrollBar and ChannelHistory and ChannelHistory.UpdateThinScrollFrameBar then ChannelHistory:UpdateThinScrollFrameBar(self.scrollBar, self.scroll) end
 		end
 
+		editBox:SetScript("OnTextChanged", function()
+			if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
+		end)
 		scroll:SetScript("OnSizeChanged", function() popup:RefreshScrollHeight() end)
 
 		copyPopup = popup
@@ -3525,20 +3528,18 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 		popup:Show()
 
 		local text = sanitizeCopyText(buildCopyTextFromData())
-		local maxLetters = 15000
-		if text and #text > maxLetters then text = string.sub(text, -maxLetters) end
-		popup.editBox._justSet = true
 		popup.editBox:SetText(text or "")
-
-		-- C_Timer.After(0, function()
-		-- 	if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
-		-- 	if popup.scroll then popup.scroll:SetVerticalScroll(0) end
-		-- 	if popup.scrollBar and ChannelHistory and ChannelHistory.UpdateThinScrollFrameBar then ChannelHistory:UpdateThinScrollFrameBar(popup.scrollBar, popup.scroll) end
-
-		-- 	popup.editBox:SetCursorPosition(0)
-		-- 	popup.editBox:SetFocus()
-		-- 	popup.editBox:HighlightText()
-		-- end)
+		C_Timer.After(0, function()
+			if not popup or not popup:IsShown() then return end
+			if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
+			if popup.scroll then popup.scroll:SetVerticalScroll(0) end
+			if popup.scrollBar and ChannelHistory and ChannelHistory.UpdateThinScrollFrameBar then ChannelHistory:UpdateThinScrollFrameBar(popup.scrollBar, popup.scroll) end
+			if popup.editBox then
+				popup.editBox:SetCursorPosition(0)
+				popup.editBox:SetFocus()
+				popup.editBox:HighlightText()
+			end
+		end)
 	end
 
 	copyBtn:SetScript("OnClick", function() copyVisibleLines() end)

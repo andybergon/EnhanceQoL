@@ -34,6 +34,7 @@ addon.WeaponBuffs.functions = addon.WeaponBuffs.functions or {}
 addon.WeaponBuffs.filteredWeaponBuffs = addon.WeaponBuffs.filteredWeaponBuffs or {}
 addon.foodBagItemCountCache = addon.foodBagItemCountCache or {}
 addon.foodBagItemCountCacheReady = addon.foodBagItemCountCacheReady == true
+addon.foodBagItemCountCacheVersion = tonumber(addon.foodBagItemCountCacheVersion) or 0
 
 -- Health macro module scaffolding
 addon.Health = addon.Health or {}
@@ -51,6 +52,7 @@ addon.macroWarnings = addon.macroWarnings or {}
 local function syncSharedFoodBagItemCountCache(counts)
 	addon.foodBagItemCountCache = counts
 	addon.foodBagItemCountCacheReady = true
+	addon.foodBagItemCountCacheVersion = (tonumber(addon.foodBagItemCountCacheVersion) or 0) + 1
 	addon.Flasks.bagItemCountCache = counts
 	addon.Flasks.bagItemCountCacheReady = true
 	addon.BuffFoods.bagItemCountCache = counts
@@ -112,6 +114,11 @@ end
 function addon.functions.getFoodBagItemCountCache()
 	if addon.foodBagItemCountCacheReady == true and type(addon.foodBagItemCountCache) == "table" then return addon.foodBagItemCountCache end
 	return addon.functions.rebuildFoodBagItemCountCache()
+end
+
+function addon.functions.getFoodBagItemCountCacheVersion()
+	if addon.foodBagItemCountCacheReady ~= true then addon.functions.getFoodBagItemCountCache() end
+	return tonumber(addon.foodBagItemCountCacheVersion) or 0
 end
 
 function addon.functions.getFoodBagItemCount(itemId)

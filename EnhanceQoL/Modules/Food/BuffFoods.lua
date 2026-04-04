@@ -29,6 +29,7 @@ addon.BuffFoods = addon.BuffFoods or {}
 addon.BuffFoods.functions = addon.BuffFoods.functions or {}
 addon.BuffFoods.filteredBuffFoods = addon.BuffFoods.filteredBuffFoods or {}
 addon.BuffFoods.bagItemCountCache = addon.BuffFoods.bagItemCountCache or {}
+addon.BuffFoods.candidateCache = addon.BuffFoods.candidateCache or {}
 
 addon.BuffFoods.typeOrder = {
 	"highestSecondary",
@@ -260,19 +261,8 @@ local function getBestItemCount(itemId)
 	local targetId = tonumber(itemId)
 	if not targetId or targetId <= 0 then return 0, 0, 0 end
 
-	local countApi = 0
 	local countBag = getDirectBagItemCount(targetId)
-
-	if C_Item and C_Item.GetItemCount then
-		local cNoBank = tonumber(C_Item.GetItemCount(targetId, false, false)) or 0
-		local cDefault = tonumber(C_Item.GetItemCount(targetId)) or 0
-		if cNoBank > countApi then countApi = cNoBank end
-		if cDefault > countApi then countApi = cDefault end
-	end
-
-	local best = countApi
-	if countBag > best then best = countBag end
-	return best, countApi, countBag
+	return countBag, countBag, countBag
 end
 
 local function isEntryAvailable(entry, playerLevel)
@@ -331,9 +321,21 @@ function addon.BuffFoods.functions.normalizeTypeKey(value) return normalizeTypeK
 function addon.BuffFoods.functions.getCurrentSpecID() return getCurrentSpecID() end
 function addon.BuffFoods.functions.rebuildBagItemCountCache() return rebuildBagItemCountCache() end
 
+local function buildCandidateCacheKey(specID, playerLevel, bagVersion, selectedType, selectedRoleKey, selectedPreference)
+	local db = addon.db or {}
+	return table.concat({
+		tostring(tonumber(specID) or 0),
+		tostring(tonumber(playerLevel) or 0),
+		tostring(tonumber(bagVersion) or 0),
+		tostring(selectedType or "none"),
+		tostring(selectedRoleKey or "none"),
+		tostring(selectedPreference or "useRole"),
+		db.buffFoodPreferHearty == false and "standard" or "hearty",
+	}, "|")
+end
+
 function addon.BuffFoods.functions.getAvailableCandidatesForSpec(specID)
 	local playerLevel = UnitLevel("player") or 0
-	local candidates = {}
 	local selectedType = "none"
 	local selectedPreference = "useRole"
 	local selectedRoleKey = nil
@@ -349,6 +351,15 @@ function addon.BuffFoods.functions.getAvailableCandidatesForSpec(specID)
 		selectedType = normalizeTypeKey(selectedPreference)
 	end
 
+	getBagItemCountCache()
+	local bagVersion = addon.functions and addon.functions.getFoodBagItemCountCacheVersion and addon.functions.getFoodBagItemCountCacheVersion() or 0
+	local cacheKey = buildCandidateCacheKey(specID, playerLevel, bagVersion, selectedType, selectedRoleKey, selectedPreference)
+	local cache = addon.BuffFoods.candidateCache
+	if cache and cache.key == cacheKey and type(cache.list) == "table" then
+		return cache.list, cache.selectedType, cache.selectedRoleKey, cache.selectedPreference
+	end
+
+	local candidates = {}
 	if selectedType ~= "none" then
 		local list = addon.BuffFoods.typeFoods and addon.BuffFoods.typeFoods[selectedType]
 		if db.buffFoodPreferHearty ~= false then
@@ -360,6 +371,13 @@ function addon.BuffFoods.functions.getAvailableCandidatesForSpec(specID)
 		end
 	end
 
+	addon.BuffFoods.candidateCache = {
+		key = cacheKey,
+		list = candidates,
+		selectedType = selectedType,
+		selectedRoleKey = selectedRoleKey,
+		selectedPreference = selectedPreference,
+	}
 	return candidates, selectedType, selectedRoleKey, selectedPreference
 end
 

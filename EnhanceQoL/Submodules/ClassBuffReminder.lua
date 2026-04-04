@@ -1537,7 +1537,7 @@ function Reminder:GetWeaponBuffMissingEntry(evalContext)
 	local prepared = context and context.weaponBuffPreparedData or self:GetPreparedWeaponBuffCandidateData(candidates)
 	if context and not context.weaponBuffPreparedData then context.weaponBuffPreparedData = prepared end
 
-	return makeSelfMissingEntry(prepared.displaySpellId, prepared.displayLabel, missingRequirements, totalRequirements, "WEAPON_BUFF")
+	return makeSelfMissingEntry(prepared.displaySpellId, prepared.displayLabel, nil, nil, "WEAPON_BUFF")
 end
 
 function Reminder:GetSupplementalMissingEntries(evalContext)

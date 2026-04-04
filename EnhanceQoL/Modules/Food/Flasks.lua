@@ -30,6 +30,7 @@ addon.Flasks = addon.Flasks or {}
 addon.Flasks.functions = addon.Flasks.functions or {}
 addon.Flasks.filteredFlasks = addon.Flasks.filteredFlasks or {}
 addon.Flasks.bagItemCountCache = addon.Flasks.bagItemCountCache or {}
+addon.Flasks.candidateCache = addon.Flasks.candidateCache or {}
 
 addon.Flasks.typeOrder = { "haste", "criticalStrike", "mastery", "versatility", "alchemicalChaos" }
 addon.Flasks.roleOrder = { "tank", "healer", "ranged", "melee" }
@@ -270,19 +271,8 @@ local function getBestItemCount(itemId)
 	local targetId = tonumber(itemId)
 	if not targetId or targetId <= 0 then return 0, 0, 0 end
 
-	local countApi = 0
 	local countBag = getDirectBagItemCount(targetId)
-
-	if C_Item and C_Item.GetItemCount then
-		local cNoBank = tonumber(C_Item.GetItemCount(targetId, false, false)) or 0
-		local cDefault = tonumber(C_Item.GetItemCount(targetId)) or 0
-		if cNoBank > countApi then countApi = cNoBank end
-		if cDefault > countApi then countApi = cDefault end
-	end
-
-	local best = countApi
-	if countBag > best then best = countBag end
-	return best, countApi, countBag
+	return countBag, countBag, countBag
 end
 
 local function isEntryAvailable(entry, playerLevel)
@@ -455,9 +445,21 @@ end
 
 function addon.Flasks.functions.normalizeTypeKey(value) return normalizeTypeKey(value) end
 
+local function buildCandidateCacheKey(specID, playerLevel, bagVersion, selectedType, selectedRoleKey, selectedPreference)
+	local db = addon.db or {}
+	return table.concat({
+		tostring(tonumber(specID) or 0),
+		tostring(tonumber(playerLevel) or 0),
+		tostring(tonumber(bagVersion) or 0),
+		tostring(selectedType or "none"),
+		tostring(selectedRoleKey or "none"),
+		tostring(selectedPreference or "useRole"),
+		db.flaskPreferCauldrons == true and "fleeting" or "normal",
+	}, "|")
+end
+
 function addon.Flasks.functions.getAvailableCandidatesForSpec(specID)
 	local playerLevel = UnitLevel("player") or 0
-	local candidates = {}
 	local selectedType = "none"
 	local selectedPreference = "useRole"
 	local selectedRoleKey = nil
@@ -473,6 +475,15 @@ function addon.Flasks.functions.getAvailableCandidatesForSpec(specID)
 		selectedType = normalizeTypeKey(selectedPreference)
 	end
 
+	getBagItemCountCache()
+	local bagVersion = addon.functions and addon.functions.getFoodBagItemCountCacheVersion and addon.functions.getFoodBagItemCountCacheVersion() or 0
+	local cacheKey = buildCandidateCacheKey(specID, playerLevel, bagVersion, selectedType, selectedRoleKey, selectedPreference)
+	local cache = addon.Flasks.candidateCache
+	if cache and cache.key == cacheKey and type(cache.list) == "table" then
+		return cache.list, cache.selectedType, cache.selectedRoleKey, cache.selectedPreference
+	end
+
+	local candidates = {}
 	if db.flaskPreferCauldrons then
 		-- "Prefer Cauldrons" maps to fleeting flasks in this implementation.
 		if selectedType ~= "none" then
@@ -485,6 +496,13 @@ function addon.Flasks.functions.getAvailableCandidatesForSpec(specID)
 		appendAvailable(normalList, playerLevel, candidates)
 	end
 
+	addon.Flasks.candidateCache = {
+		key = cacheKey,
+		list = candidates,
+		selectedType = selectedType,
+		selectedRoleKey = selectedRoleKey,
+		selectedPreference = selectedPreference,
+	}
 	return candidates, selectedType, selectedRoleKey, selectedPreference
 end
 
