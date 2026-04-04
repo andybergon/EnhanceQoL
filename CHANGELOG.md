@@ -5,6 +5,7 @@
 ### ✨ Added
 
 - Mythic+ (Teleports / Hearthstones): Added `Preyseeker's Hearthstone` to the available hearthstone list.
+- Cooldown Panels / Bars: Added a `Reverse fill direction` option for cooldown bars.
 
 ### 🐛 Fixed
 

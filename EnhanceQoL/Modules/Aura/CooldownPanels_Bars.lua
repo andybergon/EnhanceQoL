@@ -90,6 +90,7 @@ Bars.DEFAULTS = Bars.DEFAULTS
 		barOffsetX = 0,
 		barOffsetY = 0,
 		barOrientation = "HORIZONTAL",
+		barReverseFill = false,
 		barSegmentDirection = "HORIZONTAL",
 		barSegmentReverse = false,
 		barProcGlowColor = { 0.35, 0.75, 1.00, 0.95 },
@@ -167,6 +168,7 @@ local BAR_FONT_SIZE_MAX = 64
 local BAR_TEXTURE_MENU_HEIGHT = 220
 local BAR_STATUS_INTERPOLATION_IMMEDIATE = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate or 0
 local BAR_STATUS_TIMER_DIRECTION_ELAPSED = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.ElapsedTime or 0
+local BAR_STATUS_TIMER_DIRECTION_REMAINING = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
 local getBarColor
 local normalizeBarEntry
 local refreshPanelContext
@@ -201,6 +203,11 @@ local function getTextValue(value)
 	if isSecretValue(value) then return value end
 	if value ~= "" then return value end
 	return nil
+end
+
+local function getOppositeTimerDirection(direction)
+	if direction == BAR_STATUS_TIMER_DIRECTION_REMAINING then return BAR_STATUS_TIMER_DIRECTION_ELAPSED end
+	return BAR_STATUS_TIMER_DIRECTION_REMAINING
 end
 
 local function safeNumber(value)
@@ -670,6 +677,7 @@ normalizeBarEntry = function(entry)
 	entry.barOffsetX = normalizeBarOffset(entry.barOffsetX, Bars.DEFAULTS.barOffsetX)
 	entry.barOffsetY = normalizeBarOffset(entry.barOffsetY, Bars.DEFAULTS.barOffsetY)
 	entry.barOrientation = normalizeBarOrientation(entry.barOrientation, Bars.DEFAULTS.barOrientation)
+	entry.barReverseFill = getStoredBoolean(entry, "barReverseFill", Bars.DEFAULTS.barReverseFill)
 	entry.barSegmentDirection = normalizeBarSegmentDirection(entry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection)
 	entry.barSegmentReverse = getStoredBoolean(entry, "barSegmentReverse", Bars.DEFAULTS.barSegmentReverse)
 	entry.barProcGlowColor = Helper.NormalizeColor(entry.barProcGlowColor, Bars.DEFAULTS.barProcGlowColor)
@@ -2267,6 +2275,7 @@ buildBarState = function(panelId, entryId, entry, icon, preview)
 		barOffsetX = normalizeBarOffset(entry.barOffsetX, Bars.DEFAULTS.barOffsetX),
 		barOffsetY = normalizeBarOffset(entry.barOffsetY, Bars.DEFAULTS.barOffsetY),
 		orientation = normalizeBarOrientation(entry.barOrientation, Bars.DEFAULTS.barOrientation),
+		reverseFill = mode == Bars.BAR_MODE.COOLDOWN and getStoredBoolean(entry, "barReverseFill", Bars.DEFAULTS.barReverseFill),
 		segmentDirection = normalizeBarSegmentDirection(entry.barSegmentDirection, Bars.DEFAULTS.barSegmentDirection),
 		segmentReverse = getStoredBoolean(entry, "barSegmentReverse", Bars.DEFAULTS.barSegmentReverse),
 		barTexture = resolveBarTexture(entry.barTexture),
@@ -2914,18 +2923,22 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		if state.mode == Bars.BAR_MODE.STACKS then
 			Bars.SetStatusBarRangedValue(barFrame.fill, state.stackFillValue ~= nil and state.stackFillValue or 0, state.stackFillMax or max(1, state.stackMax or Bars.DEFAULTS.barStackMax))
 		else
+			local reverseFill = state.reverseFill == true
+			local displayProgress = clamp(reverseFill and (1 - (state.progress or 0)) or (state.progress or 0), 0, 1)
+			local timerDirection = state.timerDirection or BAR_STATUS_TIMER_DIRECTION_ELAPSED
+			if reverseFill then timerDirection = getOppositeTimerDirection(timerDirection) end
 			local timerCacheKey = nil
 			if state.fillDurationObject ~= nil then
 				timerCacheKey = table.concat({
 					"barfill",
 					tostring(state.entryKey or state.entryId or "nil"),
 					tostring(state.mode or "nil"),
-					tostring(state.timerDirection or BAR_STATUS_TIMER_DIRECTION_ELAPSED),
+					tostring(timerDirection),
 				}, ":")
 			end
-			if not setStatusBarTimerDuration(barFrame.fill, state.fillDurationObject, timerCacheKey, state.timerDirection) then
+			if not setStatusBarTimerDuration(barFrame.fill, state.fillDurationObject, timerCacheKey, timerDirection) then
 				barFrame.fill:SetMinMaxValues(0, 1)
-				setStatusBarImmediateValue(barFrame.fill, state.progress or 0)
+				setStatusBarImmediateValue(barFrame.fill, displayProgress)
 			end
 		end
 		if useStackDividers then
@@ -4075,6 +4088,20 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 			return getStoredBoolean(currentEntry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
 		end,
 		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowValueText", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["CooldownPanelBarReverseFill"] or "Reverse fill direction",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarCooldown",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.COOLDOWN
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barReverseFill", Bars.DEFAULTS.barReverseFill)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barReverseFill", value) end,
 	}
 	settings[#settings + 1] = {
 		name = L["CooldownPanelShowStacks"] or "Show stack count",
