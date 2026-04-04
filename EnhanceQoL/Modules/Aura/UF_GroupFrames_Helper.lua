@@ -378,6 +378,23 @@ function Pixel.SetSize(region, width, height, minWidthPixels, minHeightPixels)
 	Pixel.SetHeight(region, height, minHeightPixels)
 end
 
+function Pixel.DisableSnap(object)
+	if not object then return object end
+	if object.SetSnapToPixelGrid then object:SetSnapToPixelGrid(false) end
+	if object.SetTexelSnappingBias then object:SetTexelSnappingBias(0) end
+	if object.GetStatusBarTexture then
+		local texture = object:GetStatusBarTexture()
+		if texture and texture ~= object then Pixel.DisableSnap(texture) end
+	end
+	return object
+end
+
+function Pixel.CreateTexture(parent, ...)
+	if not (parent and parent.CreateTexture) then return nil end
+	local texture = parent:CreateTexture(...)
+	return Pixel.DisableSnap(texture)
+end
+
 function H.RoundToPixel(value, scale)
 	return Pixel.Round(value, scale)
 end

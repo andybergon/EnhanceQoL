@@ -27,6 +27,11 @@ addon.BuffFoods = addon.BuffFoods or {}
 addon.BuffFoods.functions = addon.BuffFoods.functions or {}
 addon.BuffFoods.filteredBuffFoods = addon.BuffFoods.filteredBuffFoods or {}
 
+-- Weapon buff reminder scaffolding
+addon.WeaponBuffs = addon.WeaponBuffs or {}
+addon.WeaponBuffs.functions = addon.WeaponBuffs.functions or {}
+addon.WeaponBuffs.filteredWeaponBuffs = addon.WeaponBuffs.filteredWeaponBuffs or {}
+
 -- Health macro module scaffolding
 addon.Health = addon.Health or {}
 addon.Health.functions = addon.Health.functions or {}

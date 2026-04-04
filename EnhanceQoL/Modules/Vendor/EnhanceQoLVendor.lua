@@ -25,7 +25,11 @@ local ensureDestroyButton
 local ensureBaganatorIntegration
 local applySellDestroyOverlayToItemButton
 local applySellDestroyOverlaysToBaganatorButtons
+local getTooltipInfo
 local tooltipCache = {}
+local slotAnalysisCache = {}
+local slotAnalysisScratch = {}
+local slotAnalysisCacheVersion = 0
 local destroyState = {
 	queue = {},
 	rows = {},
@@ -238,6 +242,105 @@ local function inventoryOpen()
 		baganatorVisibleBackpackButtonCount = 0
 	end
 	return false
+end
+
+local function wipeMap(target)
+	if type(target) ~= "table" then return end
+	if wipe then
+		wipe(target)
+		return
+	end
+	for key in pairs(target) do
+		target[key] = nil
+	end
+end
+
+local function invalidateVendorScanCaches(clearTooltip)
+	slotAnalysisCacheVersion = slotAnalysisCacheVersion + 1
+	wipeMap(slotAnalysisCache)
+	if clearTooltip ~= false then wipeMap(tooltipCache) end
+end
+
+local function beginSlotAnalysisPass()
+	wipeMap(slotAnalysisScratch)
+	return slotAnalysisScratch
+end
+
+local function finishSlotAnalysisPass(activeKeys)
+	if type(activeKeys) ~= "table" then return end
+	for key in pairs(slotAnalysisCache) do
+		if not activeKeys[key] then slotAnalysisCache[key] = nil end
+	end
+	for key in pairs(tooltipCache) do
+		if not activeKeys[key] then tooltipCache[key] = nil end
+	end
+	wipeMap(activeKeys)
+end
+
+local function getSlotAnalysisSignature(bagInfo, itemLink)
+	local itemID = bagInfo and bagInfo.itemID or 0
+	local quality = bagInfo and bagInfo.quality or 0
+	local stackCount = bagInfo and bagInfo.stackCount or 0
+	local hasNoValue = bagInfo and bagInfo.hasNoValue == true and 1 or 0
+	local link = itemLink or (bagInfo and bagInfo.hyperlink) or ""
+	return table.concat({
+		tostring(slotAnalysisCacheVersion),
+		tostring(itemID),
+		tostring(quality),
+		tostring(stackCount),
+		tostring(hasNoValue),
+		tostring(link),
+	}, "\001")
+end
+
+local function getSlotAnalysisEntry(bag, slot, bagInfo, itemLink, activeKeys)
+	local key = bag .. "_" .. slot
+	if activeKeys then activeKeys[key] = true end
+	local signature = getSlotAnalysisSignature(bagInfo, itemLink)
+	local cached = slotAnalysisCache[key]
+	if cached and cached.signature == signature then return cached end
+	tooltipCache[key] = nil
+	cached = { signature = signature }
+	slotAnalysisCache[key] = cached
+	return cached
+end
+
+local function getCachedItemInfo(cached, itemID, itemLink)
+	if not cached.itemInfoLoaded then
+		local itemName, _, quality, _, _, _, _, _, _, _, sellPrice, classID, subclassID, bindType, expansionID = C_Item.GetItemInfo(itemLink)
+		if not itemName then
+			if itemID then C_Item.RequestLoadItemDataByID(itemID) end
+			return nil
+		end
+		cached.itemInfoLoaded = true
+		cached.itemName = itemName
+		cached.quality = quality
+		cached.sellPrice = sellPrice
+		cached.classID = classID
+		cached.subclassID = subclassID
+		cached.bindType = bindType
+		cached.expansionID = expansionID
+	end
+	return cached.itemName, cached.quality, cached.sellPrice, cached.classID, cached.subclassID, cached.bindType, cached.expansionID
+end
+
+local function getCachedDetailedItemLevel(cached, itemLink)
+	if cached.detailedItemLevelLoaded ~= true then
+		cached.detailedItemLevel = C_Item.GetDetailedItemLevelInfo(itemLink)
+		cached.detailedItemLevelLoaded = true
+	end
+	return cached.detailedItemLevel
+end
+
+local function getCachedTooltipInfo(cached, bag, slot, quality, bagInfo, itemLink)
+	if not cached.tooltipInfoLoaded then
+		local bType, canUpgrade, isIgnoredUpgradeTrack = getTooltipInfo(bag, slot, quality, bagInfo, itemLink)
+		cached.tooltipInfoLoaded = true
+		cached.bType = bType
+		cached.canUpgrade = canUpgrade
+		cached.isIgnoredUpgradeTrack = isIgnoredUpgradeTrack
+	end
+	return cached.bType, cached.canUpgrade, cached.isIgnoredUpgradeTrack
 end
 
 local function createDestroyEntry(bag, slot, itemID, itemName, info)
@@ -908,17 +1011,28 @@ local function sellItems(items)
 	sellNextItem()
 end
 
-local function getTooltipInfo(bag, slot, quality)
+getTooltipInfo = function(bag, slot, quality, bagInfo, itemLink)
 	local key = bag .. "_" .. slot
+	local cacheItemKey = itemLink or (bagInfo and bagInfo.hyperlink) or (bagInfo and bagInfo.itemID) or C_Container.GetContainerItemLink(bag, slot) or C_Container.GetContainerItemID(
+		bag,
+		slot
+	)
+	local cacheQuality = quality or (bagInfo and bagInfo.quality) or false
 	local cached = tooltipCache[key]
-	if cached then return cached[1], cached[2], cached[3] end
+	if cached and cached.itemKey == cacheItemKey and cached.quality == cacheQuality then return cached.bType, cached.canUpgrade, cached.isIgnoredUpgradeTrack end
 
+	local tabName = addon.Vendor.variables.tabNames[quality]
 	local bType
 	local canUpgrade = false
 	local isIgnoredUpgradeTrack = false
 	local data = C_TooltipInfo.GetBagItem(bag, slot)
 	if data then
-		for _, v in pairs(data.lines) do
+		local ignoreUpgradable = tabName and addon.db["vendor" .. tabName .. "IgnoreUpgradable"]
+		local ignoreMythTrack = tabName and addon.db["vendor" .. tabName .. "IgnoreMythTrack"]
+		local ignoreHeroicTrack = tabName and addon.db["vendor" .. tabName .. "IgnoreHeroicTrack"]
+		local lines = data.lines
+		for i = 1, lines and #lines or 0 do
+			local v = lines[i]
 			if v.type == 20 then
 				if v.leftText == ITEM_BIND_ON_EQUIP then
 					bType = 2
@@ -931,7 +1045,7 @@ local function getTooltipInfo(bag, slot, quality)
 			elseif v.type == 42 then
 				local text = v.rightText or v.leftText
 				if text then
-					if addon.db["vendor" .. addon.Vendor.variables.tabNames[quality] .. "IgnoreUpgradable"] then
+					if ignoreUpgradable then
 						local color = v.leftColor
 						if color and color.r and color.g and color.b then
 							if not (color.r > 0.5 and color.g > 0.5 and color.b > 0.5) then canUpgrade = true end
@@ -939,10 +1053,8 @@ local function getTooltipInfo(bag, slot, quality)
 					end
 					local tier = text:gsub(".+:%s?", ""):gsub("%s?%d/%d", "")
 					if tier then
-						if
-							(addon.db["vendor" .. addon.Vendor.variables.tabNames[quality] .. "IgnoreMythTrack"] and string.lower(L["upgradeLevelMythic"]) == string.lower(tier))
-							or (addon.db["vendor" .. addon.Vendor.variables.tabNames[quality] .. "IgnoreHeroicTrack"] and string.lower(L["upgradeLevelHero"]) == string.lower(tier))
-						then
+						local tierLower = string.lower(tier)
+						if (ignoreMythTrack and string.lower(L["upgradeLevelMythic"]) == tierLower) or (ignoreHeroicTrack and string.lower(L["upgradeLevelHero"]) == tierLower) then
 							isIgnoredUpgradeTrack = true
 						end
 					end
@@ -951,7 +1063,13 @@ local function getTooltipInfo(bag, slot, quality)
 		end
 	end
 
-	tooltipCache[key] = { bType, canUpgrade, isIgnoredUpgradeTrack }
+	tooltipCache[key] = {
+		itemKey = cacheItemKey,
+		quality = cacheQuality,
+		bType = bType,
+		canUpgrade = canUpgrade,
+		isIgnoredUpgradeTrack = isIgnoredUpgradeTrack,
+	}
 	return bType, canUpgrade, isIgnoredUpgradeTrack
 end
 
@@ -1002,6 +1120,7 @@ local function lookupItems()
 	local _, avgItemLevelEquipped = GetAverageItemLevel()
 	local itemsToSell = {}
 	local itemsToDestroy = {}
+	local activeKeys = beginSlotAnalysisPass()
 	for bag = 0, NUM_TOTAL_EQUIPPED_BAG_SLOTS do
 		for slot = 1, C_Container.GetContainerNumSlots(bag) do
 			local itemID = C_Container.GetContainerItemID(bag, slot)
@@ -1011,6 +1130,7 @@ local function lookupItems()
 				local itemNameFromBag = bagInfo and bagInfo.itemName
 				local hasNoValue = bagInfo and bagInfo.hasNoValue
 				local qualityFromBag = bagInfo and bagInfo.quality
+				local cached = getSlotAnalysisEntry(bag, slot, bagInfo, itemLink, activeKeys)
 
 				local inDestroyList = addon.db["vendorIncludeDestroyList"] and addon.db["vendorIncludeDestroyList"][itemID]
 				local inSellList = addon.db["vendorIncludeSellList"] and addon.db["vendorIncludeSellList"][itemID]
@@ -1030,9 +1150,10 @@ local function lookupItems()
 				end
 
 				if not processed then
-					local itemName, _, quality, itemLevel, _, _, _, _, _, _, sellPrice, classID, subclassID, bindType, expansionID = C_Item.GetItemInfo(itemLink)
+					local itemName, quality, sellPrice, classID, subclassID, bindType, expansionID = getCachedItemInfo(cached, itemID, itemLink)
 					if not itemName then
-						C_Item.RequestLoadItemDataByID(itemID)
+						-- Item data is still loading. Keep the slot cache warm so the next refresh
+						-- can reuse any unchanged slot state instead of rebuilding from scratch.
 					else
 						local resolvedName = itemNameFromBag or itemName
 						local reason
@@ -1063,7 +1184,7 @@ local function lookupItems()
 							if isItemInEquipmentSet(bag, slot, quality) then
 								-- Keep items that are assigned to an equipment set.
 							elseif quality == 0 and addon.Vendor.variables.itemQualityFilter[quality] then
-								local bType = select(1, getTooltipInfo(bag, slot, quality))
+								local bType = select(1, getCachedTooltipInfo(cached, bag, slot, quality, bagInfo, itemLink))
 								local effectiveBindType = bindType or 0
 								if bType and effectiveBindType < bType then effectiveBindType = bType end
 								local bindFilter = addon.Vendor.variables.itemBindTypeQualityFilter[quality]
@@ -1074,8 +1195,8 @@ local function lookupItems()
 								local expTable = addon.db["vendor" .. addon.Vendor.variables.tabNames[quality] .. "CraftingExpansions"]
 								if expTable and expTable[expansionID] then table.insert(itemsToSell, { bag = bag, slot = slot, itemID = itemID }) end
 							elseif addon.Vendor.variables.itemQualityFilter[quality] then
-								local effectiveILvl = C_Item.GetDetailedItemLevelInfo(itemLink)
-								local bType, canUpgrade, isIgnoredUpgradeTrack = getTooltipInfo(bag, slot, quality)
+								local effectiveILvl = getCachedDetailedItemLevel(cached, itemLink)
+								local bType, canUpgrade, isIgnoredUpgradeTrack = getCachedTooltipInfo(cached, bag, slot, quality, bagInfo, itemLink)
 								local effectiveBindType = bindType or 0
 								if bType and effectiveBindType < bType then effectiveBindType = bType end
 								if
@@ -1098,6 +1219,7 @@ local function lookupItems()
 			end
 		end
 	end
+	finishSlotAnalysisPass(activeKeys)
 	return itemsToSell, itemsToDestroy
 end
 
@@ -1146,23 +1268,20 @@ local eventHandlers = {
 	["MERCHANT_CLOSED"] = function()
 		hasMoreItems = false
 		updateSellMoreButton()
-		wipe(tooltipCache)
-		updateSellMarks(nil, true)
+		updateSellMarks()
 		if addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 	end,
 	["BAG_UPDATE_DELAYED"] = function()
-		wipe(tooltipCache)
-		updateSellMarks(nil, true)
+		updateSellMarks()
 		if addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 	end,
 	["EQUIPMENT_SETS_CHANGED"] = function()
-		wipe(tooltipCache)
-		updateSellMarks(nil, true)
+		updateSellMarks()
 	end,
 	["ADDON_LOADED"] = function(loadedAddonName)
 		if loadedAddonName ~= "Baganator" then return end
 		ensureBaganatorIntegration()
-		updateSellMarks(nil, true)
+		updateSellMarks()
 		if addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 	end,
 	["ITEM_DATA_LOAD_RESULT"] = function(arg1, arg2)
@@ -1694,12 +1813,13 @@ end
 -- addon.variables.statusTable.groups["items\001economy"] = true
 -- addon.variables.statusTable.groups["items\001economy\001selling"] = true
 local function performUpdateSellMarks(resetCache)
-	if resetCache then wipe(tooltipCache) end
+	if resetCache then invalidateVendorScanCaches() end
 
 	local overlaySell = addon.db["vendorShowSellOverlay"]
 	local overlayDestroy = addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"]
 	local tooltip = addon.db["vendorShowSellTooltip"]
 	local frames = ContainerFrameContainer and ContainerFrameContainer.ContainerFrames or {}
+	local inventoryVisible = inventoryOpen()
 
 	local function clearFrame(frame)
 		if frame and frame:IsShown() then
@@ -1707,6 +1827,13 @@ local function performUpdateSellMarks(resetCache)
 				hideSellDestroyOverlays(itemButton)
 			end
 		end
+	end
+
+	if not inventoryVisible then
+		updateDestroyUI({})
+		wipe(sellMarkLookup)
+		wipe(destroyMarkLookup)
+		return
 	end
 
 	if not overlaySell and not overlayDestroy and not tooltip then
@@ -1829,7 +1956,7 @@ local function hookBagFrame(frame)
 	hooksecurefunc(frame, "UpdateItems", function(self) applySellDestroyOverlaysToFrame(self) end)
 	frame:HookScript("OnShow", function()
 		if destroyState.button and (not InCombatLockdown or not InCombatLockdown()) then anchorDestroyButton(destroyState.button) end
-		updateSellMarks(nil, true)
+		updateSellMarks()
 		if addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 	end)
 	frame:HookScript("OnHide", function() destroyHideList() end)

@@ -70,9 +70,7 @@ local min = math.min
 local floor = math.floor
 local hooksecurefunc = hooksecurefunc
 local BAR_TEX_INHERIT = "__PER_BAR__"
-local EDIT_MODE_SAMPLE_MAX = 100
 local AURA_FILTERS = GFH.AuraFilters
-local SECRET_TEXT_UPDATE_INTERVAL = 0.1
 local FONT_DROPDOWN_SCROLL_HEIGHT = 220
 GF._FRAME_STRATA_INDEX = GF._FRAME_STRATA_INDEX or {
 	BACKGROUND = true,
@@ -407,6 +405,11 @@ local function setBackdrop(frame, borderCfg)
 		local insetVal = borderCfg.inset
 		if insetVal == nil then insetVal = edgeSize end
 		insetVal = max(0, tonumber(insetVal) or edgeSize)
+		if Pixel and Pixel.Round then
+			edgeSize = Pixel.Round(edgeSize, frame, 1)
+			offset = Pixel.Round(offset, frame)
+			insetVal = Pixel.Round(insetVal, frame, 1)
+		end
 		local edgeFile = (UFHelper and UFHelper.resolveBorderTexture and UFHelper.resolveBorderTexture(borderCfg.texture)) or "Interface\\Buttons\\WHITE8x8"
 		borderFrame:ClearAllPoints()
 		borderFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", -offset, offset)
@@ -504,6 +507,10 @@ local function applyHighlightStyle(st, cfg, key)
 	local size = cfg.size or 1
 	if size < 1 then size = 1 end
 	local offset = cfg.offset or 0
+	if Pixel and Pixel.Round then
+		size = Pixel.Round(size, st.barGroup, 1)
+		offset = Pixel.Round(offset, st.barGroup)
+	end
 	frame:SetBackdrop({
 		bgFile = "Interface\\Buttons\\WHITE8x8",
 		edgeFile = resolveBorderTexture(cfg.texture),
@@ -568,7 +575,7 @@ local function applyBarBackdrop(bar, cfg, options)
 		if bar.SetBackdrop then bar:SetBackdrop(nil) end
 		local tex = bar._eqolBackdropTexture
 		if not tex then
-			tex = bar:CreateTexture(nil, "BACKGROUND")
+			tex = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(bar, nil, "BACKGROUND")) or bar:CreateTexture(nil, "BACKGROUND")
 			bar._eqolBackdropTexture = tex
 		end
 		local htex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
@@ -582,6 +589,7 @@ local function applyBarBackdrop(bar, cfg, options)
 			tex:SetAllPoints(bar)
 		end
 		tex:SetTexture(backdropTexture)
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(tex) end
 		if tex.SetHorizTile then tex:SetHorizTile(false) end
 		if tex.SetVertTile then tex:SetVertTile(false) end
 		if tex.SetVertexColor then tex:SetVertexColor(r, g, b, a) end
@@ -618,7 +626,11 @@ function GF._applyOverlayHeight(bar, anchor, height, maxHeight)
 	if limit and limit > 0 and desired > limit then desired = limit end
 	bar:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
 	bar:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
-	bar:SetHeight(desired)
+	if Pixel and Pixel.SetHeight then
+		Pixel.SetHeight(bar, desired)
+	else
+		bar:SetHeight(desired)
+	end
 end
 
 function GF._ensureOverlayClipFrame(anchor, key)
@@ -745,6 +757,7 @@ function GF.ApplyGroupPortraitSeparator(cfg, kind, st, portraitEnabled)
 
 	local color = separatorColor or { 0, 0, 0, 0.8 }
 	st.portraitSeparator:SetTexture(UFHelper.resolveSeparatorTexture(separatorTexture))
+	if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.portraitSeparator) end
 	st.portraitSeparator:SetVertexColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
 	st.portraitSeparator:ClearAllPoints()
 	local side = st._portraitSide or "LEFT"
@@ -757,30 +770,34 @@ function GF.ApplyGroupPortraitSeparator(cfg, kind, st, portraitEnabled)
 		st.portraitSeparator:SetPoint("BOTTOM", st.portraitHolder, "BOTTOM", 0, 0)
 		st.portraitSeparator:SetPoint("LEFT", st.portraitHolder, "RIGHT", 0, 0)
 	end
-	st.portraitSeparator:SetWidth(separatorSize)
+	if Pixel and Pixel.SetWidth then
+		Pixel.SetWidth(st.portraitSeparator, separatorSize, 1)
+	else
+		st.portraitSeparator:SetWidth(separatorSize)
+	end
 	st.portraitSeparator:Show()
 end
 
 local function stabilizeStatusBarTexture(bar)
 	if not bar then return end
-	if bar.SetSnapToPixelGrid then bar:SetSnapToPixelGrid(false) end
-	if bar.SetTexelSnappingBias then bar:SetTexelSnappingBias(0) end
+	if GFH.Pixel and GFH.Pixel.DisableSnap then GFH.Pixel.DisableSnap(bar) end
 	if not bar.GetStatusBarTexture then return end
 	local t = bar:GetStatusBarTexture()
 	if not t then return end
 	if t.SetHorizTile then t:SetHorizTile(false) end
 	if t.SetVertTile then t:SetVertTile(false) end
 	if t.SetTexCoord then t:SetTexCoord(0, 1, 0, 1) end
-	if t.SetSnapToPixelGrid then t:SetSnapToPixelGrid(false) end
-	if t.SetTexelSnappingBias then t:SetTexelSnappingBias(0) end
+	if GFH.Pixel and GFH.Pixel.DisableSnap then GFH.Pixel.DisableSnap(t) end
 end
 
+local Pixel = GFH.Pixel
 local roundToPixel = GFH.RoundToPixel
 
 local function roundToEvenPixel(value, scale)
 	value = tonumber(value) or 0
 	if value == 0 then return 0 end
 	-- Snap half-size to pixel grid and double it so final size always lands on an even pixel count.
+	if Pixel and Pixel.RoundEven then return Pixel.RoundEven(value, scale, 2) end
 	return roundToPixel(value * 0.5, scale) * 2
 end
 
@@ -5552,17 +5569,17 @@ function GF:BuildButton(self)
 		st.portraitHolder:Hide()
 	end
 	if not st.portrait then
-		st.portrait = st.portraitHolder:CreateTexture(nil, "ARTWORK")
+		st.portrait = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(st.portraitHolder, nil, "ARTWORK")) or st.portraitHolder:CreateTexture(nil, "ARTWORK")
 		st.portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 		st.portrait:Hide()
 	end
 	if not st.portraitBg then
-		st.portraitBg = st.portraitHolder:CreateTexture(nil, "BACKGROUND")
+		st.portraitBg = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(st.portraitHolder, nil, "BACKGROUND")) or st.portraitHolder:CreateTexture(nil, "BACKGROUND")
 		st.portraitBg:SetColorTexture(0, 0, 0, 1)
 		st.portraitBg:Hide()
 	end
 	if not st.portraitSeparator then
-		st.portraitSeparator = st.barGroup:CreateTexture(nil, "ARTWORK")
+		st.portraitSeparator = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(st.barGroup, nil, "ARTWORK")) or st.barGroup:CreateTexture(nil, "ARTWORK")
 		st.portraitSeparator:SetColorTexture(0, 0, 0, 1)
 		st.portraitSeparator:Hide()
 	end
@@ -5679,35 +5696,35 @@ function GF:BuildButton(self)
 	if st.privateAuras.GetParent and privateAuraParent and st.privateAuras:GetParent() ~= privateAuraParent then st.privateAuras:SetParent(privateAuraParent) end
 
 	local indicatorLayer = st.statusIconLayer or st.healthTextLayer
-	if not st.leaderIcon then st.leaderIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7) end
-	if not st.assistIcon then st.assistIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7) end
+	if not st.leaderIcon then st.leaderIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7) end
+	if not st.assistIcon then st.assistIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7) end
 	if not st.raidIcon then
-		st.raidIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
+		st.raidIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
 		st.raidIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
-		st.raidIcon:SetSize(18, 18)
+		if Pixel and Pixel.SetSize then Pixel.SetSize(st.raidIcon, 18, 18, 1, 1) else st.raidIcon:SetSize(18, 18) end
 		st.raidIcon:Hide()
 	end
 	if not st.readyCheckIcon then
-		st.readyCheckIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
+		st.readyCheckIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
 		st.readyCheckIcon:SetTexture(GFH.STATUS_ICON_CONST.waiting)
-		st.readyCheckIcon:SetSize(16, 16)
+		if Pixel and Pixel.SetSize then Pixel.SetSize(st.readyCheckIcon, 16, 16, 1, 1) else st.readyCheckIcon:SetSize(16, 16) end
 		st.readyCheckIcon:Hide()
 	end
 	if not st.summonIcon then
-		st.summonIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
-		st.summonIcon:SetSize(16, 16)
+		st.summonIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
+		if Pixel and Pixel.SetSize then Pixel.SetSize(st.summonIcon, 16, 16, 1, 1) else st.summonIcon:SetSize(16, 16) end
 		st.summonIcon:Hide()
 	end
 	if not st.resurrectIcon then
-		st.resurrectIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
+		st.resurrectIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
 		st.resurrectIcon:SetTexture(GFH.STATUS_ICON_CONST.resurrect)
-		st.resurrectIcon:SetSize(16, 16)
+		if Pixel and Pixel.SetSize then Pixel.SetSize(st.resurrectIcon, 16, 16, 1, 1) else st.resurrectIcon:SetSize(16, 16) end
 		st.resurrectIcon:Hide()
 	end
 	if not st.phaseIcon then
-		st.phaseIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
+		st.phaseIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
 		st.phaseIcon:SetTexture(GFH.STATUS_ICON_CONST.phase)
-		st.phaseIcon:SetSize(14, 14)
+		if Pixel and Pixel.SetSize then Pixel.SetSize(st.phaseIcon, 14, 14, 1, 1) else st.phaseIcon:SetSize(14, 14) end
 		st.phaseIcon:Hide()
 	end
 	if st.leaderIcon.GetParent and st.leaderIcon:GetParent() ~= indicatorLayer then st.leaderIcon:SetParent(indicatorLayer) end
@@ -5874,7 +5891,11 @@ function GF:LayoutButton(self)
 	st.power:ClearAllPoints()
 	st.power:SetPoint("BOTTOMLEFT", st.barGroup, "BOTTOMLEFT", contentOffsetLeft, 0)
 	st.power:SetPoint("BOTTOMRIGHT", st.barGroup, "BOTTOMRIGHT", -contentOffsetRight, 0)
-	st.power:SetHeight(powerH)
+	if Pixel and Pixel.SetHeight then
+		Pixel.SetHeight(st.power, powerH)
+	else
+		st.power:SetHeight(powerH)
+	end
 
 	st.health:ClearAllPoints()
 	st.health:SetPoint("TOPLEFT", st.barGroup, "TOPLEFT", contentOffsetLeft, 0)
@@ -5898,7 +5919,11 @@ function GF:LayoutButton(self)
 			else
 				holderX = portraitOutside and -holderOffset or holderOffset
 			end
-			st.portraitHolder:SetSize(portraitSize, portraitSize)
+			if Pixel and Pixel.SetSize then
+				Pixel.SetSize(st.portraitHolder, portraitSize, portraitSize, 1, 1)
+			else
+				st.portraitHolder:SetSize(portraitSize, portraitSize)
+			end
 			st.portraitHolder:ClearAllPoints()
 			if portraitSide == "RIGHT" then
 				st.portraitHolder:SetPoint("CENTER", holderParent, "RIGHT", holderX, 0)
@@ -5910,7 +5935,11 @@ function GF:LayoutButton(self)
 				st.portraitHolder:SetFrameLevel((holderParent:GetFrameLevel() or 0) + 1)
 			end
 			if st.portrait then
-				st.portrait:SetSize(portraitSize, portraitSize)
+				if Pixel and Pixel.SetSize then
+					Pixel.SetSize(st.portrait, portraitSize, portraitSize, 1, 1)
+				else
+					st.portrait:SetSize(portraitSize, portraitSize)
+				end
 				st.portrait:ClearAllPoints()
 				st.portrait:SetPoint("CENTER", st.portraitHolder, "CENTER", 0, 0)
 			end
@@ -6089,21 +6118,25 @@ function GF:LayoutButton(self)
 	local rolePad = 0
 	local roleEnabled = rc.enabled ~= false
 	if roleEnabled and type(rc.showRoles) == "table" and not GFH.SelectionHasAny(rc.showRoles) then roleEnabled = false end
-	if roleEnabled then
-		local indicatorLayer = st.statusIconLayer or st.healthTextLayer or st.health
-		if not st.roleIcon then st.roleIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7) end
-		if st.roleIcon.GetParent and st.roleIcon:GetParent() ~= indicatorLayer then st.roleIcon:SetParent(indicatorLayer) end
-		if st.roleIcon.SetDrawLayer then st.roleIcon:SetDrawLayer("OVERLAY", 7) end
-		local size = GF.ScaleContentValue(self, rc.size or 14, cfg, 1)
+		if roleEnabled then
+			local indicatorLayer = st.statusIconLayer or st.healthTextLayer or st.health
+			if not st.roleIcon then st.roleIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7) end
+			if st.roleIcon.GetParent and st.roleIcon:GetParent() ~= indicatorLayer then st.roleIcon:SetParent(indicatorLayer) end
+			if st.roleIcon.SetDrawLayer then st.roleIcon:SetDrawLayer("OVERLAY", 7) end
+			local size = GF.ScaleContentValue(self, rc.size or 14, cfg, 1)
 		local point = rc.point or "LEFT"
 		local relPoint = rc.relativePoint or "LEFT"
 		local ox = roundToPixel((rc.x or 2) * contentScale, scale)
 		local oy = roundToPixel((rc.y or 0) * contentScale, scale)
-		local roleAnchor = layoutAnchor or self or st.health
-		st.roleIcon:ClearAllPoints()
-		st.roleIcon:SetPoint(point, roleAnchor, relPoint, ox, oy)
-		st.roleIcon:SetSize(size, size)
-		rolePad = size + ((rc.spacing or 2) * contentScale)
+			local roleAnchor = layoutAnchor or self or st.health
+			st.roleIcon:ClearAllPoints()
+			st.roleIcon:SetPoint(point, roleAnchor, relPoint, ox, oy)
+			if Pixel and Pixel.SetSize then
+				Pixel.SetSize(st.roleIcon, size, size, 1, 1)
+			else
+				st.roleIcon:SetSize(size, size)
+			end
+			rolePad = size + ((rc.spacing or 2) * contentScale)
 	else
 		if st.roleIcon then st.roleIcon:Hide() end
 	end
@@ -6190,7 +6223,13 @@ function GF:LayoutButton(self)
 		if UFHelper and UFHelper.applyFont then UFHelper.applyFont(st.levelText, levelFont, levelFontSize, levelOutline) end
 		local anchor = sc.levelAnchor or "RIGHT"
 		local levelOffset = sc.levelOffset or {}
-		if st.levelText.SetWidth then st.levelText:SetWidth(roundToPixel((sc.levelWidth or 26), scale)) end
+			if st.levelText.SetWidth then
+				if Pixel and Pixel.SetWidth then
+					Pixel.SetWidth(st.levelText, sc.levelWidth or 26, 1)
+				else
+					st.levelText:SetWidth(roundToPixel((sc.levelWidth or 26), scale))
+				end
+			end
 		local levelX, levelY
 		if GFH and GFH.SnapPointOffsets then
 			levelX, levelY = GFH.SnapPointOffsets(st.health, anchor, levelOffset.x or 0, levelOffset.y or 0, scale)
@@ -6223,7 +6262,7 @@ function GF:LayoutButton(self)
 				roundToPixel((ric.x or 0) * contentScale, scale),
 				roundToPixel((ric.y or -2) * contentScale, scale)
 			)
-			st.raidIcon:SetSize(size, size)
+				if Pixel and Pixel.SetSize then Pixel.SetSize(st.raidIcon, size, size, 1, 1) else st.raidIcon:SetSize(size, size) end
 		else
 			st.raidIcon:Hide()
 		end
@@ -6253,7 +6292,7 @@ function GF:LayoutButton(self)
 			local size = GF.ScaleContentValue(self, lc.size or 12, cfg, 1)
 			st.leaderIcon:ClearAllPoints()
 			st.leaderIcon:SetPoint(lc.point or "TOPLEFT", st.health, lc.relativePoint or "TOPLEFT", roundToPixel((lc.x or 0) * contentScale, scale), roundToPixel((lc.y or 0) * contentScale, scale))
-			st.leaderIcon:SetSize(size, size)
+				if Pixel and Pixel.SetSize then Pixel.SetSize(st.leaderIcon, size, size, 1, 1) else st.leaderIcon:SetSize(size, size) end
 		else
 			st.leaderIcon:Hide()
 		end
@@ -6274,7 +6313,7 @@ function GF:LayoutButton(self)
 				roundToPixel((acfg.x or 0) * contentScale, scale),
 				roundToPixel((acfg.y or 0) * contentScale, scale)
 			)
-			st.assistIcon:SetSize(size, size)
+				if Pixel and Pixel.SetSize then Pixel.SetSize(st.assistIcon, size, size, 1, 1) else st.assistIcon:SetSize(size, size) end
 		else
 			st.assistIcon:Hide()
 		end
@@ -6295,7 +6334,7 @@ function GF:LayoutButton(self)
 				roundToPixel((rcfg.x or 0) * contentScale, scale),
 				roundToPixel((rcfg.y or 0) * contentScale, scale)
 			)
-			st.readyCheckIcon:SetSize(size, size)
+				if Pixel and Pixel.SetSize then Pixel.SetSize(st.readyCheckIcon, size, size, 1, 1) else st.readyCheckIcon:SetSize(size, size) end
 		else
 			st.readyCheckIcon:Hide()
 		end
@@ -6316,7 +6355,7 @@ function GF:LayoutButton(self)
 				roundToPixel((scfg.x or 0) * contentScale, scale),
 				roundToPixel((scfg.y or 0) * contentScale, scale)
 			)
-			st.summonIcon:SetSize(size, size)
+				if Pixel and Pixel.SetSize then Pixel.SetSize(st.summonIcon, size, size, 1, 1) else st.summonIcon:SetSize(size, size) end
 		else
 			st.summonIcon:Hide()
 		end
@@ -6337,7 +6376,7 @@ function GF:LayoutButton(self)
 				roundToPixel((rcfg.x or 0) * contentScale, scale),
 				roundToPixel((rcfg.y or 0) * contentScale, scale)
 			)
-			st.resurrectIcon:SetSize(size, size)
+				if Pixel and Pixel.SetSize then Pixel.SetSize(st.resurrectIcon, size, size, 1, 1) else st.resurrectIcon:SetSize(size, size) end
 		else
 			st.resurrectIcon:Hide()
 		end
@@ -6358,7 +6397,7 @@ function GF:LayoutButton(self)
 				roundToPixel((pcfg.x or 0) * contentScale, scale),
 				roundToPixel((pcfg.y or 0) * contentScale, scale)
 			)
-			st.phaseIcon:SetSize(size, size)
+				if Pixel and Pixel.SetSize then Pixel.SetSize(st.phaseIcon, size, size, 1, 1) else st.phaseIcon:SetSize(size, size) end
 		else
 			st.phaseIcon:Hide()
 		end
@@ -6612,7 +6651,7 @@ function GF:UpdateRoleIcon(self)
 		return
 	end
 	local indicatorLayer = st.statusIconLayer or st.healthTextLayer or st.health or st.barGroup or st.frame
-	if not st.roleIcon then st.roleIcon = indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7) end
+	if not st.roleIcon then st.roleIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7) end
 	if st.roleIcon.GetParent and st.roleIcon:GetParent() ~= indicatorLayer then st.roleIcon:SetParent(indicatorLayer) end
 	if st.roleIcon.SetDrawLayer then st.roleIcon:SetDrawLayer("OVERLAY", 7) end
 	local roleKey = getUnitRoleKey(unit)
@@ -6641,6 +6680,7 @@ function GF:UpdateRoleIcon(self)
 			st._lastRoleFallbackAtlas = fallbackAtlas
 			local ok = st.roleIcon:SetAtlas(atlas, false)
 			if ok ~= true and fallbackAtlas then st.roleIcon:SetAtlas(fallbackAtlas, false) end
+			if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.roleIcon) end
 		end
 		st.roleIcon:Show()
 	else
@@ -6663,12 +6703,14 @@ function GF:UpdateRaidIcon(self)
 	end
 	if isEditModeActive() then
 		if SetRaidTargetIconTexture then SetRaidTargetIconTexture(st.raidIcon, 8) end
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.raidIcon) end
 		st.raidIcon:Show()
 		return
 	end
 	local idx = GetRaidTargetIndex and GetRaidTargetIndex(unit)
 	if idx then
 		if SetRaidTargetIconTexture then SetRaidTargetIconTexture(st.raidIcon, idx) end
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.raidIcon) end
 		st.raidIcon:Show()
 	else
 		st.raidIcon:Hide()
@@ -6699,6 +6741,7 @@ function GF:UpdateGroupIcons(self)
 		if not showLeader and isEditModeActive() then showLeader = true end
 		if showLeader then
 			st.leaderIcon:SetAtlas("UI-HUD-UnitFrame-Player-Group-LeaderIcon", false)
+			if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.leaderIcon) end
 			st.leaderIcon:Show()
 		else
 			st.leaderIcon:Hide()
@@ -6719,6 +6762,7 @@ function GF:UpdateGroupIcons(self)
 			else
 				st.assistIcon:SetTexture("Interface\\GroupFrame\\UI-Group-AssistantIcon")
 			end
+			if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.assistIcon) end
 			st.assistIcon:Show()
 		else
 			st.assistIcon:Hide()
@@ -6742,6 +6786,7 @@ function GF:UpdateReadyCheckIcon(self, event)
 	if isEditModeActive() and st._preview then
 		GFH.CancelReadyCheckIconTimer(st)
 		st.readyCheckIcon:SetTexture(GFH.STATUS_ICON_CONST.waiting)
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.readyCheckIcon) end
 		st.readyCheckIcon:Show()
 		return
 	end
@@ -6751,18 +6796,22 @@ function GF:UpdateReadyCheckIcon(self, event)
 	if status == "ready" then
 		GFH.CancelReadyCheckIconTimer(st)
 		st.readyCheckIcon:SetTexture(GFH.STATUS_ICON_CONST.ready)
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.readyCheckIcon) end
 		st.readyCheckIcon:Show()
 	elseif status == "notready" then
 		GFH.CancelReadyCheckIconTimer(st)
 		st.readyCheckIcon:SetTexture(GFH.STATUS_ICON_CONST.notReady)
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.readyCheckIcon) end
 		st.readyCheckIcon:Show()
 	elseif status == "waiting" then
 		GFH.CancelReadyCheckIconTimer(st)
 		st.readyCheckIcon:SetTexture(GFH.STATUS_ICON_CONST.waiting)
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.readyCheckIcon) end
 		st.readyCheckIcon:Show()
 	elseif sampleActive then
 		GFH.CancelReadyCheckIconTimer(st)
 		st.readyCheckIcon:SetTexture(GFH.STATUS_ICON_CONST.waiting)
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.readyCheckIcon) end
 		st.readyCheckIcon:Show()
 	elseif event ~= "READY_CHECK_FINISHED" then
 		GFH.CancelReadyCheckIconTimer(st)
@@ -6782,6 +6831,7 @@ function GF:UpdateSummonIcon(self)
 			st._lastSummonAtlas = texturePath
 			st.summonIcon:SetTexture(texturePath)
 			if st.summonIcon.SetTexCoord then st.summonIcon:SetTexCoord(0, 1, 0, 1) end
+			if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.summonIcon) end
 		end
 	end
 
@@ -6850,6 +6900,7 @@ function GF:UpdateResurrectIcon(self)
 
 	if showResurrect then
 		st.resurrectIcon:SetTexture(GFH.STATUS_ICON_CONST.resurrect)
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.resurrectIcon) end
 		st.resurrectIcon:Show()
 	else
 		st.resurrectIcon:Hide()
@@ -6875,6 +6926,7 @@ function GF:UpdatePhaseIcon(self)
 
 	if reason then
 		st.phaseIcon:SetTexture(GFH.STATUS_ICON_CONST.phase)
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.phaseIcon) end
 		st.phaseIcon:Show()
 	else
 		st.phaseIcon:Hide()
@@ -7323,7 +7375,11 @@ function GF:LayoutAuras(self)
 					else
 						h = roundToPixel(h, scale)
 					end
-					container:SetSize(w > 0 and w or 0.001, h > 0 and h or 0.001)
+					if Pixel and Pixel.SetSize then
+						Pixel.SetSize(container, w > 0 and w or 0.001, h > 0 and h or 0.001)
+					else
+						container:SetSize(w > 0 and w or 0.001, h > 0 and h or 0.001)
+					end
 					if container.SetClipsChildren then container:SetClipsChildren(false) end
 				end
 				local buttons = st[meta.buttonsKey]
@@ -7332,7 +7388,11 @@ function GF:LayoutAuras(self)
 						if AuraUtil and AuraUtil.setAuraButtonSize then
 							AuraUtil.setAuraButtonSize(btn, size)
 						elseif btn.SetSize then
-							btn:SetSize(size, size)
+							if Pixel and Pixel.SetSize then
+								Pixel.SetSize(btn, size, size, 1, 1)
+							else
+								btn:SetSize(size, size)
+							end
 							btn._eqolAuraButtonSize = size
 						end
 						positionAuraButton(btn, container, primary, secondary, i, perRow, size, spacing)
@@ -7458,7 +7518,11 @@ local function updateAuraType(self, unit, st, ac, kindKey, cache, changed, heale
 		w = roundToEvenPixel(w, scale)
 		h = roundToEvenPixel(h, scale)
 		if container._eqolAuraCenterW ~= w or container._eqolAuraCenterH ~= h then
-			container:SetSize(w, h)
+			if Pixel and Pixel.SetSize then
+				Pixel.SetSize(container, w, h)
+			else
+				container:SetSize(w, h)
+			end
 			container._eqolAuraCenterW = w
 			container._eqolAuraCenterH = h
 		end
@@ -7956,7 +8020,11 @@ function GF:UpdateSampleAuras(self)
 			w = roundToEvenPixel(w, scale)
 			h = roundToEvenPixel(h, scale)
 			if container._eqolAuraCenterW ~= w or container._eqolAuraCenterH ~= h then
-				container:SetSize(w, h)
+				if Pixel and Pixel.SetSize then
+					Pixel.SetSize(container, w, h)
+				else
+					container:SetSize(w, h)
+				end
 				container._eqolAuraCenterW = w
 				container._eqolAuraCenterH = h
 			end
@@ -8744,7 +8812,7 @@ function GF:UpdateHealthValue(self, unit, st)
 	local sampleHealAbsorb = inEditMode and hc.showSampleHealAbsorb == true
 	local maxIsSecret = issecretvalue and issecretvalue(maxForValue)
 	local sampleMax = maxForValue
-	if (sampleIncomingHeal or sampleAbsorb or sampleHealAbsorb) and maxIsSecret then sampleMax = EDIT_MODE_SAMPLE_MAX end
+	if (sampleIncomingHeal or sampleAbsorb or sampleHealAbsorb) and maxIsSecret then sampleMax = 100 end
 	if suppressAuxHealthBars then
 		if st.incomingHeal then st.incomingHeal:Hide() end
 		if st.absorb then st.absorb:Hide() end
@@ -8951,7 +9019,7 @@ function GF:UpdateHealthValue(self, unit, st)
 				if now < nextAt then
 					allowTextRefresh = false
 				else
-					st._nextHealthTextUpdateAt = now + SECRET_TEXT_UPDATE_INTERVAL
+					st._nextHealthTextUpdateAt = now + 0.1
 				end
 			else
 				st._nextHealthTextUpdateAt = nil
@@ -9833,7 +9901,11 @@ function GF:UpdateAnchorSize(kind)
 	totalW = roundToEvenPixel(totalW, scale)
 	totalH = roundToEvenPixel(totalH, scale)
 
-	anchor:SetSize(totalW, totalH)
+	if Pixel and Pixel.SetSize then
+		Pixel.SetSize(anchor, totalW, totalH)
+	else
+		anchor:SetSize(totalW, totalH)
+	end
 end
 
 local function applyVisibility(header, kind, cfg)
@@ -10266,7 +10338,11 @@ function GF:UpdatePreviewLayout(kind)
 				btn._eqolGroupKind = kind
 				btn._eqolCfg = cfg
 				updateButtonConfig(btn, cfg)
-				btn:SetSize(visualW, visualH)
+				if Pixel and Pixel.SetSize then
+					Pixel.SetSize(btn, visualW, visualH, 1, 1)
+				else
+					btn:SetSize(visualW, visualH)
+				end
 				if btn.SetScale then btn:SetScale(visualScale) end
 				btn:ClearAllPoints()
 				if raidStyle and groupedEntry then
@@ -10620,7 +10696,13 @@ local function syncHeaderChild(child, kind, cfg, frameW, frameH)
 			local h = tonumber(frameH) or 0
 			if w > 0 and h > 0 then
 				local cw, ch = child:GetSize()
-				if abs((cw or 0) - w) > 0.01 or abs((ch or 0) - h) > 0.01 then child:SetSize(w, h) end
+				if abs((cw or 0) - w) > 0.01 or abs((ch or 0) - h) > 0.01 then
+					if Pixel and Pixel.SetSize then
+						Pixel.SetSize(child, w, h, 1, 1)
+					else
+						child:SetSize(w, h)
+					end
+				end
 			end
 		end
 	end

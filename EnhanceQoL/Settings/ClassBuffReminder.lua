@@ -32,6 +32,8 @@ local DB_TRACK_FLASKS = "classBuffReminderTrackFlasks"
 local DB_TRACK_FLASKS_INSTANCE_ONLY = "classBuffReminderTrackFlasksInstanceOnly"
 local DB_TRACK_FOOD = "classBuffReminderTrackFood"
 local DB_TRACK_FOOD_INSTANCE_ONLY = "classBuffReminderTrackFoodInstanceOnly"
+local DB_TRACK_WEAPON_BUFFS = "classBuffReminderTrackWeaponBuffs"
+local DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY = "classBuffReminderTrackWeaponBuffsInstanceOnly"
 local DB_SCALE = "classBuffReminderScale"
 local DB_ICON_SIZE = "classBuffReminderIconSize"
 local DB_FONT_SIZE = "classBuffReminderFontSize"
@@ -78,6 +80,8 @@ local defaults = (Reminder and Reminder.defaults)
 		trackFlasksInstanceOnly = false,
 		trackFood = false,
 		trackFoodInstanceOnly = false,
+		trackWeaponBuffs = false,
+		trackWeaponBuffsInstanceOnly = false,
 		scale = 1,
 		iconSize = 64,
 		fontSize = 13,
@@ -107,6 +111,8 @@ if defaults.hideForNoRole == nil then defaults.hideForNoRole = false end
 if defaults.showIfOnlyProvider == nil then defaults.showIfOnlyProvider = true end
 if defaults.trackFood == nil then defaults.trackFood = false end
 if defaults.trackFoodInstanceOnly == nil then defaults.trackFoodInstanceOnly = false end
+if defaults.trackWeaponBuffs == nil then defaults.trackWeaponBuffs = false end
+if defaults.trackWeaponBuffsInstanceOnly == nil then defaults.trackWeaponBuffsInstanceOnly = false end
 if defaults.borderEnabled == nil then defaults.borderEnabled = false end
 if defaults.borderTexture == nil or defaults.borderTexture == "" then defaults.borderTexture = "DEFAULT" end
 if defaults.borderSize == nil then defaults.borderSize = 1 end
@@ -246,6 +252,8 @@ function addon.functions.initClassBuffReminder()
 	init(DB_TRACK_FLASKS_INSTANCE_ONLY, defaults.trackFlasksInstanceOnly)
 	init(DB_TRACK_FOOD, defaults.trackFood)
 	init(DB_TRACK_FOOD_INSTANCE_ONLY, defaults.trackFoodInstanceOnly)
+	init(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs)
+	init(DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY, defaults.trackWeaponBuffsInstanceOnly)
 	init(DB_SCALE, defaults.scale)
 	init(DB_ICON_SIZE, defaults.iconSize)
 	init(DB_FONT_SIZE, defaults.fontSize)

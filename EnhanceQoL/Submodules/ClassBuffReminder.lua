@@ -66,6 +66,8 @@ local DB_TRACK_FLASKS = "classBuffReminderTrackFlasks"
 local DB_TRACK_FLASKS_INSTANCE_ONLY = "classBuffReminderTrackFlasksInstanceOnly"
 local DB_TRACK_FOOD = "classBuffReminderTrackFood"
 local DB_TRACK_FOOD_INSTANCE_ONLY = "classBuffReminderTrackFoodInstanceOnly"
+local DB_TRACK_WEAPON_BUFFS = "classBuffReminderTrackWeaponBuffs"
+local DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY = "classBuffReminderTrackWeaponBuffsInstanceOnly"
 local DB_SCALE = "classBuffReminderScale"
 local DB_ICON_SIZE = "classBuffReminderIconSize"
 local DB_FONT_SIZE = "classBuffReminderFontSize"
@@ -113,6 +115,8 @@ Reminder.defaults = Reminder.defaults
 		trackFlasksInstanceOnly = false,
 		trackFood = false,
 		trackFoodInstanceOnly = false,
+		trackWeaponBuffs = false,
+		trackWeaponBuffsInstanceOnly = false,
 		scale = 1,
 		iconSize = 64,
 		fontSize = 13,
@@ -464,23 +468,42 @@ local function isUnitHealerRole(unit)
 	return role == "HEALER"
 end
 
-local function isPlayerOffhandShield()
-	if not (C_Item and C_Item.GetItemInfoInstant) then return false end
+local function getPlayerEquippedItemEquipLoc(slot)
+	if not (C_Item and C_Item.GetItemInfoInstant) then return nil end
+	slot = tonumber(slot)
+	if not slot or slot <= 0 then return nil end
 
-	local offhandSlot = INVSLOT_OFFHAND or 17
 	if GetInventoryItemID then
-		local offhandItemId = GetInventoryItemID("player", offhandSlot)
-		if offhandItemId then
-			local equipLocById = select(4, C_Item.GetItemInfoInstant(offhandItemId))
-			if equipLocById == "INVTYPE_SHIELD" then return true end
-		end
+		local itemId = GetInventoryItemID("player", slot)
+		if itemId then return select(4, C_Item.GetItemInfoInstant(itemId)) end
 	end
 
-	if not GetInventoryItemLink then return false end
-	local offhandLink = GetInventoryItemLink("player", offhandSlot)
-	if type(offhandLink) ~= "string" or offhandLink == "" then return false end
-	local equipLoc = select(4, C_Item.GetItemInfoInstant(offhandLink))
-	return equipLoc == "INVTYPE_SHIELD"
+	if not GetInventoryItemLink then return nil end
+	local itemLink = GetInventoryItemLink("player", slot)
+	if type(itemLink) ~= "string" or itemLink == "" then return nil end
+	return select(4, C_Item.GetItemInfoInstant(itemLink))
+end
+
+local function isEnchantableWeaponEquipLoc(equipLoc)
+	return equipLoc == "INVTYPE_WEAPON" or equipLoc == "INVTYPE_2HWEAPON" or equipLoc == "INVTYPE_WEAPONMAINHAND" or equipLoc == "INVTYPE_WEAPONOFFHAND"
+		or equipLoc == "INVTYPE_RANGED" or equipLoc == "INVTYPE_RANGEDRIGHT"
+end
+
+local function isPlayerOffhandShield()
+	local offhandSlot = INVSLOT_OFFHAND or 17
+	return getPlayerEquippedItemEquipLoc(offhandSlot) == "INVTYPE_SHIELD"
+end
+
+local function isPlayerOffhandEnchantableWeapon()
+	local offhandSlot = INVSLOT_OFFHAND or 17
+	local equipLoc = getPlayerEquippedItemEquipLoc(offhandSlot)
+	if equipLoc == "INVTYPE_SHIELD" or equipLoc == "INVTYPE_HOLDABLE" then return false end
+	return isEnchantableWeaponEquipLoc(equipLoc)
+end
+
+local function isPlayerMainhandEnchantableWeapon()
+	local mainhandSlot = INVSLOT_MAINHAND or 16
+	return isEnchantableWeaponEquipLoc(getPlayerEquippedItemEquipLoc(mainhandSlot))
 end
 
 local function safeGetSpellName(spellId)
@@ -777,12 +800,13 @@ local function setProviderDisplaySpellId(provider, spellId)
 	provider._presentationAttempted = nil
 end
 
-local function makeSelfMissingEntry(spellId, label, countMissing, countTotal)
+local function makeSelfMissingEntry(spellId, label, countMissing, countTotal, sourceKind)
 	return {
 		spellId = normalizeSpellId(spellId),
 		label = label,
 		countMissing = tonumber(countMissing),
 		countTotal = tonumber(countTotal),
+		sourceKind = sourceKind,
 	}
 end
 
@@ -920,6 +944,10 @@ function Reminder:IsFoodTrackingEnabled() return getValue(DB_TRACK_FOOD, default
 
 function Reminder:IsFoodInstanceOnlyEnabled() return getValue(DB_TRACK_FOOD_INSTANCE_ONLY, defaults.trackFoodInstanceOnly) == true end
 
+function Reminder:IsWeaponBuffTrackingEnabled() return getValue(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs) == true end
+
+function Reminder:IsWeaponBuffInstanceOnlyEnabled() return getValue(DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY, defaults.trackWeaponBuffsInstanceOnly) == true end
+
 function Reminder:IsDungeonOrRaidInstance()
 	if not IsInInstance then return false end
 	local inInstance, instanceType = IsInInstance()
@@ -962,8 +990,35 @@ function Reminder:CanCheckFoodReminder()
 	return self:IsDungeonOrRaidInstance()
 end
 
+function Reminder:ShouldSuppressGenericWeaponBuffReminder()
+	local classToken = self:GetClassToken()
+	if classToken == "ROGUE" then return true end
+	if classToken == "SHAMAN" then
+		local specId = self:GetCurrentSpecId()
+		return specId == SHAMAN_SPEC_ENHANCEMENT or specId == SHAMAN_SPEC_RESTORATION
+	end
+	if classToken == "PALADIN" then
+		local provider = self:GetPaladinRitesProvider()
+		return provider and provider.trackRites == true or false
+	end
+	return false
+end
+
+function Reminder:CanCheckWeaponBuffReminder()
+	if self:IsFlaskEnvironmentRestricted() then return false end
+	if self:ShouldSuppressGenericWeaponBuffReminder() then return false end
+	if not self:IsWeaponBuffTrackingEnabled() then return false end
+	if not self:IsWeaponBuffInstanceOnlyEnabled() then return true end
+	return self:IsDungeonOrRaidInstance()
+end
+
 function Reminder:CanEvaluateFoodReminderNow()
 	if not self:CanCheckFoodReminder() then return false end
+	return true
+end
+
+function Reminder:CanEvaluateWeaponBuffReminderNow()
+	if not self:CanCheckWeaponBuffReminder() then return false end
 	return true
 end
 
@@ -1071,6 +1126,7 @@ function Reminder:InvalidateFlaskCache()
 	self.flaskCandidateCacheTime = 0
 	self.flaskCandidateCacheReady = false
 	self.flaskCacheDirty = true
+	self.preparedFlaskCandidateData = nil
 end
 
 function Reminder:InvalidateFoodCache()
@@ -1079,6 +1135,189 @@ function Reminder:InvalidateFoodCache()
 	self.foodCandidateCacheTime = 0
 	self.foodCandidateCacheReady = false
 	self.foodCacheDirty = true
+	self.preparedFoodCandidateData = nil
+end
+
+function Reminder:InvalidateWeaponBuffCache()
+	self.weaponBuffCandidateCache = nil
+	self.weaponBuffCandidateCacheTime = 0
+	self.weaponBuffCandidateCacheReady = false
+	self.weaponBuffCacheDirty = true
+	self.preparedWeaponBuffCandidateData = nil
+end
+
+function Reminder:InvalidatePlayerAuraPresenceSnapshot() self.playerAuraPresenceSnapshot = nil end
+
+function Reminder:PrepareConsumableCandidateAuraData(candidates, fallbackLabel)
+	local prepared = {
+		source = candidates,
+		spellIds = {},
+		auraNames = {},
+		displaySpellId = nil,
+		displayLabel = nil,
+	}
+	local seenSpellIds = {}
+	local seenAuraNames = {}
+	local function appendUniquePreparedValue(list, seen, value)
+		if type(value) ~= "string" or value == "" or seen[value] then return end
+		seen[value] = true
+		list[#list + 1] = value
+	end
+	local function appendUniquePreparedSpellId(list, seen, spellId)
+		spellId = normalizeSpellId(spellId)
+		if not spellId or seen[spellId] then return end
+		seen[spellId] = true
+		list[#list + 1] = spellId
+	end
+
+	for i = 1, #candidates do
+		local itemId = tonumber(candidates[i] and candidates[i].id)
+		if itemId and itemId > 0 then
+			local spellName, spellId
+			if C_Item and C_Item.GetItemSpell then spellName, spellId = C_Item.GetItemSpell(itemId) end
+
+			spellId = normalizeSpellId(spellId)
+			if not prepared.displaySpellId and spellId then prepared.displaySpellId = spellId end
+			appendUniquePreparedSpellId(prepared.spellIds, seenSpellIds, spellId)
+
+			if type(spellName) == "string" and spellName ~= "" then
+				appendUniquePreparedValue(prepared.auraNames, seenAuraNames, spellName)
+				if not prepared.displayLabel then prepared.displayLabel = spellName end
+			end
+
+			local itemName
+			if C_Item and C_Item.GetItemNameByID then itemName = C_Item.GetItemNameByID(itemId) end
+			if (not itemName or itemName == "") and C_Item and C_Item.GetItemInfo then itemName = C_Item.GetItemInfo(itemId) end
+			if type(itemName) == "string" and itemName ~= "" then
+				appendUniquePreparedValue(prepared.auraNames, seenAuraNames, itemName)
+				if not prepared.displayLabel then prepared.displayLabel = itemName end
+			end
+		end
+	end
+
+	if type(prepared.displayLabel) ~= "string" or prepared.displayLabel == "" then prepared.displayLabel = fallbackLabel end
+	return prepared
+end
+
+function Reminder:GetPreparedFlaskCandidateData(candidates)
+	local prepared = self.preparedFlaskCandidateData
+	if prepared and prepared.source == candidates then return prepared end
+	prepared = self:PrepareConsumableCandidateAuraData(candidates, "Flask")
+	self.preparedFlaskCandidateData = prepared
+	return prepared
+end
+
+function Reminder:GetPreparedFoodCandidateData(candidates)
+	local prepared = self.preparedFoodCandidateData
+	if prepared and prepared.source == candidates then return prepared end
+	prepared = self:PrepareConsumableCandidateAuraData(candidates, L["Buff Food Macro"] or "Buff food")
+	self.preparedFoodCandidateData = prepared
+	return prepared
+end
+
+function Reminder:GetPreparedWeaponBuffCandidateData(candidates)
+	local prepared = self.preparedWeaponBuffCandidateData
+	if prepared and prepared.source == candidates then return prepared end
+
+	prepared = {
+		source = candidates,
+		displaySpellId = nil,
+		displayLabel = nil,
+	}
+
+	local itemId = tonumber(candidates[1] and candidates[1].id)
+	if itemId and itemId > 0 then
+		local spellName, spellId
+		if C_Item and C_Item.GetItemSpell then spellName, spellId = C_Item.GetItemSpell(itemId) end
+		prepared.displaySpellId = normalizeSpellId(spellId)
+		if type(spellName) == "string" and spellName ~= "" then prepared.displayLabel = spellName end
+		if not prepared.displayLabel and C_Item and C_Item.GetItemNameByID then prepared.displayLabel = C_Item.GetItemNameByID(itemId) end
+		if (not prepared.displayLabel or prepared.displayLabel == "") and C_Item and C_Item.GetItemInfo then prepared.displayLabel = C_Item.GetItemInfo(itemId) end
+	end
+
+	if type(prepared.displayLabel) ~= "string" or prepared.displayLabel == "" then prepared.displayLabel = L["ClassBuffReminderWeaponBuff"] or "Weapon buff" end
+	self.preparedWeaponBuffCandidateData = prepared
+	return prepared
+end
+
+function Reminder:GetPlayerAuraPresenceSnapshot()
+	local snapshot = self.playerAuraPresenceSnapshot
+	if type(snapshot) == "table" then return snapshot end
+
+	snapshot = {
+		supported = false,
+		spellIds = {},
+		names = {},
+		icons = {},
+	}
+
+	if not (C_UnitAuras and C_UnitAuras.GetAuraSlots and C_UnitAuras.GetAuraDataBySlot) then
+		self.playerAuraPresenceSnapshot = snapshot
+		return snapshot
+	end
+	snapshot.supported = true
+
+	local continuationToken
+	for _ = 1, AURA_SLOT_SCAN_GUARD do
+		local slots, slotCount, nextToken = getHelpfulAuraSlotBuffer("player", continuationToken)
+		for i = 2, slotCount do
+			local slot = slots[i]
+			if not (issecretvalue and issecretvalue(slot)) then
+				local aura = C_UnitAuras.GetAuraDataBySlot("player", slot)
+				if aura and not (issecretvalue and issecretvalue(aura)) then
+					local isHelpful = aura.isHelpful
+					if issecretvalue and issecretvalue(isHelpful) then isHelpful = nil end
+					if isHelpful ~= false then
+						local auraSpellId = normalizeSpellId(aura.spellId)
+						if auraSpellId then snapshot.spellIds[auraSpellId] = true end
+
+						local auraName = aura.name
+						if not (issecretvalue and issecretvalue(auraName)) and type(auraName) == "string" and auraName ~= "" then snapshot.names[auraName] = true end
+
+						local auraIcon = aura.icon
+						if issecretvalue and issecretvalue(auraIcon) then auraIcon = nil end
+						auraIcon = tonumber(auraIcon)
+						if auraIcon and auraIcon > 0 then snapshot.icons[auraIcon] = true end
+					end
+				end
+			end
+		end
+
+		if nextToken == nil then break end
+		continuationToken = nextToken
+	end
+
+	self.playerAuraPresenceSnapshot = snapshot
+	return snapshot
+end
+
+function Reminder:AuraSnapshotHasAnySpellId(snapshot, spellIds)
+	if type(snapshot) ~= "table" or type(spellIds) ~= "table" then return false end
+	local present = snapshot.spellIds
+	if type(present) ~= "table" then return false end
+	for i = 1, #spellIds do
+		local spellId = normalizeSpellId(spellIds[i])
+		if spellId and present[spellId] then return true end
+	end
+	return false
+end
+
+function Reminder:AuraSnapshotHasAnyName(snapshot, auraNames)
+	if type(snapshot) ~= "table" or type(auraNames) ~= "table" then return false end
+	local present = snapshot.names
+	if type(present) ~= "table" then return false end
+	for i = 1, #auraNames do
+		local auraName = auraNames[i]
+		if type(auraName) == "string" and auraName ~= "" and present[auraName] then return true end
+	end
+	return false
+end
+
+function Reminder:AuraSnapshotHasIcon(snapshot, iconId)
+	iconId = tonumber(iconId)
+	if not iconId or iconId <= 0 or type(snapshot) ~= "table" then return false end
+	local present = snapshot.icons
+	return type(present) == "table" and present[iconId] == true or false
 end
 
 local function nowSeconds()
@@ -1193,120 +1432,128 @@ function Reminder:GetFoodCandidatesForCurrentSpec()
 	return candidates, selectedType
 end
 
-function Reminder:GetFlaskMissingEntry()
+function Reminder:GetWeaponBuffCandidates()
+	if not self:CanCheckWeaponBuffReminder() then return nil end
+	if not (addon.WeaponBuffs and addon.WeaponBuffs.functions and addon.WeaponBuffs.functions.getAvailableCandidates) then return nil end
+
+	if self.weaponBuffCacheDirty ~= true and self.weaponBuffCandidateCacheReady == true then return self.weaponBuffCandidateCache end
+
+	local candidates = addon.WeaponBuffs.functions.getAvailableCandidates()
+	if type(candidates) ~= "table" or #candidates <= 0 then candidates = nil end
+
+	self.weaponBuffCandidateCache = candidates
+	self.weaponBuffCandidateCacheTime = nowSeconds()
+	self.weaponBuffCandidateCacheReady = true
+	self.weaponBuffCacheDirty = false
+
+	return candidates
+end
+
+function Reminder:GetFlaskMissingEntry(evalContext)
 	local candidates = self:GetFlaskCandidatesForCurrentSpec()
 	if type(candidates) ~= "table" or #candidates <= 0 then return nil end
 
-	local hasFlaskAura = self:UnitHasAnyAuraSpellId("player", SHARED_FLASK_AURA_IDS)
-	local dynamicSpellIds = self.runtimeFlaskSpellIds or {}
-	local dynamicAuraNames = self.runtimeFlaskAuraNames or {}
-	self.runtimeFlaskSpellIds = dynamicSpellIds
-	self.runtimeFlaskAuraNames = dynamicAuraNames
-	wipeTable(dynamicSpellIds)
-	wipeTable(dynamicAuraNames)
+	local context = type(evalContext) == "table" and evalContext or nil
+	local prepared = context and context.flaskPreparedData or self:GetPreparedFlaskCandidateData(candidates)
+	if context and not context.flaskPreparedData then context.flaskPreparedData = prepared end
+	local snapshot = context and context.playerAuraSnapshot or self:GetPlayerAuraPresenceSnapshot()
+	if context and not context.playerAuraSnapshot then context.playerAuraSnapshot = snapshot end
 
-	local displaySpellId
-	local displayLabel
-	for i = 1, #candidates do
-		local itemId = tonumber(candidates[i] and candidates[i].id)
-		if itemId and itemId > 0 then
-			local spellName, spellId
-			if C_Item and C_Item.GetItemSpell then
-				spellName, spellId = C_Item.GetItemSpell(itemId)
-			end
-
-			spellId = normalizeSpellId(spellId)
-			if not displaySpellId and spellId then displaySpellId = spellId end
-			if spellId then dynamicSpellIds[#dynamicSpellIds + 1] = spellId end
-
-			if type(spellName) == "string" and spellName ~= "" then
-				dynamicAuraNames[#dynamicAuraNames + 1] = spellName
-				if not displayLabel then displayLabel = spellName end
-			end
-
-			local itemName
-			if C_Item and C_Item.GetItemNameByID then itemName = C_Item.GetItemNameByID(itemId) end
-			if (not itemName or itemName == "") and C_Item and C_Item.GetItemInfo then itemName = C_Item.GetItemInfo(itemId) end
-			if type(itemName) == "string" and itemName ~= "" then
-				dynamicAuraNames[#dynamicAuraNames + 1] = itemName
-				if not displayLabel then displayLabel = itemName end
-			end
-		end
+	local hasFlaskAura
+	if snapshot and snapshot.supported == true then
+		hasFlaskAura = self:AuraSnapshotHasAnySpellId(snapshot, SHARED_FLASK_AURA_IDS)
+		if not hasFlaskAura and #prepared.spellIds > 0 and self:AuraSnapshotHasAnySpellId(snapshot, prepared.spellIds) then hasFlaskAura = true end
+		if not hasFlaskAura and #prepared.auraNames > 0 and self:AuraSnapshotHasAnyName(snapshot, prepared.auraNames) then hasFlaskAura = true end
+	else
+		hasFlaskAura = self:UnitHasAnyAuraSpellId("player", SHARED_FLASK_AURA_IDS)
+		if not hasFlaskAura and #prepared.spellIds > 0 and self:UnitHasAnyAuraSpellId("player", prepared.spellIds) then hasFlaskAura = true end
+		if not hasFlaskAura and #prepared.auraNames > 0 and self:UnitHasAnyAuraName("player", prepared.auraNames) then hasFlaskAura = true end
 	end
-
-	if not hasFlaskAura and #dynamicSpellIds > 0 and self:UnitHasAnyAuraSpellId("player", dynamicSpellIds) then hasFlaskAura = true end
-	if not hasFlaskAura and #dynamicAuraNames > 0 and self:UnitHasAnyAuraName("player", dynamicAuraNames) then hasFlaskAura = true end
 	if hasFlaskAura then return nil end
 
-	if not displaySpellId then displaySpellId = normalizeSpellId(SHARED_FLASK_AURA_IDS[1]) end
+	local displaySpellId = prepared.displaySpellId or normalizeSpellId(SHARED_FLASK_AURA_IDS[1])
+	local displayLabel = prepared.displayLabel
 	if type(displayLabel) ~= "string" or displayLabel == "" then displayLabel = "Flask" end
-	return makeSelfMissingEntry(displaySpellId, displayLabel)
+	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "FLASK")
 end
 
-function Reminder:GetFoodMissingEntry()
+function Reminder:GetFoodMissingEntry(evalContext)
 	if self:IsEarthenPlayer() then return nil end
-
-	local hasFoodAura = self:UnitHasAuraIcon("player", SHARED_FOOD_AURA_ICON_ID)
 
 	local candidates = self:GetFoodCandidatesForCurrentSpec()
 	if type(candidates) ~= "table" or #candidates <= 0 then return nil end
 
-	local dynamicSpellIds = self.runtimeFoodSpellIds or {}
-	local dynamicAuraNames = self.runtimeFoodAuraNames or {}
-	self.runtimeFoodSpellIds = dynamicSpellIds
-	self.runtimeFoodAuraNames = dynamicAuraNames
-	wipeTable(dynamicSpellIds)
-	wipeTable(dynamicAuraNames)
+	local context = type(evalContext) == "table" and evalContext or nil
+	local prepared = context and context.foodPreparedData or self:GetPreparedFoodCandidateData(candidates)
+	if context and not context.foodPreparedData then context.foodPreparedData = prepared end
+	local snapshot = context and context.playerAuraSnapshot or self:GetPlayerAuraPresenceSnapshot()
+	if context and not context.playerAuraSnapshot then context.playerAuraSnapshot = snapshot end
 
-	local displaySpellId
-	local displayLabel
-	for i = 1, #candidates do
-		local itemId = tonumber(candidates[i] and candidates[i].id)
-		if itemId and itemId > 0 then
-			local spellName, spellId
-			if C_Item and C_Item.GetItemSpell then
-				spellName, spellId = C_Item.GetItemSpell(itemId)
-			end
-
-			spellId = normalizeSpellId(spellId)
-			if not displaySpellId and spellId then displaySpellId = spellId end
-			if spellId then dynamicSpellIds[#dynamicSpellIds + 1] = spellId end
-
-			if type(spellName) == "string" and spellName ~= "" then
-				dynamicAuraNames[#dynamicAuraNames + 1] = spellName
-				if not displayLabel then displayLabel = spellName end
-			end
-
-			local itemName
-			if C_Item and C_Item.GetItemNameByID then itemName = C_Item.GetItemNameByID(itemId) end
-			if (not itemName or itemName == "") and C_Item and C_Item.GetItemInfo then itemName = C_Item.GetItemInfo(itemId) end
-			if type(itemName) == "string" and itemName ~= "" then
-				dynamicAuraNames[#dynamicAuraNames + 1] = itemName
-				if not displayLabel then displayLabel = itemName end
-			end
-		end
+	local hasFoodAura
+	if snapshot and snapshot.supported == true then
+		hasFoodAura = self:AuraSnapshotHasIcon(snapshot, SHARED_FOOD_AURA_ICON_ID)
+		if not hasFoodAura and #prepared.spellIds > 0 and self:AuraSnapshotHasAnySpellId(snapshot, prepared.spellIds) then hasFoodAura = true end
+		if not hasFoodAura and #prepared.auraNames > 0 and self:AuraSnapshotHasAnyName(snapshot, prepared.auraNames) then hasFoodAura = true end
+	else
+		hasFoodAura = self:UnitHasAuraIcon("player", SHARED_FOOD_AURA_ICON_ID)
+		if not hasFoodAura and #prepared.spellIds > 0 and self:UnitHasAnyAuraSpellId("player", prepared.spellIds) then hasFoodAura = true end
+		if not hasFoodAura and #prepared.auraNames > 0 and self:UnitHasAnyAuraName("player", prepared.auraNames) then hasFoodAura = true end
 	end
-
-	if not hasFoodAura and #dynamicSpellIds > 0 and self:UnitHasAnyAuraSpellId("player", dynamicSpellIds) then hasFoodAura = true end
-	if not hasFoodAura and #dynamicAuraNames > 0 and self:UnitHasAnyAuraName("player", dynamicAuraNames) then hasFoodAura = true end
 	if hasFoodAura then return nil end
 
-	if not displaySpellId and type(dynamicSpellIds) == "table" and #dynamicSpellIds > 0 then displaySpellId = normalizeSpellId(dynamicSpellIds[1]) end
+	local displaySpellId = prepared.displaySpellId
+	local displayLabel = prepared.displayLabel
+	if not displaySpellId and #prepared.spellIds > 0 then displaySpellId = normalizeSpellId(prepared.spellIds[1]) end
 	if type(displayLabel) ~= "string" or displayLabel == "" then displayLabel = L["Buff Food Macro"] or "Buff food" end
-	return makeSelfMissingEntry(displaySpellId, displayLabel)
+	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "FOOD")
 end
 
-function Reminder:GetSupplementalMissingEntries()
+function Reminder:GetWeaponBuffMissingEntry(evalContext)
+	local candidates = self:GetWeaponBuffCandidates()
+	if type(candidates) ~= "table" or #candidates <= 0 then return nil end
+	if not GetWeaponEnchantInfo then return nil end
+
+	local totalRequirements = 0
+	local missingRequirements = 0
+	local hasMainWeapon = isPlayerMainhandEnchantableWeapon()
+	local hasOffhandWeapon = isPlayerOffhandEnchantableWeapon()
+	local hasMainEnchant, _, _, _, hasOffhandEnchant = GetWeaponEnchantInfo()
+
+	if hasMainWeapon then
+		totalRequirements = totalRequirements + 1
+		if hasMainEnchant ~= true then missingRequirements = missingRequirements + 1 end
+	end
+
+	if hasOffhandWeapon then
+		totalRequirements = totalRequirements + 1
+		if hasOffhandEnchant ~= true then missingRequirements = missingRequirements + 1 end
+	end
+
+	if totalRequirements <= 0 or missingRequirements <= 0 then return nil end
+
+	local context = type(evalContext) == "table" and evalContext or nil
+	local prepared = context and context.weaponBuffPreparedData or self:GetPreparedWeaponBuffCandidateData(candidates)
+	if context and not context.weaponBuffPreparedData then context.weaponBuffPreparedData = prepared end
+
+	return makeSelfMissingEntry(prepared.displaySpellId, prepared.displayLabel, missingRequirements, totalRequirements, "WEAPON_BUFF")
+end
+
+function Reminder:GetSupplementalMissingEntries(evalContext)
 	if not canEvaluateUnit("player") then return nil end
 
+	local context = type(evalContext) == "table" and evalContext or nil
 	local entries = {}
 	if self:CanEvaluateFlaskReminderNow() then
-		local flaskEntry = self:GetFlaskMissingEntry()
+		local flaskEntry = self:GetFlaskMissingEntry(context)
 		if flaskEntry then entries[#entries + 1] = flaskEntry end
 	end
 	if self:CanEvaluateFoodReminderNow() then
-		local foodEntry = self:GetFoodMissingEntry()
+		local foodEntry = self:GetFoodMissingEntry(context)
 		if foodEntry then entries[#entries + 1] = foodEntry end
+	end
+	if self:CanEvaluateWeaponBuffReminderNow() then
+		local weaponBuffEntry = self:GetWeaponBuffMissingEntry(context)
+		if weaponBuffEntry then entries[#entries + 1] = weaponBuffEntry end
 	end
 	if #entries <= 0 then return nil end
 	return entries
@@ -2060,6 +2307,16 @@ function Reminder:GetFoodOnlyProvider()
 	return self.foodOnlyProvider
 end
 
+function Reminder:GetWeaponBuffOnlyProvider()
+	self.weaponBuffOnlyProvider = self.weaponBuffOnlyProvider or {
+		scope = PROVIDER_SCOPE_SELF,
+		spellIds = { 1 },
+		fallbackName = L["ClassBuffReminderWeaponBuff"] or "Weapon buff",
+		displaySpellId = 1,
+	}
+	return self.weaponBuffOnlyProvider
+end
+
 local function finalizeResolvedProvider(provider)
 	if not provider then return nil end
 	if provider.scope == nil then provider.scope = PROVIDER_SCOPE_GROUP end
@@ -2465,6 +2722,7 @@ function Reminder:InvalidateGroupMissingState() self.groupMissingState = nil end
 
 function Reminder:MarkAuraStatesDirty()
 	self:ClearPendingAuraUpdates()
+	self:InvalidatePlayerAuraPresenceSnapshot()
 	if type(self.unitAuraStates) == "table" then
 		for _, state in pairs(self.unitAuraStates) do
 			if type(state) == "table" then state.initialized = false end
@@ -2475,6 +2733,7 @@ end
 
 function Reminder:InvalidateAuraStates()
 	self:ClearPendingAuraUpdates()
+	self:InvalidatePlayerAuraPresenceSnapshot()
 	self.unitAuraStates = {}
 	self:InvalidateGroupMissingState()
 end
@@ -3474,7 +3733,7 @@ function Reminder:ShouldRegisterRuntimeEvents()
 	if getValue(DB_ENABLED, defaults.enabled) ~= true then return false end
 	if self.runtimeProviderValid ~= true then self:RefreshProviderCache(false) end
 	if self.hasProviderCached == true then return true end
-	return self:IsFlaskTrackingEnabled() or self:IsFoodTrackingEnabled()
+	return self:IsFlaskTrackingEnabled() or self:IsFoodTrackingEnabled() or self:IsWeaponBuffTrackingEnabled()
 end
 
 function Reminder:Render(provider, missing, total, supplementalEntries, effectiveMissing)
@@ -3640,6 +3899,8 @@ function Reminder:UpdateDisplay()
 			provider = self:GetFlaskOnlyProvider()
 		elseif self:CanCheckFoodReminder() then
 			provider = self:GetFoodOnlyProvider()
+		elseif self:CanCheckWeaponBuffReminder() then
+			provider = self:GetWeaponBuffOnlyProvider()
 		else
 			self:SetGlowShown(false)
 			self.missingActive = false
@@ -3652,18 +3913,24 @@ function Reminder:UpdateDisplay()
 	if classProvider then
 		missing, total = self:ComputeMissing(classProvider)
 	end
-	local supplementalEntries = self:GetSupplementalMissingEntries()
+	local supplementalContext = {}
+	local supplementalEntries = self:GetSupplementalMissingEntries(supplementalContext)
 	local supplementalMissing = type(supplementalEntries) == "table" and #supplementalEntries or 0
-	if total <= 0 and supplementalMissing > 0 and type(supplementalEntries) == "table" and supplementalEntries[1] and supplementalEntries[1].spellId then
-		if self:CanCheckFlaskReminder() and self:GetFlaskMissingEntry() then
+	local primarySupplementalEntry = type(supplementalEntries) == "table" and supplementalEntries[1] or nil
+	if total <= 0 and primarySupplementalEntry and primarySupplementalEntry.spellId then
+		if primarySupplementalEntry.sourceKind == "FLASK" then
 			provider = self:GetFlaskOnlyProvider() or provider
-		else
+		elseif primarySupplementalEntry.sourceKind == "FOOD" then
 			provider = self:GetFoodOnlyProvider() or provider
+		elseif primarySupplementalEntry.sourceKind == "WEAPON_BUFF" then
+			provider = self:GetWeaponBuffOnlyProvider() or provider
 		end
-		provider.displaySpellId = normalizeSpellId(supplementalEntries[1].spellId) or provider.displaySpellId
-		provider.cachedIcon = nil
-		provider.cachedName = provider.fallbackName or (L["Buff Food Macro"] or "Buff food")
-		provider._presentationReady = false
+		if provider then
+			provider.displaySpellId = normalizeSpellId(primarySupplementalEntry.spellId) or provider.displaySpellId
+			provider.cachedIcon = nil
+			provider.cachedName = primarySupplementalEntry.label or provider.fallbackName or (L["ClassBuffReminderWeaponBuff"] or "Weapon buff")
+			provider._presentationReady = false
+		end
 	end
 	if total <= 0 and supplementalMissing <= 0 then
 		self:SetGlowShown(false)
@@ -3715,6 +3982,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:MarkAuraStatesDirty()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(false)
 		self:ScheduleDeferredAuraResync(0.35)
 		return
@@ -3736,6 +4004,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:MarkAuraStatesDirty()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(true)
 		self:ScheduleDeferredAuraResync(0.2)
 		self:ScheduleDeferredAuraResync(1.0)
@@ -3772,6 +4041,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:InvalidateProviderAvailabilityCache()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(true)
 		return
 	end
@@ -3780,6 +4050,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		if unit == "player" then
 			self:InvalidateFlaskCache()
 			self:InvalidateFoodCache()
+			self:InvalidateWeaponBuffCache()
 			self:RequestUpdate(false)
 		end
 		return
@@ -3788,6 +4059,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	if event == "PLAYER_EQUIPMENT_CHANGED" then
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(false)
 		return
 	end
@@ -3795,6 +4067,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	if event == "BAG_UPDATE_DELAYED" then
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(false)
 		return
 	end
@@ -3803,6 +4076,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:InvalidateProviderAvailabilityCache()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(true)
 		return
 	end
@@ -3816,9 +4090,10 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	if event == "UNIT_AURA" then
 		if not isTrackedUnit(unit) then return end
 		if self:IsRuntimeEvaluationBlockedByCombat() then return end
+		if isPlayerUnit(unit) then self:InvalidatePlayerAuraPresenceSnapshot() end
 		local provider = self:GetProvider()
 		if provider and provider.scope == PROVIDER_SCOPE_GROUP and self:ShouldEvaluateGroupResponsibilities(provider) ~= true then
-			if isPlayerUnit(unit) and (self:CanCheckFlaskReminder() or self:CanCheckFoodReminder()) then self:RequestUpdate(false) end
+			if isPlayerUnit(unit) and (self:CanCheckFlaskReminder() or self:CanCheckFoodReminder() or self:CanCheckWeaponBuffReminder()) then self:RequestUpdate(false) end
 			return
 		end
 		if provider and provider.scope == PROVIDER_SCOPE_SELF then
@@ -3958,26 +4233,14 @@ local function editModeSetTrackFood(value)
 	Reminder:RequestUpdate(true)
 end
 
-local function editModeSetTrackFoodInstanceOnly(value)
-	if addon.db then addon.db[DB_TRACK_FOOD_INSTANCE_ONLY] = value == true end
-	Reminder:InvalidateFoodCache()
-	Reminder:RequestUpdate(true)
-end
-
 local function editModeSetRoleFilterContext(value)
 	if addon.db then addon.db[DB_ROLE_FILTER_CONTEXT] = normalizeRoleFilterContext(value) end
 	Reminder:RequestUpdate(true)
 end
 
-local function editModeSetTextOutline(value)
-	if addon.db then addon.db[DB_XY_TEXT_OUTLINE] = normalizeTextOutline(value) end
-	Reminder:ApplyVisualSettings()
-	Reminder:RequestUpdate(true)
-end
-
-local function editModeSetMissingSound(value)
+function Reminder:EditModeSetMissingSound(value)
 	if addon.db then
-		local _, map, pathToKey = Reminder:GetMissingSoundOptions()
+		local _, map, pathToKey = self:GetMissingSoundOptions()
 		local chosen = type(value) == "string" and value or ""
 		if chosen ~= "" and map and map[chosen] then
 			-- keep chosen key
@@ -3988,13 +4251,13 @@ local function editModeSetMissingSound(value)
 		end
 		addon.db[DB_MISSING_SOUND] = chosen or ""
 	end
-	Reminder.initialSoundSyncDone = false
-	Reminder:NormalizeMissingSoundSelection()
-	Reminder:ScheduleInitialSoundSync()
-	Reminder:RequestUpdate(true)
+	self.initialSoundSyncDone = false
+	self:NormalizeMissingSoundSelection()
+	self:ScheduleInitialSoundSync()
+	self:RequestUpdate(true)
 end
 
-local function isEditModeIconOnlyModeActive() return normalizeDisplayMode(getValue(DB_DISPLAY_MODE, defaults.displayMode)) == DISPLAY_MODE_ICON_ONLY end
+function Reminder:IsEditModeIconOnlyModeActive() return normalizeDisplayMode(getValue(DB_DISPLAY_MODE, defaults.displayMode)) == DISPLAY_MODE_ICON_ONLY end
 
 local editModeSettingsBuilders = {}
 
@@ -4241,8 +4504,43 @@ function editModeSettingsBuilders.buildConsumables()
 			parentId = "food",
 			default = defaults.trackFoodInstanceOnly == true,
 			get = function() return getValue(DB_TRACK_FOOD_INSTANCE_ONLY, defaults.trackFoodInstanceOnly) == true end,
-			set = function(_, value) editModeSetTrackFoodInstanceOnly(value) end,
+			set = function(_, value)
+				if addon.db then addon.db[DB_TRACK_FOOD_INSTANCE_ONLY] = value == true end
+				Reminder:InvalidateFoodCache()
+				Reminder:RequestUpdate(true)
+			end,
 			isShown = function() return getValue(DB_TRACK_FOOD, defaults.trackFood) == true end,
+		},
+		{
+			name = L["ClassBuffReminderSectionWeaponBuffs"] or "Weapon Buffs",
+			kind = SettingType.Collapsible,
+			id = "weaponBuffs",
+			defaultCollapsed = false,
+		},
+		{
+			name = L["ClassBuffReminderTrackWeaponBuffs"] or "Track missing weapon oil/stone",
+			kind = SettingType.Checkbox,
+			parentId = "weaponBuffs",
+			default = defaults.trackWeaponBuffs == true,
+			get = function() return getValue(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs) == true end,
+			set = function(_, value)
+				if addon.db then addon.db[DB_TRACK_WEAPON_BUFFS] = value == true end
+				Reminder:InvalidateWeaponBuffCache()
+				Reminder:RequestUpdate(true)
+			end,
+		},
+		{
+			name = L["ClassBuffReminderTrackWeaponBuffsInstanceOnly"] or "Only in dungeons/raids",
+			kind = SettingType.Checkbox,
+			parentId = "weaponBuffs",
+			default = defaults.trackWeaponBuffsInstanceOnly == true,
+			get = function() return getValue(DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY, defaults.trackWeaponBuffsInstanceOnly) == true end,
+			set = function(_, value)
+				if addon.db then addon.db[DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY] = value == true end
+				Reminder:InvalidateWeaponBuffCache()
+				Reminder:RequestUpdate(true)
+			end,
+			isShown = function() return getValue(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs) == true end,
 		},
 	}
 end
@@ -4272,13 +4570,13 @@ function editModeSettingsBuilders.buildSound()
 				Reminder:BuildMissingSoundOptions()
 				return Reminder:GetMissingSoundValue()
 			end,
-			set = function(_, value) editModeSetMissingSound(value) end,
+			set = function(_, value) Reminder:EditModeSetMissingSound(value) end,
 			generator = function(_, root)
 				local keys = Reminder:BuildMissingSoundOptions()
 				for i = 1, #keys do
 					local soundName = keys[i]
 					root:CreateRadio(soundName, function() return Reminder:GetMissingSoundValue() == soundName end, function()
-						editModeSetMissingSound(soundName)
+						Reminder:EditModeSetMissingSound(soundName)
 						Reminder:PlayMissingSound(true)
 					end)
 				end
@@ -4401,7 +4699,7 @@ function editModeSettingsBuilders.buildLayout()
 			get = function() return clamp(getValue(DB_FONT_SIZE, defaults.fontSize), 9, 30, defaults.fontSize) end,
 			set = function(_, value) editModeSetNumber(DB_FONT_SIZE, value, 9, 30, defaults.fontSize) end,
 			formatter = function(value) return tostring(math.floor((tonumber(value) or defaults.fontSize) + 0.5)) end,
-			isShown = function() return not isEditModeIconOnlyModeActive() end,
+			isShown = function() return not Reminder:IsEditModeIconOnlyModeActive() end,
 		},
 		{
 			name = L["ClassBuffReminderXYTextSize"] or "X/Y text size",
@@ -4414,7 +4712,7 @@ function editModeSettingsBuilders.buildLayout()
 			get = function() return clamp(getValue(DB_XY_TEXT_SIZE, defaults.xyTextSize), 8, 64, defaults.xyTextSize) end,
 			set = function(_, value) editModeSetNumber(DB_XY_TEXT_SIZE, value, 8, 64, defaults.xyTextSize) end,
 			formatter = function(value) return tostring(math.floor((tonumber(value) or defaults.xyTextSize) + 0.5)) end,
-			isShown = function() return isEditModeIconOnlyModeActive() end,
+			isShown = function() return Reminder:IsEditModeIconOnlyModeActive() end,
 		},
 		{
 			name = L["ClassBuffReminderXYTextOutline"] or "X/Y text outline",
@@ -4422,30 +4720,50 @@ function editModeSettingsBuilders.buildLayout()
 			parentId = "anchorSize",
 			height = 120,
 			get = function() return normalizeTextOutline(getValue(DB_XY_TEXT_OUTLINE, defaults.xyTextOutline)) end,
-			set = function(_, value) editModeSetTextOutline(value) end,
+			set = function(_, value)
+				if addon.db then addon.db[DB_XY_TEXT_OUTLINE] = normalizeTextOutline(value) end
+				Reminder:ApplyVisualSettings()
+				Reminder:RequestUpdate(true)
+			end,
 			generator = function(_, root)
 				root:CreateRadio(
 					L["ClassBuffReminderTextOutlineNone"] or "None",
 					function() return normalizeTextOutline(getValue(DB_XY_TEXT_OUTLINE, defaults.xyTextOutline)) == TEXT_OUTLINE_NONE end,
-					function() editModeSetTextOutline(TEXT_OUTLINE_NONE) end
+					function()
+						if addon.db then addon.db[DB_XY_TEXT_OUTLINE] = normalizeTextOutline(TEXT_OUTLINE_NONE) end
+						Reminder:ApplyVisualSettings()
+						Reminder:RequestUpdate(true)
+					end
 				)
 				root:CreateRadio(
 					L["ClassBuffReminderTextOutlineNormal"] or "Outline",
 					function() return normalizeTextOutline(getValue(DB_XY_TEXT_OUTLINE, defaults.xyTextOutline)) == TEXT_OUTLINE_OUTLINE end,
-					function() editModeSetTextOutline(TEXT_OUTLINE_OUTLINE) end
+					function()
+						if addon.db then addon.db[DB_XY_TEXT_OUTLINE] = normalizeTextOutline(TEXT_OUTLINE_OUTLINE) end
+						Reminder:ApplyVisualSettings()
+						Reminder:RequestUpdate(true)
+					end
 				)
 				root:CreateRadio(
 					L["ClassBuffReminderTextOutlineThick"] or "Thick outline",
 					function() return normalizeTextOutline(getValue(DB_XY_TEXT_OUTLINE, defaults.xyTextOutline)) == TEXT_OUTLINE_THICK end,
-					function() editModeSetTextOutline(TEXT_OUTLINE_THICK) end
+					function()
+						if addon.db then addon.db[DB_XY_TEXT_OUTLINE] = normalizeTextOutline(TEXT_OUTLINE_THICK) end
+						Reminder:ApplyVisualSettings()
+						Reminder:RequestUpdate(true)
+					end
 				)
 				root:CreateRadio(
 					L["ClassBuffReminderTextOutlineMono"] or "Monochrome outline",
 					function() return normalizeTextOutline(getValue(DB_XY_TEXT_OUTLINE, defaults.xyTextOutline)) == TEXT_OUTLINE_MONO end,
-					function() editModeSetTextOutline(TEXT_OUTLINE_MONO) end
+					function()
+						if addon.db then addon.db[DB_XY_TEXT_OUTLINE] = normalizeTextOutline(TEXT_OUTLINE_MONO) end
+						Reminder:ApplyVisualSettings()
+						Reminder:RequestUpdate(true)
+					end
 				)
 			end,
-			isShown = function() return isEditModeIconOnlyModeActive() end,
+			isShown = function() return Reminder:IsEditModeIconOnlyModeActive() end,
 		},
 		{
 			name = L["ClassBuffReminderXYTextColor"] or "X/Y text color",
@@ -4458,7 +4776,7 @@ function editModeSettingsBuilders.buildLayout()
 				return { r = r, g = g, b = b, a = a }
 			end,
 			set = function(_, value) editModeSetColor(DB_XY_TEXT_COLOR, value, defaults.xyTextColor) end,
-			isShown = function() return isEditModeIconOnlyModeActive() end,
+			isShown = function() return Reminder:IsEditModeIconOnlyModeActive() end,
 		},
 		{
 			name = L["ClassBuffReminderXYTextOffsetX"] or "X/Y offset X",
@@ -4471,7 +4789,7 @@ function editModeSettingsBuilders.buildLayout()
 			get = function() return clamp(getValue(DB_XY_TEXT_OFFSET_X, defaults.xyTextOffsetX), -60, 60, defaults.xyTextOffsetX) end,
 			set = function(_, value) editModeSetNumber(DB_XY_TEXT_OFFSET_X, value, -60, 60, defaults.xyTextOffsetX) end,
 			formatter = function(value) return tostring(math.floor((tonumber(value) or defaults.xyTextOffsetX) + 0.5)) end,
-			isShown = function() return isEditModeIconOnlyModeActive() end,
+			isShown = function() return Reminder:IsEditModeIconOnlyModeActive() end,
 		},
 		{
 			name = L["ClassBuffReminderXYTextOffsetY"] or "X/Y offset Y",
@@ -4484,7 +4802,7 @@ function editModeSettingsBuilders.buildLayout()
 			get = function() return clamp(getValue(DB_XY_TEXT_OFFSET_Y, defaults.xyTextOffsetY), -60, 60, defaults.xyTextOffsetY) end,
 			set = function(_, value) editModeSetNumber(DB_XY_TEXT_OFFSET_Y, value, -60, 60, defaults.xyTextOffsetY) end,
 			formatter = function(value) return tostring(math.floor((tonumber(value) or defaults.xyTextOffsetY) + 0.5)) end,
-			isShown = function() return isEditModeIconOnlyModeActive() end,
+			isShown = function() return Reminder:IsEditModeIconOnlyModeActive() end,
 		},
 	}
 end
@@ -4583,7 +4901,7 @@ function editModeSettingsBuilders.buildBorder()
 	}
 end
 
-local function buildClassBuffReminderEditModeSettings()
+function editModeSettingsBuilders.buildAll()
 	if not SettingType then return nil end
 
 	local settings = {}
@@ -4600,7 +4918,7 @@ function Reminder:RegisterEditMode()
 	if self.editModeRegistered then return end
 	if not (EditMode and EditMode.RegisterFrame) then return end
 
-	local settings = buildClassBuffReminderEditModeSettings()
+	local settings = editModeSettingsBuilders.buildAll()
 
 	EditMode:RegisterFrame(EDITMODE_ID, {
 		frame = self:EnsureFrame(),
