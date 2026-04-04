@@ -684,9 +684,7 @@ end
 
 function CDMAuras:ScanTrackedBuffs(force)
 	local runtime = getRuntime()
-	if not force and runtime.scan and runtime.scan.list and runtime.scan.byCooldownID then
-		return runtime.scan.list, runtime.scan.byCooldownID, runtime.scan.bySpellID, runtime.scan.byCooldownKey
-	end
+	if not force and runtime.scan and runtime.scan.list and runtime.scan.byCooldownID then return runtime.scan.list, runtime.scan.byCooldownID, runtime.scan.bySpellID, runtime.scan.byCooldownKey end
 
 	local scan = runtime.scan or {}
 	scan.list = scan.list or {}
@@ -1325,12 +1323,21 @@ function CDMAuras:AppendAddMenu(rootDescription, panelId)
 			local icon = tostring(info.iconTextureID or Helper.PREVIEW_ICON)
 			local nameText = tostring(info.buffName or info.cooldownID)
 			local label = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", icon, nameText)
+			local sourceType = normalizeSourceType(info.sourceType or (info.availableSources and info.availableSources[SOURCE_ICON] and SOURCE_ICON or SOURCE_BAR))
+			local addInfo = {
+				cooldownID = info.cooldownID,
+				spellID = info.spellID,
+				buffName = info.buffName,
+				iconTextureID = info.iconTextureID,
+				sourceType = sourceType,
+				sourceViewer = info.sourceViewer or (sourceType == SOURCE_BAR and BAR_VIEWER or ICON_VIEWER),
+			}
 			if (duplicateNames[string.lower(nameText)] or 0) > 1 then
 				label = string.format("%s |cff888888(CD:%s, Spell:%s)|r", label, tostring(info.cooldownID or "?"), tostring(info.spellID or "?"))
 			end
 			buffsMenu:CreateButton(label, function()
 				if CooldownPanels.AddEntrySafe then
-					CooldownPanels:AddEntrySafe(panelId, ENTRY_TYPE, info)
+					CooldownPanels:AddEntrySafe(panelId, ENTRY_TYPE, addInfo)
 					CooldownPanels:RefreshEditor()
 				end
 			end)
@@ -1415,21 +1422,43 @@ function CDMAuras:ImportEntries(panelId, sourceKind)
 end
 
 function CDMAuras:AddEntrySafe(panelId, idValue, overrides)
-	local info = idValue
-	if type(info) ~= "table" then
+	local lookupCooldownID = type(idValue) == "table" and idValue.cooldownID or idValue
+	local info = nil
+	local panel = CooldownPanels.GetPanel and CooldownPanels:GetPanel(panelId) or nil
+	if isValidCooldownID(lookupCooldownID) then
 		local _, byCooldownID = self:ScanTrackedBuffs(false)
-		info = byCooldownID and byCooldownID[idValue] or nil
+		info = byCooldownID and byCooldownID[lookupCooldownID] or nil
+	end
+	if type(info) ~= "table" and type(idValue) == "table" and isValidCooldownID(idValue.cooldownID) then
+		info = {
+			cooldownID = idValue.cooldownID,
+			spellID = idValue.spellID,
+			buffName = idValue.buffName,
+			iconTextureID = idValue.iconTextureID,
+			sourceType = normalizeSourceType(idValue.sourceType),
+			sourceViewer = idValue.sourceViewer,
+		}
 	end
 	if type(info) ~= "table" or not isValidCooldownID(info.cooldownID) then
 		showErrorMessage(L["CooldownPanelCDMAuraNotFound"] or "Tracked aura not found in Cooldown Manager.")
 		return nil
 	end
-	if CooldownPanels.FindEntryByValue and CooldownPanels:FindEntryByValue(panelId, ENTRY_TYPE, info) then
+	local effectiveOverrides = overrides
+	if panel and Helper.IsFixedLayout and Helper.IsFixedLayout(panel.layout) and CooldownPanels.ResolveFixedEntryAddOverrides then
+		local resolvedOverrides, fixedError = CooldownPanels:ResolveFixedEntryAddOverrides(panel, overrides)
+		if fixedError then
+			showErrorMessage(fixedError)
+			return nil
+		end
+		effectiveOverrides = resolvedOverrides
+	end
+	local existingEntryId = CooldownPanels.FindEntryByValue and CooldownPanels:FindEntryByValue(panelId, ENTRY_TYPE, info.cooldownID) or nil
+	if existingEntryId then
 		showErrorMessage("Entry already exists.")
 		return nil
 	end
 	if not CooldownPanels.AddEntry then return nil end
-	return CooldownPanels:AddEntry(panelId, ENTRY_TYPE, info, overrides)
+	return CooldownPanels:AddEntry(panelId, ENTRY_TYPE, info, effectiveOverrides)
 end
 
 function CDMAuras:HandleRootRefresh()
@@ -1560,9 +1589,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	local canUseTargetAuraCache = normalizedTrackUnit ~= "target" or state.targetAuraEpoch == targetEpoch
 	local frameMatchesTrackedSpell = false
 
-	if chosenFrame and canUseTargetAuraCache then
-		frameMatchesTrackedSpell = isFrameShowingTrackedSpell(chosenFrame, state, state.trackUnit)
-	end
+	if chosenFrame and canUseTargetAuraCache then frameMatchesTrackedSpell = isFrameShowingTrackedSpell(chosenFrame, state, state.trackUnit) end
 
 	if chosenFrame and canUseTargetAuraCache and frameMatchesTrackedSpell then
 		local currentAuraData, currentAuraUnit, currentAuraID = getFrameAuraData(chosenFrame)
@@ -1607,8 +1634,12 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 		end
 	end
 	state.pandemicActive = pandemicActive or nil
-	local iconTextureID = auraData and auraData.icon or getFrameIconTexture(chosenFrame) or entry.iconTextureID or (scanInfo and scanInfo.iconTextureID)
-		or getSpellTexture(entry.spellID) or Helper.PREVIEW_ICON
+	local iconTextureID = auraData and auraData.icon
+		or getFrameIconTexture(chosenFrame)
+		or entry.iconTextureID
+		or (scanInfo and scanInfo.iconTextureID)
+		or getSpellTexture(entry.spellID)
+		or Helper.PREVIEW_ICON
 	local applications = auraData and auraData.applications or nil
 	local stackCount = resolveAuraStackCount(auraUnit, auraInstanceID, applications)
 	local rawDuration = auraData and auraData.duration or nil
