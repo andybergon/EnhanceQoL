@@ -2399,6 +2399,9 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 			state.stackFillValue = stackValue or min(stackMax, 2)
 			state.stackFillMax = stackMax
 		end
+		if state.showStacks and not (Helper.HasDisplayCount and Helper.HasDisplayCount(state.stackDisplayText)) then
+			state.stackDisplayText = resolvedType == "CDM_AURA" and "2" or "3"
+		end
 		return state
 	end
 
@@ -2419,7 +2422,7 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 				end
 				local cooldownActive = CooldownPanels.IsSpellCooldownInfoActive and CooldownPanels.IsSpellCooldownInfoActive(isActive, enabled, startTime, duration) and cooldownGCD ~= true
 				if cooldownActive then
-					progress = getCooldownProgress(startTime, duration, rate) or getDurationObjectElapsedProgress(durationObject) or 0
+					progress = getDurationObjectElapsedProgress(durationObject) or getCooldownProgress(startTime, duration, rate) or 0
 					valueText = Bars.GetCooldownValueText(icon, durationObject, startTime, duration, rate)
 					animate = progress < 1 or durationObject ~= nil
 					cooldownValueVisible = valueText ~= nil or durationObject ~= nil
@@ -2464,7 +2467,9 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 			local durationObject = runtimeData and (runtimeData.cooldownDurationObject or runtimeData.cdmAuraDurationObject) or nil
 			local auraActive = runtimeData and ((runtimeData.active == true) or (runtimeData.cdmAuraActive == true)) or false
 			local durationActive = runtimeData and (runtimeData.durationActive == true or durationObject ~= nil) or false
-			if runtimeData and durationActive and durationObject ~= nil then
+			if auraActive ~= true then
+				progress = 0
+			elseif runtimeData and durationActive and durationObject ~= nil then
 				local remaining = getDurationObjectRemaining(durationObject)
 				local total = getDurationObjectTotal(durationObject)
 				progress = (remaining and total and total > 0) and clamp(remaining / total, 0, 1) or 0
@@ -2484,7 +2489,7 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 					(safeNumber(runtimeData.cooldownDuration) or 0)
 						- (((Api.GetTime and Api.GetTime()) or GetTime()) - (safeNumber(runtimeData.cooldownStart) or 0)) * (safeNumber(runtimeData.cooldownRate) or 1)
 				)
-				progress = fallbackProgress and clamp(1 - fallbackProgress, 0, 1) or ((safeNumber(runtimeData.cooldownDuration) or 0) > 0 and 1 or 0)
+				progress = fallbackProgress and clamp(1 - fallbackProgress, 0, 1) or 1
 				valueText = fallbackProgress and durationToText(fallbackRemaining) or nil
 				animate = fallbackProgress ~= nil and fallbackProgress < 1 or false
 				cooldownValueVisible = valueText ~= nil
@@ -2997,12 +3002,31 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		barFrame.fillBg:Show()
 		barFrame.fill:SetStatusBarColor(fillColor[1], fillColor[2], fillColor[3], fillColor[4])
 		if state.mode == Bars.BAR_MODE.STACKS then
+			local ufHelper = addon.Aura and addon.Aura.UFHelper
+			if ufHelper and ufHelper.applyStatusBarReverseFill then
+				ufHelper.applyStatusBarReverseFill(barFrame.fill, false)
+			end
 			Bars.SetStatusBarRangedValue(barFrame.fill, state.stackFillValue ~= nil and state.stackFillValue or 0, state.stackFillMax or max(1, state.stackMax or Bars.DEFAULTS.barStackMax))
 		else
 			local reverseFill = state.reverseFill == true
-			local displayProgress = clamp(reverseFill and (1 - (state.progress or 0)) or (state.progress or 0), 0, 1)
+			local usesNativeReverseFill = false
+			local ufHelper = addon.Aura and addon.Aura.UFHelper
+			if ufHelper and ufHelper.applyStatusBarReverseFill then
+				ufHelper.applyStatusBarReverseFill(barFrame.fill, reverseFill)
+				usesNativeReverseFill = true
+			elseif barFrame.fill.SetFillStyle then
+				barFrame.fill:SetFillStyle(reverseFill and (Enum and Enum.StatusBarFillStyle and Enum.StatusBarFillStyle.Reverse or "REVERSE") or (Enum and Enum.StatusBarFillStyle and Enum.StatusBarFillStyle.Standard or "STANDARD"))
+				usesNativeReverseFill = true
+			elseif barFrame.fill.SetReverseFill then
+				barFrame.fill:SetReverseFill(reverseFill)
+				usesNativeReverseFill = true
+			end
+			local displayProgress = clamp(state.progress or 0, 0, 1)
 			local timerDirection = state.timerDirection or BAR_STATUS_TIMER_DIRECTION_ELAPSED
-			if reverseFill then timerDirection = getOppositeTimerDirection(timerDirection) end
+			if reverseFill and usesNativeReverseFill ~= true then
+				displayProgress = clamp(1 - displayProgress, 0, 1)
+				timerDirection = getOppositeTimerDirection(timerDirection)
+			end
 			local timerCacheKey = nil
 			if state.fillDurationObject ~= nil then
 				timerCacheKey = table.concat({
