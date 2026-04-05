@@ -18,6 +18,7 @@
 - Group Finder / Mythic+ Score Panel: Fixed an occasional Blizzard UI error when opening the score panel or updating it next to Group Finder tooltips.
 - Resource Bars: Fixed chained `Use relative width` anchors sometimes resolving in the wrong order after zone or instance transitions, which could break segmented bars like Paladin `Holy Power`.
 - Cooldown Panels (Tracked Auras / Fixed Slots): Fixed `Add more -> Tracked Aura` failing silently on fixed-slot panels with no free slot. The proper panel/group full error is now shown instead.
+- Cooldown Panels: Fixed spells with dynamic icons.
 
 ---
 
