@@ -9,6 +9,7 @@
 ### 🐛 Fixed
 
 - Group Frames (Raid): Fixed `Group Growth` not working correctly when raid frames were grouped by role.
+- ChatIM / Instant Chats: Fixed ChatIM opening its own whisper window and trying to send whispers during chat messaging lockdown.
 
 ---
 
