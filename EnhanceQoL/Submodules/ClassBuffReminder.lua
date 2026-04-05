@@ -1718,6 +1718,11 @@ function Reminder:GetGroupBuffMissingCountBySpellIds(spellIds, includeAIFollower
 	return tonumber(state.missing) or 0, tonumber(state.total) or 0
 end
 
+function Reminder:GetSharedClassBuffMissingCountBySpellIds(spellIds)
+	-- Shared class buffs should ignore follower dungeon AI companions.
+	return self:GetGroupBuffMissingCountBySpellIds(spellIds, false)
+end
+
 local function anyUnitHasAnyAuraSpellId(reminder, units, spellIds)
 	if type(reminder) ~= "table" or type(units) ~= "table" or type(spellIds) ~= "table" then return false end
 	for i = 1, #units do
@@ -1830,7 +1835,7 @@ local function shamanEnhancementGetSelfStatus(provider, reminder)
 	local skyfuryDisplayId = normalizeSpellId(provider.skyfuryDisplaySpellId) or normalizeSpellId(provider.skyfurySpellIds and provider.skyfurySpellIds[1])
 	local skyfuryMissingCount, skyfuryTotal = 0, 0
 	if trackSkyfury and shouldEvaluateGroupResponsibilities then
-		skyfuryMissingCount, skyfuryTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.skyfurySpellIds, true)
+		skyfuryMissingCount, skyfuryTotal = reminder:GetSharedClassBuffMissingCountBySpellIds(provider.skyfurySpellIds)
 	end
 	if shouldEvaluateGroupResponsibilities and skyfuryTotal > 0 then
 		totalRequirements = totalRequirements + 1
@@ -1879,7 +1884,7 @@ local function shamanRestorationGetSelfStatus(provider, reminder)
 	local skyfuryDisplayId = normalizeSpellId(provider.skyfuryDisplaySpellId) or normalizeSpellId(provider.skyfurySpellIds and provider.skyfurySpellIds[1])
 	local skyfuryMissingCount, skyfuryTotal = 0, 0
 	if trackSkyfury and shouldEvaluateGroupResponsibilities then
-		skyfuryMissingCount, skyfuryTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.skyfurySpellIds, true)
+		skyfuryMissingCount, skyfuryTotal = reminder:GetSharedClassBuffMissingCountBySpellIds(provider.skyfurySpellIds)
 	end
 	if shouldEvaluateGroupResponsibilities and skyfuryTotal > 0 then
 		totalRequirements = totalRequirements + 1
@@ -1952,7 +1957,7 @@ local function druidRestorationGetSelfStatus(provider, reminder)
 	local trackMark = hasKnownSpellInList(provider.markKnownSpellIds or provider.markSpellIds)
 	local markMissingCount, markTotal = 0, 0
 	if trackMark and shouldEvaluateGroupResponsibilities then
-		markMissingCount, markTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.markSpellIds, true)
+		markMissingCount, markTotal = reminder:GetSharedClassBuffMissingCountBySpellIds(provider.markSpellIds)
 	end
 	if shouldEvaluateGroupResponsibilities and markTotal > 0 then
 		totalRequirements = totalRequirements + 1
@@ -2019,7 +2024,7 @@ local function evokerSupportGetSelfStatus(provider, reminder)
 	local bronzeDisplaySpellId = normalizeSpellId(provider.bronzeDisplaySpellId) or normalizeSpellId(provider.bronzeSpellIds and provider.bronzeSpellIds[1])
 	local shouldTrackBronze = hasKnownSpellInList(provider.bronzeKnownSpellIds or provider.bronzeSpellIds)
 	if shouldTrackBronze then
-		local bronzeMissingCount, bronzeTotal = reminder:GetGroupBuffMissingCountBySpellIds(provider.bronzeSpellIds, true)
+		local bronzeMissingCount, bronzeTotal = reminder:GetSharedClassBuffMissingCountBySpellIds(provider.bronzeSpellIds)
 		if bronzeTotal > 0 then
 			totalRequirements = totalRequirements + 1
 			if bronzeMissingCount > 0 then
