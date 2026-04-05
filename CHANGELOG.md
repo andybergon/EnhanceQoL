@@ -7,6 +7,7 @@
 - Mythic+ (Teleports / Hearthstones): Added `Preyseeker's Hearthstone` to the available hearthstone list.
 - Cooldown Panels / Bars: Added a `Reverse fill direction` option for cooldown bars.
 - Group Frames / Main Tank / Main Assist: Added a `Show for role` dropdown so `MT` / `MA` headers can be limited to your own role (`All`, `Tank`, `Healer`, or `DPS`).
+- Sound: Added new dungeon NPC mute toggles for `Belath Dawnblade (Murder Row)`, `Lirath Windrunner (Windrunner Spire)`, and `Zul'Jarra (Den of Nalorakk)`.
 
 ### 🐛 Fixed
 

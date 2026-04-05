@@ -56,6 +56,9 @@ L["priory_of_the_sacred_flame_npc"] = "Priory of the Sacred Flame NPCs"
 L["rookery_npc"] = "Rookery NPCs"
 L["mechagon_npc"] = "Mechagon Workshop NPCs"
 L["cinderbrew_meadery_npc"] = "Cinderbrew Meadery NPCs"
+L["murder_row_belath_dawnblade"] = "Belath Dawnblade (Murder Row)"
+L["windrunner_spire_lirath_windrunner"] = "Lirath Windrunner (Windrunner Spire)"
+L["den_of_nalorakk_zuljarra"] = "Zul'Jarra (Den of Nalorakk)"
 
 -- Mounts
 L["banlu"] = "Ban-Lu"
