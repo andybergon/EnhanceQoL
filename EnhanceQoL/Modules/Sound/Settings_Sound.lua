@@ -9,7 +9,7 @@ end
 
 if not addon.Sounds or not addon.Sounds.soundFiles then return end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Sound")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local wipeTable = _G.wipe or table.wipe
 
 local function GetLabel(key) return L[key] or key end

@@ -1,7 +1,6 @@
 local addonName, addon = ...
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
-local LMP = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_MythicPlus")
 local issecretvalue = _G.issecretvalue
 
 ---- REGION Functions
@@ -1109,8 +1108,8 @@ if cChar and sectionDungeon then
 	-- Keystone Helper
 	keystoneEnable = addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "enableKeystoneHelper",
-		text = LMP["enableKeystoneHelper"],
-		desc = LMP["enableKeystoneHelperDesc"],
+		text = L["enableKeystoneHelper"],
+		desc = L["enableKeystoneHelperDesc"],
 		func = function(v)
 			addon.db["enableKeystoneHelper"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.toggleFrame then addon.MythicPlus.functions.toggleFrame() end
@@ -1119,13 +1118,13 @@ if cChar and sectionDungeon then
 	})
 
 	local keystoneChildren = {
-		{ var = "autoInsertKeystone", text = LMP["Automatically insert keystone"], func = function(v) addon.db["autoInsertKeystone"] = v end, parentSection = sectionDungeon },
-		{ var = "closeBagsOnKeyInsert", text = LMP["Close all bags on keystone insert"], func = function(v) addon.db["closeBagsOnKeyInsert"] = v end, parentSection = sectionDungeon },
-		{ var = "autoKeyStart", text = LMP["autoKeyStart"], func = function(v) addon.db["autoKeyStart"] = v end, parentSection = sectionDungeon },
+		{ var = "autoInsertKeystone", text = L["Automatically insert keystone"], func = function(v) addon.db["autoInsertKeystone"] = v end, parentSection = sectionDungeon },
+		{ var = "closeBagsOnKeyInsert", text = L["Close all bags on keystone insert"], func = function(v) addon.db["closeBagsOnKeyInsert"] = v end, parentSection = sectionDungeon },
+		{ var = "autoKeyStart", text = L["autoKeyStart"], func = function(v) addon.db["autoKeyStart"] = v end, parentSection = sectionDungeon },
 		{
 			var = "mythicPlusShowChestTimers",
-			text = LMP["mythicPlusShowChestTimers"],
-			desc = LMP["mythicPlusShowChestTimersDesc"],
+			text = L["mythicPlusShowChestTimers"],
+			desc = L["mythicPlusShowChestTimersDesc"],
 			func = function(v) addon.db["mythicPlusShowChestTimers"] = v end,
 			parentSection = sectionDungeon,
 		},
@@ -1138,14 +1137,14 @@ if cChar and sectionDungeon then
 	end
 
 	local listPull, orderPull = addon.functions.prepareListForDropdown({
-		[1] = LMP["None"],
-		[2] = LMP["Blizzard Pull Timer"],
-		[3] = LMP["DBM / BigWigs Pull Timer"],
-		[4] = LMP["Both"],
+		[1] = _G.NONE,
+		[2] = L["Blizzard Pull Timer"],
+		[3] = L["DBM / BigWigs Pull Timer"],
+		[4] = _G.STATUS_TEXT_BOTH,
 	})
 	addon.functions.SettingsCreateDropdown(cChar, {
 		var = "PullTimerType",
-		text = LMP["PullTimer"],
+		text = L["PullTimer"],
 		type = Settings.VarType.Number,
 		default = 2,
 		list = listPull,
@@ -1160,7 +1159,7 @@ if cChar and sectionDungeon then
 
 	addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "noChatOnPullTimer",
-		text = LMP["noChatOnPullTimer"],
+		text = L["noChatOnPullTimer"],
 		func = function(v) addon.db["noChatOnPullTimer"] = v end,
 		parent = true,
 		element = keystoneEnable.element,
@@ -1170,7 +1169,7 @@ if cChar and sectionDungeon then
 
 	addon.functions.SettingsCreateSlider(cChar, {
 		var = "pullTimerLongTime",
-		text = LMP["sliderLongTime"],
+		text = L["sliderLongTime"],
 		min = 0,
 		max = 60,
 		step = 1,
@@ -1185,7 +1184,7 @@ if cChar and sectionDungeon then
 
 	addon.functions.SettingsCreateSlider(cChar, {
 		var = "pullTimerShortTime",
-		text = LMP["sliderShortTime"],
+		text = L["sliderShortTime"],
 		min = 0,
 		max = 60,
 		step = 1,
@@ -1201,8 +1200,8 @@ if cChar and sectionDungeon then
 	-- Objective Tracker
 	local objEnable = addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "mythicPlusEnableObjectiveTracker",
-		text = LMP["mythicPlusEnableObjectiveTracker"],
-		desc = LMP["mythicPlusEnableObjectiveTrackerDesc"],
+		text = L["mythicPlusEnableObjectiveTracker"],
+		desc = L["mythicPlusEnableObjectiveTrackerDesc"],
 		func = function(v)
 			addon.db["mythicPlusEnableObjectiveTracker"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.setObjectiveFrames then addon.MythicPlus.functions.setObjectiveFrames() end
@@ -1211,10 +1210,10 @@ if cChar and sectionDungeon then
 	})
 	local function isObjectiveEnabled() return objEnable and objEnable.setting and objEnable.setting:GetValue() == true end
 
-	local listObj, orderObj = addon.functions.prepareListForDropdown({ [1] = LMP["HideTracker"], [2] = LMP["collapse"] })
+	local listObj, orderObj = addon.functions.prepareListForDropdown({ [1] = L["HideTracker"], [2] = L["collapse"] })
 	addon.functions.SettingsCreateDropdown(cChar, {
 		var = "mythicPlusObjectiveTrackerSetting",
-		text = LMP["mythicPlusObjectiveTrackerSetting"],
+		text = L["mythicPlusObjectiveTrackerSetting"],
 		type = Settings.VarType.Number,
 		default = (addon.db and addon.db["mythicPlusObjectiveTrackerSetting"]) or 1,
 		list = listObj,
@@ -1233,8 +1232,8 @@ if cChar and sectionDungeon then
 	-- BR Tracker
 	addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "mythicPlusBRTrackerEnabled",
-		text = LMP["mythicPlusBRTrackerEnabled"],
-		desc = LMP["mythicPlusBRTrackerEditModeHint"],
+		text = L["mythicPlusBRTrackerEnabled"],
+		desc = L["mythicPlusBRTrackerEditModeHint"],
 		func = function(v)
 			addon.db["mythicPlusBRTrackerEnabled"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.createBRFrame then
@@ -1248,8 +1247,8 @@ if cChar and sectionDungeon then
 
 	addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "mythicPlusBloodlustTrackerEnabled",
-		text = LMP["mythicPlusBloodlustTrackerEnabled"],
-		desc = LMP["mythicPlusBloodlustTrackerEditModeHint"],
+		text = L["mythicPlusBloodlustTrackerEnabled"],
+		desc = L["mythicPlusBloodlustTrackerEditModeHint"],
 		func = function(v)
 			addon.db["mythicPlusBloodlustTrackerEnabled"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.syncBloodlustUnitAuraRegistration then addon.MythicPlus.functions.syncBloodlustUnitAuraRegistration() end
@@ -1360,8 +1359,8 @@ data = {
 if keystoneEnable then
 	table.insert(data, {
 		var = "groupfinderShowPartyKeystone",
-		text = LMP["groupfinderShowPartyKeystone"],
-		desc = LMP["groupfinderShowPartyKeystoneDesc"],
+		text = L["groupfinderShowPartyKeystone"],
+		desc = L["groupfinderShowPartyKeystoneDesc"],
 		func = function(v)
 			addon.db["groupfinderShowPartyKeystone"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.togglePartyKeystone then addon.MythicPlus.functions.togglePartyKeystone() end
@@ -1375,7 +1374,7 @@ end
 
 table.insert(data, {
 	var = "groupfinderShowDungeonScoreFrame",
-	text = LMP["groupfinderShowDungeonScoreFrame"]:format(DUNGEON_SCORE),
+	text = L["groupfinderShowDungeonScoreFrame"]:format(DUNGEON_SCORE),
 	func = function(v)
 		addon.db["groupfinderShowDungeonScoreFrame"] = v
 		if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.toggleFrame then addon.MythicPlus.functions.toggleFrame() end
@@ -1385,8 +1384,8 @@ table.insert(data, {
 
 table.insert(data, {
 	var = "mythicPlusEnableDungeonFilter",
-	text = LMP["mythicPlusEnableDungeonFilter"],
-	desc = LMP["mythicPlusEnableDungeonFilterDesc"]:format(REPORT_GROUP_FINDER_ADVERTISEMENT),
+	text = L["mythicPlusEnableDungeonFilter"],
+	desc = L["mythicPlusEnableDungeonFilterDesc"]:format(REPORT_GROUP_FINDER_ADVERTISEMENT),
 	func = function(v)
 		addon.db["mythicPlusEnableDungeonFilter"] = v
 		if addon.MythicPlus and addon.MythicPlus.functions then
@@ -1401,7 +1400,7 @@ table.insert(data, {
 	children = {
 		{
 			var = "mythicPlusEnableDungeonFilterClearReset",
-			text = LMP["mythicPlusEnableDungeonFilterClearReset"],
+			text = L["mythicPlusEnableDungeonFilterClearReset"],
 			func = function(v) addon.db["mythicPlusEnableDungeonFilterClearReset"] = v end,
 			parentCheck = function()
 				return addon.SettingsLayout.elements["mythicPlusEnableDungeonFilter"]

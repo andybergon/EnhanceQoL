@@ -12,7 +12,7 @@ addon.Aura.CooldownPanels = addon.Aura.CooldownPanels or {}
 local CooldownPanels = addon.Aura.CooldownPanels
 local Helper = CooldownPanels.helper or {}
 local Api = Helper.Api or {}
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local LSM = LibStub("LibSharedMedia-3.0", true)
 
 CooldownPanels.Bars = CooldownPanels.Bars or {}

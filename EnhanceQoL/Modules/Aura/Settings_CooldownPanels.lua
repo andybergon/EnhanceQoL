@@ -7,7 +7,7 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 local cat = addon.SettingsLayout and addon.SettingsLayout.rootUI
 if not (cat and addon.functions and addon.functions.SettingsCreateExpandableSection) then return end

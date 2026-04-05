@@ -7,8 +7,7 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_DrinkMacro")
-local LCore = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local wipe = wipe
 
 local function isCheckboxEnabled(var)
@@ -51,7 +50,7 @@ local function buildDrinkMacroSettings()
 	local convenienceSection = addon.SettingsLayout.gameplayConvenienceSection
 	if not convenienceSection then
 		convenienceSection = addon.functions.SettingsCreateExpandableSection(cDrink, {
-			name = (LCore and LCore["MacrosAndConsumables"]) or "Macros & Consumables",
+			name = L["MacrosAndConsumables"] or "Macros & Consumables",
 			newTagID = "MacrosAndConsumables",
 			expanded = false,
 			colorizeTitle = false,

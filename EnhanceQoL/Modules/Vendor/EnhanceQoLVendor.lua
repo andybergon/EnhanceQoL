@@ -11,7 +11,7 @@ addon.Vendor = addon.Vendor or {}
 addon.Vendor.functions = addon.Vendor.functions or {}
 addon.Vendor.variables = addon.Vendor.variables or {}
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Vendor")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local MainL = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 local lastEbox = nil
 local sellMoreButton

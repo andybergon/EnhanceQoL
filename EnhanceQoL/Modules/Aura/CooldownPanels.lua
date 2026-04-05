@@ -15,7 +15,7 @@ local Keybinds = Helper.Keybinds
 local Api = Helper.Api or {}
 local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 local LSM = LibStub("LibSharedMedia-3.0", true)
 local Glow = addon.Glow
 local Masque
@@ -1707,7 +1707,7 @@ end
 
 local function getSoundLabel(value)
 	local soundName = normalizeSoundName(value)
-	if soundName == "None" then return L["None"] or _G.NONE or "None" end
+	if soundName == "None" then return _G.NONE end
 	return soundName
 end
 

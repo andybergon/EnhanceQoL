@@ -24,12 +24,6 @@ jobs:
           args: "--no-color -q"
           annotate: warning
 
-      - name: Update CurseForge Translations
-        # Run only for beta or release tags (skip alpha)
-        if: startsWith(github.ref, 'refs/tags/') && (contains(github.ref, '-beta') || !contains(github.ref, '-alpha'))
-        run: ./update_translations.sh
-        env:
-          CF_API_KEY: ${{ secrets.CURSE_API_TOKEN }}
       # - name: Generate Changelog
       #   run: ./generate_changelog.sh
 

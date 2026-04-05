@@ -15,7 +15,7 @@ ResourceBars.ui = ResourceBars.ui or {}
 -- forward declarations to satisfy luacheck for early function
 local LSM = LibStub("LibSharedMedia-3.0")
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local GetVisibilityRuleMetadata = addon.functions and addon.functions.GetVisibilityRuleMetadata
 
 local UnitPower, UnitPowerMax, UnitHealth, UnitHealthMax, UnitGetTotalAbsorbs, UnitStagger, GetTime = UnitPower, UnitPowerMax, UnitHealth, UnitHealthMax, UnitGetTotalAbsorbs, UnitStagger, GetTime

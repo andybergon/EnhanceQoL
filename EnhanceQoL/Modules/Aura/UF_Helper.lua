@@ -1803,7 +1803,7 @@ end
 
 function H.GetSecondaryPowerTokenOptions(includeNone)
 	local options = {}
-	if includeNone == true then options[#options + 1] = { value = "NONE", label = _G.NONE or "None" } end
+	if includeNone == true then options[#options + 1] = { value = "NONE", label = _G.NONE } end
 	for _, token in ipairs(getSecondaryPowerTokens()) do
 		options[#options + 1] = { value = token, label = H.getPowerLabel(token) }
 	end

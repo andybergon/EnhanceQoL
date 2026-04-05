@@ -7,13 +7,12 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Mouse")
-local LMain = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 local cMouse = addon.SettingsLayout.rootGENERAL
 
 local expandable = addon.functions.SettingsCreateExpandableSection(cMouse, {
-	name = (LMain and LMain["MouseAndAccessibility"]) or "Mouse & Accessibility",
+	name = L["MouseAndAccessibility"] or "Mouse & Accessibility",
 	newTagID = "MouseAndAccessibility",
 	expanded = false,
 	colorizeTitle = false,

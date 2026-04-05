@@ -11,7 +11,7 @@ addon.Aura = addon.Aura or {}
 addon.Aura.StandalonePrivateAuras = addon.Aura.StandalonePrivateAuras or {}
 local PrivateAuras = addon.Aura.StandalonePrivateAuras
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local UFHelper = addon.Aura and addon.Aura.UFHelper

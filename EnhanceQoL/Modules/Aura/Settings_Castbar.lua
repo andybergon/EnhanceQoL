@@ -13,7 +13,7 @@ local CastbarSettings = addon.Aura.SettingsCastbar
 
 function CastbarSettings.BuildStandaloneCastbarSettings(ctx)
 	ctx = type(ctx) == "table" and ctx or {}
-	local L = ctx.L or LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+	local L = ctx.L or LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 	local settingType = ctx.settingType
 	local getCastbarModule = ctx.getCastbarModule
 	local toRGBA = ctx.toRGBA

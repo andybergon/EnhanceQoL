@@ -14,7 +14,7 @@ local UF = addon.Aura.UF
 UF.AuraUtil = UF.AuraUtil or {}
 local AuraUtil = UF.AuraUtil
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local Masque
 
 function AuraUtil.getMasqueGroup()

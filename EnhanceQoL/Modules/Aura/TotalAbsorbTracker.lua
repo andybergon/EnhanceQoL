@@ -22,7 +22,7 @@ local UnitGetDetailedHealPrediction = _G.UnitGetDetailedHealPrediction
 local UnitExists = _G.UnitExists
 local AbbreviateNumbers = _G.AbbreviateNumbers
 local STANDARD_TEXT_FONT = _G.STANDARD_TEXT_FONT
-local NONE = _G.NONE or "None"
+local NONE = _G.NONE
 local DEFAULT = _G.DEFAULT or "Default"
 local Enum = _G.Enum
 

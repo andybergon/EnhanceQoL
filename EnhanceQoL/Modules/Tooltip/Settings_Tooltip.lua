@@ -7,7 +7,7 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Tooltip")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 local cTooltip = addon.SettingsLayout.rootUI
 
@@ -320,7 +320,7 @@ addon.functions.SettingsCreateHeadline(cTooltip, {
 })
 
 data = {
-	list = { [1] = NONE, [2] = L["Enemies"], [3] = L["Friendly"], [4] = L["Both"] },
+	list = { [1] = _G.NONE, [2] = L["Enemies"], [3] = L["Friendly"], [4] = _G.STATUS_TEXT_BOTH },
 	text = L["TooltipUnitHideType"],
 	get = function() return addon.db.TooltipUnitHideType or 1 end,
 	set = function(key) addon.db.TooltipUnitHideType = key end,

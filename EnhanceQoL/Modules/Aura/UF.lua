@@ -122,7 +122,7 @@ local function DisableBossFrames()
 	end
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local LSM = LibStub("LibSharedMedia-3.0")
 local AceGUI = addon.AceGUI or LibStub("AceGUI-3.0")
 local DEFAULT_NOT_INTERRUPTIBLE_COLOR = { 204 / 255, 204 / 255, 204 / 255, 1 }

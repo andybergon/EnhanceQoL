@@ -7,7 +7,7 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Mouse")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local GetVisibilityRuleMetadata = addon.functions and addon.functions.GetVisibilityRuleMetadata

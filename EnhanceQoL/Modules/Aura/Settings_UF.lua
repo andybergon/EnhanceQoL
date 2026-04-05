@@ -7,7 +7,7 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local LSM = LibStub("LibSharedMedia-3.0")
 local EditMode = addon.EditMode
 local settingType = EditMode and EditMode.lib and EditMode.lib.SettingType
@@ -157,7 +157,7 @@ local function maxDelimiterCount(leftMode, centerMode, rightMode)
 end
 
 local outlineOptions = {
-	{ value = "NONE", label = L["None"] or "None" },
+	{ value = "NONE", label = _G.NONE },
 	{ value = "OUTLINE", label = L["Outline"] or "Outline" },
 	{ value = "THICKOUTLINE", label = L["Thick Outline"] or "Thick Outline" },
 	{ value = "MONOCHROMEOUTLINE", label = L["Monochrome Outline"] or "Monochrome Outline" },
@@ -579,7 +579,7 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		{ value = "OVERLAY", label = L["Overlay"] or "Overlay" },
 	}
 	local stackOutlineOptions = {
-		{ value = "NONE", label = L["None"] or "None" },
+		{ value = "NONE", label = _G.NONE },
 		{ value = "OUTLINE", label = L["Outline"] or "Outline" },
 		{ value = "THICKOUTLINE", label = L["Thick outline"] or "Thick outline" },
 		{ value = "MONOCHROMEOUTLINE", label = L["Monochrome outline"] or "Monochrome outline" },

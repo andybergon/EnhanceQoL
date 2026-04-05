@@ -7,7 +7,7 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Tooltip")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local WHITE_FONT_COLOR = _G.WHITE_FONT_COLOR
 
 local frameLoad = CreateFrame("Frame")

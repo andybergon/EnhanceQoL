@@ -15,7 +15,7 @@ local Castbar = addon.Aura.Castbar
 local UFHelper = addon.Aura.UFHelper
 if not UFHelper then return end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local After = C_Timer and C_Timer.After
 local issecretvalue = _G.issecretvalue
 local UNIT = "player"

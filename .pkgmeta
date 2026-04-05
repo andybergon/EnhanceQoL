@@ -30,7 +30,6 @@ ignore:
   - README.md
   - CONTRIBUTING.md
   - stylua.toml
-  - update_translations.sh
   - wow-ui-retail.skill
 
 manual-changelog:

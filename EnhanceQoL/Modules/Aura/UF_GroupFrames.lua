@@ -42,7 +42,7 @@ local healthTextModeOptions = GFH.healthTextModeOptions or GFH.textModeOptions
 local delimiterOptions = GFH.delimiterOptions
 local outlineOptions = GFH.outlineOptions
 local ensureAuraConfig = GFH.EnsureAuraConfig
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 GF.splitRoleViewerRoleOptions = {
 	{ value = "ALL", label = L["All"] or "All" },
 	{ value = "TANK", label = TANK or "Tank" },

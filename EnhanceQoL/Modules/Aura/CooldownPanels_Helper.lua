@@ -12,7 +12,7 @@ addon.Aura.CooldownPanels = addon.Aura.CooldownPanels or {}
 local CooldownPanels = addon.Aura.CooldownPanels
 CooldownPanels.helper = CooldownPanels.helper or {}
 local Helper = CooldownPanels.helper
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local LSM = LibStub("LibSharedMedia-3.0", true)
 
 Helper.Api = Helper.Api or {}
@@ -109,7 +109,7 @@ Helper.FixedGroupStartPointOptions = {
 	{ value = "BOTTOMRIGHT", label = L["Bottom Right"] or "Bottom Right" },
 }
 Helper.FontStyleOptions = {
-	{ value = "NONE", label = L["None"] or "None" },
+	{ value = "NONE", label = _G.NONE },
 	{ value = "OUTLINE", label = L["Outline"] or "Outline" },
 	{ value = "THICKOUTLINE", label = L["Thick Outline"] or "Thick Outline" },
 	{ value = "MONOCHROMEOUTLINE", label = L["Monochrome Outline"] or "Monochrome Outline" },

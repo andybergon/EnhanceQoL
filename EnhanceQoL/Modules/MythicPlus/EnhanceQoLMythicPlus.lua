@@ -11,8 +11,7 @@ addon.MythicPlus = addon.MythicPlus or {}
 addon.MythicPlus.functions = addon.MythicPlus.functions or {}
 addon.MythicPlus.variables = addon.MythicPlus.variables or {}
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_MythicPlus")
-local LCore = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local LSM = LibStub("LibSharedMedia-3.0")
 local issecretvalue = _G.issecretvalue
 local wipe = _G.wipe or (table and table.wipe)
@@ -705,10 +704,10 @@ local function ensureBRAnchor()
 			end
 
 			local function outlineOptionLabel(value)
-				if value == "NONE" then return (LCore and LCore["fontOutlineNone"]) or NONE end
-				if value == "OUTLINE" then return (LCore and LCore["fontOutlineThin"]) or "Outline" end
-				if value == "THICKOUTLINE" then return (LCore and LCore["fontOutlineThick"]) or "Thick Outline" end
-				if value == "MONOCHROMEOUTLINE" then return (LCore and LCore["fontOutlineMono"]) or "Monochrome Outline" end
+				if value == "NONE" then return L["fontOutlineNone"] or NONE end
+				if value == "OUTLINE" then return L["fontOutlineThin"] or "Outline" end
+				if value == "THICKOUTLINE" then return L["fontOutlineThick"] or "Thick Outline" end
+				if value == "MONOCHROMEOUTLINE" then return L["fontOutlineMono"] or "Monochrome Outline" end
 				return value
 			end
 
@@ -1774,10 +1773,10 @@ local function ensureBloodlustAnchor()
 			end
 
 			local function outlineOptionLabel(value)
-				if value == "NONE" then return (LCore and LCore["fontOutlineNone"]) or NONE end
-				if value == "OUTLINE" then return (LCore and LCore["fontOutlineThin"]) or "Outline" end
-				if value == "THICKOUTLINE" then return (LCore and LCore["fontOutlineThick"]) or "Thick Outline" end
-				if value == "MONOCHROMEOUTLINE" then return (LCore and LCore["fontOutlineMono"]) or "Monochrome Outline" end
+				if value == "NONE" then return L["fontOutlineNone"] or NONE end
+				if value == "OUTLINE" then return L["fontOutlineThin"] or "Outline" end
+				if value == "THICKOUTLINE" then return L["fontOutlineThick"] or "Thick Outline" end
+				if value == "MONOCHROMEOUTLINE" then return L["fontOutlineMono"] or "Monochrome Outline" end
 				return value
 			end
 

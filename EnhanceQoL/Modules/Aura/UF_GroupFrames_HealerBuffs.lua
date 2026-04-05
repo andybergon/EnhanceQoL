@@ -10,7 +10,7 @@ end
 addon.Aura = addon.Aura or {}
 addon.Aura.UF = addon.Aura.UF or {}
 local UF = addon.Aura.UF
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 UF.GroupFramesHealerBuffs = UF.GroupFramesHealerBuffs or {}
 local HB = UF.GroupFramesHealerBuffs

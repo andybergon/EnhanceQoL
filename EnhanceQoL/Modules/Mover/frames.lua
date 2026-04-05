@@ -7,7 +7,7 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Mover")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local db
 
 local groupOrder = {
@@ -669,7 +669,7 @@ local frames = {
 	},
 	{
 		id = "QuestFrame",
-		label = L["Quest"] or "Quest",
+		label = L["MoverQuestDialog"] or "NPC Dialog (Quest)",
 		group = "world",
 		names = { "QuestFrame", "GossipFrame" },
 		defaultEnabled = true,
