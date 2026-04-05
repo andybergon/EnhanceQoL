@@ -1,5 +1,17 @@
 # Changelog
 
+## [9.12.0-beta11] - 2026-04-05
+
+### ✨ Added
+
+- Group Frames (Raid): Added a separate `Main Tank / Main Assist` icon option for raid frames.
+
+### 🐛 Fixed
+
+- Group Frames (Raid): Fixed `Group Growth` not working correctly when raid frames were grouped by role.
+
+---
+
 ## [9.12.0-beta10] - 2026-04-05
 
 ### 🐛 Fixed

@@ -52,9 +52,7 @@ GF.splitRoleViewerRoleOptions = {
 
 local function textureOptions() return GFH.TextureOptions(LSM) end
 local function fontOptions() return GFH.FontOptions(LSM) end
-function GF.FontOptionsWithDefault()
-	return fontOptions()
-end
+function GF.FontOptionsWithDefault() return fontOptions() end
 function GF.GlobalFontConfigKey()
 	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
 	return "__EQOL_GLOBAL_FONT__"
@@ -252,23 +250,25 @@ function GF.ScaleOffset(offset, factor)
 	}
 end
 
-GF.IsCenteredHorizontalAnchor = GF.IsCenteredHorizontalAnchor or function(point)
-	if type(point) ~= "string" then return false end
-	return not point:find("LEFT", 1, true) and not point:find("RIGHT", 1, true)
-end
+GF.IsCenteredHorizontalAnchor = GF.IsCenteredHorizontalAnchor
+	or function(point)
+		if type(point) ~= "string" then return false end
+		return not point:find("LEFT", 1, true) and not point:find("RIGHT", 1, true)
+	end
 
-GF.GetCenteredFontStringHalfPixelOffset = GF.GetCenteredFontStringHalfPixelOffset or function(fs)
-	if not (fs and fs.GetStringWidth and Pixel and Pixel.GetPixelToUIUnitFactor) then return 0 end
-	local width = tonumber(fs:GetStringWidth()) or 0
-	if width <= 0 then return 0 end
-	local scale = (Pixel.GetScale and Pixel.GetScale(fs)) or (fs.GetEffectiveScale and fs:GetEffectiveScale()) or 1
-	scale = tonumber(scale) or 1
-	if scale <= 0 then scale = 1 end
-	local factor = Pixel.GetPixelToUIUnitFactor()
-	local widthPixels = floor(((width * scale) / factor) + 0.5)
-	if widthPixels <= 0 or (widthPixels % 2) == 0 then return 0 end
-	return (factor / scale) * 0.5
-end
+GF.GetCenteredFontStringHalfPixelOffset = GF.GetCenteredFontStringHalfPixelOffset
+	or function(fs)
+		if not (fs and fs.GetStringWidth and Pixel and Pixel.GetPixelToUIUnitFactor) then return 0 end
+		local width = tonumber(fs:GetStringWidth()) or 0
+		if width <= 0 then return 0 end
+		local scale = (Pixel.GetScale and Pixel.GetScale(fs)) or (fs.GetEffectiveScale and fs:GetEffectiveScale()) or 1
+		scale = tonumber(scale) or 1
+		if scale <= 0 then scale = 1 end
+		local factor = Pixel.GetPixelToUIUnitFactor()
+		local widthPixels = floor(((width * scale) / factor) + 0.5)
+		if widthPixels <= 0 or (widthPixels % 2) == 0 then return 0 end
+		return (factor / scale) * 0.5
+	end
 
 function GF.ApplyCenteredNameTextNudge(st)
 	local fs = st and st.nameText
@@ -1077,6 +1077,37 @@ function GF.ResolveUnitGrowthDirection(value, fallback)
 	if mode == "CENTER_HORIZONTAL" then return mode, "RIGHT" end
 	if mode == "CENTER_VERTICAL" then return mode, "DOWN" end
 	return mode, mode
+end
+
+function GF.ResolveRaidCrossGrowthValue(groupGrowth, unitGrowth)
+	local unit = (GFH and GFH.NormalizeGrowthDirection and GFH.NormalizeGrowthDirection(unitGrowth, "DOWN")) or tostring(unitGrowth or "DOWN"):upper()
+	if GFH and GFH.ResolveGroupGrowthDirection then return GFH.ResolveGroupGrowthDirection(groupGrowth, unit, nil) end
+	return (GFH and GFH.NormalizeGrowthDirection and GFH.NormalizeGrowthDirection(groupGrowth, nil)) or ((unit == "RIGHT" or unit == "LEFT") and "DOWN" or "RIGHT")
+end
+
+function GF.ResolveRaidCrossGrowth(cfg, growth)
+	local _, unitGrowth = GF.ResolveUnitGrowthDirection(growth or (cfg and cfg.growth), "DOWN")
+	return GF.ResolveRaidCrossGrowthValue(cfg and cfg.groupGrowth, unitGrowth)
+end
+
+function GF.GetRaidLayoutStartPoint(growth, groupGrowth)
+	local _, unitGrowth = GF.ResolveUnitGrowthDirection(growth, "DOWN")
+	local crossGrowth = GF.ResolveRaidCrossGrowthValue(groupGrowth, unitGrowth)
+	if unitGrowth == "RIGHT" or unitGrowth == "LEFT" then
+		local horizontalPoint = (unitGrowth == "LEFT") and "RIGHT" or "LEFT"
+		local verticalPoint = (crossGrowth == "UP") and "BOTTOM" or "TOP"
+		return verticalPoint .. horizontalPoint
+	end
+	local horizontalPoint = (crossGrowth == "LEFT") and "RIGHT" or "LEFT"
+	local verticalPoint = (unitGrowth == "UP") and "BOTTOM" or "TOP"
+	return verticalPoint .. horizontalPoint
+end
+
+function GF.GetRaidColumnAnchorPoint(growth, groupGrowth)
+	local _, unitGrowth = GF.ResolveUnitGrowthDirection(growth, "DOWN")
+	local crossGrowth = GF.ResolveRaidCrossGrowthValue(groupGrowth, unitGrowth)
+	if unitGrowth == "RIGHT" or unitGrowth == "LEFT" then return (crossGrowth == "UP") and "BOTTOM" or "TOP" end
+	return (crossGrowth == "LEFT") and "RIGHT" or "LEFT"
 end
 
 function GF.SupportsCenterGrowth(kind) return kind == "party" or kind == "raid" end
@@ -2590,6 +2621,14 @@ local DEFAULTS = {
 				size = 19,
 				x = 6,
 				y = 10,
+			},
+			raidAssignmentIcon = {
+				enabled = false,
+				point = "TOPRIGHT",
+				relativePoint = "TOPRIGHT",
+				size = 12,
+				x = -2,
+				y = -2,
 			},
 			levelAnchor = "TOPRIGHT",
 			levelColor = {
@@ -5818,6 +5857,9 @@ function GF:BuildButton(self)
 	if not st.assistIcon then
 		st.assistIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
 	end
+	if not st.raidAssignmentIcon then
+		st.raidAssignmentIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
+	end
 	if not st.raidIcon then
 		st.raidIcon = (Pixel and Pixel.CreateTexture and Pixel.CreateTexture(indicatorLayer, nil, "OVERLAY", nil, 7)) or indicatorLayer:CreateTexture(nil, "OVERLAY", nil, 7)
 		if Pixel and Pixel.SetTexture then
@@ -5885,6 +5927,7 @@ function GF:BuildButton(self)
 	end
 	if st.leaderIcon.GetParent and st.leaderIcon:GetParent() ~= indicatorLayer then st.leaderIcon:SetParent(indicatorLayer) end
 	if st.assistIcon.GetParent and st.assistIcon:GetParent() ~= indicatorLayer then st.assistIcon:SetParent(indicatorLayer) end
+	if st.raidAssignmentIcon.GetParent and st.raidAssignmentIcon:GetParent() ~= indicatorLayer then st.raidAssignmentIcon:SetParent(indicatorLayer) end
 	if st.raidIcon.GetParent and st.raidIcon:GetParent() ~= indicatorLayer then st.raidIcon:SetParent(indicatorLayer) end
 	if st.readyCheckIcon.GetParent and st.readyCheckIcon:GetParent() ~= indicatorLayer then st.readyCheckIcon:SetParent(indicatorLayer) end
 	if st.summonIcon.GetParent and st.summonIcon:GetParent() ~= indicatorLayer then st.summonIcon:SetParent(indicatorLayer) end
@@ -5892,6 +5935,7 @@ function GF:BuildButton(self)
 	if st.phaseIcon.GetParent and st.phaseIcon:GetParent() ~= indicatorLayer then st.phaseIcon:SetParent(indicatorLayer) end
 	if st.leaderIcon.SetDrawLayer then st.leaderIcon:SetDrawLayer("OVERLAY", 7) end
 	if st.assistIcon.SetDrawLayer then st.assistIcon:SetDrawLayer("OVERLAY", 7) end
+	if st.raidAssignmentIcon.SetDrawLayer then st.raidAssignmentIcon:SetDrawLayer("OVERLAY", 7) end
 	if st.raidIcon.SetDrawLayer then st.raidIcon:SetDrawLayer("OVERLAY", 7) end
 	if st.readyCheckIcon.SetDrawLayer then st.readyCheckIcon:SetDrawLayer("OVERLAY", 7) end
 	if st.summonIcon.SetDrawLayer then st.summonIcon:SetDrawLayer("OVERLAY", 7) end
@@ -6380,7 +6424,7 @@ function GF:LayoutButton(self)
 				st.nameText:SetPoint(rightPoint, nameAnchorFrame, rightPoint, rightX, rightY)
 			end
 		else
-				local centeredNameAnchor = GF.IsCenteredHorizontalAnchor and GF.IsCenteredHorizontalAnchor(nameAnchor)
+			local centeredNameAnchor = GF.IsCenteredHorizontalAnchor and GF.IsCenteredHorizontalAnchor(nameAnchor)
 			st._eqolNameAnchorState = {
 				centered = centeredNameAnchor,
 				point = nameAnchor,
@@ -6394,7 +6438,7 @@ function GF:LayoutButton(self)
 			else
 				st.nameText:SetPoint(nameAnchor, nameAnchorFrame, nameAnchor, nameX, nameY)
 			end
-				if centeredNameAnchor and GF.ApplyCenteredNameTextNudge then GF.ApplyCenteredNameTextNudge(st) end
+			if centeredNameAnchor and GF.ApplyCenteredNameTextNudge then GF.ApplyCenteredNameTextNudge(st) end
 		end
 		local justify = "CENTER"
 		if nameAnchor and nameAnchor:find("LEFT") then
@@ -6551,6 +6595,36 @@ function GF:LayoutButton(self)
 			end
 		else
 			st.assistIcon:Hide()
+		end
+	end
+
+	if st.raidAssignmentIcon then
+		local racfg = sc.raidAssignmentIcon or {}
+		local defRaidAssignment = (def.status and def.status.raidAssignmentIcon) or {}
+		local raidAssignmentEnabled = racfg.enabled
+		if raidAssignmentEnabled == nil then raidAssignmentEnabled = defRaidAssignment.enabled == true end
+		local indicatorLayer = st.statusIconLayer or st.healthTextLayer or st.health
+		if st.raidAssignmentIcon.GetParent and st.raidAssignmentIcon:GetParent() ~= indicatorLayer then st.raidAssignmentIcon:SetParent(indicatorLayer) end
+		if st.raidAssignmentIcon.SetDrawLayer then st.raidAssignmentIcon:SetDrawLayer("OVERLAY", 7) end
+		if raidAssignmentEnabled == true then
+			local size = GF.ScaleContentValue(self, racfg.size or defRaidAssignment.size or 12, cfg, 1)
+			st.raidAssignmentIcon:ClearAllPoints()
+			local assignmentPoint = racfg.point or defRaidAssignment.point or "TOPRIGHT"
+			local assignmentRelativePoint = racfg.relativePoint or defRaidAssignment.relativePoint or defRaidAssignment.point or "TOPRIGHT"
+			local assignmentX = roundToPixel(((racfg.x ~= nil) and racfg.x or (defRaidAssignment.x or -2)) * contentScale, scale)
+			local assignmentY = roundToPixel(((racfg.y ~= nil) and racfg.y or (defRaidAssignment.y or -2)) * contentScale, scale)
+			if Pixel and Pixel.SetPoint then
+				Pixel.SetPoint(st.raidAssignmentIcon, assignmentPoint, st.health, assignmentRelativePoint, assignmentX, assignmentY)
+			else
+				st.raidAssignmentIcon:SetPoint(assignmentPoint, st.health, assignmentRelativePoint, assignmentX, assignmentY)
+			end
+			if Pixel and Pixel.SetSize then
+				Pixel.SetSize(st.raidAssignmentIcon, size, size, 1, 1)
+			else
+				st.raidAssignmentIcon:SetSize(size, size)
+			end
+		else
+			st.raidAssignmentIcon:Hide()
 		end
 	end
 
@@ -7047,19 +7121,24 @@ function GF:UpdateRaidIcon(self)
 	end
 end
 
-local function isUnitMainAssist(unit)
-	if not (unit and UnitInRaid and UnitInRaid(unit)) then return false end
-	if GetPartyAssignment then return GetPartyAssignment("MAINASSIST", unit) and true or false end
-	if not GetRaidRosterInfo then return false end
+function GF.GetUnitRaidAssignmentRole(unit)
+	if not (unit and UnitInRaid and UnitInRaid(unit)) then return nil end
+	if GetPartyAssignment then
+		if GetPartyAssignment("MAINTANK", unit) then return "MAINTANK" end
+		if GetPartyAssignment("MAINASSIST", unit) then return "MAINASSIST" end
+	end
+	if not GetRaidRosterInfo then return nil end
 	local raidID = UnitInRaid(unit)
-	if not raidID then return false end
-	return select(10, GetRaidRosterInfo(raidID)) == "MAINASSIST"
+	if not raidID then return nil end
+	local role = select(10, GetRaidRosterInfo(raidID))
+	if role == "MAINTANK" or role == "MAINASSIST" then return role end
+	return nil
 end
 
 function GF:UpdateGroupIcons(self)
 	local unit = getUnit(self)
 	local st = getState(self)
-	if not (st and st.leaderIcon and st.assistIcon) then return end
+	if not (st and st.leaderIcon and st.assistIcon and st.raidAssignmentIcon) then return end
 	local cfg = self._eqolCfg or getCfg(self._eqolGroupKind or "party")
 	local scfg = cfg and cfg.status or {}
 
@@ -7082,27 +7161,49 @@ function GF:UpdateGroupIcons(self)
 		end
 	end
 
+	local racfg = scfg.raidAssignmentIcon or {}
+	local defRaidAssignment = (DEFAULTS[self._eqolGroupKind or "party"] and DEFAULTS[self._eqolGroupKind or "party"].status and DEFAULTS[self._eqolGroupKind or "party"].status.raidAssignmentIcon)
+		or {}
+	local raidAssignmentEnabled = racfg.enabled
+	if raidAssignmentEnabled == nil then raidAssignmentEnabled = defRaidAssignment.enabled == true end
+	if self._eqolGroupKind ~= "raid" or raidAssignmentEnabled ~= true then
+		st.raidAssignmentIcon:Hide()
+	else
+		local raidAssignment = GF.GetUnitRaidAssignmentRole(unit)
+		local showRaidAssignment = raidAssignment ~= nil
+		if not showRaidAssignment and isEditModeActive() then
+			raidAssignment = "MAINTANK"
+			showRaidAssignment = true
+		end
+		if showRaidAssignment then
+			local atlas = (raidAssignment == "MAINTANK") and "RaidFrame-Icon-MainTank" or "RaidFrame-Icon-MainAssist"
+			local fallbackTexture = (raidAssignment == "MAINTANK") and "Interface\\GroupFrame\\UI-Group-MainTankIcon" or "Interface\\GroupFrame\\UI-Group-MainAssistIcon"
+			if Pixel and Pixel.SetAtlas then
+				local ok = Pixel.SetAtlas(st.raidAssignmentIcon, atlas, false)
+				if ok ~= true and Pixel.SetTexture then Pixel.SetTexture(st.raidAssignmentIcon, fallbackTexture) end
+			else
+				local ok = st.raidAssignmentIcon:SetAtlas(atlas, false)
+				if ok ~= true then st.raidAssignmentIcon:SetTexture(fallbackTexture) end
+			end
+			if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.raidAssignmentIcon) end
+			st.raidAssignmentIcon:Show()
+		else
+			st.raidAssignmentIcon:Hide()
+		end
+	end
+
 	local acfg = scfg.assistIcon or {}
 	if self._eqolGroupKind == "party" or acfg.enabled == false then
 		st.assistIcon:Hide()
 	else
-		local isMainAssist = isUnitMainAssist(unit)
 		local isAssistant = unit and UnitIsGroupAssistant and UnitIsGroupAssistant(unit)
-		local showAssist = isMainAssist or isAssistant
+		local showAssist = isAssistant
 		if not showAssist and isEditModeActive() then showAssist = true end
 		if showAssist then
-			if isMainAssist or isEditModeActive() then
-				if Pixel and Pixel.SetAtlas then
-					Pixel.SetAtlas(st.assistIcon, "RaidFrame-Icon-MainAssist", false)
-				else
-					st.assistIcon:SetAtlas("RaidFrame-Icon-MainAssist", false)
-				end
+			if Pixel and Pixel.SetTexture then
+				Pixel.SetTexture(st.assistIcon, "Interface\\GroupFrame\\UI-Group-AssistantIcon")
 			else
-				if Pixel and Pixel.SetTexture then
-					Pixel.SetTexture(st.assistIcon, "Interface\\GroupFrame\\UI-Group-AssistantIcon")
-				else
-					st.assistIcon:SetTexture("Interface\\GroupFrame\\UI-Group-AssistantIcon")
-				end
+				st.assistIcon:SetTexture("Interface\\GroupFrame\\UI-Group-AssistantIcon")
 			end
 			if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.assistIcon) end
 			st.assistIcon:Show()
@@ -8602,11 +8703,11 @@ function GF:UpdateStatusText(self)
 			local style = resolveStatusTextStyle(cfg, def, hc)
 			GF.ApplyScaledFont(self, statusFs, style.font, style.fontSize or 12, style.fontOutline, cfg)
 			applyStatusTextAnchor(st, style.anchor, GF.ScaleOffset(style.offset, contentScale), scale, GF.GetLayoutAnchorFrame(st, self) or self, statusFs)
-				local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
-				statusFs:SetText(statusTag)
-				if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(statusFs) end
-				statusFs:SetTextColor(r, g, b, a)
-				statusFs:Show()
+			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
+			statusFs:SetText(statusTag)
+			if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(statusFs) end
+			statusFs:SetTextColor(r, g, b, a)
+			statusFs:Show()
 		else
 			statusFs:SetText("")
 			statusFs:Hide()
@@ -8618,11 +8719,11 @@ function GF:UpdateStatusText(self)
 			local style = resolveGroupNumberStyle(cfg, def, hc)
 			if UFHelper and UFHelper.applyFont then UFHelper.applyFont(groupFs, style.font, style.fontSize or 12, style.fontOutline) end
 			applyStatusTextAnchor(st, style.anchor, style.offset, scale, GF.GetLayoutAnchorFrame(st, self) or self, groupFs)
-				local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
-				groupFs:SetText(groupTag)
-				if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(groupFs) end
-				groupFs:SetTextColor(r, g, b, a)
-				groupFs:Show()
+			local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
+			groupFs:SetText(groupTag)
+			if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(groupFs) end
+			groupFs:SetTextColor(r, g, b, a)
+			groupFs:Show()
 		else
 			groupFs:SetText("")
 			groupFs:Hide()
@@ -8797,11 +8898,11 @@ local function updateGroupIndicatorsForFrames(container, frames, cfg, def, isPre
 				if fs.SetDrawLayer then fs:SetDrawLayer("OVERLAY", 7) end
 				if UFHelper and UFHelper.applyFont then UFHelper.applyFont(fs, style.font, style.fontSize or 12, style.fontOutline) end
 				applyGroupIndicatorAnchor(fs, style.anchor, style.offset, scale, anchorTarget)
-					local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
-					fs:SetText(formatGroupNumber(subgroup, format))
-					if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(fs) end
-					fs:SetTextColor(r, g, b, a)
-					fs:Show()
+				local r, g, b, a = unpackColor(style.color, GFH.COLOR_WHITE)
+				fs:SetText(formatGroupNumber(subgroup, format))
+				if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(fs) end
+				fs:SetTextColor(r, g, b, a)
+				fs:Show()
 				used[subgroup] = true
 			else
 				fs:SetText("")
@@ -10413,6 +10514,7 @@ function GF:UpdatePreviewLayout(kind)
 		maxColumns = max(1, floor(clampNumber(tonumber(cfg.maxColumns) or 8, 1, 10, 8) + 0.5))
 		viewportColumns = maxColumns
 		columnSpacing = roundToPixel(clampNumber(tonumber(cfg.columnSpacing) or spacing, 0, 40, spacing), scale)
+		groupGrowth = GF.ResolveRaidCrossGrowth(cfg, growth)
 		if kind == "raid" then
 			sortMethod = resolveSortMethod(cfg)
 			local customSort = GFH and GFH.EnsureCustomSortConfig and GFH.EnsureCustomSortConfig(cfg)
@@ -10452,12 +10554,6 @@ function GF:UpdatePreviewLayout(kind)
 					end
 					if fallbackToSampleGroups then previewGroupSpecs = nil end
 				end
-				local defaultGroupGrowth = DEFAULTS and DEFAULTS.raid and DEFAULTS.raid.groupGrowth
-				if GFH.ResolveGroupGrowthDirection then
-					groupGrowth = GFH.ResolveGroupGrowthDirection(cfg and cfg.groupGrowth, growth, defaultGroupGrowth)
-				else
-					groupGrowth = (GFH.NormalizeGrowthDirection and GFH.NormalizeGrowthDirection(cfg and cfg.groupGrowth, nil)) or ((growth == "RIGHT" or growth == "LEFT") and "DOWN" or "RIGHT")
-				end
 				local unitIsHorizontal = (growth == "LEFT" or growth == "RIGHT")
 				local groupIsHorizontal = (groupGrowth == "LEFT" or groupGrowth == "RIGHT")
 				if unitIsHorizontal == groupIsHorizontal then
@@ -10474,6 +10570,7 @@ function GF:UpdatePreviewLayout(kind)
 			end
 		end
 	end
+	if raidStyle and not useGroupedPreview and not centerGrowthActive then startPoint = GF.GetRaidLayoutStartPoint(growth, groupGrowth) end
 	local maxShown
 	if raidStyle and useGroupedPreview then
 		if useGroupedCustomSort then
@@ -10727,7 +10824,7 @@ function GF:UpdatePreviewLayout(kind)
 								anchor,
 								previewAnchorPoint,
 								previewCenterOffsetX + roundToPixel(row * (visualW + visualSpacing) * xSign, scale),
-								previewCenterOffsetY + roundToPixel(col * (visualH + visualColumnSpacing) * -1, scale)
+								previewCenterOffsetY + roundToPixel(col * (visualH + visualColumnSpacing) * ((groupGrowth == "UP") and 1 or -1), scale)
 							)
 						else
 							btn:SetPoint(
@@ -10735,7 +10832,7 @@ function GF:UpdatePreviewLayout(kind)
 								anchor,
 								previewAnchorPoint,
 								previewCenterOffsetX + roundToPixel(row * (visualW + visualSpacing) * xSign, scale),
-								previewCenterOffsetY + roundToPixel(col * (visualH + visualColumnSpacing) * -1, scale)
+								previewCenterOffsetY + roundToPixel(col * (visualH + visualColumnSpacing) * ((groupGrowth == "UP") and 1 or -1), scale)
 							)
 						end
 					else
@@ -10745,7 +10842,7 @@ function GF:UpdatePreviewLayout(kind)
 								startPoint,
 								anchor,
 								previewAnchorPoint,
-								previewCenterOffsetX + roundToPixel(col * (visualW + visualColumnSpacing), scale),
+								previewCenterOffsetX + roundToPixel(col * (visualW + visualColumnSpacing) * ((groupGrowth == "LEFT") and -1 or 1), scale),
 								previewCenterOffsetY + roundToPixel(row * (visualH + visualSpacing) * ySign, scale)
 							)
 						else
@@ -10753,7 +10850,7 @@ function GF:UpdatePreviewLayout(kind)
 								startPoint,
 								anchor,
 								previewAnchorPoint,
-								previewCenterOffsetX + roundToPixel(col * (visualW + visualColumnSpacing), scale),
+								previewCenterOffsetX + roundToPixel(col * (visualW + visualColumnSpacing) * ((groupGrowth == "LEFT") and -1 or 1), scale),
 								previewCenterOffsetY + roundToPixel(row * (visualH + visualSpacing) * ySign, scale)
 							)
 						end
@@ -11910,7 +12007,7 @@ function GF:ApplyHeaderAttributes(kind, options)
 			setAttr("columnSpacing", layoutColumnSpacing)
 		end
 
-		layoutColumnAnchorPoint = "TOP"
+		layoutColumnAnchorPoint = (kind == "raid" and not centerGrowthActive) and GF.GetRaidColumnAnchorPoint(growth, cfg.groupGrowth) or "TOP"
 		setAttr("columnAnchorPoint", layoutColumnAnchorPoint)
 	else
 		local yOff = (growth == "UP") and spacing or -spacing
@@ -11924,7 +12021,7 @@ function GF:ApplyHeaderAttributes(kind, options)
 		local columnSpacing = clampNumber(tonumber(cfg.columnSpacing) or spacing, 0, 40, spacing)
 		layoutColumnSpacing = roundToPixel(columnSpacing, scale)
 		setAttr("columnSpacing", layoutColumnSpacing)
-		layoutColumnAnchorPoint = "LEFT"
+		layoutColumnAnchorPoint = (kind == "raid" and not centerGrowthActive) and GF.GetRaidColumnAnchorPoint(growth, cfg.groupGrowth) or "LEFT"
 		setAttr("columnAnchorPoint", layoutColumnAnchorPoint)
 	end
 
@@ -12023,6 +12120,7 @@ function GF:ApplyHeaderAttributes(kind, options)
 		GF:UpdateAnchorSize(kind)
 		header:ClearAllPoints()
 		local p = getGrowthStartPoint(growth)
+		if kind == "raid" and not useGroupHeaders and not centerGrowthActive then p = GF.GetRaidLayoutStartPoint(growth, cfg.groupGrowth) end
 		local rp = p
 		if centerGrowthActive then rp = GF.GetCenterGrowthRelativePoint(growth) end
 		local anchorOffsetX, anchorOffsetY = 0, 0
@@ -12709,6 +12807,7 @@ GF._groupCopySectionRules = {
 	},
 	groupicons = {
 		{ "status", "leaderIcon" },
+		{ "status", "raidAssignmentIcon" },
 		{ "status", "assistIcon" },
 	},
 	raidmarker = {
@@ -14057,9 +14156,7 @@ local function buildEditModeSettings(kind, editModeId)
 		local cfg = getCfg(kind)
 		return GF.NormalizeViewerRoleFilter(cfg and cfg.viewerRoleFilter)
 	end
-	local function getSplitRoleViewerRoleLabel()
-		return GF.DropdownOptionLabel(GF.splitRoleViewerRoleOptions, getSplitRoleViewerRoleValue(), L["All"] or "All")
-	end
+	local function getSplitRoleViewerRoleLabel() return GF.DropdownOptionLabel(GF.splitRoleViewerRoleOptions, getSplitRoleViewerRoleValue(), L["All"] or "All") end
 	local function getGroupNumberEnabledValue()
 		local cfg = getCfg(kind)
 		local def = DEFAULTS[kind] or {}
@@ -14716,7 +14813,7 @@ local function buildEditModeSettings(kind, editModeId)
 			isShown = function() return raidKind end,
 			isEnabled = function()
 				local cfg = getCfg(kind)
-				return raidKind and GF:IsRaidGroupedLayout(cfg) and not GF.IsCenterGrowthMode(kind, cfg)
+				return raidKind and not GF.IsCenterGrowthMode(kind, cfg)
 			end,
 			generator = function(_, root)
 				local cfg = getCfg(kind)
@@ -19464,6 +19561,174 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
+			name = COMPACT_UNIT_FRAME_PROFILE_DISPLAYMAINTANKANDASSIST or "Display Main Tank and Assist",
+			kind = SettingType.Checkbox,
+			field = "raidAssignmentIconEnabled",
+			parentId = "groupicons",
+			get = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				local enabled = racfg.enabled
+				if enabled == nil then enabled = def.enabled == true end
+				return enabled == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.status = cfg.status or {}
+				cfg.status.raidAssignmentIcon = cfg.status.raidAssignmentIcon or {}
+				cfg.status.raidAssignmentIcon.enabled = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "raidAssignmentIconEnabled", cfg.status.raidAssignmentIcon.enabled, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isShown = function() return kind == "raid" end,
+		},
+		{
+			name = string.format("%s %s", COMPACT_UNIT_FRAME_PROFILE_DISPLAYMAINTANKANDASSIST or "Main Tank & Assist", L["Size"] or "Size"),
+			kind = SettingType.Slider,
+			allowInput = true,
+			field = "raidAssignmentIconSize",
+			parentId = "groupicons",
+			minValue = 8,
+			maxValue = 40,
+			valueStep = 1,
+			get = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				return racfg.size or def.size or 12
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.status = cfg.status or {}
+				cfg.status.raidAssignmentIcon = cfg.status.raidAssignmentIcon or {}
+				cfg.status.raidAssignmentIcon.size = clampNumber(value, 8, 40, cfg.status.raidAssignmentIcon.size or 12)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "raidAssignmentIconSize", cfg.status.raidAssignmentIcon.size, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				local enabled = racfg.enabled
+				if enabled == nil then enabled = def.enabled == true end
+				return enabled == true
+			end,
+			isShown = function() return kind == "raid" end,
+		},
+		{
+			name = string.format("%s %s", COMPACT_UNIT_FRAME_PROFILE_DISPLAYMAINTANKANDASSIST or "Main Tank & Assist", L["Anchor"] or "Anchor"),
+			kind = SettingType.Dropdown,
+			field = "raidAssignmentIconPoint",
+			parentId = "groupicons",
+			values = auraAnchorOptions,
+			height = 180,
+			get = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				return racfg.point or def.point or "TOPRIGHT"
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.status = cfg.status or {}
+				cfg.status.raidAssignmentIcon = cfg.status.raidAssignmentIcon or {}
+				cfg.status.raidAssignmentIcon.point = value
+				cfg.status.raidAssignmentIcon.relativePoint = value
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "raidAssignmentIconPoint", value, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				local enabled = racfg.enabled
+				if enabled == nil then enabled = def.enabled == true end
+				return enabled == true
+			end,
+			isShown = function() return kind == "raid" end,
+		},
+		{
+			name = string.format("%s %s", COMPACT_UNIT_FRAME_PROFILE_DISPLAYMAINTANKANDASSIST or "Main Tank & Assist", L["Offset X"] or "Offset X"),
+			kind = SettingType.Slider,
+			allowInput = true,
+			field = "raidAssignmentIconOffsetX",
+			parentId = "groupicons",
+			minValue = -200,
+			maxValue = 200,
+			valueStep = 1,
+			get = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				return racfg.x or def.x or -2
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.status = cfg.status or {}
+				cfg.status.raidAssignmentIcon = cfg.status.raidAssignmentIcon or {}
+				cfg.status.raidAssignmentIcon.x = clampNumber(value, -200, 200, cfg.status.raidAssignmentIcon.x or -2)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "raidAssignmentIconOffsetX", cfg.status.raidAssignmentIcon.x, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				local enabled = racfg.enabled
+				if enabled == nil then enabled = def.enabled == true end
+				return enabled == true
+			end,
+			isShown = function() return kind == "raid" end,
+		},
+		{
+			name = string.format("%s %s", COMPACT_UNIT_FRAME_PROFILE_DISPLAYMAINTANKANDASSIST or "Main Tank & Assist", L["Offset Y"] or "Offset Y"),
+			kind = SettingType.Slider,
+			allowInput = true,
+			field = "raidAssignmentIconOffsetY",
+			parentId = "groupicons",
+			minValue = -200,
+			maxValue = 200,
+			valueStep = 1,
+			get = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				return racfg.y or def.y or -2
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.status = cfg.status or {}
+				cfg.status.raidAssignmentIcon = cfg.status.raidAssignmentIcon or {}
+				cfg.status.raidAssignmentIcon.y = clampNumber(value, -200, 200, cfg.status.raidAssignmentIcon.y or -2)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "raidAssignmentIconOffsetY", cfg.status.raidAssignmentIcon.y, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local sc = cfg and cfg.status or {}
+				local racfg = sc.raidAssignmentIcon or {}
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].status and DEFAULTS[kind].status.raidAssignmentIcon) or {}
+				local enabled = racfg.enabled
+				if enabled == nil then enabled = def.enabled == true end
+				return enabled == true
+			end,
+			isShown = function() return kind == "raid" end,
+		},
+		{
 			name = L["Show assist icon"] or "Show assist icon",
 			kind = SettingType.Checkbox,
 			field = "assistIconEnabled",
@@ -23357,9 +23622,7 @@ local function buildEditModeSettings(kind, editModeId)
 					local cfg = getCfg(kind)
 					if not cfg then return end
 					cfg.viewerRoleFilter = GF.NormalizeViewerRoleFilter(value)
-					if EditMode and EditMode.SetValue then
-						EditMode:SetValue(editModeId, "viewerRoleFilter", cfg.viewerRoleFilter, nil, true)
-					end
+					if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "viewerRoleFilter", cfg.viewerRoleFilter, nil, true) end
 					GF:ApplyHeaderAttributes(kind)
 					if GF._previewActive and GF._previewActive[kind] then GF:UpdatePreviewLayout(kind) end
 				end,
@@ -24601,6 +24864,23 @@ local function applyEditModeData(kind, data)
 		if data.raidIconOffsetX ~= nil then cfg.status.raidIcon.x = data.raidIconOffsetX end
 		if data.raidIconOffsetY ~= nil then cfg.status.raidIcon.y = data.raidIconOffsetY end
 	end
+	if
+		data.raidAssignmentIconEnabled ~= nil
+		or data.raidAssignmentIconSize ~= nil
+		or data.raidAssignmentIconPoint ~= nil
+		or data.raidAssignmentIconOffsetX ~= nil
+		or data.raidAssignmentIconOffsetY ~= nil
+	then
+		cfg.status.raidAssignmentIcon = cfg.status.raidAssignmentIcon or {}
+		if data.raidAssignmentIconEnabled ~= nil then cfg.status.raidAssignmentIcon.enabled = data.raidAssignmentIconEnabled and true or false end
+		if data.raidAssignmentIconSize ~= nil then cfg.status.raidAssignmentIcon.size = data.raidAssignmentIconSize end
+		if data.raidAssignmentIconPoint ~= nil then
+			cfg.status.raidAssignmentIcon.point = data.raidAssignmentIconPoint
+			cfg.status.raidAssignmentIcon.relativePoint = data.raidAssignmentIconPoint
+		end
+		if data.raidAssignmentIconOffsetX ~= nil then cfg.status.raidAssignmentIcon.x = data.raidAssignmentIconOffsetX end
+		if data.raidAssignmentIconOffsetY ~= nil then cfg.status.raidAssignmentIcon.y = data.raidAssignmentIconOffsetY end
+	end
 	if data.leaderIconEnabled ~= nil or data.leaderIconSize ~= nil or data.leaderIconPoint ~= nil or data.leaderIconOffsetX ~= nil or data.leaderIconOffsetY ~= nil then
 		cfg.status.leaderIcon = cfg.status.leaderIcon or {}
 		if data.leaderIconEnabled ~= nil then cfg.status.leaderIcon.enabled = data.leaderIconEnabled and true or false end
@@ -24971,9 +25251,7 @@ local function applyEditModeData(kind, data)
 			end
 		end
 	elseif isRaidLikeKind(kind) then
-		if (kind == "mt" or kind == "ma") and data.viewerRoleFilter ~= nil then
-			cfg.viewerRoleFilter = GF.NormalizeViewerRoleFilter(data.viewerRoleFilter)
-		end
+		if (kind == "mt" or kind == "ma") and data.viewerRoleFilter ~= nil then cfg.viewerRoleFilter = GF.NormalizeViewerRoleFilter(data.viewerRoleFilter) end
 		if kind == "raid" then
 			local custom = GFH.EnsureCustomSortConfig(cfg)
 			local selectedRaidGroups
@@ -25091,6 +25369,7 @@ function GF:EnsureEditMode()
 			local gn = sc.groupNumber or {}
 			local gi = cfg.groupIndicator or {}
 			local lc = sc.leaderIcon or {}
+			local racfg = sc.raidAssignmentIcon or {}
 			local acfg = sc.assistIcon or {}
 			local hc = cfg.health or {}
 			local def = DEFAULTS[kind] or {}
@@ -25404,6 +25683,12 @@ function GF:EnsureEditMode()
 				raidIconPoint = (sc.raidIcon and sc.raidIcon.point) or "TOP",
 				raidIconOffsetX = (sc.raidIcon and sc.raidIcon.x) or 0,
 				raidIconOffsetY = (sc.raidIcon and sc.raidIcon.y) or -2,
+				raidAssignmentIconEnabled = (sc.raidAssignmentIcon and sc.raidAssignmentIcon.enabled) == true,
+				raidAssignmentIconSize = (sc.raidAssignmentIcon and sc.raidAssignmentIcon.size) or ((def.status and def.status.raidAssignmentIcon and def.status.raidAssignmentIcon.size) or 12),
+				raidAssignmentIconPoint = (sc.raidAssignmentIcon and sc.raidAssignmentIcon.point)
+					or ((def.status and def.status.raidAssignmentIcon and def.status.raidAssignmentIcon.point) or "TOPRIGHT"),
+				raidAssignmentIconOffsetX = (sc.raidAssignmentIcon and sc.raidAssignmentIcon.x) or ((def.status and def.status.raidAssignmentIcon and def.status.raidAssignmentIcon.x) or -2),
+				raidAssignmentIconOffsetY = (sc.raidAssignmentIcon and sc.raidAssignmentIcon.y) or ((def.status and def.status.raidAssignmentIcon and def.status.raidAssignmentIcon.y) or -2),
 				leaderIconEnabled = lc.enabled ~= false,
 				leaderIconSize = lc.size or 12,
 				leaderIconPoint = lc.point or "TOPLEFT",
