@@ -187,6 +187,10 @@ function ResourceBars.RelativeFrameMatchesName(relativeName, frameName)
 end
 
 function ResourceBars.GetRelativeFrameHookTargets(relativeName)
+	ResourceBars._relativeFrameHookTargetsCache = ResourceBars._relativeFrameHookTargetsCache or {}
+	if type(relativeName) ~= "string" or relativeName == "" then return ResourceBars._emptyRelativeFrameHookTargets or {} end
+	local cached = ResourceBars._relativeFrameHookTargetsCache[relativeName]
+	if cached then return cached end
 	local targets = {}
 	local seen = {}
 	local function add(name)
@@ -200,6 +204,7 @@ function ResourceBars.GetRelativeFrameHookTargets(relativeName)
 		add(mapped.uf)
 	end
 	add(relativeName)
+	ResourceBars._relativeFrameHookTargetsCache[relativeName] = targets
 	return targets
 end
 
@@ -2873,6 +2878,14 @@ function ResourceBars.PrepareBarConfigForRuntime(cfg, pType, specInfo)
 	return cfg
 end
 
+function ResourceBars.GetRuntimeBarConfig(pType, frame)
+	local cfg = frame and frame._cfg
+	if cfg then return cfg end
+	cfg = getBarSettings(pType)
+	if frame and cfg then frame._cfg = cfg end
+	return cfg
+end
+
 local function isEQOLBarFrameName(name) return type(name) == "string" and name:match("^EQOL.+Bar$") end
 
 ensureRelativeFrameFallback = function(anchor, pType, specInfo)
@@ -2907,7 +2920,7 @@ function updateHealthBar(evt)
 		end
 		local maxHealth = healthBar._lastMax or newMax or 1
 		local curHealth = UnitHealth("player")
-		local settings = getBarSettings("HEALTH") or {}
+		local settings = ResourceBars.GetRuntimeBarConfig("HEALTH", healthBar) or {}
 		local smooth = settings.smoothFill == true
 		setBarValue(healthBar, curHealth, smooth)
 		healthBar._lastVal = curHealth
@@ -3070,13 +3083,22 @@ function getAnchor(name, spec)
 		local frameId = ResourceBars.GetEditModeFrameId and ResourceBars.GetEditModeFrameId(name, nil, spec)
 		local legacyId = ResourceBars.GetEditModeLegacyFrameId and ResourceBars.GetEditModeLegacyFrameId(name)
 		local store = addon and addon.db and addon.db.editModeData
+		local cleared = ResourceBars._clearedEditModeAnchorIds
+		if not cleared then
+			cleared = {}
+			ResourceBars._clearedEditModeAnchorIds = cleared
+		end
+		local profileToken = tostring(addon and addon.db)
 		local function clear(id)
 			if not id or id == "" then return end
+			local clearKey = profileToken .. ":" .. tostring(id)
+			if cleared[clearKey] then return end
 			if editMode and editMode.ClearStoredPosition then
 				editMode:ClearStoredPosition(id)
 			elseif type(store) == "table" then
 				store[id] = nil
 			end
+			cleared[clearKey] = true
 		end
 		clear(frameId)
 		if legacyId and legacyId ~= frameId then clear(legacyId) end
@@ -3513,7 +3535,7 @@ function updatePowerBar(type, runeSlot)
 	if not bar or not bar:IsShown() then return end
 	-- Special handling for DK RUNES: six sub-bars that fill as cooldown progresses
 	if type == "RUNES" then
-		local cfg = getBarSettings("RUNES") or {}
+		local cfg = ResourceBars.GetRuntimeBarConfig("RUNES", bar) or {}
 		local readyR, readyG, readyB, readyA = resolveRuneReadyColor(cfg)
 		local cooldownR, cooldownG, cooldownB, cooldownA
 		if ResourceBars.ResolveRuneCooldownColor then
@@ -3849,7 +3871,7 @@ function updatePowerBar(type, runeSlot)
 		return
 	end
 	if type == "STAGGER" then
-		local cfg = getBarSettings(type) or {}
+		local cfg = ResourceBars.GetRuntimeBarConfig(type, bar) or {}
 		local maxHealth = UnitHealthMax("player") or 1
 		if maxHealth <= 0 then return end
 		local maxPercent = cfg.useStaggerMaxOverride == true and (tonumber(cfg.staggerMaxPercent) or 200) or 100
@@ -3933,7 +3955,7 @@ function updatePowerBar(type, runeSlot)
 		return
 	end
 	if isAuraPowerType(type) then
-		local cfg = getBarSettings(type) or {}
+		local cfg = ResourceBars.GetRuntimeBarConfig(type, bar) or {}
 		if type == "MAELSTROM_WEAPON" then ensureMaelstromWeaponDefaults(cfg) end
 		local stacks, logicalMax, visualMax = getAuraPowerCounts(type)
 		local cfgDef = RB.AURA_POWER_CONFIG[type] or {}
@@ -4049,7 +4071,7 @@ function updatePowerBar(type, runeSlot)
 	end
 	local pType = POWER_ENUM[type]
 	if not pType then return end
-	local cfg = getBarSettings(type) or {}
+	local cfg = ResourceBars.GetRuntimeBarConfig(type, bar) or {}
 	local cfgDef = (RB.POWER_CONFIG and RB.POWER_CONFIG[type]) or {}
 	local thresholdModeForBar = ResourceBars.GetThresholdColorModeAndCap(type)
 	local isSoulShards = type == "SOUL_SHARDS"
@@ -4977,7 +4999,7 @@ local function createPowerBar(type, anchor)
 		bar._rbRefreshOnShow = true
 	end
 
-	local settings = getBarSettings(type)
+	local settings = ResourceBars.GetRuntimeBarConfig(type, bar)
 	local w = max(RB.MIN_RESOURCE_BAR_WIDTH, (settings and settings.width) or RB.DEFAULT_POWER_WIDTH)
 	local h = settings and settings.height or RB.DEFAULT_POWER_HEIGHT
 	bar._cfg = settings
@@ -4986,11 +5008,8 @@ local function createPowerBar(type, anchor)
 	local defaultStyle = (type == "MANA" or type == "STAGGER") and "PERCENT" or "CURMAX"
 	bar._style = settings and settings.textStyle or defaultStyle
 	bar:SetSize(w, h)
-	do
-		local cfg2 = getBarSettings(type) or {}
-		bar:SetStatusBarTexture(resolveTexture(cfg2))
-		configureSpecialTexture(bar, type, cfg2)
-	end
+	bar:SetStatusBarTexture(resolveTexture(settings or {}))
+	configureSpecialTexture(bar, type, settings or {})
 	bar:SetClampedToScreen(true)
 	local stackSpacing = RB.DEFAULT_STACK_SPACING
 
@@ -5121,24 +5140,30 @@ local function createPowerBar(type, anchor)
 	updateBarThresholds(type)
 
 	-- Ensure dependents re-anchor when this bar changes size
-	bar:SetScript("OnSizeChanged", function()
-		if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ReanchorDependentsOf then addon.Aura.ResourceBars.ReanchorDependentsOf("EQOL" .. type .. "Bar") end
-		if type == "RUNES" then
-			layoutRunes(bar)
-			updateBarSeparators("RUNES")
-		elseif type == "ESSENCE" then
-			local cfg = getBarSettings("ESSENCE") or {}
-			local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-			ResourceBars.LayoutEssences(bar, cfg, count, resolveTexture(cfg))
-			if ResourceBars.separatorEligible[type] then updateBarSeparators(type) end
-		elseif ResourceBars.separatorEligible[type] then
-			updateBarSeparators(type)
-		end
-		updateBarThresholds(type)
-	end)
+	if not bar._rbSizeChangedHooked then
+		bar:SetScript("OnSizeChanged", function(self)
+			local barType = self._rbType
+			if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ReanchorDependentsOf then addon.Aura.ResourceBars.ReanchorDependentsOf("EQOL" .. tostring(barType) .. "Bar") end
+			if barType == "RUNES" then
+				layoutRunes(self)
+				updateBarSeparators("RUNES")
+			elseif barType == "ESSENCE" then
+				local cfg = ResourceBars.GetRuntimeBarConfig("ESSENCE", self) or {}
+				local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
+				ResourceBars.LayoutEssences(self, cfg, count, resolveTexture(cfg))
+				if ResourceBars.separatorEligible[barType] then updateBarSeparators(barType) end
+			elseif ResourceBars.separatorEligible[barType] then
+				updateBarSeparators(barType)
+			end
+			updateBarThresholds(barType)
+		end)
+		bar._rbSizeChangedHooked = true
+	end
 
-	if ResourceBars and ResourceBars.SyncRelativeFrameWidths then ResourceBars.SyncRelativeFrameWidths() end
-	if ensureEditModeRegistration then ensureEditModeRegistration() end
+	if not ((ResourceBars._barBuildBatchDepth or 0) > 0) then
+		if ResourceBars and ResourceBars.SyncRelativeFrameWidths then ResourceBars.SyncRelativeFrameWidths() end
+		if ensureEditModeRegistration then ensureEditModeRegistration() end
+	end
 end
 
 RB.EVENTS_TO_REGISTER = {
@@ -5205,6 +5230,7 @@ local function setPowerbars(opts)
 	local specCfg = ensureSpecCfg(addon.variables.unitSpec)
 
 	local desiredVisibility = {}
+	ResourceBars._barBuildBatchDepth = (ResourceBars._barBuildBatchDepth or 0) + 1
 
 	if
 		powertypeClasses[addon.variables.unitClass]
@@ -5306,8 +5332,10 @@ local function setPowerbars(opts)
 		end
 	end
 
+	ResourceBars._barBuildBatchDepth = max(0, (ResourceBars._barBuildBatchDepth or 1) - 1)
 	if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ApplyVisibilityPreference then addon.Aura.ResourceBars.ApplyVisibilityPreference("fromSetPowerbars") end
 	if ResourceBars and ResourceBars.SyncRelativeFrameWidths then ResourceBars.SyncRelativeFrameWidths() end
+	if ensureEditModeRegistration then ensureEditModeRegistration() end
 end
 addon.Aura.functions.setPowerBars = setPowerbars
 
@@ -5320,8 +5348,8 @@ local function forEachResourceBarFrame(callback)
 end
 
 local function resolveBarConfigForFrame(pType, frame)
-	local cfg = getBarSettings(pType)
-	if not cfg and frame and frame._cfg then cfg = frame._cfg end
+	local cfg = frame and frame._cfg
+	if not cfg then cfg = getBarSettings(pType) end
 	return cfg
 end
 

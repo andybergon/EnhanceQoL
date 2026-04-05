@@ -18546,6 +18546,55 @@ refreshPanelsForSpell = function(spellId)
 	return refreshed
 end
 
+local function invalidateSpellIconCacheForSpell(spellId)
+	local numericSpellId = tonumber(spellId)
+	local runtime = CooldownPanels.runtime
+	local cache = runtime and runtime.iconCache
+	if not (numericSpellId and cache) then return false end
+
+	local changed = false
+	local function clearForId(id)
+		if not id then return end
+		local cacheKey = "S:" .. tostring(id)
+		if cache[cacheKey] ~= nil then
+			cache[cacheKey] = nil
+			changed = true
+		end
+	end
+
+	clearForId(numericSpellId)
+
+	local baseId = getBaseSpellId(numericSpellId)
+	if baseId and baseId ~= numericSpellId then clearForId(baseId) end
+
+	local effectiveId = getEffectiveSpellId(numericSpellId)
+	if effectiveId and effectiveId ~= numericSpellId and effectiveId ~= baseId then clearForId(effectiveId) end
+
+	local canonicalId, _, variantGroup = CooldownPanels:GetCanonicalSpellVariantID(numericSpellId)
+	if canonicalId and canonicalId ~= numericSpellId and canonicalId ~= baseId and canonicalId ~= effectiveId then clearForId(canonicalId) end
+	if type(variantGroup) == "table" then
+		for i = 1, #variantGroup do
+			clearForId(variantGroup[i])
+		end
+	end
+
+	return changed
+end
+
+local function handleSpellUpdateIcon(spellId)
+	if spellId ~= nil then
+		invalidateSpellIconCacheForSpell(spellId)
+		return refreshPanelsForSpell(spellId) == true
+	end
+
+	if CooldownPanels.runtime then CooldownPanels.runtime.iconCache = nil end
+	CooldownPanels:RequestUpdate({
+		cause = "Event:SPELL_UPDATE_ICON",
+		fullRefresh = true,
+	})
+	return true
+end
+
 function CooldownPanels:GetReadySoundState(spellId, create)
 	local runtime = self.runtime
 	if not runtime then return nil end
@@ -19464,7 +19513,7 @@ local function ensureUpdateFrame()
 			return
 		end
 		if event == "SPELL_UPDATE_ICON" then
-			if CooldownPanels.runtime then CooldownPanels.runtime.iconCache = nil end
+			if handleSpellUpdateIcon(...) then return end
 		end
 		if event == "BAG_UPDATE_COOLDOWN" then
 			local runtime = CooldownPanels.runtime
