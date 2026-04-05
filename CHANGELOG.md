@@ -7,6 +7,8 @@
 - Cooldown Panels / Bars: Fixed cooldown bars not updating correctly when a cooldown finished. `Show on cooldown` and `Hide on cooldown` now behave properly again.
 - Cooldown Panels: Fixed a loading error that could prevent the cooldown panel module from initializing correctly in some cases.
 
+---
+
 ## [9.12.0-beta9] - 2026-04-05
 
 ### ✨ Added
