@@ -14,7 +14,6 @@ local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local Masque
-local LSM = LibStub("LibSharedMedia-3.0", true)
 
 local EDITMODE_ID = "actionTracker"
 local MAX_ICONS_LIMIT = 10
@@ -84,6 +83,14 @@ local function getMasqueGroup()
 	return ActionTracker.runtime.masqueGroup
 end
 
+local function getCachedMediaHash(mediaType)
+	if addon.functions and addon.functions.GetLSMMediaHash then
+		local hash = addon.functions.GetLSMMediaHash(mediaType)
+		if type(hash) == "table" then return hash end
+	end
+	return {}
+end
+
 local function getValue(key, fallback)
 	if not addon.db then return fallback end
 	local value = addon.db[key]
@@ -146,10 +153,9 @@ local function resolveBorderTexture(value)
 	local key = normalizeBorderTexture(value)
 	if key == "DEFAULT" or key == "SOLID" then return "Interface\\Buttons\\WHITE8x8" end
 	if isLikelyFilePath(key) then return key end
-	if LSM and LSM.Fetch then
-		local texture = LSM:Fetch("border", key, true)
-		if texture then return texture end
-	end
+	local hash = getCachedMediaHash("border")
+	local texture = hash and hash[key]
+	if type(texture) == "string" and texture ~= "" then return texture end
 	return "Interface\\Buttons\\WHITE8x8"
 end
 
@@ -534,6 +540,16 @@ end
 function ActionTracker:ReskinMasque()
 	local group = getMasqueGroup()
 	if group and group.ReSkin then group:ReSkin() end
+end
+
+function ActionTracker:OnMediaRegistered(mediaType, mediaKey)
+	if mediaType ~= "border" or type(mediaKey) ~= "string" or mediaKey == "" then return end
+	if not (addon and addon.db and addon.db[DB_ENABLED] == true) then return end
+	if not self.frame then return end
+	if self:GetBorderTextureKey() ~= mediaKey then return end
+
+	self:RefreshIcons()
+	if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(EDITMODE_ID) end
 end
 
 function ActionTracker:StartFadeUpdate()

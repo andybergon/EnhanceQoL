@@ -6153,6 +6153,12 @@ local function setAllHooks()
 		gcdBar:OnMediaRegistered(mediaType, mediaKey)
 	end
 
+	local function refreshActionTrackerForMedia(mediaType, mediaKey)
+		local tracker = addon.ActionTracker
+		if not (tracker and tracker.OnMediaRegistered) then return end
+		tracker:OnMediaRegistered(mediaType, mediaKey)
+	end
+
 	local function refreshClassBuffReminderForMedia(mediaType, mediaKey)
 		if mediaType ~= "border" then return end
 		local reminder = addon.ClassBuffReminder
@@ -6250,6 +6256,7 @@ local function setAllHooks()
 			refreshExperienceBarForMedia(mediaType, mediaKey)
 			refreshTotalAbsorbTrackerForMedia(mediaType, mediaKey)
 			refreshGCDBarForMedia(mediaType, mediaKey)
+			refreshActionTrackerForMedia(mediaType, mediaKey)
 			refreshClassBuffReminderForMedia(mediaType, mediaKey)
 			refreshSquareMinimapBorderForMedia(mediaType, mediaKey)
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.refreshBloodlustMedia then addon.MythicPlus.functions.refreshBloodlustMedia(mediaType, mediaKey) end
