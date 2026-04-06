@@ -166,9 +166,11 @@ local BAR_CHARGES_GAP_MAX = 2000
 local BAR_FONT_SIZE_MIN = 6
 local BAR_FONT_SIZE_MAX = 64
 local BAR_TEXTURE_MENU_HEIGHT = 220
-local BAR_STATUS_INTERPOLATION_IMMEDIATE = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate or 0
-local BAR_STATUS_TIMER_DIRECTION_ELAPSED = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.ElapsedTime or 0
-local BAR_STATUS_TIMER_DIRECTION_REMAINING = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
+local cdp = {
+	BAR_STATUS_INTERPOLATION_IMMEDIATE = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate or 0,
+	BAR_STATUS_TIMER_DIRECTION_ELAPSED = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.ElapsedTime or 0,
+	BAR_STATUS_TIMER_DIRECTION_REMAINING = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1,
+}
 local getBarColor
 local normalizeBarEntry
 local refreshPanelContext
@@ -206,8 +208,8 @@ local function getTextValue(value)
 end
 
 local function getOppositeTimerDirection(direction)
-	if direction == BAR_STATUS_TIMER_DIRECTION_REMAINING then return BAR_STATUS_TIMER_DIRECTION_ELAPSED end
-	return BAR_STATUS_TIMER_DIRECTION_REMAINING
+	if direction == cdp.BAR_STATUS_TIMER_DIRECTION_REMAINING then return cdp.BAR_STATUS_TIMER_DIRECTION_ELAPSED end
+	return cdp.BAR_STATUS_TIMER_DIRECTION_REMAINING
 end
 
 local function safeNumber(value)
@@ -307,8 +309,10 @@ Bars.ResolveStackDisplay = function(panelId, entryId, resolvedType, icon, runtim
 		local entryKey = Helper.GetEntryKey(panelId, entryId)
 		local shared = CooldownPanels.runtime
 		rawValue = shared and shared.actionDisplayCounts and shared.actionDisplayCounts[entryKey] or nil
-		if icon and icon.count and icon.count.GetText then displayText = Helper.NormalizeDisplayCount and Helper.NormalizeDisplayCount(icon.count:GetText()) or getTextValue(icon.count:GetText()) end
-		if displayText == nil then displayText = Helper.NormalizeDisplayCount and Helper.NormalizeDisplayCount(rawValue) or getTextValue(rawValue) end
+		displayText = Helper.NormalizeDisplayCount and Helper.NormalizeDisplayCount(rawValue) or getTextValue(rawValue)
+		if displayText == nil and icon and icon.count and icon.count.GetText then
+			displayText = Helper.NormalizeDisplayCount and Helper.NormalizeDisplayCount(icon.count:GetText()) or getTextValue(icon.count:GetText())
+		end
 	end
 
 	local entryKey = Helper.GetEntryKey(panelId, entryId)
@@ -325,7 +329,7 @@ Bars.ResolveStackDisplay = function(panelId, entryId, resolvedType, icon, runtim
 	local runtime = CooldownPanels.runtime.cooldownPanelBars
 	runtime.stackValueByEntryKey = runtime.stackValueByEntryKey or {}
 	local cachedNumeric = runtime.stackValueByEntryKey[entryKey]
-	local numericValue = resolvedType == "CDM_AURA" and safeNumber(rawValue) or safeNumber(displayText)
+	local numericValue = resolvedType == "CDM_AURA" and safeNumber(rawValue) or (safeNumber(rawValue) or safeNumber(displayText))
 	if numericValue ~= nil then
 		runtime.stackValueByEntryKey[entryKey] = numericValue
 		cachedNumeric = numericValue
@@ -659,6 +663,17 @@ local function supportsBarMode(entry, mode)
 	return resolvedType == "SPELL" or resolvedType == "ITEM" or entry.type == "MACRO" or resolvedType == "CDM_AURA"
 end
 
+local function shouldAutoEnableShowStacks(entry)
+	return supportsBarMode(entry, Bars.BAR_MODE.STACKS)
+		and normalizeDisplayMode(entry and entry.displayMode, Bars.DEFAULTS.displayMode) == Bars.DISPLAY_MODE.BAR
+		and normalizeBarMode(entry and entry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.STACKS
+end
+
+Bars.ShouldEntryShowStacks = function(entry, resolvedType)
+	if resolvedType ~= "SPELL" and resolvedType ~= "CDM_AURA" then return false end
+	return shouldAutoEnableShowStacks(entry) or getStoredBoolean(entry, "showStacks", false)
+end
+
 local function isBarProcGlowActive(resolvedType, spellId)
 	if resolvedType ~= "SPELL" or not spellId then return false end
 	local runtime = CooldownPanels.runtime
@@ -722,6 +737,7 @@ normalizeBarEntry = function(entry)
 	entry.barValueSize = normalizeBarFontSize(entry.barValueSize, Bars.DEFAULTS.barValueSize)
 	entry.barValueStyle = normalizeBarFontStyle(entry.barValueStyle, Bars.DEFAULTS.barValueStyle)
 	entry.barValueColor = Helper.NormalizeColor(entry.barValueColor, Bars.DEFAULTS.barValueColor)
+	if shouldAutoEnableShowStacks(entry) then entry.showStacks = true end
 	if entry.displayMode == Bars.DISPLAY_MODE.BAR and not supportsBarMode(entry, entry.barMode) then
 		entry.barMode = Bars.BAR_MODE.COOLDOWN
 		if not supportsBarMode(entry, entry.barMode) then entry.displayMode = Bars.DISPLAY_MODE.BUTTON end
@@ -1861,8 +1877,8 @@ end
 
 setStatusBarImmediateValue = function(statusBar, value)
 	if not statusBar then return end
-	if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
-	if statusBar.SetValue then statusBar:SetValue(clamp(value or 0, 0, 1), BAR_STATUS_INTERPOLATION_IMMEDIATE) end
+	if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, cdp.BAR_STATUS_INTERPOLATION_IMMEDIATE) end
+	if statusBar.SetValue then statusBar:SetValue(clamp(value or 0, 0, 1), cdp.BAR_STATUS_INTERPOLATION_IMMEDIATE) end
 	if statusBar.SetToTargetValue then statusBar:SetToTargetValue() end
 	statusBar._eqolTimerDurationObject = nil
 	statusBar._eqolTimerDurationKey = nil
@@ -1879,8 +1895,8 @@ Bars.SetStatusBarRangedValue = function(statusBar, value, maxValue)
 	end
 
 	if value == nil then value = 0 end
-	if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, resolvedMax, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
-	if statusBar.SetValue then statusBar:SetValue(value or 0, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
+	if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, resolvedMax, cdp.BAR_STATUS_INTERPOLATION_IMMEDIATE) end
+	if statusBar.SetValue then statusBar:SetValue(value or 0, cdp.BAR_STATUS_INTERPOLATION_IMMEDIATE) end
 	if statusBar.SetToTargetValue then statusBar:SetToTargetValue() end
 	statusBar._eqolTimerDurationObject = nil
 	statusBar._eqolTimerDurationKey = nil
@@ -1890,10 +1906,10 @@ end
 setStatusBarTimerDuration = function(statusBar, durationObject, cacheKey, direction)
 	if not (statusBar and durationObject and statusBar.SetTimerDuration) then return false end
 	local appliedKey = cacheKey or durationObject
-	local appliedDirection = direction or BAR_STATUS_TIMER_DIRECTION_ELAPSED
+	local appliedDirection = direction or cdp.BAR_STATUS_TIMER_DIRECTION_ELAPSED
 	if statusBar._eqolTimerDurationKey ~= appliedKey or statusBar._eqolTimerDirection ~= appliedDirection or statusBar._eqolTimerDurationObject ~= durationObject then
-		if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, BAR_STATUS_INTERPOLATION_IMMEDIATE) end
-		statusBar:SetTimerDuration(durationObject, BAR_STATUS_INTERPOLATION_IMMEDIATE, appliedDirection)
+		if statusBar.SetMinMaxValues then statusBar:SetMinMaxValues(0, 1, cdp.BAR_STATUS_INTERPOLATION_IMMEDIATE) end
+		statusBar:SetTimerDuration(durationObject, cdp.BAR_STATUS_INTERPOLATION_IMMEDIATE, appliedDirection)
 		statusBar._eqolTimerDurationObject = durationObject
 		statusBar._eqolTimerDurationKey = appliedKey
 		statusBar._eqolTimerDirection = appliedDirection
@@ -2313,14 +2329,14 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 		showIcon = getStoredBoolean(entry, "barShowIcon", Bars.DEFAULTS.barShowIcon),
 		showLabel = getStoredBoolean(entry, "barShowLabel", Bars.DEFAULTS.barShowLabel),
 		showValueText = mode ~= Bars.BAR_MODE.STACKS and getStoredBoolean(entry, "barShowValueText", Bars.DEFAULTS.barShowValueText),
-		showStacks = (resolvedType == "SPELL" or resolvedType == "CDM_AURA") and (mode == Bars.BAR_MODE.STACKS or getStoredBoolean(entry, "showStacks", false)),
+		showStacks = Bars.ShouldEntryShowStacks(entry, resolvedType),
 		stackDisplayText = nil,
 		progress = 1,
 		icon = icon,
 		panelId = panelId,
 		entryId = entryId,
 		fillDurationObject = nil,
-		timerDirection = BAR_STATUS_TIMER_DIRECTION_ELAPSED,
+		timerDirection = cdp.BAR_STATUS_TIMER_DIRECTION_ELAPSED,
 		stackFillValue = nil,
 		stackFillMax = nil,
 		entryKey = entryKey,
@@ -2478,7 +2494,7 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 				cooldownValueVisible = true
 				cooldownVisibilityActive = true
 				state.fillDurationObject = durationObject
-				state.timerDirection = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
+				state.timerDirection = cdp.BAR_STATUS_TIMER_DIRECTION_REMAINING
 				state.startTime = safeNumber(runtimeData.cooldownStart)
 				state.duration = safeNumber(runtimeData.cooldownDuration)
 				state.rate = safeNumber(runtimeData.cooldownRate) or 1
@@ -2494,7 +2510,7 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 				animate = fallbackProgress ~= nil and fallbackProgress < 1 or false
 				cooldownValueVisible = valueText ~= nil
 				cooldownVisibilityActive = true
-				state.timerDirection = Enum and Enum.StatusBarTimerDirection and Enum.StatusBarTimerDirection.RemainingTime or 1
+				state.timerDirection = cdp.BAR_STATUS_TIMER_DIRECTION_REMAINING
 				state.startTime = safeNumber(runtimeData.cooldownStart)
 				state.duration = safeNumber(runtimeData.cooldownDuration)
 				state.rate = safeNumber(runtimeData.cooldownRate) or 1
@@ -3022,7 +3038,7 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 				usesNativeReverseFill = true
 			end
 			local displayProgress = clamp(state.progress or 0, 0, 1)
-			local timerDirection = state.timerDirection or BAR_STATUS_TIMER_DIRECTION_ELAPSED
+			local timerDirection = state.timerDirection or cdp.BAR_STATUS_TIMER_DIRECTION_ELAPSED
 			if reverseFill and usesNativeReverseFill ~= true then
 				displayProgress = clamp(1 - displayProgress, 0, 1)
 				timerDirection = getOppositeTimerDirection(timerDirection)
@@ -4231,7 +4247,8 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return currentEntry and currentEntry.showStacks == true or false
+			local resolvedType = currentEntry and getEntryResolvedType(currentEntry) or nil
+			return Bars.ShouldEntryShowStacks(currentEntry, resolvedType)
 		end,
 		set = function(_, value) setEntryBarBoolean(panelId, entryId, "showStacks", value) end,
 	}

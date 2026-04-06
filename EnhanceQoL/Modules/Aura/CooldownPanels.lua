@@ -19,6 +19,17 @@ local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 local LSM = LibStub("LibSharedMedia-3.0", true)
 local Glow = addon.Glow
 local Masque
+local cdp = {
+	FAKE_CURSOR = {
+		FRAME_NAME = "EQOL_CooldownPanelsFakeCursor",
+		ATLAS = "Cursor_Point_32",
+		SIZE = 32,
+		HOTSPOT_X = 0,
+		HOTSPOT_Y = 0,
+		DEFAULT_X = 0,
+		DEFAULT_Y = 100,
+	},
+}
 
 CooldownPanels.ENTRY_TYPE = {
 	SPELL = "SPELL",
@@ -121,6 +132,14 @@ function CooldownPanels:RegisterSpellVariantGroup(variantList)
 		groupMap[ids[i]] = ids
 	end
 	return true
+end
+
+local function shouldShowEntryStacks(entry, resolvedType)
+	if not entry then return false end
+	if resolvedType ~= "SPELL" and resolvedType ~= "CDM_AURA" then return false end
+	local bars = CooldownPanels.Bars
+	if bars and bars.ShouldEntryShowStacks then return bars.ShouldEntryShowStacks(entry, resolvedType) end
+	return entry.showStacks == true
 end
 
 function CooldownPanels:IngestRankGroupsByRank(entries, keyPrefix)
@@ -922,13 +941,6 @@ CooldownPanels.MarkRelativeFrameEntriesDirty = function()
 	runtime._eqolRelativeFrameEntriesVersion = (runtime._eqolRelativeFrameEntriesVersion or 0) + 1
 end
 
-local FAKE_CURSOR_FRAME_NAME = "EQOL_CooldownPanelsFakeCursor"
-local FAKE_CURSOR_ATLAS = "Cursor_Point_32"
-local FAKE_CURSOR_SIZE = 32
-local FAKE_CURSOR_HOTSPOT_X = 0
-local FAKE_CURSOR_HOTSPOT_Y = 0
-local FAKE_CURSOR_DEFAULT_X = 0
-local FAKE_CURSOR_DEFAULT_Y = 100
 local fakeCursorFrame
 local fakeCursorResetOnShow = true
 local fakeCursorMode
@@ -937,8 +949,8 @@ local cursorSpecRetryPending
 
 local function ensureFakeCursorFrame()
 	if fakeCursorFrame then return fakeCursorFrame end
-	local frame = CreateFrame("Frame", FAKE_CURSOR_FRAME_NAME, UIParent)
-	frame:SetSize(FAKE_CURSOR_SIZE, FAKE_CURSOR_SIZE)
+	local frame = CreateFrame("Frame", cdp.FAKE_CURSOR.FRAME_NAME, UIParent)
+	frame:SetSize(cdp.FAKE_CURSOR.SIZE, cdp.FAKE_CURSOR.SIZE)
 	frame:SetFrameStrata("TOOLTIP")
 	frame:SetClampedToScreen(true)
 	frame:EnableMouse(true)
@@ -948,10 +960,16 @@ local function ensureFakeCursorFrame()
 	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
 
 	local tex = frame:CreateTexture(nil, "OVERLAY")
-	tex:SetAtlas(FAKE_CURSOR_ATLAS, true)
+	tex:SetAtlas(cdp.FAKE_CURSOR.ATLAS, true)
 	tex:ClearAllPoints()
-	tex:SetSize(FAKE_CURSOR_SIZE, FAKE_CURSOR_SIZE)
-	tex:SetPoint("CENTER", frame, "CENTER", (FAKE_CURSOR_SIZE * 0.5) - FAKE_CURSOR_HOTSPOT_X, FAKE_CURSOR_HOTSPOT_Y - (FAKE_CURSOR_SIZE * 0.5))
+	tex:SetSize(cdp.FAKE_CURSOR.SIZE, cdp.FAKE_CURSOR.SIZE)
+	tex:SetPoint(
+		"CENTER",
+		frame,
+		"CENTER",
+		(cdp.FAKE_CURSOR.SIZE * 0.5) - cdp.FAKE_CURSOR.HOTSPOT_X,
+		cdp.FAKE_CURSOR.HOTSPOT_Y - (cdp.FAKE_CURSOR.SIZE * 0.5)
+	)
 	frame.texture = tex
 
 	frame:Hide()
@@ -963,7 +981,7 @@ local function showFakeCursorFrame()
 	local frame = ensureFakeCursorFrame()
 	if fakeCursorResetOnShow or not frame._eqolHasPosition then
 		frame:ClearAllPoints()
-		frame:SetPoint("CENTER", UIParent, "CENTER", FAKE_CURSOR_DEFAULT_X, FAKE_CURSOR_DEFAULT_Y)
+		frame:SetPoint("CENTER", UIParent, "CENTER", cdp.FAKE_CURSOR.DEFAULT_X, cdp.FAKE_CURSOR.DEFAULT_Y)
 		frame._eqolHasPosition = true
 		fakeCursorResetOnShow = false
 	end
@@ -1033,7 +1051,7 @@ end
 local function panelUsesFakeCursor(panel)
 	local anchor = ensurePanelAnchor(panel)
 	local rel = anchor and anchor.relativeFrame
-	return rel == FAKE_CURSOR_FRAME_NAME
+	return rel == cdp.FAKE_CURSOR.FRAME_NAME
 end
 
 local function hasSpecFilteredCursorPanels()
@@ -1573,7 +1591,7 @@ local function anchorUsesUIParent(anchor) return not anchor or (anchor.relativeF
 local function resolveAnchorFrame(anchor)
 	local relativeName = Helper.NormalizeRelativeFrameName(anchor and anchor.relativeFrame)
 	if relativeName == "UIParent" then return UIParent end
-	if relativeName == FAKE_CURSOR_FRAME_NAME then return ensureFakeCursorFrame() end
+	if relativeName == cdp.FAKE_CURSOR.FRAME_NAME then return ensureFakeCursorFrame() end
 	local generic = Helper.GENERIC_ANCHORS[relativeName]
 	if generic then
 		local ufCfg = addon.db and addon.db.ufFrames
@@ -1647,7 +1665,7 @@ CooldownPanels.GetRelativeFrameCache = function(runtimePanel, panel, panelKey)
 	end
 
 	add("UIParent", "UIParent")
-	add(FAKE_CURSOR_FRAME_NAME, _G.CURSOR or "Cursor")
+	add(cdp.FAKE_CURSOR.FRAME_NAME, _G.CURSOR or "Cursor")
 	for _, key in ipairs(Helper.GENERIC_ANCHOR_ORDER) do
 		local info = Helper.GENERIC_ANCHORS[key]
 		if info then add(key, info.label) end
@@ -9066,7 +9084,8 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			end,
 			get = function()
 				local _, currentEntry = getEntry()
-				return currentEntry and currentEntry.showStacks == true or false
+				local effectiveType = getEffectiveType()
+				return shouldShowEntryStacks(currentEntry, effectiveType)
 			end,
 			set = function(_, value) setEntryBoolean("showStacks", value) end,
 		},
@@ -13388,7 +13407,7 @@ local function refreshPreview(editor, panel)
 					icon.charges:SetText("2")
 					icon.charges:Show()
 				end
-				if entry.showStacks then
+				if shouldShowEntryStacks(entry, effectiveType) then
 					icon.count:SetText("3")
 					icon.count:Show()
 				end
@@ -13396,7 +13415,7 @@ local function refreshPreview(editor, panel)
 				local cdmAuras = CooldownPanels.CDMAuras
 				if cdmAuras and cdmAuras.ApplyPreview then
 					cdmAuras:ApplyPreview(icon, entry)
-				elseif entry.showStacks then
+				elseif shouldShowEntryStacks(entry, effectiveType) then
 					icon.count:SetText("2")
 					icon.count:Show()
 				end
@@ -13723,7 +13742,7 @@ local function refreshInspector(editor, panel, entry)
 			inspector.cbAlwaysShow:SetChecked(alwaysShowChecked)
 		end
 		inspector.cbCharges:SetChecked(entry.showCharges and true or false)
-		inspector.cbStacks:SetChecked(entry.showStacks and true or false)
+		inspector.cbStacks:SetChecked(shouldShowEntryStacks(entry, effectiveType))
 		inspector.cbItemCount:SetChecked(effectiveType == "ITEM" and entry.showItemCount ~= false)
 		inspector.cbItemUses:SetChecked(effectiveType == "ITEM" and entry.showItemUses == true)
 		if inspector.cbUseHighestRank then inspector.cbUseHighestRank:SetChecked(effectiveType == "ITEM" and entry.type == "ITEM" and entry.useHighestRank == true) end
@@ -14280,7 +14299,7 @@ function CooldownPanels:UpdatePreviewIcons(panelId, countOverride)
 		local staticCooldown = entry and entry.staticTextShowOnCooldown == true or false
 		local showCooldownText = entry and entry.showCooldownText ~= false
 		local showCharges = entry and resolvedType == "SPELL" and entry.showCharges == true
-		local showStacks = entry and (resolvedType == "SPELL" or resolvedType == "CDM_AURA") and entry.showStacks == true
+		local showStacks = shouldShowEntryStacks(entry, resolvedType)
 		local showItemCount = entry and resolvedType == "ITEM" and entry.showItemCount ~= false
 		local showItemUses = entry and resolvedType == "ITEM" and entry.showItemUses == true
 		local showEntryIconTexture = entry and CooldownPanels:ResolveEntryShowIconTexture(entryLayout, entry) or showIconTexture
@@ -14655,7 +14674,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local staticTextShowOnCooldown = entry.staticTextShowOnCooldown == true
 			local trackCooldown = showCooldown or staticTextShowOnCooldown
 			local showCharges = entry.showCharges == true and resolvedType == "SPELL"
-			local showStacks = entry.showStacks == true and (resolvedType == "SPELL" or resolvedType == "CDM_AURA")
+			local showStacks = shouldShowEntryStacks(entry, resolvedType)
 			local showItemCount = resolvedType == "ITEM" and entry.showItemCount ~= false
 			local showItemUses = resolvedType == "ITEM" and entry.showItemUses == true
 			local showWhenEmpty = resolvedType == "ITEM" and entry.showWhenEmpty == true
@@ -16674,7 +16693,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 					local target = Helper.NormalizeRelativeFrameName(value)
 					local cache = CooldownPanels.GetRelativeFrameCache(runtime, panel, panelKey)
 					if not (cache.valid and cache.valid[target]) then target = "UIParent" end
-					if target == FAKE_CURSOR_FRAME_NAME then
+					if target == cdp.FAKE_CURSOR.FRAME_NAME then
 						CooldownPanels:AttachFakeCursor(panelId)
 						return
 					end
@@ -16696,7 +16715,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 							local target = entry.key
 							local cache = CooldownPanels.GetRelativeFrameCache(runtime, panel, panelKey)
 							if not (cache.valid and cache.valid[target]) then target = "UIParent" end
-							if target == FAKE_CURSOR_FRAME_NAME then
+							if target == cdp.FAKE_CURSOR.FRAME_NAME then
 								CooldownPanels:AttachFakeCursor(panelId)
 								return
 							end
@@ -18408,7 +18427,7 @@ function CooldownPanels:AttachFakeCursor(panelId)
 	anchor.point = "CENTER"
 	anchor.relativePoint = "CENTER"
 	CooldownPanels.MarkRelativeFrameEntriesDirty()
-	anchor.relativeFrame = FAKE_CURSOR_FRAME_NAME
+	anchor.relativeFrame = cdp.FAKE_CURSOR.FRAME_NAME
 	anchor.x = 0
 	anchor.y = 0
 	panel.point = anchor.point or panel.point or "CENTER"

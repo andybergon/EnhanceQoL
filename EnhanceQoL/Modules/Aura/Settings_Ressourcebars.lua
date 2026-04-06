@@ -54,12 +54,20 @@ local STAGGER_EXTRA_THRESHOLD_HIGH = (ResourceBars and ResourceBars.STAGGER_EXTR
 local STAGGER_EXTRA_THRESHOLD_VERY_HIGH = (ResourceBars and ResourceBars.STAGGER_EXTRA_THRESHOLD_VERY_HIGH) or 250
 local STAGGER_EXTRA_THRESHOLD_EXTREME = (ResourceBars and ResourceBars.STAGGER_EXTRA_THRESHOLD_EXTREME) or 300
 local STAGGER_EXTRA_THRESHOLD_CRITICAL = (ResourceBars and ResourceBars.STAGGER_EXTRA_THRESHOLD_CRITICAL) or 350
+local STAGGER_LOW_THRESHOLD = (ResourceBars and ResourceBars.STAGGER_LOW_THRESHOLD) or 30
+local STAGGER_MEDIUM_THRESHOLD = (ResourceBars and ResourceBars.STAGGER_MEDIUM_THRESHOLD) or 60
 local STAGGER_EXTRA_COLORS = (ResourceBars and ResourceBars.STAGGER_EXTRA_COLORS)
 	or {
 		high = { 0.62, 0.2, 1, 1 },
 		veryHigh = { 0.85, 0.2, 1, 1 },
 		extreme = { 1, 0.2, 0.8, 1 },
 		critical = { 1, 0.1, 0.45, 1 },
+	}
+local STAGGER_FALLBACK_COLORS = (ResourceBars and ResourceBars.STAGGER_FALLBACK_COLORS)
+	or {
+		green = { 0.52, 1.0, 0.52, 1 },
+		yellow = { 1.0, 0.98, 0.72, 1 },
+		red = { 1.0, 0.42, 0.42, 1 },
 	}
 local SMF = addon.SharedMedia and addon.SharedMedia.functions
 local EQOL_RUNES_BORDER = (ResourceBars and ResourceBars.RUNE_BORDER_ID) or "EQOL_BORDER_RUNES"
@@ -3000,6 +3008,9 @@ local function registerEditModeBars()
 			end
 
 			if barType == "STAGGER" then
+				local staggerLowDefaultColor = (STAGGER_FALLBACK_COLORS and STAGGER_FALLBACK_COLORS.green) or { 0.52, 1.0, 0.52, 1 }
+				local staggerMediumDefaultColor = (STAGGER_FALLBACK_COLORS and STAGGER_FALLBACK_COLORS.yellow) or { 1.0, 0.98, 0.72, 1 }
+
 				settingsList[#settingsList + 1] = {
 					name = L["Colors"] or "Stagger colors",
 					kind = settingType.Collapsible,
@@ -3050,6 +3061,92 @@ local function registerEditModeBars()
 						local c = curSpecCfg()
 						return c and c.useStaggerMaxOverride == true
 					end,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Stagger low threshold"] or "Stagger low threshold (%)",
+					kind = settingType.Slider,
+					allowInput = true,
+					field = "staggerLowThreshold",
+					minValue = 0,
+					maxValue = 100,
+					valueStep = 1,
+					parentId = "staggercolors",
+					get = function()
+						local c = curSpecCfg()
+						return (c and c.staggerLowThreshold) or STAGGER_LOW_THRESHOLD
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						local low = math.max(0, math.min(100, tonumber(value) or STAGGER_LOW_THRESHOLD))
+						c.staggerLowThreshold = low
+						local medium = tonumber(c.staggerMediumThreshold) or STAGGER_MEDIUM_THRESHOLD
+						if medium < low then c.staggerMediumThreshold = low end
+						queueRefresh()
+					end,
+					default = STAGGER_LOW_THRESHOLD,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Stagger low color"] or "Stagger low color",
+					kind = settingType.Color,
+					parentId = "staggercolors",
+					get = function()
+						local c = curSpecCfg()
+						return toUIColor((c and c.staggerLowColor) or staggerLowDefaultColor, staggerLowDefaultColor)
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.staggerLowColor = toColorArray(value, staggerLowDefaultColor)
+						queueRefresh()
+					end,
+					default = { r = 0.52, g = 1.0, b = 0.52, a = 1 },
+					hasOpacity = true,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Stagger medium threshold"] or "Stagger medium threshold (%)",
+					kind = settingType.Slider,
+					allowInput = true,
+					field = "staggerMediumThreshold",
+					minValue = 0,
+					maxValue = 100,
+					valueStep = 1,
+					parentId = "staggercolors",
+					get = function()
+						local c = curSpecCfg()
+						return (c and c.staggerMediumThreshold) or STAGGER_MEDIUM_THRESHOLD
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						local low = tonumber(c.staggerLowThreshold) or STAGGER_LOW_THRESHOLD
+						low = math.max(0, math.min(100, low))
+						local medium = math.max(low, math.min(100, tonumber(value) or STAGGER_MEDIUM_THRESHOLD))
+						c.staggerMediumThreshold = medium
+						queueRefresh()
+					end,
+					default = STAGGER_MEDIUM_THRESHOLD,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Stagger medium color"] or "Stagger medium color",
+					kind = settingType.Color,
+					parentId = "staggercolors",
+					get = function()
+						local c = curSpecCfg()
+						return toUIColor((c and c.staggerMediumColor) or staggerMediumDefaultColor, staggerMediumDefaultColor)
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.staggerMediumColor = toColorArray(value, staggerMediumDefaultColor)
+						queueRefresh()
+					end,
+					default = { r = 1.0, g = 0.98, b = 0.72, a = 1 },
+					hasOpacity = true,
 				}
 
 				settingsList[#settingsList + 1] = {

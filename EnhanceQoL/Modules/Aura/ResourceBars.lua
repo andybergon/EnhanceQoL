@@ -1,5 +1,5 @@
 local parentAddonName = "EnhanceQoL"
-local addonName, addon = ...
+local addon = select(2, ...)
 
 if _G[parentAddonName] then
 	addon = _G[parentAddonName]
@@ -49,12 +49,6 @@ local shouldUseDiscreteSeparatorSegments
 local refreshDiscreteSegmentsForBar
 local ensureEditModeRegistration
 local ensureRelativeFrameFallback
-local lastBarSelectionPerSpec = {}
-local lastSpecCopySelection = {}
-local lastProfileShareScope = {}
-local lastSpecCopyMode = {}
-local lastSpecCopyBar = {}
-local lastSpecCopyCosmetic = {}
 local visibilityDriverWatcher
 local ResourcebarVars = {
 	RESOURCE_SHARE_KIND = "EQOL_RESOURCE_BAR_PROFILE",
@@ -240,6 +234,10 @@ local COSMETIC_BAR_KEYS = {
 	"gradientStartColor",
 	"gradientEndColor",
 	"gradientDirection",
+	"staggerLowThreshold",
+	"staggerLowColor",
+	"staggerMediumThreshold",
+	"staggerMediumColor",
 	"staggerHighColors",
 	"useStaggerMaxOverride",
 	"staggerMaxPercent",
@@ -628,8 +626,10 @@ local function setBarDesaturated(bar, flag)
 	if bar and bar.SetStatusBarDesaturated then bar:SetStatusBarDesaturated(flag and true or false) end
 end
 
-RB.STAGGER_YELLOW_THRESHOLD = 0.30
-RB.STAGGER_RED_THRESHOLD = 0.60
+RB.STAGGER_LOW_THRESHOLD = 30
+RB.STAGGER_MEDIUM_THRESHOLD = 60
+RB.STAGGER_YELLOW_THRESHOLD = RB.STAGGER_LOW_THRESHOLD / 100
+RB.STAGGER_RED_THRESHOLD = RB.STAGGER_MEDIUM_THRESHOLD / 100
 RB.STAGGER_EXTRA_THRESHOLD_HIGH = 200
 RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH = 250
 RB.STAGGER_EXTRA_THRESHOLD_EXTREME = 300
@@ -653,22 +653,48 @@ local function getColorComponents(color, fallback)
 	return color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
 end
 
+local function getStaggerThresholds(cfg)
+	local low = tonumber(cfg and cfg.staggerLowThreshold) or RB.STAGGER_LOW_THRESHOLD
+	local medium = tonumber(cfg and cfg.staggerMediumThreshold) or RB.STAGGER_MEDIUM_THRESHOLD
+	local high = tonumber(cfg and cfg.staggerHighThreshold) or RB.STAGGER_EXTRA_THRESHOLD_HIGH
+	local veryHigh = tonumber(cfg and cfg.staggerVeryHighThreshold) or RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH
+	local extreme = tonumber(cfg and cfg.staggerExtremeThreshold) or RB.STAGGER_EXTRA_THRESHOLD_EXTREME
+	local critical = tonumber(cfg and cfg.staggerCriticalThreshold) or RB.STAGGER_EXTRA_THRESHOLD_CRITICAL
+
+	if low < 0 then
+		low = 0
+	elseif low > 100 then
+		low = 100
+	end
+
+	if medium < low then
+		medium = low
+	elseif medium > 100 then
+		medium = 100
+	end
+
+	if high < 100 then high = 100 end
+	if high < medium then high = medium end
+	if veryHigh < high then veryHigh = high end
+	if extreme < veryHigh then extreme = veryHigh end
+	if critical < extreme then critical = extreme end
+
+	return low / 100, medium / 100, high / 100, veryHigh / 100, extreme / 100, critical / 100
+end
+
+local function getStaggerBaseColor(info, cfg, state)
+	if state == "medium" then
+		return getColorComponents(cfg and cfg.staggerMediumColor, (info and info.yellow) or RB.STAGGER_FALLBACK_COLORS.yellow)
+	elseif state == "high" then
+		return getColorComponents((info and info.red) or RB.STAGGER_FALLBACK_COLORS.red)
+	end
+	return getColorComponents(cfg and cfg.staggerLowColor, (info and info.green) or RB.STAGGER_FALLBACK_COLORS.green)
+end
+
 local function getStaggerStateColor(percent, cfg)
 	local info = (GetPowerBarColor and GetPowerBarColor("STAGGER")) or (PowerBarColor and PowerBarColor["STAGGER"])
+	local lowRatio, mediumRatio, highRatio, veryHighRatio, extremeRatio, criticalRatio = getStaggerThresholds(cfg)
 	if cfg and cfg.staggerHighColors == true then
-		local high = tonumber(cfg.staggerHighThreshold) or RB.STAGGER_EXTRA_THRESHOLD_HIGH
-		local veryHigh = tonumber(cfg.staggerVeryHighThreshold) or RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH
-		local extreme = tonumber(cfg.staggerExtremeThreshold) or RB.STAGGER_EXTRA_THRESHOLD_EXTREME
-		local critical = tonumber(cfg.staggerCriticalThreshold) or RB.STAGGER_EXTRA_THRESHOLD_CRITICAL
-		if high < 0 then high = 0 end
-		if veryHigh < high then veryHigh = high end
-		if extreme < veryHigh then extreme = veryHigh end
-		if critical < extreme then critical = extreme end
-		if extreme < high then extreme = high end
-		local highRatio = high / 100
-		local veryHighRatio = veryHigh / 100
-		local extremeRatio = extreme / 100
-		local criticalRatio = critical / 100
 		if percent >= criticalRatio then
 			return getColorComponents(cfg.staggerCriticalColor, RB.STAGGER_EXTRA_COLORS.critical)
 		elseif percent >= extremeRatio then
@@ -679,15 +705,9 @@ local function getStaggerStateColor(percent, cfg)
 			return getColorComponents(cfg.staggerHighColor, RB.STAGGER_EXTRA_COLORS.high)
 		end
 	end
-	local key
-	if percent >= RB.STAGGER_RED_THRESHOLD then
-		key = "red"
-	elseif percent >= RB.STAGGER_YELLOW_THRESHOLD then
-		key = "yellow"
-	else
-		key = "green"
-	end
-	return getColorComponents((info and info[key]) or RB.STAGGER_FALLBACK_COLORS[key] or RB.STAGGER_FALLBACK_COLORS.green)
+	if percent >= mediumRatio then return getStaggerBaseColor(info, cfg, "high") end
+	if percent >= lowRatio then return getStaggerBaseColor(info, cfg, "medium") end
+	return getStaggerBaseColor(info, cfg, "low")
 end
 
 local function getPowerBarColor(type)
@@ -6885,11 +6905,14 @@ ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS = RB.ABSOLUTE_THRESHOLD_COLOR_DEF
 ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_VOID_METAMORPHOSIS = RB.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_VOID_METAMORPHOSIS
 ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_CONTINUOUS = RB.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_CONTINUOUS
 ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_PERCENT = RB.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_PERCENT
+ResourceBars.STAGGER_LOW_THRESHOLD = RB.STAGGER_LOW_THRESHOLD
+ResourceBars.STAGGER_MEDIUM_THRESHOLD = RB.STAGGER_MEDIUM_THRESHOLD
 ResourceBars.STAGGER_EXTRA_THRESHOLD_HIGH = RB.STAGGER_EXTRA_THRESHOLD_HIGH
 ResourceBars.STAGGER_EXTRA_THRESHOLD_VERY_HIGH = RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH
 ResourceBars.STAGGER_EXTRA_THRESHOLD_EXTREME = RB.STAGGER_EXTRA_THRESHOLD_EXTREME
 ResourceBars.STAGGER_EXTRA_THRESHOLD_CRITICAL = RB.STAGGER_EXTRA_THRESHOLD_CRITICAL
 ResourceBars.STAGGER_EXTRA_COLORS = RB.STAGGER_EXTRA_COLORS
+ResourceBars.STAGGER_FALLBACK_COLORS = RB.STAGGER_FALLBACK_COLORS
 ResourceBars.getBarSettings = getBarSettings
 ResourceBars.getAnchor = getAnchor
 ResourceBars.BehaviorOptionsForType = behaviorOptionsForType
