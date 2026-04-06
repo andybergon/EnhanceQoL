@@ -32,6 +32,7 @@ local cdp = {
 	FIXED_VISUAL = {
 		LAYOUTS = setmetatable({}, { __mode = "k" }),
 	},
+	RUNTIME = {},
 }
 
 CooldownPanels.ENTRY_TYPE = {
@@ -966,13 +967,7 @@ local function ensureFakeCursorFrame()
 	tex:SetAtlas(cdp.FAKE_CURSOR.ATLAS, true)
 	tex:ClearAllPoints()
 	tex:SetSize(cdp.FAKE_CURSOR.SIZE, cdp.FAKE_CURSOR.SIZE)
-	tex:SetPoint(
-		"CENTER",
-		frame,
-		"CENTER",
-		(cdp.FAKE_CURSOR.SIZE * 0.5) - cdp.FAKE_CURSOR.HOTSPOT_X,
-		cdp.FAKE_CURSOR.HOTSPOT_Y - (cdp.FAKE_CURSOR.SIZE * 0.5)
-	)
+	tex:SetPoint("CENTER", frame, "CENTER", (cdp.FAKE_CURSOR.SIZE * 0.5) - cdp.FAKE_CURSOR.HOTSPOT_X, cdp.FAKE_CURSOR.HOTSPOT_Y - (cdp.FAKE_CURSOR.SIZE * 0.5))
 	frame.texture = tex
 
 	frame:Hide()
@@ -1702,7 +1697,7 @@ local function getSoundLabel(value)
 	return soundName
 end
 
-local function getSoundButtonText(value) return (SOUND) .. ": " .. getSoundLabel(value) end
+local function getSoundButtonText(value) return SOUND .. ": " .. getSoundLabel(value) end
 
 local function getSoundOptions()
 	local list = {}
@@ -5528,9 +5523,7 @@ function CooldownPanels._eqolFixedVisualCacheUtil.GetDynamicPlacement(cache, gro
 		groupKey = type(group.id) == "string" and group.id or tostring(group.id or "")
 		placementsByGroupId = cache.dynamicPlacementsByGroupId
 	end
-	if not placementsByGroupId then
-		return Helper.GetFixedGroupDynamicPlacement and Helper.GetFixedGroupDynamicPlacement(group, index, count) or nil
-	end
+	if not placementsByGroupId then return Helper.GetFixedGroupDynamicPlacement and Helper.GetFixedGroupDynamicPlacement(group, index, count) or nil end
 	local groupCache = placementsByGroupId[groupKey]
 	if type(groupCache) ~= "table" then
 		groupCache = {}
@@ -5609,9 +5602,7 @@ function CooldownPanels:ResolveFixedGroupSlotSpacingOffset(panel, frame, entry, 
 	end
 
 	local icons = frame.icons or nil
-	local function getSlotCenter(column, row)
-		return cacheUtil.GetSlotCenter(frameCache, icons, fixedGridColumns, column, row)
-	end
+	local function getSlotCenter(column, row) return cacheUtil.GetSlotCenter(frameCache, icons, fixedGridColumns, column, row) end
 
 	if centerGrowth and placement then
 		local rowCount = math.floor(tonumber(placement.rowCount) or 0)
@@ -5854,6 +5845,213 @@ local function applyStateTexture(icon, data)
 		applyRegion(texture, 0, 0, mirror, mirrorVertical)
 		if textureSecond then textureSecond:Hide() end
 	end
+end
+
+function cdp.RUNTIME.ClearIconSnapshot(icon)
+	if not icon then return end
+	icon._eqolRuntimeSnapshot = nil
+end
+
+function cdp.RUNTIME.EnsureIconSnapshot(icon)
+	if not icon then return nil end
+	local snapshot = icon._eqolRuntimeSnapshot
+	if type(snapshot) ~= "table" then
+		snapshot = {}
+		icon._eqolRuntimeSnapshot = snapshot
+	end
+	return snapshot
+end
+
+function cdp.RUNTIME.GetFixedContextSignature(fixedContext)
+	if type(fixedContext) ~= "table" then return nil, nil end
+	return tonumber(fixedContext.dynamicLocalIndex) or 0, tonumber(fixedContext.dynamicCount) or 0
+end
+
+function cdp.RUNTIME.HasPlacementChange(icon, snapshot, data, fixedLayoutCache, fixedGridColumns, slotColumn, slotRow, layoutEditActive)
+	if not (icon and snapshot and data) then return true end
+	if icon._eqolVisualSize == nil or icon._eqolVisualAnchor == nil or icon._eqolVisualOffsetX == nil or icon._eqolVisualOffsetY == nil then return true end
+	if icon._eqolMasqueNeedsReskin then return true end
+	local entry = data.entry
+	local layout = data.layout
+	local fixedLocalIndex, fixedCount = cdp.RUNTIME.GetFixedContextSignature(data.fixedContext)
+	return snapshot.entryId ~= data.entryId
+		or snapshot.baseSlotSize ~= icon._eqolBaseSlotSize
+		or snapshot.fixedLayoutCache ~= fixedLayoutCache
+		or snapshot.fixedGridColumns ~= fixedGridColumns
+		or snapshot.slotColumn ~= slotColumn
+		or snapshot.slotRow ~= slotRow
+		or snapshot.layoutEditActive ~= (layoutEditActive == true)
+		or snapshot.entryIconSizeUseGlobal ~= (entry and entry.iconSizeUseGlobal)
+		or snapshot.entryIconSize ~= (entry and entry.iconSize)
+		or snapshot.entryIconOffsetX ~= (entry and entry.iconOffsetX)
+		or snapshot.entryIconOffsetY ~= (entry and entry.iconOffsetY)
+		or snapshot.entryFixedGroupId ~= (entry and entry.fixedGroupId)
+		or snapshot.layoutIconOffsetX ~= (layout and layout.iconOffsetX)
+		or snapshot.layoutIconOffsetY ~= (layout and layout.iconOffsetY)
+		or snapshot.layoutSpacing ~= (layout and layout.spacing)
+		or snapshot.fixedLocalIndex ~= fixedLocalIndex
+		or snapshot.fixedCount ~= fixedCount
+end
+
+function cdp.RUNTIME.WritePlacementSnapshot(icon, snapshot, data, fixedLayoutCache, fixedGridColumns, slotColumn, slotRow, layoutEditActive)
+	if not (icon and snapshot and data) then return end
+	local entry = data.entry
+	local layout = data.layout
+	local fixedLocalIndex, fixedCount = cdp.RUNTIME.GetFixedContextSignature(data.fixedContext)
+	snapshot.entryId = data.entryId
+	snapshot.baseSlotSize = icon._eqolBaseSlotSize
+	snapshot.fixedLayoutCache = fixedLayoutCache
+	snapshot.fixedGridColumns = fixedGridColumns
+	snapshot.slotColumn = slotColumn
+	snapshot.slotRow = slotRow
+	snapshot.layoutEditActive = layoutEditActive == true
+	snapshot.entryIconSizeUseGlobal = entry and entry.iconSizeUseGlobal or nil
+	snapshot.entryIconSize = entry and entry.iconSize or nil
+	snapshot.entryIconOffsetX = entry and entry.iconOffsetX or nil
+	snapshot.entryIconOffsetY = entry and entry.iconOffsetY or nil
+	snapshot.entryFixedGroupId = entry and entry.fixedGroupId or nil
+	snapshot.layoutIconOffsetX = layout and layout.iconOffsetX or nil
+	snapshot.layoutIconOffsetY = layout and layout.iconOffsetY or nil
+	snapshot.layoutSpacing = layout and layout.spacing or nil
+	snapshot.fixedLocalIndex = fixedLocalIndex
+	snapshot.fixedCount = fixedCount
+end
+
+function cdp.RUNTIME.HasBaseDecorChange(snapshot, data, showTooltips)
+	if not (snapshot and data) then return true end
+	local keybindVisible = data.showKeybinds == true and data.keybindText ~= nil
+	return snapshot.entryId ~= data.entryId
+		or snapshot.decorEntry ~= data.entry
+		or snapshot.showIconTexture ~= (data.showIconTexture ~= false)
+		or snapshot.tooltipEnabled ~= (showTooltips == true)
+		or snapshot.keybindVisible ~= keybindVisible
+		or snapshot.keybindText ~= data.keybindText
+end
+
+function cdp.RUNTIME.WriteBaseDecorSnapshot(snapshot, data, showTooltips)
+	if not (snapshot and data) then return end
+	snapshot.entryId = data.entryId
+	snapshot.decorEntry = data.entry
+	snapshot.showIconTexture = data.showIconTexture ~= false
+	snapshot.tooltipEnabled = showTooltips == true
+	snapshot.keybindVisible = data.showKeybinds == true and data.keybindText ~= nil
+	snapshot.keybindText = data.keybindText
+end
+
+function cdp.RUNTIME.HasTextureChange(snapshot, data)
+	if not data then return true end
+	local iconTexture = data.icon or Helper.PREVIEW_ICON
+	local issecretvalue = Api and Api.issecretvalue or nil
+	if issecretvalue and issecretvalue(iconTexture) then return true end
+	if not snapshot or snapshot.iconTextureComparable ~= true then return true end
+	return snapshot.iconTexture ~= iconTexture
+end
+
+function cdp.RUNTIME.WriteTextureSnapshot(snapshot, data)
+	if not (snapshot and data) then return end
+	local iconTexture = data.icon or Helper.PREVIEW_ICON
+	local issecretvalue = Api and Api.issecretvalue or nil
+	if issecretvalue and issecretvalue(iconTexture) then
+		snapshot.iconTextureComparable = false
+		snapshot.iconTexture = nil
+		return
+	end
+	snapshot.iconTextureComparable = true
+	snapshot.iconTexture = iconTexture
+end
+
+function cdp.RUNTIME.HasStaticTextChange(snapshot, data, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
+	if not (snapshot and data) then return true end
+	local entry = data.entry
+	local layout = data.layout
+	return snapshot.entryId ~= data.entryId
+		or snapshot.staticFontPath ~= staticFontPath
+		or snapshot.staticFontSize ~= staticFontSize
+		or snapshot.staticFontStyle ~= staticFontStyle
+		or snapshot.staticTextCooldown ~= (staticTextCooldown == true)
+		or snapshot.entryStaticText ~= (entry and entry.staticText)
+		or snapshot.entryStaticTextShowOnCooldown ~= (entry and entry.staticTextShowOnCooldown)
+		or snapshot.entryStaticTextUseGlobal ~= (entry and entry.staticTextUseGlobal)
+		or snapshot.entryStaticTextFont ~= (entry and entry.staticTextFont)
+		or snapshot.entryStaticTextSize ~= (entry and entry.staticTextSize)
+		or snapshot.entryStaticTextStyle ~= (entry and entry.staticTextStyle)
+		or snapshot.entryStaticTextColor ~= (entry and entry.staticTextColor)
+		or snapshot.entryStaticTextAnchor ~= (entry and entry.staticTextAnchor)
+		or snapshot.entryStaticTextX ~= (entry and entry.staticTextX)
+		or snapshot.entryStaticTextY ~= (entry and entry.staticTextY)
+		or snapshot.layoutStaticTextFont ~= (layout and layout.staticTextFont)
+		or snapshot.layoutStaticTextSize ~= (layout and layout.staticTextSize)
+		or snapshot.layoutStaticTextStyle ~= (layout and layout.staticTextStyle)
+		or snapshot.layoutStaticTextColor ~= (layout and layout.staticTextColor)
+		or snapshot.layoutStaticTextAnchor ~= (layout and layout.staticTextAnchor)
+		or snapshot.layoutStaticTextX ~= (layout and layout.staticTextX)
+		or snapshot.layoutStaticTextY ~= (layout and layout.staticTextY)
+end
+
+function cdp.RUNTIME.WriteStaticTextSnapshot(snapshot, data, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
+	if not (snapshot and data) then return end
+	local entry = data.entry
+	local layout = data.layout
+	snapshot.entryId = data.entryId
+	snapshot.staticFontPath = staticFontPath
+	snapshot.staticFontSize = staticFontSize
+	snapshot.staticFontStyle = staticFontStyle
+	snapshot.staticTextCooldown = staticTextCooldown == true
+	snapshot.entryStaticText = entry and entry.staticText or nil
+	snapshot.entryStaticTextShowOnCooldown = entry and entry.staticTextShowOnCooldown or nil
+	snapshot.entryStaticTextUseGlobal = entry and entry.staticTextUseGlobal or nil
+	snapshot.entryStaticTextFont = entry and entry.staticTextFont or nil
+	snapshot.entryStaticTextSize = entry and entry.staticTextSize or nil
+	snapshot.entryStaticTextStyle = entry and entry.staticTextStyle or nil
+	snapshot.entryStaticTextColor = entry and entry.staticTextColor or nil
+	snapshot.entryStaticTextAnchor = entry and entry.staticTextAnchor or nil
+	snapshot.entryStaticTextX = entry and entry.staticTextX or nil
+	snapshot.entryStaticTextY = entry and entry.staticTextY or nil
+	snapshot.layoutStaticTextFont = layout and layout.staticTextFont or nil
+	snapshot.layoutStaticTextSize = layout and layout.staticTextSize or nil
+	snapshot.layoutStaticTextStyle = layout and layout.staticTextStyle or nil
+	snapshot.layoutStaticTextColor = layout and layout.staticTextColor or nil
+	snapshot.layoutStaticTextAnchor = layout and layout.staticTextAnchor or nil
+	snapshot.layoutStaticTextX = layout and layout.staticTextX or nil
+	snapshot.layoutStaticTextY = layout and layout.staticTextY or nil
+end
+
+function cdp.RUNTIME.HasStateTextureChange(snapshot, data)
+	if not (snapshot and data) then return true end
+	return snapshot.entryId ~= data.entryId
+		or snapshot.stateTextureShown ~= (data.stateTextureShown == true)
+		or snapshot.stateTextureType ~= data.stateTextureType
+		or snapshot.stateTextureValue ~= data.stateTextureValue
+		or snapshot.stateTextureWidth ~= data.stateTextureWidth
+		or snapshot.stateTextureHeight ~= data.stateTextureHeight
+		or snapshot.stateTextureScale ~= data.stateTextureScale
+		or snapshot.stateTextureAngle ~= data.stateTextureAngle
+		or snapshot.stateTextureDouble ~= (data.stateTextureDouble == true)
+		or snapshot.stateTextureMirror ~= (data.stateTextureMirror == true)
+		or snapshot.stateTextureMirrorSecond ~= (data.stateTextureMirrorSecond == true)
+		or snapshot.stateTextureMirrorVertical ~= (data.stateTextureMirrorVertical == true)
+		or snapshot.stateTextureMirrorVerticalSecond ~= (data.stateTextureMirrorVerticalSecond == true)
+		or snapshot.stateTextureSpacingX ~= data.stateTextureSpacingX
+		or snapshot.stateTextureSpacingY ~= data.stateTextureSpacingY
+end
+
+function cdp.RUNTIME.WriteStateTextureSnapshot(snapshot, data)
+	if not (snapshot and data) then return end
+	snapshot.entryId = data.entryId
+	snapshot.stateTextureShown = data.stateTextureShown == true
+	snapshot.stateTextureType = data.stateTextureType
+	snapshot.stateTextureValue = data.stateTextureValue
+	snapshot.stateTextureWidth = data.stateTextureWidth
+	snapshot.stateTextureHeight = data.stateTextureHeight
+	snapshot.stateTextureScale = data.stateTextureScale
+	snapshot.stateTextureAngle = data.stateTextureAngle
+	snapshot.stateTextureDouble = data.stateTextureDouble == true
+	snapshot.stateTextureMirror = data.stateTextureMirror == true
+	snapshot.stateTextureMirrorSecond = data.stateTextureMirrorSecond == true
+	snapshot.stateTextureMirrorVertical = data.stateTextureMirrorVertical == true
+	snapshot.stateTextureMirrorVerticalSecond = data.stateTextureMirrorVerticalSecond == true
+	snapshot.stateTextureSpacingX = data.stateTextureSpacingX
+	snapshot.stateTextureSpacingY = data.stateTextureSpacingY
 end
 
 local function createIconFrame(parent)
@@ -14992,12 +15190,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.liveGlowAllowed = entryLayout.hideGlowOutOfCombat ~= true or playerInCombat == true
 				data.entry = entry
 				data.entryId = entryId
-				data.fixedContext = fixedGroupDynamicRuntimeIndex
-						and {
-							dynamicLocalIndex = fixedGroupDynamicRuntimeIndex,
-							dynamicCount = fixedGroupDynamicRuntimeIndex,
-						}
-					or nil
+				data.fixedContext = fixedGroupDynamicRuntimeIndex and {
+					dynamicLocalIndex = fixedGroupDynamicRuntimeIndex,
+					dynamicCount = fixedGroupDynamicRuntimeIndex,
+				} or nil
 				data.hideOnCooldown = entryHideOnCooldown == true
 				data.showOnCooldown = entryShowOnCooldown == true
 				data.resolvedType = resolvedType
@@ -15178,6 +15374,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			self:ConfigureEditModePanelIcon(panelId, icon, data and data.entryId or nil, slotColumn, slotRow)
 		end
 		if not data then
+			cdp.RUNTIME.ClearIconSnapshot(icon)
 			icon.entryId = nil
 			icon._eqolRuntimeData = nil
 			if not layoutEditActive and icon._eqolRuntimeEmpty == true then
@@ -15238,11 +15435,35 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				CooldownPanels.HidePreviewGlowBorder(icon)
 				CooldownPanels.StopAllIconGlows(icon)
 			end
+			cdp.RUNTIME.EnsureIconSnapshot(icon)
+			data._eqolRuntimePlacementDirty = cdp.RUNTIME.HasPlacementChange(
+				icon,
+				icon._eqolRuntimeSnapshot,
+				data,
+				fixedLayout and fixedLayoutCache or nil,
+				fixedLayout and fixedGridColumns or nil,
+				slotColumn,
+				slotRow,
+				layoutEditActive
+			)
+			data._eqolRuntimeBaseDecorDirty = data._eqolRuntimePlacementDirty or cdp.RUNTIME.HasBaseDecorChange(icon._eqolRuntimeSnapshot, data, showTooltips)
 			local showGhostIcon = layoutEditActive and data.showGhostIcon == true
 			local hideOnCooldown = data.hideOnCooldown == true
 			local showOnCooldown = data.showOnCooldown == true
-			CooldownPanels:ApplyEntryIconVisualLayout(icon, data.layout, data.entry, fixedLayout and panel or nil, fixedLayout and fixedGridColumns or nil, slotColumn, slotRow, data.fixedContext)
-			self:SyncMasqueButton(icon)
+			if data._eqolRuntimePlacementDirty then
+				CooldownPanels:ApplyEntryIconVisualLayout(icon, data.layout, data.entry, fixedLayout and panel or nil, fixedLayout and fixedGridColumns or nil, slotColumn, slotRow, data.fixedContext)
+				self:SyncMasqueButton(icon)
+				cdp.RUNTIME.WritePlacementSnapshot(
+					icon,
+					icon._eqolRuntimeSnapshot,
+					data,
+					fixedLayout and fixedLayoutCache or nil,
+					fixedLayout and fixedGridColumns or nil,
+					slotColumn,
+					slotRow,
+					layoutEditActive
+				)
+			end
 			CooldownPanels:HideEditorGhostIcon(icon)
 			if showOnCooldown then
 				icon:SetAlpha(0)
@@ -15251,10 +15472,16 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			end
 			clearPreviewCooldown(icon.cooldown)
 			entryToIcon[data.entryId] = icon
-			icon.texture:SetTexture(data.icon or Helper.PREVIEW_ICON)
+			data._eqolRuntimeTextureDirty = cdp.RUNTIME.HasTextureChange(icon._eqolRuntimeSnapshot, data)
+			if data._eqolRuntimeTextureDirty then
+				icon.texture:SetTexture(data.icon or Helper.PREVIEW_ICON)
+				cdp.RUNTIME.WriteTextureSnapshot(icon._eqolRuntimeSnapshot, data)
+			end
 			icon.texture:SetAlpha(1)
-			icon.texture:SetShown(data.showIconTexture ~= false)
-			CooldownPanels.ApplyIconTooltip(icon, data.entry, showTooltips)
+			if data._eqolRuntimeBaseDecorDirty then
+				icon.texture:SetShown(data.showIconTexture ~= false)
+				CooldownPanels.ApplyIconTooltip(icon, data.entry, showTooltips)
+			end
 			icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
 			CooldownPanels:ApplyEntryStackTextStyle(icon, data.layout, data.entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
 			CooldownPanels:ApplyEntryChargesTextStyle(icon, data.layout, data.entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
@@ -15557,19 +15784,24 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					icon.count:Show()
 				end
 			end
-			if icon.keybind then
+			if data._eqolRuntimeBaseDecorDirty and icon.keybind then
 				if data.showKeybinds and data.keybindText then
 					icon.keybind:SetText(data.keybindText)
 					icon.keybind:Show()
 				else
 					icon.keybind:Hide()
 				end
+				cdp.RUNTIME.WriteBaseDecorSnapshot(icon._eqolRuntimeSnapshot, data, showTooltips)
 			end
 			local staticTextCooldown = false
 			if data.entry and data.entry.staticTextShowOnCooldown == true then
 				staticTextCooldown = data.stanceActive == true or cdmAuraActive or durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
 			end
-			applyStaticText(icon, data.layout, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
+			if data._eqolRuntimeBaseDecorDirty and not icon.keybind then cdp.RUNTIME.WriteBaseDecorSnapshot(icon._eqolRuntimeSnapshot, data, showTooltips) end
+			if data._eqolRuntimePlacementDirty or cdp.RUNTIME.HasStaticTextChange(icon._eqolRuntimeSnapshot, data, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown) then
+				applyStaticText(icon, data.layout, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
+				cdp.RUNTIME.WriteStaticTextSnapshot(icon._eqolRuntimeSnapshot, data, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
+			end
 			if durationActive and showOnCooldown and data.entry.staticTextShowOnCooldown == true and staticTextCooldown then
 				if data.entry.spellID then
 					icon.staticText:SetAlpha(cooldownDurationObject:EvaluateRemainingDuration(Helper.FakeCurve))
@@ -15577,7 +15809,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				end
 			end
 
-			applyStateTexture(icon, data)
+			if data._eqolRuntimePlacementDirty or cdp.RUNTIME.HasStateTextureChange(icon._eqolRuntimeSnapshot, data) then
+				applyStateTexture(icon, data)
+				cdp.RUNTIME.WriteStateTextureSnapshot(icon._eqolRuntimeSnapshot, data)
+			end
 			if layoutEditActive and icon.previewSoundBorder and data.previewSound then icon.previewSoundBorder:Show() end
 			if icon.rangeOverlay then
 				if data.rangeOverlay then
@@ -15716,6 +15951,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 	for i = count + 1, #frame.icons do
 		local icon = frame.icons[i]
 		if icon then
+			cdp.RUNTIME.ClearIconSnapshot(icon)
 			self:ConfigureEditModePanelIcon(panelId, icon, nil, nil, nil)
 			icon.entryId = nil
 			clearPreviewCooldown(icon.cooldown)
