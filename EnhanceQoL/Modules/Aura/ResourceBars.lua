@@ -238,6 +238,7 @@ local COSMETIC_BAR_KEYS = {
 	"staggerLowColor",
 	"staggerMediumThreshold",
 	"staggerMediumColor",
+	"staggerBaseHighColor",
 	"staggerHighColors",
 	"useStaggerMaxOverride",
 	"staggerMaxPercent",
@@ -628,6 +629,7 @@ end
 
 RB.STAGGER_LOW_THRESHOLD = 30
 RB.STAGGER_MEDIUM_THRESHOLD = 60
+RB.STAGGER_THRESHOLD_MAX = 1000
 RB.STAGGER_YELLOW_THRESHOLD = RB.STAGGER_LOW_THRESHOLD / 100
 RB.STAGGER_RED_THRESHOLD = RB.STAGGER_MEDIUM_THRESHOLD / 100
 RB.STAGGER_EXTRA_THRESHOLD_HIGH = 200
@@ -653,27 +655,26 @@ local function getColorComponents(color, fallback)
 	return color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
 end
 
+local function clampStaggerThreshold(value, fallback)
+	local n = tonumber(value)
+	if n == nil then n = fallback end
+	if n == nil then return nil end
+	if n < 0 then
+		n = 0
+	elseif n > RB.STAGGER_THRESHOLD_MAX then
+		n = RB.STAGGER_THRESHOLD_MAX
+	end
+	return n
+end
+
 local function getStaggerThresholds(cfg)
-	local low = tonumber(cfg and cfg.staggerLowThreshold) or RB.STAGGER_LOW_THRESHOLD
-	local medium = tonumber(cfg and cfg.staggerMediumThreshold) or RB.STAGGER_MEDIUM_THRESHOLD
-	local high = tonumber(cfg and cfg.staggerHighThreshold) or RB.STAGGER_EXTRA_THRESHOLD_HIGH
-	local veryHigh = tonumber(cfg and cfg.staggerVeryHighThreshold) or RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH
-	local extreme = tonumber(cfg and cfg.staggerExtremeThreshold) or RB.STAGGER_EXTRA_THRESHOLD_EXTREME
-	local critical = tonumber(cfg and cfg.staggerCriticalThreshold) or RB.STAGGER_EXTRA_THRESHOLD_CRITICAL
+	local low = clampStaggerThreshold(cfg and cfg.staggerLowThreshold, RB.STAGGER_LOW_THRESHOLD)
+	local medium = clampStaggerThreshold(cfg and cfg.staggerMediumThreshold, RB.STAGGER_MEDIUM_THRESHOLD)
+	local high = clampStaggerThreshold(cfg and cfg.staggerHighThreshold, RB.STAGGER_EXTRA_THRESHOLD_HIGH)
+	local veryHigh = clampStaggerThreshold(cfg and cfg.staggerVeryHighThreshold, RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH)
+	local extreme = clampStaggerThreshold(cfg and cfg.staggerExtremeThreshold, RB.STAGGER_EXTRA_THRESHOLD_EXTREME)
+	local critical = clampStaggerThreshold(cfg and cfg.staggerCriticalThreshold, RB.STAGGER_EXTRA_THRESHOLD_CRITICAL)
 
-	if low < 0 then
-		low = 0
-	elseif low > 100 then
-		low = 100
-	end
-
-	if medium < low then
-		medium = low
-	elseif medium > 100 then
-		medium = 100
-	end
-
-	if high < 100 then high = 100 end
 	if high < medium then high = medium end
 	if veryHigh < high then veryHigh = high end
 	if extreme < veryHigh then extreme = veryHigh end
@@ -686,7 +687,7 @@ local function getStaggerBaseColor(info, cfg, state)
 	if state == "medium" then
 		return getColorComponents(cfg and cfg.staggerMediumColor, (info and info.yellow) or RB.STAGGER_FALLBACK_COLORS.yellow)
 	elseif state == "high" then
-		return getColorComponents((info and info.red) or RB.STAGGER_FALLBACK_COLORS.red)
+		return getColorComponents(cfg and cfg.staggerBaseHighColor, (info and info.red) or RB.STAGGER_FALLBACK_COLORS.red)
 	end
 	return getColorComponents(cfg and cfg.staggerLowColor, (info and info.green) or RB.STAGGER_FALLBACK_COLORS.green)
 end
@@ -6907,6 +6908,7 @@ ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_CONTINUOUS = RB.ABSOLUTE_THRESHOL
 ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_PERCENT = RB.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_PERCENT
 ResourceBars.STAGGER_LOW_THRESHOLD = RB.STAGGER_LOW_THRESHOLD
 ResourceBars.STAGGER_MEDIUM_THRESHOLD = RB.STAGGER_MEDIUM_THRESHOLD
+ResourceBars.STAGGER_THRESHOLD_MAX = RB.STAGGER_THRESHOLD_MAX
 ResourceBars.STAGGER_EXTRA_THRESHOLD_HIGH = RB.STAGGER_EXTRA_THRESHOLD_HIGH
 ResourceBars.STAGGER_EXTRA_THRESHOLD_VERY_HIGH = RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH
 ResourceBars.STAGGER_EXTRA_THRESHOLD_EXTREME = RB.STAGGER_EXTRA_THRESHOLD_EXTREME

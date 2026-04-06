@@ -4,14 +4,14 @@
 
 ### ✨ Added
 
-- Cooldown Panels: Added an `Only show Panels of my Spec` editor filter, `Ignore Masque` controls, and vertical mirroring for state textures.
+- Cooldown Panels: Added an `Only show Panels of my Spec` editor filter and vertical mirroring for state textures.
 - Group Frames: Added role-aware `Main Tank / Main Assist` controls, a separate raid `MT / MA` icon option, per-group raid visibility toggles, private-aura text scaling, and `Name` / `Level` frame strata and level settings.
 - Group Frames / Auras: Added multi-select debuff filters for `Party` and `Raid` debuffs plus configurable aura borders for `Buffs`, `Debuffs`, and `Externals`, including custom external border colors and a new `Solid` style.
 - Class Buff Reminder: Added food tracking with shared macro settings, a global `Don't show in rested areas` option, a configurable glow color, Druid party tracking for `Symbiotic Relationship`, and an optional configurable border in Edit Mode.
 - Data Panels: Added new display options for `Item Level`, `Stats`, and `Pet Tracker`, including pet reminder layouts and rested hiding.
 - UI: Added standalone cast-icon border styling, expanded Square Minimap border/background styling, a detached `Minimap Button Sink` toggle, and a new Experience Bar `Current / Max (needed)` text mode.
 - Mythic+: Expanded Combat Resurrection / Bloodlust tracker styling and added `Lightcalled Hearthstone` and `Preyseeker's Hearthstone` to the hearthstone list.
-- Resource Bars (Brewmaster / Stagger): Added scaling beyond `100%` plus four configurable extended color thresholds.
+- Resource Bars (Brewmaster / Stagger): Added scaling beyond `100%` plus configurable `Low`, `Medium`, `High`, `Very high`, `Extreme`, `Critical`, and `Deadly` stagger colors and thresholds.
 - Sound: Added mute toggles for `Belath Dawnblade`, `Lirath Windrunner`, and `Zul'Jarra`.
 - Unit Frames (Boss): Increased the configurable boss-frame count to `8`.
 - Group Frames (Healer Buffs / Mistweaver Monk): Added PTR prep for `Coalescence` (`1292922`) with a fallback icon.

@@ -56,6 +56,7 @@ local STAGGER_EXTRA_THRESHOLD_EXTREME = (ResourceBars and ResourceBars.STAGGER_E
 local STAGGER_EXTRA_THRESHOLD_CRITICAL = (ResourceBars and ResourceBars.STAGGER_EXTRA_THRESHOLD_CRITICAL) or 350
 local STAGGER_LOW_THRESHOLD = (ResourceBars and ResourceBars.STAGGER_LOW_THRESHOLD) or 30
 local STAGGER_MEDIUM_THRESHOLD = (ResourceBars and ResourceBars.STAGGER_MEDIUM_THRESHOLD) or 60
+local STAGGER_THRESHOLD_MAX = (ResourceBars and ResourceBars.STAGGER_THRESHOLD_MAX) or 1000
 local STAGGER_EXTRA_COLORS = (ResourceBars and ResourceBars.STAGGER_EXTRA_COLORS)
 	or {
 		high = { 0.62, 0.2, 1, 1 },
@@ -3010,6 +3011,7 @@ local function registerEditModeBars()
 			if barType == "STAGGER" then
 				local staggerLowDefaultColor = (STAGGER_FALLBACK_COLORS and STAGGER_FALLBACK_COLORS.green) or { 0.52, 1.0, 0.52, 1 }
 				local staggerMediumDefaultColor = (STAGGER_FALLBACK_COLORS and STAGGER_FALLBACK_COLORS.yellow) or { 1.0, 0.98, 0.72, 1 }
+				local staggerHighDefaultColor = (STAGGER_FALLBACK_COLORS and STAGGER_FALLBACK_COLORS.red) or { 1.0, 0.42, 0.42, 1 }
 
 				settingsList[#settingsList + 1] = {
 					name = L["Colors"] or "Stagger colors",
@@ -3069,7 +3071,7 @@ local function registerEditModeBars()
 					allowInput = true,
 					field = "staggerLowThreshold",
 					minValue = 0,
-					maxValue = 100,
+					maxValue = STAGGER_THRESHOLD_MAX,
 					valueStep = 1,
 					parentId = "staggercolors",
 					get = function()
@@ -3079,10 +3081,15 @@ local function registerEditModeBars()
 					set = function(_, value)
 						local c = curSpecCfg()
 						if not c then return end
-						local low = math.max(0, math.min(100, tonumber(value) or STAGGER_LOW_THRESHOLD))
+						local low = math.max(0, math.min(STAGGER_THRESHOLD_MAX, tonumber(value) or STAGGER_LOW_THRESHOLD))
 						c.staggerLowThreshold = low
 						local medium = tonumber(c.staggerMediumThreshold) or STAGGER_MEDIUM_THRESHOLD
-						if medium < low then c.staggerMediumThreshold = low end
+						if medium < low then
+							medium = low
+							c.staggerMediumThreshold = medium
+						end
+						local high = tonumber(c.staggerHighThreshold) or STAGGER_EXTRA_THRESHOLD_HIGH
+						if high < medium then c.staggerHighThreshold = medium end
 						queueRefresh()
 					end,
 					default = STAGGER_LOW_THRESHOLD,
@@ -3112,7 +3119,7 @@ local function registerEditModeBars()
 					allowInput = true,
 					field = "staggerMediumThreshold",
 					minValue = 0,
-					maxValue = 100,
+					maxValue = STAGGER_THRESHOLD_MAX,
 					valueStep = 1,
 					parentId = "staggercolors",
 					get = function()
@@ -3123,9 +3130,11 @@ local function registerEditModeBars()
 						local c = curSpecCfg()
 						if not c then return end
 						local low = tonumber(c.staggerLowThreshold) or STAGGER_LOW_THRESHOLD
-						low = math.max(0, math.min(100, low))
-						local medium = math.max(low, math.min(100, tonumber(value) or STAGGER_MEDIUM_THRESHOLD))
+						low = math.max(0, math.min(STAGGER_THRESHOLD_MAX, low))
+						local medium = math.max(low, math.min(STAGGER_THRESHOLD_MAX, tonumber(value) or STAGGER_MEDIUM_THRESHOLD))
 						c.staggerMediumThreshold = medium
+						local high = tonumber(c.staggerHighThreshold) or STAGGER_EXTRA_THRESHOLD_HIGH
+						if high < medium then c.staggerHighThreshold = medium end
 						queueRefresh()
 					end,
 					default = STAGGER_MEDIUM_THRESHOLD,
@@ -3150,6 +3159,51 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
+					name = L["Stagger high threshold"] or "Stagger high threshold (%)",
+					kind = settingType.Slider,
+					allowInput = true,
+					field = "staggerHighThreshold",
+					minValue = 100,
+					maxValue = STAGGER_THRESHOLD_MAX,
+					valueStep = 10,
+					parentId = "staggercolors",
+					get = function()
+						local c = curSpecCfg()
+						return (c and c.staggerHighThreshold) or STAGGER_EXTRA_THRESHOLD_HIGH
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						local medium = tonumber(c.staggerMediumThreshold) or STAGGER_MEDIUM_THRESHOLD
+						medium = math.max(0, math.min(STAGGER_THRESHOLD_MAX, medium))
+						local high = math.max(medium, math.min(STAGGER_THRESHOLD_MAX, tonumber(value) or STAGGER_EXTRA_THRESHOLD_HIGH))
+						c.staggerHighThreshold = high
+						local veryHigh = tonumber(c.staggerVeryHighThreshold) or STAGGER_EXTRA_THRESHOLD_VERY_HIGH
+						if veryHigh < high then c.staggerVeryHighThreshold = high end
+						queueRefresh()
+					end,
+					default = STAGGER_EXTRA_THRESHOLD_HIGH,
+				}
+
+				settingsList[#settingsList + 1] = {
+					name = L["Stagger high color"] or "Stagger high color",
+					kind = settingType.Color,
+					parentId = "staggercolors",
+					get = function()
+						local c = curSpecCfg()
+						return toUIColor((c and c.staggerBaseHighColor) or staggerHighDefaultColor, staggerHighDefaultColor)
+					end,
+					set = function(_, value)
+						local c = curSpecCfg()
+						if not c then return end
+						c.staggerBaseHighColor = toColorArray(value, staggerHighDefaultColor)
+						queueRefresh()
+					end,
+					default = { r = 1.0, g = 0.42, b = 0.42, a = 1 },
+					hasOpacity = true,
+				}
+
+				settingsList[#settingsList + 1] = {
 					name = L["Use extended stagger colors"] or "Use extended stagger colors",
 					kind = settingType.Checkbox,
 					field = "staggerHighColors",
@@ -3168,25 +3222,30 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
-					name = L["Stagger high threshold"] or "Stagger high threshold (%)",
+					name = L["Stagger very high threshold"] or "Stagger very high threshold (%)",
 					kind = settingType.Slider,
 					allowInput = true,
-					field = "staggerHighThreshold",
+					field = "staggerVeryHighThreshold",
 					minValue = 100,
-					maxValue = 1000,
+					maxValue = STAGGER_THRESHOLD_MAX,
 					valueStep = 10,
 					parentId = "staggercolors",
 					get = function()
 						local c = curSpecCfg()
-						return (c and c.staggerHighThreshold) or STAGGER_EXTRA_THRESHOLD_HIGH
+						return (c and c.staggerVeryHighThreshold) or STAGGER_EXTRA_THRESHOLD_VERY_HIGH
 					end,
 					set = function(_, value)
 						local c = curSpecCfg()
 						if not c then return end
-						c.staggerHighThreshold = value
+						local high = tonumber(c.staggerHighThreshold) or STAGGER_EXTRA_THRESHOLD_HIGH
+						high = math.max(0, math.min(STAGGER_THRESHOLD_MAX, high))
+						local veryHigh = math.max(high, math.min(STAGGER_THRESHOLD_MAX, tonumber(value) or STAGGER_EXTRA_THRESHOLD_VERY_HIGH))
+						c.staggerVeryHighThreshold = veryHigh
+						local extreme = tonumber(c.staggerExtremeThreshold) or STAGGER_EXTRA_THRESHOLD_EXTREME
+						if extreme < veryHigh then c.staggerExtremeThreshold = veryHigh end
 						queueRefresh()
 					end,
-					default = STAGGER_EXTRA_THRESHOLD_HIGH,
+					default = STAGGER_EXTRA_THRESHOLD_VERY_HIGH,
 					isEnabled = function()
 						local c = curSpecCfg()
 						return c and c.staggerHighColors == true
@@ -3194,7 +3253,7 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
-					name = L["High color"] or "Stagger high color",
+					name = L["Stagger very high color"] or "Stagger very high color",
 					kind = settingType.Color,
 					parentId = "staggercolors",
 					get = function()
@@ -3216,25 +3275,30 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
-					name = L["Stagger very high threshold"] or "Stagger very high threshold (%)",
+					name = L["Stagger extreme threshold"] or "Stagger extreme threshold (%)",
 					kind = settingType.Slider,
 					allowInput = true,
-					field = "staggerVeryHighThreshold",
+					field = "staggerExtremeThreshold",
 					minValue = 100,
-					maxValue = 1000,
+					maxValue = STAGGER_THRESHOLD_MAX,
 					valueStep = 10,
 					parentId = "staggercolors",
 					get = function()
 						local c = curSpecCfg()
-						return (c and c.staggerVeryHighThreshold) or STAGGER_EXTRA_THRESHOLD_VERY_HIGH
+						return (c and c.staggerExtremeThreshold) or STAGGER_EXTRA_THRESHOLD_EXTREME
 					end,
 					set = function(_, value)
 						local c = curSpecCfg()
 						if not c then return end
-						c.staggerVeryHighThreshold = value
+						local veryHigh = tonumber(c.staggerVeryHighThreshold) or STAGGER_EXTRA_THRESHOLD_VERY_HIGH
+						veryHigh = math.max(0, math.min(STAGGER_THRESHOLD_MAX, veryHigh))
+						local extreme = math.max(veryHigh, math.min(STAGGER_THRESHOLD_MAX, tonumber(value) or STAGGER_EXTRA_THRESHOLD_EXTREME))
+						c.staggerExtremeThreshold = extreme
+						local critical = tonumber(c.staggerCriticalThreshold) or STAGGER_EXTRA_THRESHOLD_CRITICAL
+						if critical < extreme then c.staggerCriticalThreshold = extreme end
 						queueRefresh()
 					end,
-					default = STAGGER_EXTRA_THRESHOLD_VERY_HIGH,
+					default = STAGGER_EXTRA_THRESHOLD_EXTREME,
 					isEnabled = function()
 						local c = curSpecCfg()
 						return c and c.staggerHighColors == true
@@ -3242,7 +3306,7 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
-					name = L["Stagger very high color"] or "Stagger very high color",
+					name = L["Stagger extreme color"] or "Stagger extreme color",
 					kind = settingType.Color,
 					parentId = "staggercolors",
 					get = function()
@@ -3264,25 +3328,28 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
-					name = L["Stagger extreme threshold"] or "Stagger extreme threshold (%)",
+					name = L["Stagger critical threshold"] or "Stagger critical threshold (%)",
 					kind = settingType.Slider,
 					allowInput = true,
-					field = "staggerExtremeThreshold",
+					field = "staggerCriticalThreshold",
 					minValue = 100,
-					maxValue = 1000,
+					maxValue = STAGGER_THRESHOLD_MAX,
 					valueStep = 10,
 					parentId = "staggercolors",
 					get = function()
 						local c = curSpecCfg()
-						return (c and c.staggerExtremeThreshold) or STAGGER_EXTRA_THRESHOLD_EXTREME
+						return (c and c.staggerCriticalThreshold) or STAGGER_EXTRA_THRESHOLD_CRITICAL
 					end,
 					set = function(_, value)
 						local c = curSpecCfg()
 						if not c then return end
-						c.staggerExtremeThreshold = value
+						local extreme = tonumber(c.staggerExtremeThreshold) or STAGGER_EXTRA_THRESHOLD_EXTREME
+						extreme = math.max(0, math.min(STAGGER_THRESHOLD_MAX, extreme))
+						local critical = math.max(extreme, math.min(STAGGER_THRESHOLD_MAX, tonumber(value) or STAGGER_EXTRA_THRESHOLD_CRITICAL))
+						c.staggerCriticalThreshold = critical
 						queueRefresh()
 					end,
-					default = STAGGER_EXTRA_THRESHOLD_EXTREME,
+					default = STAGGER_EXTRA_THRESHOLD_CRITICAL,
 					isEnabled = function()
 						local c = curSpecCfg()
 						return c and c.staggerHighColors == true
@@ -3290,7 +3357,7 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
-					name = L["Stagger extreme color"] or "Stagger extreme color",
+					name = L["Stagger critical color"] or "Stagger critical color",
 					kind = settingType.Color,
 					parentId = "staggercolors",
 					get = function()
@@ -3312,33 +3379,7 @@ local function registerEditModeBars()
 				}
 
 				settingsList[#settingsList + 1] = {
-					name = L["Stagger critical threshold"] or "Stagger critical threshold (%)",
-					kind = settingType.Slider,
-					allowInput = true,
-					field = "staggerCriticalThreshold",
-					minValue = 100,
-					maxValue = 1000,
-					valueStep = 10,
-					parentId = "staggercolors",
-					get = function()
-						local c = curSpecCfg()
-						return (c and c.staggerCriticalThreshold) or STAGGER_EXTRA_THRESHOLD_CRITICAL
-					end,
-					set = function(_, value)
-						local c = curSpecCfg()
-						if not c then return end
-						c.staggerCriticalThreshold = value
-						queueRefresh()
-					end,
-					default = STAGGER_EXTRA_THRESHOLD_CRITICAL,
-					isEnabled = function()
-						local c = curSpecCfg()
-						return c and c.staggerHighColors == true
-					end,
-				}
-
-				settingsList[#settingsList + 1] = {
-					name = L["Stagger critical color"] or "Stagger critical color",
+					name = L["Stagger deadly color"] or "Stagger deadly color",
 					kind = settingType.Color,
 					parentId = "staggercolors",
 					get = function()
