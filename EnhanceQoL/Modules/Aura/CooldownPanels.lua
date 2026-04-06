@@ -5960,6 +5960,181 @@ function cdp.RUNTIME.WriteTextureSnapshot(snapshot, data)
 	snapshot.iconTexture = iconTexture
 end
 
+function cdp.RUNTIME.EnsureCooldownTextDefaults(icon)
+	if not (icon and icon.cooldown and icon.cooldown.GetCountdownFontString) then return nil, nil, nil end
+	local defaults = icon.cooldown._eqolCooldownTextDefaults
+	if defaults then return defaults.font, defaults.size, defaults.style end
+	local fontString = icon.cooldown:GetCountdownFontString()
+	if not (fontString and fontString.GetFont) then return nil, nil, nil end
+	local fontPath, fontSize, fontStyle = fontString:GetFont()
+	icon.cooldown._eqolCooldownTextDefaults = {
+		font = fontPath,
+		size = fontSize,
+		style = fontStyle,
+	}
+	return fontPath, fontSize, fontStyle
+end
+
+function cdp.RUNTIME.HasCooldownWidgetConfigChange(snapshot, data, cooldownUsesAuraDisplay)
+	if not (snapshot and data) then return true end
+	return snapshot.entryId ~= data.entryId
+		or snapshot.cooldownHideCountdownNumbers ~= (not data.showCooldownText)
+		or snapshot.cooldownUsesAuraDisplay ~= (cooldownUsesAuraDisplay == true)
+end
+
+function cdp.RUNTIME.WriteCooldownWidgetConfigSnapshot(snapshot, data, cooldownUsesAuraDisplay)
+	if not (snapshot and data) then return end
+	snapshot.entryId = data.entryId
+	snapshot.cooldownHideCountdownNumbers = not data.showCooldownText
+	snapshot.cooldownUsesAuraDisplay = cooldownUsesAuraDisplay == true
+end
+
+function cdp.RUNTIME.HasCooldownTextStyleChange(snapshot, data, defaultFontPath, defaultFontSize, defaultFontStyle)
+	if not (snapshot and data) then return true end
+	local entry = data.entry
+	local layout = data.layout
+	return snapshot.entryId ~= data.entryId
+		or snapshot.cooldownTextDefaultFontPath ~= defaultFontPath
+		or snapshot.cooldownTextDefaultFontSize ~= defaultFontSize
+		or snapshot.cooldownTextDefaultFontStyle ~= defaultFontStyle
+		or snapshot.entryCooldownTextUseGlobal ~= (entry and entry.cooldownTextUseGlobal ~= false or true)
+		or snapshot.entryCooldownTextFont ~= (entry and entry.cooldownTextFont)
+		or snapshot.entryCooldownTextSize ~= (entry and entry.cooldownTextSize)
+		or snapshot.entryCooldownTextStyle ~= (entry and entry.cooldownTextStyle)
+		or snapshot.entryCooldownTextColor ~= (entry and entry.cooldownTextColor)
+		or snapshot.entryCooldownTextX ~= (entry and entry.cooldownTextX)
+		or snapshot.entryCooldownTextY ~= (entry and entry.cooldownTextY)
+		or snapshot.layoutCooldownTextFont ~= (layout and layout.cooldownTextFont)
+		or snapshot.layoutCooldownTextSize ~= (layout and layout.cooldownTextSize)
+		or snapshot.layoutCooldownTextStyle ~= (layout and layout.cooldownTextStyle)
+		or snapshot.layoutCooldownTextColor ~= (layout and layout.cooldownTextColor)
+		or snapshot.layoutCooldownTextX ~= (layout and layout.cooldownTextX)
+		or snapshot.layoutCooldownTextY ~= (layout and layout.cooldownTextY)
+end
+
+function cdp.RUNTIME.WriteCooldownTextStyleSnapshot(snapshot, data, defaultFontPath, defaultFontSize, defaultFontStyle)
+	if not (snapshot and data) then return end
+	local entry = data.entry
+	local layout = data.layout
+	snapshot.entryId = data.entryId
+	snapshot.cooldownTextDefaultFontPath = defaultFontPath
+	snapshot.cooldownTextDefaultFontSize = defaultFontSize
+	snapshot.cooldownTextDefaultFontStyle = defaultFontStyle
+	snapshot.entryCooldownTextUseGlobal = entry and entry.cooldownTextUseGlobal ~= false or true
+	snapshot.entryCooldownTextFont = entry and entry.cooldownTextFont or nil
+	snapshot.entryCooldownTextSize = entry and entry.cooldownTextSize or nil
+	snapshot.entryCooldownTextStyle = entry and entry.cooldownTextStyle or nil
+	snapshot.entryCooldownTextColor = entry and entry.cooldownTextColor or nil
+	snapshot.entryCooldownTextX = entry and entry.cooldownTextX or nil
+	snapshot.entryCooldownTextY = entry and entry.cooldownTextY or nil
+	snapshot.layoutCooldownTextFont = layout and layout.cooldownTextFont or nil
+	snapshot.layoutCooldownTextSize = layout and layout.cooldownTextSize or nil
+	snapshot.layoutCooldownTextStyle = layout and layout.cooldownTextStyle or nil
+	snapshot.layoutCooldownTextColor = layout and layout.cooldownTextColor or nil
+	snapshot.layoutCooldownTextX = layout and layout.cooldownTextX or nil
+	snapshot.layoutCooldownTextY = layout and layout.cooldownTextY or nil
+end
+
+function cdp.RUNTIME.HasStackTextStyleChange(snapshot, data, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	if not (snapshot and data) then return true end
+	local entry = data.entry
+	local layout = data.layout
+	return snapshot.entryId ~= data.entryId
+		or snapshot.stackTextFallbackFontPath ~= fallbackFontPath
+		or snapshot.stackTextFallbackFontSize ~= fallbackFontSize
+		or snapshot.stackTextFallbackFontStyle ~= fallbackFontStyle
+		or snapshot.entryStackUseGlobal ~= (entry and entry.stackStyleUseGlobal ~= false or true)
+		or snapshot.entryStackFont ~= (entry and entry.stackFont)
+		or snapshot.entryStackSize ~= (entry and entry.stackFontSize)
+		or snapshot.entryStackStyle ~= (entry and entry.stackFontStyle)
+		or snapshot.entryStackColor ~= (entry and entry.stackColor)
+		or snapshot.entryStackAnchor ~= (entry and entry.stackAnchor)
+		or snapshot.entryStackX ~= (entry and entry.stackX)
+		or snapshot.entryStackY ~= (entry and entry.stackY)
+		or snapshot.layoutStackFont ~= (layout and layout.stackFont)
+		or snapshot.layoutStackSize ~= (layout and layout.stackFontSize)
+		or snapshot.layoutStackStyle ~= (layout and layout.stackFontStyle)
+		or snapshot.layoutStackColor ~= (layout and layout.stackColor)
+		or snapshot.layoutStackAnchor ~= (layout and layout.stackAnchor)
+		or snapshot.layoutStackX ~= (layout and layout.stackX)
+		or snapshot.layoutStackY ~= (layout and layout.stackY)
+end
+
+function cdp.RUNTIME.WriteStackTextStyleSnapshot(snapshot, data, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	if not (snapshot and data) then return end
+	local entry = data.entry
+	local layout = data.layout
+	snapshot.entryId = data.entryId
+	snapshot.stackTextFallbackFontPath = fallbackFontPath
+	snapshot.stackTextFallbackFontSize = fallbackFontSize
+	snapshot.stackTextFallbackFontStyle = fallbackFontStyle
+	snapshot.entryStackUseGlobal = entry and entry.stackStyleUseGlobal ~= false or true
+	snapshot.entryStackFont = entry and entry.stackFont or nil
+	snapshot.entryStackSize = entry and entry.stackFontSize or nil
+	snapshot.entryStackStyle = entry and entry.stackFontStyle or nil
+	snapshot.entryStackColor = entry and entry.stackColor or nil
+	snapshot.entryStackAnchor = entry and entry.stackAnchor or nil
+	snapshot.entryStackX = entry and entry.stackX or nil
+	snapshot.entryStackY = entry and entry.stackY or nil
+	snapshot.layoutStackFont = layout and layout.stackFont or nil
+	snapshot.layoutStackSize = layout and layout.stackFontSize or nil
+	snapshot.layoutStackStyle = layout and layout.stackFontStyle or nil
+	snapshot.layoutStackColor = layout and layout.stackColor or nil
+	snapshot.layoutStackAnchor = layout and layout.stackAnchor or nil
+	snapshot.layoutStackX = layout and layout.stackX or nil
+	snapshot.layoutStackY = layout and layout.stackY or nil
+end
+
+function cdp.RUNTIME.HasChargesTextStyleChange(snapshot, data, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	if not (snapshot and data) then return true end
+	local entry = data.entry
+	local layout = data.layout
+	return snapshot.entryId ~= data.entryId
+		or snapshot.chargesTextFallbackFontPath ~= fallbackFontPath
+		or snapshot.chargesTextFallbackFontSize ~= fallbackFontSize
+		or snapshot.chargesTextFallbackFontStyle ~= fallbackFontStyle
+		or snapshot.entryChargesUseGlobal ~= (entry and entry.chargesStyleUseGlobal ~= false or true)
+		or snapshot.entryChargesFont ~= (entry and entry.chargesFont)
+		or snapshot.entryChargesSize ~= (entry and entry.chargesFontSize)
+		or snapshot.entryChargesStyle ~= (entry and entry.chargesFontStyle)
+		or snapshot.entryChargesColor ~= (entry and entry.chargesColor)
+		or snapshot.entryChargesAnchor ~= (entry and entry.chargesAnchor)
+		or snapshot.entryChargesX ~= (entry and entry.chargesX)
+		or snapshot.entryChargesY ~= (entry and entry.chargesY)
+		or snapshot.layoutChargesFont ~= (layout and layout.chargesFont)
+		or snapshot.layoutChargesSize ~= (layout and layout.chargesFontSize)
+		or snapshot.layoutChargesStyle ~= (layout and layout.chargesFontStyle)
+		or snapshot.layoutChargesColor ~= (layout and layout.chargesColor)
+		or snapshot.layoutChargesAnchor ~= (layout and layout.chargesAnchor)
+		or snapshot.layoutChargesX ~= (layout and layout.chargesX)
+		or snapshot.layoutChargesY ~= (layout and layout.chargesY)
+end
+
+function cdp.RUNTIME.WriteChargesTextStyleSnapshot(snapshot, data, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	if not (snapshot and data) then return end
+	local entry = data.entry
+	local layout = data.layout
+	snapshot.entryId = data.entryId
+	snapshot.chargesTextFallbackFontPath = fallbackFontPath
+	snapshot.chargesTextFallbackFontSize = fallbackFontSize
+	snapshot.chargesTextFallbackFontStyle = fallbackFontStyle
+	snapshot.entryChargesUseGlobal = entry and entry.chargesStyleUseGlobal ~= false or true
+	snapshot.entryChargesFont = entry and entry.chargesFont or nil
+	snapshot.entryChargesSize = entry and entry.chargesFontSize or nil
+	snapshot.entryChargesStyle = entry and entry.chargesFontStyle or nil
+	snapshot.entryChargesColor = entry and entry.chargesColor or nil
+	snapshot.entryChargesAnchor = entry and entry.chargesAnchor or nil
+	snapshot.entryChargesX = entry and entry.chargesX or nil
+	snapshot.entryChargesY = entry and entry.chargesY or nil
+	snapshot.layoutChargesFont = layout and layout.chargesFont or nil
+	snapshot.layoutChargesSize = layout and layout.chargesFontSize or nil
+	snapshot.layoutChargesStyle = layout and layout.chargesFontStyle or nil
+	snapshot.layoutChargesColor = layout and layout.chargesColor or nil
+	snapshot.layoutChargesAnchor = layout and layout.chargesAnchor or nil
+	snapshot.layoutChargesX = layout and layout.chargesX or nil
+	snapshot.layoutChargesY = layout and layout.chargesY or nil
+end
+
 function cdp.RUNTIME.HasStaticTextChange(snapshot, data, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
 	if not (snapshot and data) then return true end
 	local entry = data.entry
@@ -6443,6 +6618,32 @@ local function setGlow(frame, enabled, glowColor, glowKey, glowCondition, glowAl
 			Glow.SetAlpha(frame, glowKey, alphaOn)
 		end
 	end
+end
+
+local PREVIEW_GLOW_KEY = "EQOL_PREVIEW"
+
+local function stopGlowKeys(frame, ...)
+	if not frame then return end
+	for i = 1, select("#", ...) do
+		local glowKey = select(i, ...)
+		if glowKey then setGlow(frame, false, nil, glowKey) end
+	end
+end
+
+local function setPreviewGlow(frame, enabled, glowColor, glowStyle, glowInset)
+	if not frame then return end
+	if not enabled then
+		setGlow(frame, false, nil, PREVIEW_GLOW_KEY)
+		CooldownPanels.HidePreviewGlowBorder(frame)
+		return
+	end
+	if Glow then
+		CooldownPanels.HidePreviewGlowBorder(frame)
+		setGlow(frame, true, glowColor, PREVIEW_GLOW_KEY, nil, nil, nil, glowStyle, glowInset)
+		return
+	end
+	setGlow(frame, false, nil, PREVIEW_GLOW_KEY)
+	CooldownPanels.ShowPreviewGlowBorder(frame, glowColor)
 end
 
 function CooldownPanels.StopAllIconGlows(frame)
@@ -13558,7 +13759,7 @@ local function refreshPreview(editor, panel)
 				stateTextureSpacingY = stateTextureSpacingY,
 			})
 		end
-		CooldownPanels.HidePreviewGlowBorder(icon)
+		setPreviewGlow(icon, false)
 		if icon.previewBling then icon.previewBling:Hide() end
 		if icon.previewSoundBorder then icon.previewSoundBorder:Hide() end
 		icon:EnableMouse(false)
@@ -13644,6 +13845,7 @@ local function refreshPreview(editor, panel)
 	for i = count + 1, #(canvas.icons or {}) do
 		local icon = canvas.icons[i]
 		if icon then
+			setPreviewGlow(icon, false)
 			icon:Hide()
 			icon.entryId = nil
 			icon._eqolTooltipEntry = nil
@@ -15433,7 +15635,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			icon._eqolPreviewCellRow = slotRow
 			if layoutEditActive then
 				CooldownPanels.HidePreviewGlowBorder(icon)
-				CooldownPanels.StopAllIconGlows(icon)
+				stopGlowKeys(icon, "EQOL_SIMPLE", "EQOL_OVERLAY", "EQOL_READY")
 			end
 			cdp.RUNTIME.EnsureIconSnapshot(icon)
 			data._eqolRuntimePlacementDirty = cdp.RUNTIME.HasPlacementChange(
@@ -15464,7 +15666,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					layoutEditActive
 				)
 			end
-			CooldownPanels:HideEditorGhostIcon(icon)
+			if icon.editorGhostTexture and (layoutEditActive or icon.editorGhostTexture._eqolGhostShown == true) then CooldownPanels:HideEditorGhostIcon(icon) end
 			if showOnCooldown then
 				icon:SetAlpha(0)
 			elseif not hideOnCooldown then
@@ -15482,11 +15684,21 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				icon.texture:SetShown(data.showIconTexture ~= false)
 				CooldownPanels.ApplyIconTooltip(icon, data.entry, showTooltips)
 			end
-			icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
-			CooldownPanels:ApplyEntryStackTextStyle(icon, data.layout, data.entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
-			CooldownPanels:ApplyEntryChargesTextStyle(icon, data.layout, data.entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
-			if icon.cooldown.SetReverse then icon.cooldown:SetReverse(data.resolvedType == "CDM_AURA") end
-			if icon.cooldown.SetUseAuraDisplayTime then icon.cooldown:SetUseAuraDisplayTime(data.resolvedType == "CDM_AURA") end
+			local cooldownUsesAuraDisplay = data.resolvedType == "CDM_AURA"
+			if data._eqolRuntimePlacementDirty or cdp.RUNTIME.HasCooldownWidgetConfigChange(icon._eqolRuntimeSnapshot, data, cooldownUsesAuraDisplay) then
+				icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
+				if icon.cooldown.SetReverse then icon.cooldown:SetReverse(cooldownUsesAuraDisplay) end
+				if icon.cooldown.SetUseAuraDisplayTime then icon.cooldown:SetUseAuraDisplayTime(cooldownUsesAuraDisplay) end
+				cdp.RUNTIME.WriteCooldownWidgetConfigSnapshot(icon._eqolRuntimeSnapshot, data, cooldownUsesAuraDisplay)
+			end
+			if data._eqolRuntimePlacementDirty or cdp.RUNTIME.HasStackTextStyleChange(icon._eqolRuntimeSnapshot, data, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle) then
+				CooldownPanels:ApplyEntryStackTextStyle(icon, data.layout, data.entry, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+				cdp.RUNTIME.WriteStackTextStyleSnapshot(icon._eqolRuntimeSnapshot, data, defaultCountFontPath, defaultCountFontSize, defaultCountFontStyle)
+			end
+			if data._eqolRuntimePlacementDirty or cdp.RUNTIME.HasChargesTextStyleChange(icon._eqolRuntimeSnapshot, data, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle) then
+				CooldownPanels:ApplyEntryChargesTextStyle(icon, data.layout, data.entry, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+				cdp.RUNTIME.WriteChargesTextStyleSnapshot(icon._eqolRuntimeSnapshot, data, defaultChargesFontPath, defaultChargesFontSize, defaultChargesFontStyle)
+			end
 
 			-- Context for OnCooldownDone (sound/glow) - keep this in sync every update.
 			icon.cooldown._eqolPanelId = panelId
@@ -15752,7 +15964,26 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				setExampleCooldown(icon.cooldown)
 				icon:SetAlpha(1)
 			end
-			CooldownPanels:ApplyEntryCooldownTextStyle(icon, data.layout, data.entry)
+			local cooldownDefaultFontPath, cooldownDefaultFontSize, cooldownDefaultFontStyle = cdp.RUNTIME.EnsureCooldownTextDefaults(icon)
+			if
+				data._eqolRuntimePlacementDirty
+				or cdp.RUNTIME.HasCooldownTextStyleChange(
+					icon._eqolRuntimeSnapshot,
+					data,
+					cooldownDefaultFontPath,
+					cooldownDefaultFontSize,
+					cooldownDefaultFontStyle
+				)
+			then
+				CooldownPanels:ApplyEntryCooldownTextStyle(icon, data.layout, data.entry)
+				cdp.RUNTIME.WriteCooldownTextStyleSnapshot(
+					icon._eqolRuntimeSnapshot,
+					data,
+					cooldownDefaultFontPath,
+					cooldownDefaultFontSize,
+					cooldownDefaultFontStyle
+				)
+			end
 			if data.spellUnusable then
 				icon.texture:SetVertexColor(unusableTintR or 0.6, unusableTintG or 0.6, unusableTintB or 0.6)
 			elseif data.powerInsufficient then
@@ -15888,14 +16119,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				) or data.readyGlowInset
 			end
 			if layoutEditActive then
-				CooldownPanels.StopAllIconGlows(icon)
-				if simpleGlowEnabled then
-					CooldownPanels.ShowPreviewGlowBorder(icon, simpleGlowColor)
-				else
-					CooldownPanels.HidePreviewGlowBorder(icon)
-				end
+				stopGlowKeys(icon, "EQOL_SIMPLE", "EQOL_OVERLAY", "EQOL_READY")
+				setPreviewGlow(icon, simpleGlowEnabled, simpleGlowColor, simpleGlowStyle, simpleGlowInset)
 			else
-				CooldownPanels.HidePreviewGlowBorder(icon)
+				setPreviewGlow(icon, false)
 				if data.liveGlowAllowed == false then
 					setGlow(icon, false, nil, "EQOL_SIMPLE")
 					setGlow(icon, false, nil, "EQOL_OVERLAY")

@@ -14,6 +14,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local Masque
+local LSM = LibStub("LibSharedMedia-3.0", true)
 
 local EDITMODE_ID = "actionTracker"
 local MAX_ICONS_LIMIT = 10
@@ -21,15 +22,34 @@ local FADE_TICK = 0.05
 local TIME_LABEL_FONT_SIZE = 11
 local TIME_LABEL_PADDING = 2
 local TIME_LABEL_HEIGHT = TIME_LABEL_FONT_SIZE + TIME_LABEL_PADDING
-
-ActionTracker.defaults = ActionTracker.defaults or {
-	maxIcons = 5,
-	iconSize = 48,
-	spacing = 0,
-	direction = "RIGHT",
-	fadeDuration = 0,
-	showElapsed = false,
+local BORDER_SIZE_MIN = 1
+local BORDER_SIZE_MAX = 24
+local BORDER_OFFSET_MIN = -20
+local BORDER_OFFSET_MAX = 20
+local PREVIEW_INTERVAL = 1.35
+local PREVIEW_TEXTURE_FALLBACK = "Interface\\ICONS\\INV_Misc_QuestionMark"
+local PREVIEW_SPELL_IDS = {
+	133, -- Fireball
+	116, -- Frostbolt
+	172, -- Corruption
+	19434, -- Aimed Shot
+	30451, -- Arcane Blast
 }
+
+ActionTracker.defaults = ActionTracker.defaults
+	or {
+		maxIcons = 5,
+		iconSize = 48,
+		spacing = 0,
+		direction = "RIGHT",
+		fadeDuration = 0,
+		showElapsed = false,
+		borderEnabled = false,
+		borderTexture = "DEFAULT",
+		borderSize = 1,
+		borderOffset = 0,
+		borderColor = { r = 1, g = 1, b = 1, a = 1 },
+	}
 
 local defaults = ActionTracker.defaults
 
@@ -40,6 +60,11 @@ local DB_SPACING = "actionTrackerSpacing"
 local DB_DIRECTION = "actionTrackerDirection"
 local DB_FADE = "actionTrackerFadeDuration"
 local DB_SHOW_ELAPSED = "actionTrackerShowElapsed"
+local DB_BORDER_ENABLED = "actionTrackerBorderEnabled"
+local DB_BORDER_TEXTURE = "actionTrackerBorderTexture"
+local DB_BORDER_SIZE = "actionTrackerBorderSize"
+local DB_BORDER_OFFSET = "actionTrackerBorderOffset"
+local DB_BORDER_COLOR = "actionTrackerBorderColor"
 
 local VALID_DIRECTIONS = {
 	RIGHT = true,
@@ -71,6 +96,106 @@ local function normalizeDirection(direction)
 	return defaults.direction
 end
 
+local function clampNumber(value, minimum, maximum, fallback)
+	local number = tonumber(value)
+	if number == nil then number = fallback end
+	if number == nil then number = minimum end
+	number = math.floor(number + 0.5)
+	if number < minimum then number = minimum end
+	if number > maximum then number = maximum end
+	return number
+end
+
+local function normalizeColor(value, fallback)
+	local default = type(fallback) == "table" and fallback or { r = 1, g = 1, b = 1, a = 1 }
+	local r = tonumber(value and (value.r or value[1])) or tonumber(default.r or default[1]) or 1
+	local g = tonumber(value and (value.g or value[2])) or tonumber(default.g or default[2]) or 1
+	local b = tonumber(value and (value.b or value[3])) or tonumber(default.b or default[3]) or 1
+	local a = tonumber(value and (value.a or value[4])) or tonumber(default.a or default[4]) or 1
+	if r < 0 then
+		r = 0
+	elseif r > 1 then
+		r = 1
+	end
+	if g < 0 then
+		g = 0
+	elseif g > 1 then
+		g = 1
+	end
+	if b < 0 then
+		b = 0
+	elseif b > 1 then
+		b = 1
+	end
+	if a < 0 then
+		a = 0
+	elseif a > 1 then
+		a = 1
+	end
+	return r, g, b, a
+end
+
+local function isLikelyFilePath(value) return type(value) == "string" and (value:find("\\", 1, true) or value:find("/", 1, true)) ~= nil end
+
+local function normalizeBorderTexture(value)
+	if type(value) ~= "string" or value == "" then return defaults.borderTexture or "DEFAULT" end
+	return value
+end
+
+local function resolveBorderTexture(value)
+	local key = normalizeBorderTexture(value)
+	if key == "DEFAULT" or key == "SOLID" then return "Interface\\Buttons\\WHITE8x8" end
+	if isLikelyFilePath(key) then return key end
+	if LSM and LSM.Fetch then
+		local texture = LSM:Fetch("border", key, true)
+		if texture then return texture end
+	end
+	return "Interface\\Buttons\\WHITE8x8"
+end
+
+local function getBorderOptions()
+	local options = {}
+	local seen = {}
+
+	local function addOption(value, label)
+		if type(value) ~= "string" or value == "" or seen[value] then return end
+		seen[value] = true
+		options[#options + 1] = {
+			value = value,
+			label = label or value,
+		}
+	end
+
+	addOption("DEFAULT", _G.DEFAULT or "Default")
+	addOption("SOLID", "Solid")
+
+	local mediaOptions = addon.functions and addon.functions.GetLSMMediaOptions and addon.functions.GetLSMMediaOptions("border") or nil
+	if type(mediaOptions) == "table" then
+		for i = 1, #mediaOptions do
+			local option = mediaOptions[i]
+			if type(option) == "table" then addOption(option.value, option.label or option.value) end
+		end
+		return options
+	end
+
+	local names = addon.functions and addon.functions.GetLSMMediaNames and addon.functions.GetLSMMediaNames("border") or {}
+	for i = 1, #names do
+		local name = names[i]
+		addOption(name, name)
+	end
+
+	return options
+end
+
+local function getPreviewTexture(index)
+	local spellID = PREVIEW_SPELL_IDS[((index - 1) % #PREVIEW_SPELL_IDS) + 1]
+	if C_Spell and C_Spell.GetSpellTexture then
+		local texture = C_Spell.GetSpellTexture(spellID)
+		if texture then return texture end
+	end
+	return PREVIEW_TEXTURE_FALLBACK
+end
+
 function ActionTracker:GetIconSize()
 	local size = tonumber(getValue(DB_ICON_SIZE, defaults.iconSize)) or defaults.iconSize
 	if size < 16 then size = 16 end
@@ -100,6 +225,15 @@ function ActionTracker:GetFadeDuration()
 end
 
 function ActionTracker:GetShowElapsed() return getValue(DB_SHOW_ELAPSED, defaults.showElapsed) == true end
+function ActionTracker:GetBorderEnabled() return getValue(DB_BORDER_ENABLED, defaults.borderEnabled) == true end
+function ActionTracker:GetBorderTextureKey() return normalizeBorderTexture(getValue(DB_BORDER_TEXTURE, defaults.borderTexture)) end
+function ActionTracker:GetBorderSize() return clampNumber(getValue(DB_BORDER_SIZE, defaults.borderSize), BORDER_SIZE_MIN, BORDER_SIZE_MAX, defaults.borderSize) end
+function ActionTracker:GetBorderOffset() return clampNumber(getValue(DB_BORDER_OFFSET, defaults.borderOffset), BORDER_OFFSET_MIN, BORDER_OFFSET_MAX, defaults.borderOffset) end
+
+function ActionTracker:GetBorderColor()
+	local r, g, b, a = normalizeColor(getValue(DB_BORDER_COLOR, defaults.borderColor), defaults.borderColor)
+	return r, g, b, a
+end
 
 function ActionTracker:GetEntryAlpha(entry, now, fade)
 	local duration = fade
@@ -134,6 +268,19 @@ local function applyIconSize(icon, size)
 	if icon.texture then icon.texture:SetAllPoints(icon) end
 	if icon.cooldown then icon.cooldown:SetAllPoints(icon) end
 	if icon.timeText and icon.timeText.SetWidth then icon.timeText:SetWidth(size + 8) end
+end
+
+local function ensureIconBorder(icon)
+	if icon.border then return icon.border end
+
+	local border = CreateFrame("Frame", nil, icon, "BackdropTemplate")
+	border:SetFrameStrata(icon:GetFrameStrata())
+	border:SetFrameLevel((icon:GetFrameLevel() or 0) + 4)
+	border:SetBackdropColor(0, 0, 0, 0)
+	border:Hide()
+
+	icon.border = border
+	return border
 end
 
 function ActionTracker:EnsureFrame()
@@ -205,12 +352,46 @@ end
 
 function ActionTracker:ShowEditModeHint(show)
 	if not self.frame then return end
+	self.previewActive = show == true and #self.entries == 0
 	if show then
 		self.frame.bg:Show()
 		self.frame.label:Show()
 	else
 		self.frame.bg:Hide()
 		self.frame.label:Hide()
+	end
+	self:RefreshIcons()
+end
+
+function ActionTracker:UpdateBorderVisuals()
+	local frame = self.frame
+	if not frame or not frame.icons then return end
+
+	local borderEnabled = self:GetBorderEnabled()
+	local borderTexture = self:GetBorderTextureKey()
+	local borderSize = self:GetBorderSize()
+	local borderOffset = self:GetBorderOffset()
+	local r, g, b, a = self:GetBorderColor()
+
+	for i = 1, MAX_ICONS_LIMIT do
+		local icon = frame.icons[i]
+		local border = ensureIconBorder(icon)
+		if borderEnabled and icon:IsShown() then
+			border:SetBackdrop({
+				edgeFile = resolveBorderTexture(borderTexture),
+				edgeSize = borderSize,
+				insets = { left = 0, right = 0, top = 0, bottom = 0 },
+			})
+			border:SetBackdropBorderColor(r, g, b, a)
+			border:SetBackdropColor(0, 0, 0, 0)
+			border:ClearAllPoints()
+			border:SetPoint("TOPLEFT", icon, "TOPLEFT", -borderOffset, borderOffset)
+			border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", borderOffset, -borderOffset)
+			border:Show()
+		else
+			border:SetBackdrop(nil)
+			border:Hide()
+		end
 	end
 end
 
@@ -256,6 +437,7 @@ function ActionTracker:UpdateLayout()
 	end
 
 	self:ReskinMasque()
+	self:UpdateBorderVisuals()
 end
 
 function ActionTracker:RefreshIcons()
@@ -267,6 +449,7 @@ function ActionTracker:RefreshIcons()
 	local now = GetTime()
 	local fade = self:GetFadeDuration()
 	local showElapsed = self:GetShowElapsed()
+	local previewActive = self.previewActive == true and #entries == 0
 
 	self:TrimEntries()
 
@@ -299,6 +482,21 @@ function ActionTracker:RefreshIcons()
 				end
 			end
 			icon:Show()
+		elseif previewActive and i <= maxIcons then
+			icon.spellID = nil
+			icon.texture:SetTexture(getPreviewTexture(i))
+			icon.cooldown:Clear()
+			icon:SetAlpha(1)
+			if icon.timeText then
+				if showElapsed and i > 1 then
+					icon.timeText:SetText(formatElapsed(PREVIEW_INTERVAL))
+					icon.timeText:Show()
+				else
+					icon.timeText:SetText("")
+					icon.timeText:Hide()
+				end
+			end
+			icon:Show()
 		else
 			icon.spellID = nil
 			icon.texture:SetTexture(nil)
@@ -311,6 +509,8 @@ function ActionTracker:RefreshIcons()
 			icon:Hide()
 		end
 	end
+
+	self:UpdateBorderVisuals()
 end
 
 function ActionTracker:RegisterMasqueButtons()
@@ -481,6 +681,13 @@ function ActionTracker:ApplyLayoutData(data)
 	local fade = tonumber(data.fade) or defaults.fadeDuration
 	if fade < 0 then fade = 0 end
 	local showElapsed = data.showElapsed == true
+	local borderEnabled = data.borderEnabled
+	if borderEnabled == nil then borderEnabled = self:GetBorderEnabled() end
+	borderEnabled = borderEnabled == true
+	local borderTexture = normalizeBorderTexture(data.borderTexture or self:GetBorderTextureKey())
+	local borderSize = clampNumber(data.borderSize ~= nil and data.borderSize or self:GetBorderSize(), BORDER_SIZE_MIN, BORDER_SIZE_MAX, defaults.borderSize)
+	local borderOffset = clampNumber(data.borderOffset ~= nil and data.borderOffset or self:GetBorderOffset(), BORDER_OFFSET_MIN, BORDER_OFFSET_MAX, defaults.borderOffset)
+	local borderR, borderG, borderB, borderA = normalizeColor(data.borderColor or getValue(DB_BORDER_COLOR, defaults.borderColor), defaults.borderColor)
 
 	addon.db[DB_MAX_ICONS] = maxIcons
 	addon.db[DB_ICON_SIZE] = size
@@ -488,6 +695,11 @@ function ActionTracker:ApplyLayoutData(data)
 	addon.db[DB_DIRECTION] = direction
 	addon.db[DB_FADE] = fade
 	addon.db[DB_SHOW_ELAPSED] = showElapsed
+	addon.db[DB_BORDER_ENABLED] = borderEnabled
+	addon.db[DB_BORDER_TEXTURE] = borderTexture
+	addon.db[DB_BORDER_SIZE] = borderSize
+	addon.db[DB_BORDER_OFFSET] = borderOffset
+	addon.db[DB_BORDER_COLOR] = { r = borderR, g = borderG, b = borderB, a = borderA }
 
 	self:TrimEntries()
 	self:UpdateLayout()
@@ -528,6 +740,26 @@ local function applySetting(field, value)
 		local showElapsed = value == true
 		addon.db[DB_SHOW_ELAPSED] = showElapsed
 		value = showElapsed
+	elseif field == "borderEnabled" then
+		local borderEnabled = value == true
+		addon.db[DB_BORDER_ENABLED] = borderEnabled
+		value = borderEnabled
+	elseif field == "borderTexture" then
+		local borderTexture = normalizeBorderTexture(value)
+		addon.db[DB_BORDER_TEXTURE] = borderTexture
+		value = borderTexture
+	elseif field == "borderSize" then
+		local borderSize = clampNumber(value, BORDER_SIZE_MIN, BORDER_SIZE_MAX, defaults.borderSize)
+		addon.db[DB_BORDER_SIZE] = borderSize
+		value = borderSize
+	elseif field == "borderOffset" then
+		local borderOffset = clampNumber(value, BORDER_OFFSET_MIN, BORDER_OFFSET_MAX, defaults.borderOffset)
+		addon.db[DB_BORDER_OFFSET] = borderOffset
+		value = borderOffset
+	elseif field == "borderColor" then
+		local r, g, b, a = normalizeColor(value, defaults.borderColor)
+		value = { r = r, g = g, b = b, a = a }
+		addon.db[DB_BORDER_COLOR] = value
 	end
 
 	if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, field, value, nil, true) end
@@ -619,6 +851,78 @@ function ActionTracker:RegisterEditMode()
 				get = function() return ActionTracker:GetShowElapsed() end,
 				set = function(_, value) applySetting("showElapsed", value) end,
 			},
+			{
+				name = EMBLEM_BORDER,
+				kind = SettingType.Collapsible,
+				id = "border",
+				defaultCollapsed = true,
+			},
+			{
+				name = L["Use border"] or "Use border",
+				kind = SettingType.Checkbox,
+				field = "borderEnabled",
+				parentId = "border",
+				default = defaults.borderEnabled == true,
+				get = function() return ActionTracker:GetBorderEnabled() end,
+				set = function(_, value) applySetting("borderEnabled", value) end,
+			},
+			{
+				name = L["Border texture"] or "Border texture",
+				kind = SettingType.Dropdown,
+				field = "borderTexture",
+				parentId = "border",
+				height = 220,
+				get = function() return ActionTracker:GetBorderTextureKey() end,
+				set = function(_, value) applySetting("borderTexture", value) end,
+				generator = function(_, root)
+					for _, option in ipairs(getBorderOptions()) do
+						root:CreateRadio(option.label, function() return ActionTracker:GetBorderTextureKey() == option.value end, function() applySetting("borderTexture", option.value) end)
+					end
+				end,
+				isEnabled = function() return ActionTracker:GetBorderEnabled() end,
+			},
+			{
+				name = L["Border size"] or "Border size",
+				kind = SettingType.Slider,
+				field = "borderSize",
+				parentId = "border",
+				default = defaults.borderSize,
+				minValue = BORDER_SIZE_MIN,
+				maxValue = BORDER_SIZE_MAX,
+				valueStep = 1,
+				get = function() return ActionTracker:GetBorderSize() end,
+				set = function(_, value) applySetting("borderSize", value) end,
+				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+				isEnabled = function() return ActionTracker:GetBorderEnabled() end,
+			},
+			{
+				name = L["Border offset"] or "Border offset",
+				kind = SettingType.Slider,
+				field = "borderOffset",
+				parentId = "border",
+				default = defaults.borderOffset,
+				minValue = BORDER_OFFSET_MIN,
+				maxValue = BORDER_OFFSET_MAX,
+				valueStep = 1,
+				get = function() return ActionTracker:GetBorderOffset() end,
+				set = function(_, value) applySetting("borderOffset", value) end,
+				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
+				isEnabled = function() return ActionTracker:GetBorderEnabled() end,
+			},
+			{
+				name = EMBLEM_BORDER_COLOR,
+				kind = SettingType.Color,
+				field = "borderColor",
+				parentId = "border",
+				default = defaults.borderColor,
+				hasOpacity = true,
+				get = function()
+					local r, g, b, a = ActionTracker:GetBorderColor()
+					return { r = r, g = g, b = b, a = a }
+				end,
+				set = function(_, value) applySetting("borderColor", value) end,
+				isEnabled = function() return ActionTracker:GetBorderEnabled() end,
+			},
 		}
 	end
 
@@ -630,6 +934,14 @@ function ActionTracker:RegisterEditMode()
 		record.direction = self:GetDirection()
 		record.fade = self:GetFadeDuration()
 		record.showElapsed = self:GetShowElapsed()
+		record.borderEnabled = self:GetBorderEnabled()
+		record.borderTexture = self:GetBorderTextureKey()
+		do
+			local r, g, b, a = self:GetBorderColor()
+			record.borderColor = { r = r, g = g, b = b, a = a }
+		end
+		record.borderSize = self:GetBorderSize()
+		record.borderOffset = self:GetBorderOffset()
 	end
 
 	EditMode:RegisterFrame(EDITMODE_ID, {
@@ -646,6 +958,14 @@ function ActionTracker:RegisterEditMode()
 			direction = self:GetDirection(),
 			fade = self:GetFadeDuration(),
 			showElapsed = self:GetShowElapsed(),
+			borderEnabled = self:GetBorderEnabled(),
+			borderTexture = self:GetBorderTextureKey(),
+			borderColor = (function()
+				local r, g, b, a = self:GetBorderColor()
+				return { r = r, g = g, b = b, a = a }
+			end)(),
+			borderSize = self:GetBorderSize(),
+			borderOffset = self:GetBorderOffset(),
 		},
 		onApply = function(_, _, data)
 			if not self._eqolEditModeHydrated then
