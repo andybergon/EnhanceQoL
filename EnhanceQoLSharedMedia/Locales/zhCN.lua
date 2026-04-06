@@ -1,4 +1,7 @@
 local L = LibStub("AceLocale-3.0"):NewLocale("EnhanceQoL_SharedMedia", "zhCN")
 if not L then return end
 
---@localization(locale="zhCN", namespace="SharedMedia", format="lua_additive_table")@
+L["Disable All"] = "全部禁用"
+L["Enable All"] = "全部启用"
+L["Play"] = "播放"
+L["SharedMedia"] = "共享媒体"
