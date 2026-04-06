@@ -1383,6 +1383,7 @@ local defaults = {
 			blizzardDispelBorder = false,
 			blizzardDispelBorderAlpha = 1,
 			blizzardDispelBorderAlphaNot = 0,
+			borderColor = nil,
 			borderTexture = "DEFAULT",
 			borderRenderMode = "EDGE",
 			borderSize = nil,
@@ -3480,6 +3481,7 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken, harmfulF
 		end
 		if showBorder then
 			local r, g, b = 1, 0.25, 0.25
+			local a = 1
 			local usedApiColor
 			if not aura.isSample and aura.auraInstanceID and aura.auraInstanceID > 0 and C_UnitAuras and C_UnitAuras.GetAuraDispelTypeColor and UFHelper and UFHelper.debuffColorCurve then
 				local color = C_UnitAuras.GetAuraDispelTypeColor(unitToken, aura.auraInstanceID, UFHelper.debuffColorCurve)
@@ -3509,9 +3511,16 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken, harmfulF
 			if isDebuff then
 				dispelR, dispelG, dispelB = r, g, b
 			end
+			local customBorderColor = ac and ac.borderColor
+			if type(customBorderColor) == "table" then
+				r = customBorderColor[1] or customBorderColor.r or r
+				g = customBorderColor[2] or customBorderColor.g or g
+				b = customBorderColor[3] or customBorderColor.b or b
+				a = customBorderColor[4] or customBorderColor.a or a
+			end
 			if useMasqueBorder then
 				if UFHelper and UFHelper.hideAuraBorderFrame then UFHelper.hideAuraBorderFrame(btn) end
-				btn.border:SetVertexColor(r, g, b, 1)
+				btn.border:SetVertexColor(r, g, b, a)
 				btn.border:Show()
 			else
 				local borderMode = tostring((ac and ac.borderRenderMode) or "EDGE"):upper()
@@ -3548,7 +3557,7 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken, harmfulF
 						borderFrame:SetPoint("TOPLEFT", btn, "TOPLEFT", anchorInset, -anchorInset)
 						borderFrame:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -anchorInset, anchorInset)
 						borderFrame._eqolAuraBorderInset = anchorInset
-						borderFrame:SetBackdropBorderColor(r, g, b, 1)
+						borderFrame:SetBackdropBorderColor(r, g, b, a)
 						borderFrame:Show()
 					end
 					btn.border:Hide()
@@ -3572,7 +3581,7 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken, harmfulF
 					else
 						btn.border:SetAllPoints(btn)
 					end
-					btn.border:SetVertexColor(r, g, b, 1)
+					btn.border:SetVertexColor(r, g, b, a)
 					btn.border:Show()
 				end
 			end
@@ -4491,6 +4500,7 @@ do
 		blizzardDispelBorder = false,
 		blizzardDispelBorderAlpha = 1,
 		blizzardDispelBorderAlphaNot = 0,
+		borderColor = nil,
 		borderTexture = "DEFAULT",
 		borderRenderMode = "EDGE",
 		borderSize = nil,

@@ -5,10 +5,14 @@
 ### ✨ Added
 
 - Group Frames (Raid): Added a separate `Main Tank / Main Assist` icon option for raid frames.
+- Group Frames / Auras: Added a multi-select debuff filter dropdown for `Party` and `Raid` debuffs with OR matching across `All debuffs`, `Raid debuffs`, `Raid in combat`, `Crowd control`, and `Important spells`. Existing profiles keep the previous default debuff behavior unless the new filter selection is changed explicitly.
+- Group Frames / Auras: Added configurable aura borders for `Buffs`, `Debuffs`, and `Externals`, including border texture, size, and offset options in Edit Mode.
+- Group Frames / Auras: Added a custom border color option for `Externals` and a new `Solid` aura border style for thicker, more visible borders.
 
 ### 🐛 Fixed
 
 - Group Frames (Raid): Fixed `Group Growth` not working correctly when raid frames were grouped by role.
+- Unit Frames: Fixed spec-mapped Unit Frame profiles not updating correctly after switching from tank to healer or DPS.
 - ChatIM / Instant Chats: Fixed ChatIM opening its own whisper window and trying to send whispers during chat messaging lockdown.
 
 ---

@@ -31,18 +31,33 @@ local DISPEL_GLOW_KEY = "EQOL_DISPEL"
 local GFH = UF.GroupFramesHelper
 local Pixel = GFH and GFH.Pixel
 local clampNumber = GFH.ClampNumber
-local copySelectionMap = GFH.CopySelectionMap
-local roleOptions = GFH.roleOptions
-local defaultRoleSelection = GFH.DefaultRoleSelection
-local defaultSpecSelection = GFH.DefaultSpecSelection
-local auraAnchorOptions = GFH.auraAnchorOptions
-local anchorOptions9 = GFH.anchorOptions9 or GFH.auraAnchorOptions
-local textModeOptions = GFH.textModeOptions
-local healthTextModeOptions = GFH.healthTextModeOptions or GFH.textModeOptions
-local delimiterOptions = GFH.delimiterOptions
-local outlineOptions = GFH.outlineOptions
+GF._sharedEdit = {
+	csm = GFH.CopySelectionMap,
+	roleOpts = GFH.roleOptions,
+	defaultRoleSel = GFH.DefaultRoleSelection,
+	defaultSpecSel = GFH.DefaultSpecSelection,
+	auraAnchorOpts = GFH.auraAnchorOptions,
+	anchorOpts9 = GFH.anchorOptions9 or GFH.auraAnchorOptions,
+	textModeOpts = GFH.textModeOptions,
+	healthTextModeOpts = GFH.healthTextModeOptions or GFH.textModeOptions,
+	delimiterOpts = GFH.delimiterOptions,
+	outlineOpts = GFH.outlineOptions,
+}
 local ensureAuraConfig = GFH.EnsureAuraConfig
 local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
+local GROUP_DEBUFF_FILTER_ALL = "ALL"
+local GROUP_DEBUFF_FILTER_CROWD_CONTROL = "CROWD_CONTROL"
+local GROUP_DEBUFF_FILTER_IMPORTANT = "IMPORTANT"
+local GROUP_DEBUFF_FILTER_RAID = "RAID"
+local GROUP_DEBUFF_FILTER_RAID_IN_COMBAT = "RAID_IN_COMBAT"
+local groupDebuffFilterOptions = {
+	{ value = GROUP_DEBUFF_FILTER_ALL, label = L["UFGroupDebuffFilterAll"] or "All debuffs" },
+	{ value = GROUP_DEBUFF_FILTER_RAID, label = L["UFGroupDebuffFilterRaid"] or "Raid debuffs" },
+	{ value = GROUP_DEBUFF_FILTER_RAID_IN_COMBAT, label = L["UFGroupDebuffFilterRaidInCombat"] or "Raid in combat" },
+	{ value = GROUP_DEBUFF_FILTER_CROWD_CONTROL, label = L["UFGroupDebuffFilterCrowdControl"] or "Crowd control" },
+	{ value = GROUP_DEBUFF_FILTER_IMPORTANT, label = L["UFGroupDebuffFilterImportant"] or "Important spells" },
+}
+
 GF.splitRoleViewerRoleOptions = {
 	{ value = "ALL", label = L["All"] or "All" },
 	{ value = "TANK", label = TANK or "Tank" },
@@ -80,6 +95,9 @@ function GF.DropdownRadioGenerator(options)
 		end
 	end
 end
+local function requestEditModeSettingsRefresh()
+	if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RequestRefreshSettings then addon.EditModeLib.internal:RequestRefreshSettings() end
+end
 local function borderOptions()
 	local list = {}
 	local seen = {}
@@ -90,6 +108,7 @@ local function borderOptions()
 		list[#list + 1] = { value = value, label = label }
 	end
 	add("DEFAULT", "Default (Border)")
+	add("SOLID", "Solid")
 	local names = addon.functions and addon.functions.GetLSMMediaNames and addon.functions.GetLSMMediaNames("border") or {}
 	local hash = addon.functions and addon.functions.GetLSMMediaHash and addon.functions.GetLSMMediaHash("border") or {}
 	for i = 1, #names do
@@ -98,6 +117,11 @@ local function borderOptions()
 		if type(path) == "string" and path ~= "" then add(name, tostring(name)) end
 	end
 	return list
+end
+
+local function isAuraBorderAdjustable(typeCfg, defaultCfg)
+	local borderTexture = (typeCfg and typeCfg.borderTexture) or (defaultCfg and defaultCfg.borderTexture) or "DEFAULT"
+	return tostring(borderTexture or "DEFAULT"):upper() ~= "DEFAULT"
 end
 
 local max = math.max
@@ -351,6 +375,80 @@ function GF.GetBuffHelpfulFilter(ac)
 	return (AURA_FILTERS and AURA_FILTERS.helpful) or "HELPFUL|INCLUDE_NAME_PLATE_ONLY|RAID_IN_COMBAT|PLAYER"
 end
 
+local function defaultGroupDebuffSelection()
+	return { [GROUP_DEBUFF_FILTER_ALL] = true }
+end
+
+local function getGroupDebuffFilterSelection(typeCfg)
+	if type(typeCfg) ~= "table" then return nil end
+	local selection = typeCfg.filterSelection
+	if type(selection) ~= "table" then return nil end
+	return selection
+end
+
+local function isGroupDebuffFilterSelected(typeCfg, value)
+	local selection = getGroupDebuffFilterSelection(typeCfg)
+	if selection == nil then return value == GROUP_DEBUFF_FILTER_ALL end
+	if value == GROUP_DEBUFF_FILTER_ALL then return GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_ALL) end
+	return GFH.SelectionContains(selection, value)
+end
+
+local function setGroupDebuffFilterSelected(typeCfg, value, state)
+	if type(typeCfg) ~= "table" or value == nil then return {} end
+	local selection = typeCfg.filterSelection
+	if type(selection) ~= "table" then
+		selection = {}
+		typeCfg.filterSelection = selection
+	end
+
+	if value == GROUP_DEBUFF_FILTER_ALL then
+		if state then
+			for key in pairs(selection) do
+				selection[key] = nil
+			end
+			selection[GROUP_DEBUFF_FILTER_ALL] = true
+		else
+			selection[GROUP_DEBUFF_FILTER_ALL] = nil
+		end
+		return selection
+	end
+
+	selection[GROUP_DEBUFF_FILTER_ALL] = nil
+	if state then
+		selection[value] = true
+	else
+		selection[value] = nil
+	end
+	return selection
+end
+
+local function getGroupDebuffMatchFilter(typeCfg)
+	local selection = getGroupDebuffFilterSelection(typeCfg)
+	if selection == nil then return AURA_FILTERS.harmful end
+	if not GFH.SelectionHasAny(selection) then return nil end
+	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_ALL) then return AURA_FILTERS.harmful end
+
+	local filters = {}
+	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_RAID) and AURA_FILTERS.harmfulRaid then filters[#filters + 1] = AURA_FILTERS.harmfulRaid end
+	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_RAID_IN_COMBAT) and AURA_FILTERS.harmfulRaidInCombat then
+		filters[#filters + 1] = AURA_FILTERS.harmfulRaidInCombat
+	end
+	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_CROWD_CONTROL) and AURA_FILTERS.harmfulCrowdControl then
+		filters[#filters + 1] = AURA_FILTERS.harmfulCrowdControl
+	end
+	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_IMPORTANT) and AURA_FILTERS.harmfulImportant then
+		filters[#filters + 1] = AURA_FILTERS.harmfulImportant
+	end
+	if #filters == 0 then return nil end
+	return filters
+end
+
+local function exportGroupDebuffSelection(typeCfg)
+	local selection = typeCfg and typeCfg.filterSelection
+	if type(selection) == "table" then return GF._sharedEdit.csm(selection) end
+	return defaultGroupDebuffSelection()
+end
+
 function GF.CaptureGroupAuraSlotResults(...)
 	GF._groupAuraSlotResultBuffer = GF._groupAuraSlotResultBuffer or {}
 	local buffer = GF._groupAuraSlotResultBuffer
@@ -374,34 +472,36 @@ local function queryAuraSlots(unit, filter, maxCount)
 	return GF.CaptureGroupAuraSlotResults(C_UnitAuras.GetAuraSlots(unit, filter))
 end
 
-local PREVIEW_SAMPLES = GFH.PREVIEW_SAMPLES or { party = {}, raid = {}, mt = {}, ma = {} }
-local groupNumberFormatOptions = GFH.GROUP_NUMBER_FORMAT_OPTIONS or {}
-local groupNumberFormatTokens = {}
-local groupNumberFormatByText = {}
-local groupNumberFormatLabelByValue = {}
+GF._previewSamples = GFH.PREVIEW_SAMPLES or { party = {}, raid = {}, mt = {}, ma = {} }
+GF._groupNumberFormatCache = {
+	opts = GFH.GROUP_NUMBER_FORMAT_OPTIONS or {},
+	tokens = {},
+	byText = {},
+	labelByValue = {},
+}
 do
-	for _, option in ipairs(groupNumberFormatOptions) do
+	for _, option in ipairs(GF._groupNumberFormatCache.opts) do
 		if option then
 			local value = option.value
 			if value ~= nil then
-				groupNumberFormatTokens[value] = true
-				if groupNumberFormatLabelByValue[value] == nil then groupNumberFormatLabelByValue[value] = option.label or option.text or tostring(value) end
+				GF._groupNumberFormatCache.tokens[value] = true
+				if GF._groupNumberFormatCache.labelByValue[value] == nil then GF._groupNumberFormatCache.labelByValue[value] = option.label or option.text or tostring(value) end
 			end
-			if option.text ~= nil then groupNumberFormatByText[option.text] = value end
-			if option.label ~= nil then groupNumberFormatByText[option.label] = value end
+			if option.text ~= nil then GF._groupNumberFormatCache.byText[option.text] = value end
+			if option.label ~= nil then GF._groupNumberFormatCache.byText[option.label] = value end
 		end
 	end
 end
 
 local function normalizeGroupNumberFormat(format)
 	if format == nil then return nil end
-	if groupNumberFormatTokens[format] then return format end
+	if GF._groupNumberFormatCache.tokens[format] then return format end
 	local text = tostring(format)
-	local mapped = groupNumberFormatByText[text]
+	local mapped = GF._groupNumberFormatCache.byText[text]
 	if mapped then return mapped end
 	local upper = text:upper()
-	if groupNumberFormatTokens[upper] then return upper end
-	mapped = groupNumberFormatByText[upper]
+	if GF._groupNumberFormatCache.tokens[upper] then return upper end
+	mapped = GF._groupNumberFormatCache.byText[upper]
 	if mapped then return mapped end
 	return text
 end
@@ -2067,6 +2167,7 @@ local DEFAULTS = {
 			externals = {
 				anchorPoint = "CENTER",
 				anchorOutside = false,
+				borderColor = { 1, 0.25, 0.25, 1 },
 				borderOffset = 0,
 				borderSize = nil,
 				borderTexture = "DEFAULT",
@@ -2843,6 +2944,7 @@ local DEFAULTS = {
 			externals = {
 				anchorPoint = "CENTER",
 				anchorOutside = false,
+				borderColor = { 1, 0.25, 0.25, 1 },
 				borderOffset = 0,
 				borderSize = nil,
 				borderTexture = "DEFAULT",
@@ -3592,6 +3694,7 @@ local DEFAULTS = {
 			externals = {
 				anchorPoint = "CENTER",
 				anchorOutside = false,
+				borderColor = { 1, 0.25, 0.25, 1 },
 				borderOffset = 0,
 				borderSize = nil,
 				borderTexture = "DEFAULT",
@@ -4215,6 +4318,7 @@ local DEFAULTS = {
 			externals = {
 				anchorPoint = "CENTER",
 				anchorOutside = false,
+				borderColor = { 1, 0.25, 0.25, 1 },
 				borderOffset = 0,
 				borderSize = nil,
 				borderTexture = "DEFAULT",
@@ -7612,6 +7716,18 @@ end
 
 local function isAuraFilteredIn(unit, auraInstanceID, filter)
 	if not auraInstanceID then return false end
+	if type(filter) == "table" then
+		if #filter > 0 then
+			for _, auraFilter in ipairs(filter) do
+				if type(auraFilter) == "string" and not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, auraInstanceID, auraFilter) then return true end
+			end
+			return false
+		end
+		for _, auraFilter in pairs(filter) do
+			if type(auraFilter) == "string" and not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, auraInstanceID, auraFilter) then return true end
+		end
+		return false
+	end
 	if filter then return not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, auraInstanceID, filter) end
 	return false
 end
@@ -7639,7 +7755,7 @@ local function getAuraKindFlags(unit, aura, helpfulFilter, harmfulFilter, extern
 	end
 
 	if wantExternals and not harmfulMatch and isAuraFilteredIn(unit, auraId, externalFilter) then flags = setAuraFlag(flags, AURA_KIND_EXTERNAL) end
-	if wantsDispel and harmfulMatch and isAuraFilteredIn(unit, auraId, dispelFilter) then flags = setAuraFlag(flags, AURA_KIND_DISPEL) end
+	if wantsDispel and isAuraFilteredIn(unit, auraId, dispelFilter) then flags = setAuraFlag(flags, AURA_KIND_DISPEL) end
 
 	return flags
 end
@@ -7911,6 +8027,7 @@ function GF:LayoutAuras(self)
 			style.tooltipAnchor = "ANCHOR_RIGHT"
 			style.showCooldown = typeCfg.showCooldown ~= false
 			style.blizzardDispelBorder = typeCfg.showDispelIcon == true
+			style.borderColor = typeCfg.borderColor
 			style.borderTexture = typeCfg.borderTexture
 			style.borderSize = GF.ScaleContentValue(self, typeCfg.borderSize, cfg, 1)
 			style.borderOffset = GF.ScaleContentValue(self, typeCfg.borderOffset, cfg, 0)
@@ -8027,6 +8144,7 @@ local function fullScanGroupAuras(
 	cache,
 	helpfulFilter,
 	harmfulFilter,
+	harmfulScanFilter,
 	externalFilter,
 	dispelFilter,
 	wantBuff,
@@ -8067,8 +8185,8 @@ local function fullScanGroupAuras(
 			if aura then storeAura(aura) end
 		end
 	end
-	if (wantDebuff or wantsDispel) and harmfulFilter then
-		local harmfulSlots, harmfulSlotCount = queryAuraSlots(unit, harmfulFilter, queryMax and queryMax.harmful)
+	if (wantDebuff or wantsDispel) and harmfulScanFilter then
+		local harmfulSlots, harmfulSlotCount = queryAuraSlots(unit, harmfulScanFilter, queryMax and queryMax.harmful)
 		for i = 2, harmfulSlotCount do
 			local aura = C_UnitAuras.GetAuraDataBySlot(unit, harmfulSlots[i])
 			if aura then storeAura(aura) end
@@ -8225,7 +8343,8 @@ function GF:UpdateAuras(self, updateInfo)
 		end
 	end
 	local helpfulFilter = GF.GetBuffHelpfulFilter(ac)
-	local harmfulFilter = AURA_FILTERS.harmful
+	local harmfulFilter = getGroupDebuffMatchFilter(ac.debuff)
+	local harmfulScanFilter = AURA_FILTERS.harmful
 	local dispelFilter = AURA_FILTERS.dispellable
 	local externalFilter = AURA_FILTERS.bigDefensive
 	local auraContextKind = self and (self._eqolGroupKind or "party") or "party"
@@ -8275,6 +8394,7 @@ function GF:UpdateAuras(self, updateInfo)
 			allCache,
 			helpfulFilter,
 			harmfulFilter,
+			harmfulScanFilter,
 			externalFilter,
 			dispelFilter,
 			wantBuff,
@@ -10462,7 +10582,7 @@ function GF:EnsurePreviewFrames(kind)
 	if kind ~= "party" and kind ~= "raid" and kind ~= "mt" and kind ~= "ma" then return nil end
 	local cfg = getCfg(kind)
 	if not (cfg and cfg.enabled == true) then return nil end
-	local samples = PREVIEW_SAMPLES[kind]
+	local samples = GF._previewSamples[kind]
 	if not (samples and #samples > 0) then return nil end
 	if InCombatLockdown and InCombatLockdown() then return nil end
 	local anchor = GF.anchors and GF.anchors[kind]
@@ -10515,7 +10635,7 @@ function GF:UpdatePreviewLayout(kind)
 	end
 	local raidStyle = isRaidLikeKind(kind)
 	local sampleLimit = (kind == "raid" and ((GF._previewSampleSize and GF._previewSampleSize[kind]) or 10)) or nil
-	local samples = (GFH.BuildPreviewSampleList and GFH.BuildPreviewSampleList(kind, cfg, PREVIEW_SAMPLES[kind], sampleLimit, 2, 3)) or (PREVIEW_SAMPLES[kind] or {})
+	local samples = (GFH.BuildPreviewSampleList and GFH.BuildPreviewSampleList(kind, cfg, GF._previewSamples[kind], sampleLimit, 2, 3)) or (GF._previewSamples[kind] or {})
 	local growthMode, growth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
 	local centerGrowthActive = GF.IsCenterGrowthMode(kind, cfg)
 	GF._previewSampleCount = GF._previewSampleCount or {}
@@ -13322,6 +13442,10 @@ function GF._copyUnitAuraIconsToGroup(sectionId, srcAuras, dest)
 			debuff.enabled = enabled and true or false
 			copied = true
 		end
+		if type(source.filterSelection) == "table" then
+			debuff.filterSelection = GF._sharedEdit.csm(source.filterSelection)
+			copied = true
+		end
 		local debuffSize = source.size
 		if debuffSize ~= nil then
 			debuff.size = debuffSize
@@ -13962,7 +14086,7 @@ function GF:AppendStatusIconSettings(settings, kind, editModeId, insertIndex)
 			kind = SettingType.Dropdown,
 			field = pointField,
 			parentId = "statusicons",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function() return GF.ReadStatusIconField(kind, key, "point", defaultPoint) end,
 			set = function(_, value)
@@ -14232,7 +14356,7 @@ local function buildEditModeSettings(kind, editModeId)
 	end
 	local function getGroupFormatLabel()
 		local fmt = getGroupFormatValue()
-		return groupNumberFormatLabelByValue[fmt] or tostring(fmt)
+		return GF._groupNumberFormatCache.labelByValue[fmt] or tostring(fmt)
 	end
 	local function isStatusTextEnabled()
 		local cfg = getCfg(kind)
@@ -14257,7 +14381,7 @@ local function buildEditModeSettings(kind, editModeId)
 	end
 	local function getGroupIndicatorFormatLabel()
 		local fmt = getGroupIndicatorFormatValue()
-		return groupNumberFormatLabelByValue[fmt] or tostring(fmt)
+		return GF._groupNumberFormatCache.labelByValue[fmt] or tostring(fmt)
 	end
 	local function isGroupIndicatorSettingsEnabled() return isGroupIndicatorShown() and getGroupIndicatorEnabledValue() end
 	local function getRangeFadeConfig()
@@ -14446,7 +14570,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "point",
 			parentId = "frame",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			default = (DEFAULTS[kind] and DEFAULTS[kind].point) or "CENTER",
 			get = function()
@@ -14488,7 +14612,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "relativePoint",
 			parentId = "frame",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			default = (DEFAULTS[kind] and (DEFAULTS[kind].relativePoint or DEFAULTS[kind].point)) or "CENTER",
 			get = function()
@@ -16082,7 +16206,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "nameAnchor",
 			parentId = "text",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -16366,7 +16490,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local tc = cfg and cfg.text or {}
@@ -16547,7 +16671,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(healthTextModeOptions) do
+				for _, option in ipairs(GF._sharedEdit.healthTextModeOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local hc = cfg and cfg.health or {}
@@ -16582,7 +16706,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(healthTextModeOptions) do
+				for _, option in ipairs(GF._sharedEdit.healthTextModeOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local hc = cfg and cfg.health or {}
@@ -16617,7 +16741,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(healthTextModeOptions) do
+				for _, option in ipairs(GF._sharedEdit.healthTextModeOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local hc = cfg and cfg.health or {}
@@ -16781,7 +16905,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local hc = cfg and cfg.health or {}
@@ -16836,7 +16960,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(delimiterOptions) do
+				for _, option in ipairs(GF._sharedEdit.delimiterOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local hc = cfg and cfg.health or {}
@@ -16873,7 +16997,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(delimiterOptions) do
+				for _, option in ipairs(GF._sharedEdit.delimiterOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local hc = cfg and cfg.health or {}
@@ -16912,7 +17036,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(delimiterOptions) do
+				for _, option in ipairs(GF._sharedEdit.delimiterOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local hc = cfg and cfg.health or {}
@@ -17993,7 +18117,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local sc = cfg and cfg.status or {}
@@ -18021,7 +18145,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "levelAnchor",
 			parentId = "level",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -18439,7 +18563,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local sc = cfg and cfg.status or {}
@@ -18470,7 +18594,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "statusTextAnchor",
 			parentId = "statustext",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -18603,7 +18727,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root, data)
-				for _, option in ipairs(groupNumberFormatOptions) do
+				for _, option in ipairs(GF._groupNumberFormatCache.opts) do
 					local value = option and option.value
 					if value ~= nil then
 						local label = option.label or option.text or tostring(value)
@@ -18742,7 +18866,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local def = DEFAULTS[kind] or {}
@@ -18767,7 +18891,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "groupNumberAnchor",
 			parentId = "statustext",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -19536,7 +19660,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "leaderIconPoint",
 			parentId = "groupicons",
-			values = auraAnchorOptions,
+			values = GF._sharedEdit.auraAnchorOpts,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -19689,7 +19813,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "raidAssignmentIconPoint",
 			parentId = "groupicons",
-			values = auraAnchorOptions,
+			values = GF._sharedEdit.auraAnchorOpts,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -19850,7 +19974,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "assistIconPoint",
 			parentId = "groupicons",
-			values = auraAnchorOptions,
+			values = GF._sharedEdit.auraAnchorOpts,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -20005,7 +20129,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "raidIconPoint",
 			parentId = "raidmarker",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -20153,7 +20277,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "roleIconPoint",
 			parentId = "roleicons",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -20284,7 +20408,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.MultiDropdown,
 			field = "roleIconRoles",
 			height = 120,
-			values = roleOptions,
+			values = GF._sharedEdit.roleOpts,
 			parentId = "roleicons",
 			isSelected = function(_, value)
 				local cfg = getCfg(kind)
@@ -20299,7 +20423,7 @@ local function buildEditModeSettings(kind, editModeId)
 				cfg.roleIcon = cfg.roleIcon or {}
 				local selection = cfg.roleIcon.showRoles
 				if type(selection) ~= "table" then
-					selection = defaultRoleSelection()
+					selection = GF._sharedEdit.defaultRoleSel()
 					cfg.roleIcon.showRoles = selection
 				end
 				if state then
@@ -20307,7 +20431,7 @@ local function buildEditModeSettings(kind, editModeId)
 				else
 					selection[value] = nil
 				end
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "roleIconRoles", copySelectionMap(selection), nil, true) end
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "roleIconRoles", GF._sharedEdit.csm(selection), nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			isEnabled = function()
@@ -20327,7 +20451,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.MultiDropdown,
 			field = "powerRoles",
 			height = 140,
-			values = roleOptions,
+			values = GF._sharedEdit.roleOpts,
 			parentId = "power",
 			isSelected = function(_, value)
 				local cfg = getCfg(kind)
@@ -20342,7 +20466,7 @@ local function buildEditModeSettings(kind, editModeId)
 				cfg.power = cfg.power or {}
 				local selection = cfg.power.showRoles
 				if type(selection) ~= "table" then
-					selection = defaultRoleSelection()
+					selection = GF._sharedEdit.defaultRoleSel()
 					cfg.power.showRoles = selection
 				end
 				if state then
@@ -20350,7 +20474,7 @@ local function buildEditModeSettings(kind, editModeId)
 				else
 					selection[value] = nil
 				end
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerRoles", copySelectionMap(selection), nil, true) end
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerRoles", GF._sharedEdit.csm(selection), nil, true) end
 				GF:RefreshPowerVisibility()
 			end,
 		},
@@ -20381,7 +20505,7 @@ local function buildEditModeSettings(kind, editModeId)
 				cfg.power = cfg.power or {}
 				local selection = cfg.power.showSpecs
 				if type(selection) ~= "table" then
-					selection = defaultSpecSelection()
+					selection = GF._sharedEdit.defaultSpecSel()
 					cfg.power.showSpecs = selection
 				end
 				if value == "__ALL__" then
@@ -20394,7 +20518,7 @@ local function buildEditModeSettings(kind, editModeId)
 							end
 						end
 					end
-					if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerSpecs", copySelectionMap(selection), nil, true) end
+					if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerSpecs", GF._sharedEdit.csm(selection), nil, true) end
 					GF:RefreshPowerVisibility()
 					return
 				end
@@ -20403,7 +20527,7 @@ local function buildEditModeSettings(kind, editModeId)
 				else
 					selection[value] = nil
 				end
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerSpecs", copySelectionMap(selection), nil, true) end
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerSpecs", GF._sharedEdit.csm(selection), nil, true) end
 				GF:RefreshPowerVisibility()
 			end,
 		},
@@ -20426,7 +20550,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(textModeOptions) do
+				for _, option in ipairs(GF._sharedEdit.textModeOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local pcfg = cfg and cfg.power or {}
@@ -20461,7 +20585,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(textModeOptions) do
+				for _, option in ipairs(GF._sharedEdit.textModeOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local pcfg = cfg and cfg.power or {}
@@ -20496,7 +20620,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(textModeOptions) do
+				for _, option in ipairs(GF._sharedEdit.textModeOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local pcfg = cfg and cfg.power or {}
@@ -20531,7 +20655,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(delimiterOptions) do
+				for _, option in ipairs(GF._sharedEdit.delimiterOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local pcfg = cfg and cfg.power or {}
@@ -20568,7 +20692,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(delimiterOptions) do
+				for _, option in ipairs(GF._sharedEdit.delimiterOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local pcfg = cfg and cfg.power or {}
@@ -20607,7 +20731,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(delimiterOptions) do
+				for _, option in ipairs(GF._sharedEdit.delimiterOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local pcfg = cfg and cfg.power or {}
@@ -20743,7 +20867,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local pcfg = cfg and cfg.power or {}
@@ -21135,7 +21259,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "buffAnchor",
 			parentId = "buffs",
-			values = auraAnchorOptions,
+			values = GF._sharedEdit.auraAnchorOpts,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -21345,6 +21469,7 @@ local function buildEditModeSettings(kind, editModeId)
 				ac.buff.borderTexture = value or "DEFAULT"
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "buffBorderTexture", ac.buff.borderTexture, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
+				requestEditModeSettingsRefresh()
 			end,
 			generator = function(_, root)
 				for _, option in ipairs(borderOptions()) do
@@ -21360,6 +21485,7 @@ local function buildEditModeSettings(kind, editModeId)
 						ac.buff.borderTexture = option.value
 						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "buffBorderTexture", option.value, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
+						requestEditModeSettingsRefresh()
 					end)
 				end
 			end,
@@ -21388,6 +21514,12 @@ local function buildEditModeSettings(kind, editModeId)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "buffBorderSize", ac.buff.borderSize, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].auras and DEFAULTS[kind].auras.buff) or {}
+				return isAuraBorderAdjustable(ac.buff, def)
+			end,
 		},
 		{
 			name = L["Border offset"] or "Border offset",
@@ -21412,6 +21544,12 @@ local function buildEditModeSettings(kind, editModeId)
 				ac.buff.borderOffset = clampNumber(value, -64, 64, ac.buff.borderOffset or def.borderOffset or 0)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "buffBorderOffset", ac.buff.borderOffset, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].auras and DEFAULTS[kind].auras.buff) or {}
+				return isAuraBorderAdjustable(ac.buff, def)
 			end,
 		},
 		{
@@ -21445,7 +21583,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "buffCooldownTextAnchor",
 			parentId = "buffs",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -21587,7 +21725,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local ac = ensureAuraConfig(cfg)
@@ -21634,7 +21772,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "buffStackAnchor",
 			parentId = "buffs",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -21776,7 +21914,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local ac = ensureAuraConfig(cfg)
@@ -21818,11 +21956,38 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
+			name = L["UFGroupDebuffFilter"] or "Debuff filters",
+			kind = SettingType.MultiDropdown,
+			field = "debuffFilters",
+			height = 140,
+			values = groupDebuffFilterOptions,
+			parentId = "debuffs",
+			isSelected = function(_, value)
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				return isGroupDebuffFilterSelected(ac.debuff, value)
+			end,
+			setSelected = function(_, value, state)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				local ac = ensureAuraConfig(cfg)
+				local selection = setGroupDebuffFilterSelected(ac.debuff, value, state)
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "debuffFilters", GF._sharedEdit.csm(selection), nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isShown = function() return kind == "party" or kind == "raid" end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				return ac.debuff.enabled == true
+			end,
+		},
+		{
 			name = L["Debuff anchor"] or "Debuff anchor",
 			kind = SettingType.Dropdown,
 			field = "debuffAnchor",
 			parentId = "debuffs",
-			values = auraAnchorOptions,
+			values = GF._sharedEdit.auraAnchorOpts,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -22032,6 +22197,7 @@ local function buildEditModeSettings(kind, editModeId)
 				ac.debuff.borderTexture = value or "DEFAULT"
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "debuffBorderTexture", ac.debuff.borderTexture, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
+				requestEditModeSettingsRefresh()
 			end,
 			generator = function(_, root)
 				for _, option in ipairs(borderOptions()) do
@@ -22047,6 +22213,7 @@ local function buildEditModeSettings(kind, editModeId)
 						ac.debuff.borderTexture = option.value
 						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "debuffBorderTexture", option.value, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
+						requestEditModeSettingsRefresh()
 					end)
 				end
 			end,
@@ -22075,6 +22242,12 @@ local function buildEditModeSettings(kind, editModeId)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "debuffBorderSize", ac.debuff.borderSize, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].auras and DEFAULTS[kind].auras.debuff) or {}
+				return isAuraBorderAdjustable(ac.debuff, def)
+			end,
 		},
 		{
 			name = L["Border offset"] or "Border offset",
@@ -22099,6 +22272,12 @@ local function buildEditModeSettings(kind, editModeId)
 				ac.debuff.borderOffset = clampNumber(value, -64, 64, ac.debuff.borderOffset or def.borderOffset or 0)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "debuffBorderOffset", ac.debuff.borderOffset, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].auras and DEFAULTS[kind].auras.debuff) or {}
+				return isAuraBorderAdjustable(ac.debuff, def)
 			end,
 		},
 		{
@@ -22152,7 +22331,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "debuffCooldownTextAnchor",
 			parentId = "debuffs",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -22294,7 +22473,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local ac = ensureAuraConfig(cfg)
@@ -22341,7 +22520,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "debuffStackAnchor",
 			parentId = "debuffs",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -22483,7 +22662,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local ac = ensureAuraConfig(cfg)
@@ -22529,7 +22708,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "externalAnchor",
 			parentId = "externals",
-			values = auraAnchorOptions,
+			values = GF._sharedEdit.auraAnchorOpts,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -22739,6 +22918,7 @@ local function buildEditModeSettings(kind, editModeId)
 				ac.externals.borderTexture = value or "DEFAULT"
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "externalBorderTexture", ac.externals.borderTexture, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
+				requestEditModeSettingsRefresh()
 			end,
 			generator = function(_, root)
 				for _, option in ipairs(borderOptions()) do
@@ -22754,6 +22934,7 @@ local function buildEditModeSettings(kind, editModeId)
 						ac.externals.borderTexture = option.value
 						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "externalBorderTexture", option.value, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
+						requestEditModeSettingsRefresh()
 					end)
 				end
 			end,
@@ -22782,6 +22963,41 @@ local function buildEditModeSettings(kind, editModeId)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "externalBorderSize", ac.externals.borderSize, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].auras and DEFAULTS[kind].auras.externals) or {}
+				return isAuraBorderAdjustable(ac.externals, def)
+			end,
+		},
+		{
+			name = EMBLEM_BORDER_COLOR,
+			kind = SettingType.Color,
+			field = "externalBorderColor",
+			parentId = "externals",
+			hasOpacity = true,
+			default = { 1, 0.25, 0.25, 1 },
+			get = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].auras and DEFAULTS[kind].auras.externals) or {}
+				local r, g, b, a = unpackColor(ac.externals.borderColor, def.borderColor or { 1, 0.25, 0.25, 1 })
+				return { r = r, g = g, b = b, a = a }
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not (cfg and value) then return end
+				local ac = ensureAuraConfig(cfg)
+				ac.externals.borderColor = { value.r or 1, value.g or 0.25, value.b or 0.25, value.a or 1 }
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "externalBorderColor", ac.externals.borderColor, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].auras and DEFAULTS[kind].auras.externals) or {}
+				return isAuraBorderAdjustable(ac.externals, def)
+			end,
 		},
 		{
 			name = L["Border offset"] or "Border offset",
@@ -22806,6 +23022,12 @@ local function buildEditModeSettings(kind, editModeId)
 				ac.externals.borderOffset = clampNumber(value, -64, 64, ac.externals.borderOffset or def.borderOffset or 0)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "externalBorderOffset", ac.externals.borderOffset, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local ac = ensureAuraConfig(cfg)
+				local def = (DEFAULTS[kind] and DEFAULTS[kind].auras and DEFAULTS[kind].auras.externals) or {}
+				return isAuraBorderAdjustable(ac.externals, def)
 			end,
 		},
 		{
@@ -22839,7 +23061,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "externalCooldownTextAnchor",
 			parentId = "externals",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -22981,7 +23203,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local ac = ensureAuraConfig(cfg)
@@ -23028,7 +23250,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "externalStackAnchor",
 			parentId = "externals",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -23170,7 +23392,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local ac = ensureAuraConfig(cfg)
@@ -23209,7 +23431,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "externalDrAnchor",
 			parentId = "externals",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -23371,7 +23593,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local ac = ensureAuraConfig(cfg)
@@ -23515,7 +23737,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "privateAurasParentPoint",
 			parentId = "privateAuras",
-			values = auraAnchorOptions,
+			values = GF._sharedEdit.auraAnchorOpts,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -23706,7 +23928,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "privateAurasDurationPoint",
 			parentId = "privateAuras",
-			values = auraAnchorOptions,
+			values = GF._sharedEdit.auraAnchorOpts,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -24305,7 +24527,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root, data)
-				for _, option in ipairs(groupNumberFormatOptions) do
+				for _, option in ipairs(GF._groupNumberFormatCache.opts) do
 					local value = option and option.value
 					if value ~= nil then
 						local label = option.label or option.text or tostring(value)
@@ -24436,7 +24658,7 @@ local function buildEditModeSettings(kind, editModeId)
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
-				for _, option in ipairs(outlineOptions) do
+				for _, option in ipairs(GF._sharedEdit.outlineOpts) do
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local def = DEFAULTS[kind] or {}
@@ -24460,7 +24682,7 @@ local function buildEditModeSettings(kind, editModeId)
 			kind = SettingType.Dropdown,
 			field = "groupIndicatorAnchor",
 			parentId = "raid",
-			values = anchorOptions9,
+			values = GF._sharedEdit.anchorOpts9,
 			height = 180,
 			get = function()
 				local cfg = getCfg(kind)
@@ -25297,15 +25519,15 @@ local function applyEditModeData(kind, data)
 	end
 	if data.roleIconRoles ~= nil then
 		cfg.roleIcon = cfg.roleIcon or {}
-		cfg.roleIcon.showRoles = copySelectionMap(data.roleIconRoles)
+		cfg.roleIcon.showRoles = GF._sharedEdit.csm(data.roleIconRoles)
 	end
 	if data.powerRoles ~= nil then
 		cfg.power = cfg.power or {}
-		cfg.power.showRoles = copySelectionMap(data.powerRoles)
+		cfg.power.showRoles = GF._sharedEdit.csm(data.powerRoles)
 	end
 	if data.powerSpecs ~= nil then
 		cfg.power = cfg.power or {}
-		cfg.power.showSpecs = copySelectionMap(data.powerSpecs)
+		cfg.power.showSpecs = GF._sharedEdit.csm(data.powerSpecs)
 	end
 	if data.powerTextLeft ~= nil then
 		cfg.power = cfg.power or {}
@@ -25435,6 +25657,7 @@ local function applyEditModeData(kind, data)
 	if data.buffStackOutline ~= nil then ac.buff.countFontOutline = data.buffStackOutline end
 
 	if data.debuffsEnabled ~= nil then ac.debuff.enabled = data.debuffsEnabled and true or false end
+	if data.debuffFilters ~= nil then ac.debuff.filterSelection = GF._sharedEdit.csm(data.debuffFilters) end
 	if data.debuffAnchor ~= nil then ac.debuff.anchorPoint = data.debuffAnchor end
 	if data.debuffAnchorOutside ~= nil then ac.debuff.anchorOutside = data.debuffAnchorOutside and true or false end
 	if data.debuffGrowth ~= nil then
@@ -25491,6 +25714,7 @@ local function applyEditModeData(kind, data)
 	if data.externalSpacing ~= nil then ac.externals.spacing = data.externalSpacing end
 	if data.externalBorderTexture ~= nil then ac.externals.borderTexture = data.externalBorderTexture end
 	if data.externalBorderSize ~= nil then ac.externals.borderSize = clampNumber(data.externalBorderSize, 1, 64, ac.externals.borderSize or 2) end
+	if data.externalBorderColor ~= nil then ac.externals.borderColor = data.externalBorderColor end
 	if data.externalBorderOffset ~= nil then ac.externals.borderOffset = clampNumber(data.externalBorderOffset, -64, 64, ac.externals.borderOffset or 0) end
 	if data.externalCooldownTextEnabled ~= nil then ac.externals.showCooldownText = data.externalCooldownTextEnabled and true or false end
 	if data.externalCooldownTextAnchor ~= nil then ac.externals.cooldownAnchor = data.externalCooldownTextAnchor end
@@ -26100,9 +26324,9 @@ function GF:EnsureEditMode()
 				roleIconOffsetX = rc.x or 0,
 				roleIconOffsetY = rc.y or 0,
 				roleIconStyle = rc.style or "TINY",
-				roleIconRoles = (type(rc.showRoles) == "table") and copySelectionMap(rc.showRoles) or defaultRoleSelection(),
-				powerRoles = (type(pcfg.showRoles) == "table") and copySelectionMap(pcfg.showRoles) or defaultRoleSelection(),
-				powerSpecs = (type(pcfg.showSpecs) == "table") and copySelectionMap(pcfg.showSpecs) or defaultSpecSelection(),
+				roleIconRoles = (type(rc.showRoles) == "table") and GF._sharedEdit.csm(rc.showRoles) or GF._sharedEdit.defaultRoleSel(),
+				powerRoles = (type(pcfg.showRoles) == "table") and GF._sharedEdit.csm(pcfg.showRoles) or GF._sharedEdit.defaultRoleSel(),
+				powerSpecs = (type(pcfg.showSpecs) == "table") and GF._sharedEdit.csm(pcfg.showSpecs) or GF._sharedEdit.defaultSpecSel(),
 				powerTextLeft = pcfg.textLeft or ((DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.textLeft) or "NONE"),
 				powerTextCenter = pcfg.textCenter or ((DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.textCenter) or "NONE"),
 				powerTextRight = pcfg.textRight or ((DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.textRight) or "NONE"),
@@ -26171,6 +26395,7 @@ function GF:EnsureEditMode()
 				buffStackFont = ac.buff.countFont or defBuff.countFont or nil,
 				buffStackOutline = ac.buff.countFontOutline or defBuff.countFontOutline or "OUTLINE",
 				debuffsEnabled = ac.debuff.enabled == true,
+				debuffFilters = exportGroupDebuffSelection(ac.debuff),
 				debuffAnchor = debuffAnchor,
 				debuffAnchorOutside = ac.debuff.anchorOutside == true,
 				debuffGrowth = debuffGrowth,
@@ -26210,6 +26435,7 @@ function GF:EnsureEditMode()
 				externalSpacing = ac.externals.spacing or 2,
 				externalBorderTexture = ac.externals.borderTexture or defExt.borderTexture or "DEFAULT",
 				externalBorderSize = ac.externals.borderSize or defExt.borderSize or 2,
+				externalBorderColor = ac.externals.borderColor or defExt.borderColor or { 1, 0.25, 0.25, 1 },
 				externalBorderOffset = ac.externals.borderOffset or defExt.borderOffset or 0,
 				externalCooldownTextEnabled = (ac.externals.showCooldownText ~= nil and ac.externals.showCooldownText ~= false)
 					or (ac.externals.showCooldownText == nil and defExt.showCooldownText ~= false),

@@ -546,6 +546,7 @@ function H.resolveBorderTexture(key)
 end
 
 function H.resolveAuraBorderTexture(key)
+	if type(key) == "string" and key:upper() == "SOLID" then return "Interface\\Buttons\\WHITE8x8", nil, true end
 	if not key or key == "" or key == "DEFAULT" then return DEFAULT_AURA_BORDER_TEX, DEFAULT_AURA_BORDER_COORDS, false end
 	if LSM then
 		local tex = LSM:Fetch("border", key)
