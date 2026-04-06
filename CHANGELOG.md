@@ -30,6 +30,7 @@
 
 ### ❌ Removed
 
+- Masque: Removed the integration from `EnhanceQoL` for now due to multiple bugs and inconsistent behavior across several modules.
 - Mouse & Accessibility: Removed the separate `Enable Mouseover Cast` option.
 
 ---
