@@ -14,6 +14,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate repo-managed locales
+        run: python3 scripts/validate_repo_locales.py
+
       - name: Hack around https://github.com/actions/checkout/issues/290
         run: |
           git fetch --tags --force
