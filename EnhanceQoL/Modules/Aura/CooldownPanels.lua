@@ -6899,11 +6899,14 @@ end
 function CooldownPanels:GetCachedSpellCooldownDurationObject(spellId)
 	if not spellId then return nil end
 	local runtime = self:EnsureSpellQueryCaches()
+	local pass = runtime.spellQueryPass
+	if not pass then return getSpellCooldownDurationObject(spellId) end
 	local cache = runtime.spellCooldownDurationCache
 	local cached = cache[spellId]
-	if cached then return cached.value end
+	if cached and cached.pass == pass then return cached.value end
 	cached = cached or {}
 	cache[spellId] = cached
+	cached.pass = pass
 	cached.value = getSpellCooldownDurationObject(spellId)
 	return cached.value
 end
@@ -6935,15 +6938,18 @@ end
 function CooldownPanels:GetCachedSpellChargeDurationObject(spellId)
 	if not spellId or not (C_Spell and C_Spell.GetSpellChargeDuration) then return nil end
 	local runtime = self:EnsureSpellQueryCaches()
+	local pass = runtime.spellQueryPass
+	if not pass then return C_Spell.GetSpellChargeDuration(spellId) end
 	local cache = runtime.spellChargeDurationCache
 	if not cache then
 		cache = {}
 		runtime.spellChargeDurationCache = cache
 	end
 	local cached = cache[spellId]
-	if cached then return cached.value end
+	if cached and cached.pass == pass then return cached.value end
 	cached = cached or {}
 	cache[spellId] = cached
+	cached.pass = pass
 	cached.value = C_Spell.GetSpellChargeDuration(spellId)
 	return cached.value
 end
