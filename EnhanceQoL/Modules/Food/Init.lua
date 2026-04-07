@@ -28,6 +28,11 @@ addon.BuffFoods = addon.BuffFoods or {}
 addon.BuffFoods.functions = addon.BuffFoods.functions or {}
 addon.BuffFoods.filteredBuffFoods = addon.BuffFoods.filteredBuffFoods or {}
 
+-- Augment rune reminder scaffolding
+addon.Runes = addon.Runes or {}
+addon.Runes.functions = addon.Runes.functions or {}
+addon.Runes.filteredRunes = addon.Runes.filteredRunes or {}
+
 -- Weapon buff reminder scaffolding
 addon.WeaponBuffs = addon.WeaponBuffs or {}
 addon.WeaponBuffs.functions = addon.WeaponBuffs.functions or {}
@@ -57,6 +62,8 @@ local function syncSharedFoodBagItemCountCache(counts)
 	addon.Flasks.bagItemCountCacheReady = true
 	addon.BuffFoods.bagItemCountCache = counts
 	addon.BuffFoods.bagItemCountCacheReady = true
+	addon.Runes.bagItemCountCache = counts
+	addon.Runes.bagItemCountCacheReady = true
 	addon.WeaponBuffs.bagItemCountCache = counts
 	addon.WeaponBuffs.bagItemCountCacheReady = true
 	return counts
@@ -66,6 +73,7 @@ local function invalidateSharedFoodBagItemCountCache()
 	addon.foodBagItemCountCacheReady = false
 	addon.Flasks.bagItemCountCacheReady = false
 	addon.BuffFoods.bagItemCountCacheReady = false
+	addon.Runes.bagItemCountCacheReady = false
 	addon.WeaponBuffs.bagItemCountCacheReady = false
 end
 
@@ -78,6 +86,7 @@ function addon.functions.shouldMaintainFoodBagItemCountCache()
 	if not reminder.IsEnabled or reminder:IsEnabled() ~= true then return false end
 	if reminder.IsFlaskTrackingEnabled and reminder:IsFlaskTrackingEnabled() then return true end
 	if reminder.IsFoodTrackingEnabled and reminder:IsFoodTrackingEnabled() then return true end
+	if reminder.IsRuneTrackingEnabled and reminder:IsRuneTrackingEnabled() then return true end
 	if reminder.IsWeaponBuffTrackingEnabled and reminder:IsWeaponBuffTrackingEnabled() then return true end
 	return false
 end

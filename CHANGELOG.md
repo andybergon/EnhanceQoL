@@ -8,6 +8,7 @@
 - Group Frames: Added role-aware `Main Tank / Main Assist` controls, a separate raid `MT / MA` icon option, per-group raid visibility toggles, private-aura text scaling, and `Name` / `Level` frame strata and level settings.
 - Group Frames / Auras: Added multi-select debuff filters for `Party` and `Raid` debuffs plus configurable aura borders for `Buffs`, `Debuffs`, and `Externals`, including custom external border colors and a new `Solid` style.
 - Class Buff Reminder: Added food tracking with shared macro settings, per-consumable content filters for flasks, food, and weapon buffs, a global `Don't show in rested areas` option, a configurable glow color, Druid party tracking for `Symbiotic Relationship`, and an optional configurable border in Edit Mode.
+- Class Buff Reminder: Added augment-rune tracking with shared bag-cache support, content-based reminder visibility, and Shaman shield reminders for `Lightning Shield`, `Water Shield`, and `Earth Shield`.
 - Action Tracker: Added optional Edit Mode border styling with SharedMedia border selection, size, offset, color, and preview support.
 - UI / Action Buttons: Added `Use class color` as an alternative to `Custom border color` for custom action-button borders.
 - Data Panels: Added new display options for `Item Level`, `Stats`, and `Pet Tracker`, including pet reminder layouts and rested hiding.
@@ -28,6 +29,7 @@
 - Group Frames / Auras: Fixed centered aura layouts drifting off-center and raid `Group Growth` issues when raid frames were grouped by role.
 - GCD Bar: Fixed the bar sometimes starting from `0` or briefly filling the wrong way before smoothing into the active global cooldown progress.
 - Class Buff Reminder: Fixed Holy Paladin beacon tracking, Rogue poison reminders, and role-based hiding when no group role was assigned.
+- Class Buff Reminder: Fixed Shaman shield detection to fall back more reliably for known spells and active shield auras.
 - Chat / Group Finder: Fixed truncated copied chat history, prevented ChatIM from opening its own whisper window during chat lockdown, and reduced Blizzard UI errors on the Mythic+ score panel.
 - UI: Fixed some glows not showing reliably after login or other state changes, and restored shortened actionbar labels for `Backspace` and `Space`.
 

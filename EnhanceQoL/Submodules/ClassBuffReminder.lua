@@ -87,6 +87,19 @@ local BORDER_SIZE_MAX = 24
 local BORDER_OFFSET_MIN = -20
 local BORDER_OFFSET_MAX = 20
 
+Reminder.runeTracking = Reminder.runeTracking or {
+	auraIds = {
+		1264426, -- Void-Touched Augment Rune
+		1234969, -- Ethereal Augment Rune
+		1242347, -- Soulgorged Augment Rune
+		453250, -- Crystallized Augment Rune
+		393438, -- Draconic/Dreambound Augment Rune
+		347901, -- Veiled Augment Rune
+	},
+	enabledDb = "classBuffReminderTrackRunes",
+	legacyDb = "classBuffReminderTrackRunesInstanceOnly",
+}
+
 local TRACKING_CONTENT = {
 	OPEN_WORLD = "openWorld",
 	SCENARIO = "scenario",
@@ -102,6 +115,7 @@ local TRACKING_CONTENT = {
 TRACKING_CONTENT.db = {
 	FLASKS = "classBuffReminderTrackFlasksContent",
 	FOOD = "classBuffReminderTrackFoodContent",
+	RUNES = "classBuffReminderTrackRunesContent",
 	WEAPON_BUFFS = "classBuffReminderTrackWeaponBuffsContent",
 }
 
@@ -256,6 +270,9 @@ Reminder.defaults = Reminder.defaults
 		trackFood = false,
 		trackFoodContent = Reminder.CreateDefaultTrackingContentSelection(),
 		trackFoodInstanceOnly = false,
+		trackRunes = false,
+		trackRunesContent = Reminder.CreateDefaultTrackingContentSelection(),
+		trackRunesInstanceOnly = false,
 		trackWeaponBuffs = false,
 		trackWeaponBuffsContent = Reminder.CreateDefaultTrackingContentSelection(),
 		trackWeaponBuffsInstanceOnly = false,
@@ -293,6 +310,9 @@ if defaults.trackFood == nil then defaults.trackFood = false end
 if type(defaults.trackFlasksContent) ~= "table" then defaults.trackFlasksContent = Reminder.CreateDefaultTrackingContentSelection() end
 if defaults.trackFoodInstanceOnly == nil then defaults.trackFoodInstanceOnly = false end
 if type(defaults.trackFoodContent) ~= "table" then defaults.trackFoodContent = Reminder.CreateDefaultTrackingContentSelection() end
+if defaults.trackRunes == nil then defaults.trackRunes = false end
+if defaults.trackRunesInstanceOnly == nil then defaults.trackRunesInstanceOnly = false end
+if type(defaults.trackRunesContent) ~= "table" then defaults.trackRunesContent = Reminder.CreateDefaultTrackingContentSelection() end
 if defaults.trackWeaponBuffs == nil then defaults.trackWeaponBuffs = false end
 if defaults.trackWeaponBuffsInstanceOnly == nil then defaults.trackWeaponBuffsInstanceOnly = false end
 if type(defaults.trackWeaponBuffsContent) ~= "table" then defaults.trackWeaponBuffsContent = Reminder.CreateDefaultTrackingContentSelection() end
@@ -412,9 +432,33 @@ local ROGUE_POISON_UTILITY_IDS = {
 	381637, -- Atrophic Poison
 }
 
-local SHAMAN_SPEC_ENHANCEMENT = 263
-local SHAMAN_SPEC_RESTORATION = 264
 local PALADIN_SPEC_HOLY = 65
+
+Reminder.shamanReminder = Reminder.shamanReminder or {
+	elementalOrbitIds = {
+		383010, -- Elemental Orbit
+	},
+	shieldBasicIds = {
+		974, -- Earth Shield
+		192106, -- Lightning Shield
+		52127, -- Water Shield
+	},
+	shieldEarthIds = {
+		974, -- Earth Shield
+	},
+	shieldEarthSelfIds = {
+		383648, -- Elemental Orbit passive self Earth Shield
+	},
+	shieldLightningIds = {
+		192106, -- Lightning Shield
+	},
+	shieldWaterIds = {
+		52127, -- Water Shield
+	},
+	specElemental = 262,
+	specEnhancement = 263,
+	specRestoration = 264,
+}
 
 local DRUID_MARK_OF_THE_WILD_IDS = {
 	1126,
@@ -857,6 +901,8 @@ local function safeIsPlayerSpell(spellId)
 	spellId = normalizeSpellId(spellId)
 	if not spellId then return false end
 
+	if IsPlayerSpell and IsPlayerSpell(spellId) then return true end
+	if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(spellId) then return true end
 	if C_SpellBook and C_SpellBook.IsSpellInSpellBook then return C_SpellBook.IsSpellInSpellBook(spellId, Enum.SpellBookSpellBank.Player, true) == true end
 
 	return false
@@ -1150,6 +1196,18 @@ function Reminder:SetFoodTrackingContentSelection(selection)
 	self:RequestUpdate(true)
 end
 
+function Reminder:IsRuneTrackingEnabled() return getValue(Reminder.runeTracking.enabledDb, defaults.trackRunes) == true end
+
+function Reminder:GetRuneTrackingContentSelection()
+	return Reminder.GetTrackingContentSelection(TRACKING_CONTENT.db.RUNES, Reminder.runeTracking.legacyDb, defaults.trackRunesContent)
+end
+
+function Reminder:SetRuneTrackingContentSelection(selection)
+	if addon.db then addon.db[TRACKING_CONTENT.db.RUNES] = select(1, Reminder.NormalizeTrackingContentSelection(selection, nil, defaults.trackRunesContent)) end
+	self:InvalidateRuneCache()
+	self:RequestUpdate(true)
+end
+
 function Reminder:IsWeaponBuffTrackingEnabled() return getValue(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs) == true end
 
 function Reminder:GetWeaponBuffTrackingContentSelection()
@@ -1234,12 +1292,18 @@ function Reminder:CanCheckFoodReminder()
 	return self:IsTrackingContentSelected(self:GetFoodTrackingContentSelection())
 end
 
+function Reminder:CanCheckRuneReminder()
+	if self:IsFlaskEnvironmentRestricted() then return false end
+	if not self:IsRuneTrackingEnabled() then return false end
+	return self:IsTrackingContentSelected(self:GetRuneTrackingContentSelection())
+end
+
 function Reminder:ShouldSuppressGenericWeaponBuffReminder()
 	local classToken = self:GetClassToken()
 	if classToken == "ROGUE" then return true end
 	if classToken == "SHAMAN" then
 		local specId = self:GetCurrentSpecId()
-		return specId == SHAMAN_SPEC_ENHANCEMENT or specId == SHAMAN_SPEC_RESTORATION
+		return specId == Reminder.shamanReminder.specEnhancement or specId == Reminder.shamanReminder.specRestoration
 	end
 	if classToken == "PALADIN" then
 		local provider = self:GetPaladinRitesProvider()
@@ -1257,6 +1321,11 @@ end
 
 function Reminder:CanEvaluateFoodReminderNow()
 	if not self:CanCheckFoodReminder() then return false end
+	return true
+end
+
+function Reminder:CanEvaluateRuneReminderNow()
+	if not self:CanCheckRuneReminder() then return false end
 	return true
 end
 
@@ -1381,6 +1450,14 @@ function Reminder:InvalidateFoodCache()
 	self.preparedFoodCandidateData = nil
 end
 
+function Reminder:InvalidateRuneCache()
+	self.runeCandidateCache = nil
+	self.runeCandidateCacheTime = 0
+	self.runeCandidateCacheReady = false
+	self.runeCacheDirty = true
+	self.preparedRuneCandidateData = nil
+end
+
 function Reminder:InvalidateWeaponBuffCache()
 	self.weaponBuffCandidateCache = nil
 	self.weaponBuffCandidateCacheTime = 0
@@ -1422,7 +1499,12 @@ function Reminder:PrepareConsumableCandidateAuraData(candidates, fallbackLabel)
 	end
 
 	for i = 1, #candidates do
-		local itemId = tonumber(candidates[i] and candidates[i].id)
+		local candidate = candidates[i]
+		local candidateSpellId = normalizeSpellId(candidate and (candidate.displaySpellId or candidate.spellId))
+		if not prepared.displaySpellId and candidateSpellId then prepared.displaySpellId = candidateSpellId end
+		appendUniquePreparedSpellId(prepared.spellIds, seenSpellIds, candidateSpellId)
+
+		local itemId = tonumber(candidate and candidate.id)
 		if itemId and itemId > 0 then
 			local spellName, spellId
 			if C_Item and C_Item.GetItemSpell then spellName, spellId = C_Item.GetItemSpell(itemId) end
@@ -1463,6 +1545,14 @@ function Reminder:GetPreparedFoodCandidateData(candidates)
 	if prepared and prepared.source == candidates then return prepared end
 	prepared = self:PrepareConsumableCandidateAuraData(candidates, L["Buff Food Macro"] or "Buff food")
 	self.preparedFoodCandidateData = prepared
+	return prepared
+end
+
+function Reminder:GetPreparedRuneCandidateData(candidates)
+	local prepared = self.preparedRuneCandidateData
+	if prepared and prepared.source == candidates then return prepared end
+	prepared = self:PrepareConsumableCandidateAuraData(candidates, L["ClassBuffReminderAugmentRune"] or "Augment Rune")
+	self.preparedRuneCandidateData = prepared
 	return prepared
 end
 
@@ -1744,6 +1834,23 @@ function Reminder:GetFoodCandidatesForCurrentSpec()
 	return candidates, selectedType
 end
 
+function Reminder:GetRuneCandidates()
+	if not self:CanCheckRuneReminder() then return nil end
+	if not (addon.Runes and addon.Runes.functions and addon.Runes.functions.getAvailableCandidates) then return nil end
+
+	if self.runeCacheDirty ~= true and self.runeCandidateCacheReady == true then return self.runeCandidateCache end
+
+	local candidates = addon.Runes.functions.getAvailableCandidates()
+	if type(candidates) ~= "table" or #candidates <= 0 then candidates = nil end
+
+	self.runeCandidateCache = candidates
+	self.runeCandidateCacheTime = nowSeconds()
+	self.runeCandidateCacheReady = true
+	self.runeCacheDirty = false
+
+	return candidates
+end
+
 function Reminder:GetWeaponBuffCandidates()
 	if not self:CanCheckWeaponBuffReminder() then return nil end
 	if not (addon.WeaponBuffs and addon.WeaponBuffs.functions and addon.WeaponBuffs.functions.getAvailableCandidates) then return nil end
@@ -1820,6 +1927,34 @@ function Reminder:GetFoodMissingEntry(evalContext)
 	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "FOOD")
 end
 
+function Reminder:GetRuneMissingEntry(evalContext)
+	local candidates = self:GetRuneCandidates()
+	if type(candidates) ~= "table" or #candidates <= 0 then return nil end
+
+	local context = type(evalContext) == "table" and evalContext or nil
+	local prepared = context and context.runePreparedData or self:GetPreparedRuneCandidateData(candidates)
+	if context and not context.runePreparedData then context.runePreparedData = prepared end
+	local snapshot = context and context.playerAuraSnapshot or self:GetPlayerAuraPresenceSnapshot()
+	if context and not context.playerAuraSnapshot then context.playerAuraSnapshot = snapshot end
+
+	local hasRuneAura
+	if snapshot and snapshot.supported == true then
+		hasRuneAura = self:AuraSnapshotHasAnySpellId(snapshot, Reminder.runeTracking.auraIds)
+		if not hasRuneAura and #prepared.spellIds > 0 and self:AuraSnapshotHasAnySpellId(snapshot, prepared.spellIds) then hasRuneAura = true end
+		if not hasRuneAura and #prepared.auraNames > 0 and self:AuraSnapshotHasAnyName(snapshot, prepared.auraNames) then hasRuneAura = true end
+	else
+		hasRuneAura = self:UnitHasAnyAuraSpellId("player", Reminder.runeTracking.auraIds)
+		if not hasRuneAura and #prepared.spellIds > 0 and self:UnitHasAnyAuraSpellId("player", prepared.spellIds) then hasRuneAura = true end
+		if not hasRuneAura and #prepared.auraNames > 0 and self:UnitHasAnyAuraName("player", prepared.auraNames) then hasRuneAura = true end
+	end
+	if hasRuneAura then return nil end
+
+	local displaySpellId = prepared.displaySpellId or normalizeSpellId(Reminder.runeTracking.auraIds[1])
+	local displayLabel = prepared.displayLabel
+	if type(displayLabel) ~= "string" or displayLabel == "" then displayLabel = L["ClassBuffReminderAugmentRune"] or "Augment Rune" end
+	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "RUNES")
+end
+
 function Reminder:GetWeaponBuffMissingEntry(evalContext)
 	local candidates = self:GetWeaponBuffCandidates()
 	if type(candidates) ~= "table" or #candidates <= 0 then return nil end
@@ -1862,6 +1997,10 @@ function Reminder:GetSupplementalMissingEntries(evalContext)
 	if self:CanEvaluateFoodReminderNow() then
 		local foodEntry = self:GetFoodMissingEntry(context)
 		if foodEntry then entries[#entries + 1] = foodEntry end
+	end
+	if self:CanEvaluateRuneReminderNow() then
+		local runeEntry = self:GetRuneMissingEntry(context)
+		if runeEntry then entries[#entries + 1] = runeEntry end
 	end
 	if self:CanEvaluateWeaponBuffReminderNow() then
 		local weaponBuffEntry = self:GetWeaponBuffMissingEntry(context)
@@ -1915,6 +2054,24 @@ function Reminder:UnitHasAnyAuraName(unit, auraNames)
 	end
 
 	return false
+end
+
+function Reminder:UnitHasAnyAuraSpellIdOrDerivedName(unit, spellIds)
+	if self:UnitHasAnyAuraSpellId(unit, spellIds) then return true end
+	if type(spellIds) ~= "table" then return false end
+
+	local auraNames = {}
+	local seen = {}
+	for i = 1, #spellIds do
+		local name = safeGetSpellName(spellIds[i])
+		if type(name) == "string" and name ~= "" and not seen[name] then
+			seen[name] = true
+			auraNames[#auraNames + 1] = name
+		end
+	end
+
+	if #auraNames <= 0 then return false end
+	return self:UnitHasAnyAuraName(unit, auraNames)
 end
 
 function Reminder:UnitHasAuraIcon(unit, iconId)
@@ -2063,6 +2220,47 @@ local function roguePoisonsHasUnitBuff(provider, unit, reminder)
 	return status and status.missing <= 0
 end
 
+function Reminder:GetShamanPreferredShieldDisplaySpellId(provider)
+	local specId = self and self.GetCurrentSpecId and self:GetCurrentSpecId() or nil
+	if specId == Reminder.shamanReminder.specRestoration or isUnitHealerRole("player") then
+		return normalizeSpellId(provider and provider.waterShieldDisplaySpellId) or normalizeSpellId(provider and provider.waterShieldSpellIds and provider.waterShieldSpellIds[1]) or 52127
+	end
+	return normalizeSpellId(provider and provider.lightningShieldDisplaySpellId) or normalizeSpellId(provider and provider.lightningShieldSpellIds and provider.lightningShieldSpellIds[1]) or 192106
+end
+
+function Reminder:AppendShamanShieldMissingEntries(provider, missingEntries)
+	if type(provider) ~= "table" or type(self) ~= "table" or type(missingEntries) ~= "table" then return 0 end
+	if hasKnownSpellInList(provider.shieldKnownSpellIds or provider.shieldSpellIds) ~= true then return 0 end
+
+	local totalRequirements = 0
+	local hasElementalOrbit = hasKnownSpellInList(provider.elementalOrbitKnownSpellIds or provider.elementalOrbitSpellIds)
+	local preferredShieldDisplaySpellId = self:GetShamanPreferredShieldDisplaySpellId(provider)
+	local preferredShieldLabel = safeGetSpellName(preferredShieldDisplaySpellId) or safeGetSpellName(52127) or safeGetSpellName(192106) or "Shield"
+	local hasLightningShield = self:UnitHasAnyAuraSpellIdOrDerivedName("player", provider.lightningShieldSpellIds)
+	local hasWaterShield = self:UnitHasAnyAuraSpellIdOrDerivedName("player", provider.waterShieldSpellIds)
+
+	if hasElementalOrbit then
+		local earthShieldDisplaySpellId = normalizeSpellId(provider.earthShieldDisplaySpellId) or normalizeSpellId(provider.earthShieldSpellIds and provider.earthShieldSpellIds[1]) or 974
+		local earthShieldLabel = safeGetSpellName(earthShieldDisplaySpellId) or "Earth Shield"
+		local hasEarthShield = self:UnitHasAnyAuraSpellIdOrDerivedName("player", provider.earthShieldSelfSpellIds)
+		if not hasEarthShield then hasEarthShield = self:UnitHasAnyAuraSpellIdOrDerivedName("player", provider.earthShieldSpellIds) end
+
+		totalRequirements = totalRequirements + 1
+		if not hasEarthShield then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(earthShieldDisplaySpellId, earthShieldLabel) end
+
+		totalRequirements = totalRequirements + 1
+		if not (hasLightningShield or hasWaterShield) then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(preferredShieldDisplaySpellId, preferredShieldLabel) end
+
+		return totalRequirements
+	end
+
+	totalRequirements = totalRequirements + 1
+	local hasAnyShield = self:UnitHasAnyAuraSpellIdOrDerivedName("player", provider.shieldSpellIds)
+	if not hasAnyShield and provider.earthShieldSelfSpellIds then hasAnyShield = self:UnitHasAnyAuraSpellIdOrDerivedName("player", provider.earthShieldSelfSpellIds) end
+	if not hasAnyShield then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(preferredShieldDisplaySpellId, preferredShieldLabel) end
+	return totalRequirements
+end
+
 local function shamanEnhancementGetSelfStatus(provider, reminder)
 	if type(provider) ~= "table" or type(reminder) ~= "table" then return buildSelfStatus(0, {}) end
 
@@ -2096,11 +2294,13 @@ local function shamanEnhancementGetSelfStatus(provider, reminder)
 
 	if trackWindfury and not hasWindfury then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(windfuryDisplayId, "Windfury Weapon") end
 	if trackFlametongue and not hasFlametongue then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(flametongueDisplayId, "Flametongue Weapon") end
+	totalRequirements = totalRequirements + reminder:AppendShamanShieldMissingEntries(provider, missingEntries)
 
 	if #missingEntries > 0 then
 		setProviderDisplaySpellId(provider, missingEntries[1].spellId)
 	else
-		local preferredDisplaySpellId = (trackSkyfury and skyfuryDisplayId) or (trackWindfury and windfuryDisplayId) or (trackFlametongue and flametongueDisplayId)
+		local shieldDisplaySpellId = reminder:GetShamanPreferredShieldDisplaySpellId(provider)
+		local preferredDisplaySpellId = (trackSkyfury and skyfuryDisplayId) or (trackWindfury and windfuryDisplayId) or (trackFlametongue and flametongueDisplayId) or shieldDisplaySpellId
 		setProviderDisplaySpellId(provider, preferredDisplaySpellId or skyfuryDisplayId or windfuryDisplayId or flametongueDisplayId)
 	end
 
@@ -2176,7 +2376,10 @@ local function shamanRestorationGetSelfStatus(provider, reminder)
 		if not hasTidecaller then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(tidecallerDisplaySpellId, provider.tidecallerLabel or "Tidecaller's Guard") end
 	end
 
-	local preferredDisplaySpellId = (trackSkyfury and skyfuryDisplayId) or (trackEarthliving and earthlivingDisplaySpellId)
+	totalRequirements = totalRequirements + reminder:AppendShamanShieldMissingEntries(provider, missingEntries)
+
+	local shieldDisplaySpellId = reminder:GetShamanPreferredShieldDisplaySpellId(provider)
+	local preferredDisplaySpellId = (trackSkyfury and skyfuryDisplayId) or (trackEarthliving and earthlivingDisplaySpellId) or shieldDisplaySpellId
 	setProviderDisplaySpellId(provider, missingEntries[1] and missingEntries[1].spellId or preferredDisplaySpellId or skyfuryDisplayId or earthlivingDisplaySpellId)
 	return buildSelfStatus(totalRequirements, missingEntries)
 end
@@ -2184,6 +2387,42 @@ end
 local function shamanRestorationEarthlivingHasUnitBuff(provider, unit, reminder)
 	if unit ~= "player" then return false end
 	local status = shamanRestorationGetSelfStatus(provider, reminder)
+	return status and status.missing <= 0
+end
+
+function Reminder.ShamanGeneralGetSelfStatus(provider, reminder)
+	if type(provider) ~= "table" or type(reminder) ~= "table" then return buildSelfStatus(0, {}) end
+
+	local trackSkyfury = hasKnownSpellInList(provider.skyfuryKnownSpellIds or provider.skyfurySpellIds)
+	local totalRequirements = 0
+	local missingEntries = {}
+	local shouldEvaluateGroupResponsibilities = reminder:ShouldEvaluateGroupResponsibilities(provider)
+	local skyfuryDisplayId = normalizeSpellId(provider.skyfuryDisplaySpellId) or normalizeSpellId(provider.skyfurySpellIds and provider.skyfurySpellIds[1])
+	local skyfuryMissingCount, skyfuryTotal = 0, 0
+
+	if trackSkyfury and shouldEvaluateGroupResponsibilities then
+		skyfuryMissingCount, skyfuryTotal = reminder:GetSharedClassBuffMissingCountBySpellIds(provider.skyfurySpellIds)
+	end
+	if shouldEvaluateGroupResponsibilities and skyfuryTotal > 0 then
+		totalRequirements = totalRequirements + 1
+		if skyfuryMissingCount > 0 then missingEntries[#missingEntries + 1] = makeSelfMissingEntry(skyfuryDisplayId, provider.skyfuryLabel or "Skyfury", skyfuryMissingCount, skyfuryTotal) end
+	end
+
+	totalRequirements = totalRequirements + reminder:AppendShamanShieldMissingEntries(provider, missingEntries)
+
+	if #missingEntries > 0 then
+		setProviderDisplaySpellId(provider, missingEntries[1].spellId)
+	else
+		local shieldDisplaySpellId = reminder:GetShamanPreferredShieldDisplaySpellId(provider)
+		setProviderDisplaySpellId(provider, (trackSkyfury and skyfuryDisplayId) or shieldDisplaySpellId or skyfuryDisplayId)
+	end
+
+	return buildSelfStatus(totalRequirements, missingEntries)
+end
+
+function Reminder.ShamanGeneralHasUnitBuff(provider, unit, reminder)
+	if unit ~= "player" then return false end
+	local status = Reminder.ShamanGeneralGetSelfStatus(provider, reminder)
 	return status and status.missing <= 0
 end
 
@@ -2479,12 +2718,27 @@ function Reminder:GetShamanEnhancementProvider()
 				33757,
 				319778,
 				318038,
+				974,
+				192106,
+				52127,
+				383010,
 				462854,
 			},
 			windfurySpellIds = SHAMAN_ENHANCEMENT_WINDFURY_IDS,
 			windfuryKnownSpellIds = SHAMAN_ENHANCEMENT_WINDFURY_IDS,
 			flametongueSpellIds = SHAMAN_ENHANCEMENT_FLAMETONGUE_IDS,
 			flametongueKnownSpellIds = SHAMAN_ENHANCEMENT_FLAMETONGUE_IDS,
+			shieldSpellIds = Reminder.shamanReminder.shieldBasicIds,
+			shieldKnownSpellIds = Reminder.shamanReminder.shieldBasicIds,
+			earthShieldSpellIds = Reminder.shamanReminder.shieldEarthIds,
+			earthShieldSelfSpellIds = Reminder.shamanReminder.shieldEarthSelfIds,
+			earthShieldDisplaySpellId = 974,
+			lightningShieldSpellIds = Reminder.shamanReminder.shieldLightningIds,
+			lightningShieldDisplaySpellId = 192106,
+			waterShieldSpellIds = Reminder.shamanReminder.shieldWaterIds,
+			waterShieldDisplaySpellId = 52127,
+			elementalOrbitSpellIds = Reminder.shamanReminder.elementalOrbitIds,
+			elementalOrbitKnownSpellIds = Reminder.shamanReminder.elementalOrbitIds,
 			windfuryDisplaySpellId = 319773,
 			flametongueDisplaySpellId = 319778,
 			skyfurySpellIds = PROVIDER_BY_CLASS.SHAMAN.spellIds,
@@ -2526,6 +2780,10 @@ function Reminder:GetShamanRestorationProvider()
 				382024,
 				457481,
 				457496,
+				974,
+				192106,
+				52127,
+				383010,
 				462854,
 			},
 			earthlivingSpellIds = SHAMAN_RESTORATION_EARTHLIVING_IDS,
@@ -2541,6 +2799,17 @@ function Reminder:GetShamanRestorationProvider()
 			tidecallerDisplaySpellId = tidecallerDisplaySpellId,
 			requireShieldForTidecaller = true,
 			acceptAnyOffhandEnchantWhenKnown = true,
+			shieldSpellIds = Reminder.shamanReminder.shieldBasicIds,
+			shieldKnownSpellIds = Reminder.shamanReminder.shieldBasicIds,
+			earthShieldSpellIds = Reminder.shamanReminder.shieldEarthIds,
+			earthShieldSelfSpellIds = Reminder.shamanReminder.shieldEarthSelfIds,
+			earthShieldDisplaySpellId = 974,
+			lightningShieldSpellIds = Reminder.shamanReminder.shieldLightningIds,
+			lightningShieldDisplaySpellId = 192106,
+			waterShieldSpellIds = Reminder.shamanReminder.shieldWaterIds,
+			waterShieldDisplaySpellId = 52127,
+			elementalOrbitSpellIds = Reminder.shamanReminder.elementalOrbitIds,
+			elementalOrbitKnownSpellIds = Reminder.shamanReminder.elementalOrbitIds,
 			skyfurySpellIds = PROVIDER_BY_CLASS.SHAMAN.spellIds,
 			skyfuryKnownSpellIds = PROVIDER_BY_CLASS.SHAMAN.spellIds,
 			skyfuryDisplaySpellId = 462854,
@@ -2560,11 +2829,53 @@ function Reminder:GetShamanRestorationProvider()
 	return self.shamanRestorationProvider
 end
 
+function Reminder:GetShamanGeneralProvider()
+	self.shamanGeneralProvider = self.shamanGeneralProvider
+		or {
+			scope = PROVIDER_SCOPE_SELF,
+			spellIds = {
+				462854,
+				974,
+				383648,
+				192106,
+				52127,
+			},
+			knownSpellIds = {
+				462854,
+				974,
+				192106,
+				52127,
+				383010,
+			},
+			shieldSpellIds = Reminder.shamanReminder.shieldBasicIds,
+			shieldKnownSpellIds = Reminder.shamanReminder.shieldBasicIds,
+			earthShieldSpellIds = Reminder.shamanReminder.shieldEarthIds,
+			earthShieldSelfSpellIds = Reminder.shamanReminder.shieldEarthSelfIds,
+			earthShieldDisplaySpellId = 974,
+			lightningShieldSpellIds = Reminder.shamanReminder.shieldLightningIds,
+			lightningShieldDisplaySpellId = 192106,
+			waterShieldSpellIds = Reminder.shamanReminder.shieldWaterIds,
+			waterShieldDisplaySpellId = 52127,
+			elementalOrbitSpellIds = Reminder.shamanReminder.elementalOrbitIds,
+			elementalOrbitKnownSpellIds = Reminder.shamanReminder.elementalOrbitIds,
+			skyfurySpellIds = PROVIDER_BY_CLASS.SHAMAN.spellIds,
+			skyfuryKnownSpellIds = PROVIDER_BY_CLASS.SHAMAN.spellIds,
+			skyfuryDisplaySpellId = 462854,
+			skyfuryLabel = PROVIDER_BY_CLASS.SHAMAN.fallbackName or "Skyfury",
+			fallbackName = PROVIDER_BY_CLASS.SHAMAN.fallbackName or "Skyfury",
+			tracksExternalUnitAuras = true,
+			hasUnitBuffFunc = Reminder.ShamanGeneralHasUnitBuff,
+			getSelfStatusFunc = Reminder.ShamanGeneralGetSelfStatus,
+		}
+	return self.shamanGeneralProvider
+end
+
 function Reminder:GetShamanProvider()
 	local specId = self:GetCurrentSpecId()
-	if specId == SHAMAN_SPEC_ENHANCEMENT then return self:GetShamanEnhancementProvider() or PROVIDER_BY_CLASS.SHAMAN end
-	if specId == SHAMAN_SPEC_RESTORATION then return self:GetShamanRestorationProvider() or PROVIDER_BY_CLASS.SHAMAN end
-	return PROVIDER_BY_CLASS.SHAMAN
+	if specId == Reminder.shamanReminder.specEnhancement then return self:GetShamanEnhancementProvider() or PROVIDER_BY_CLASS.SHAMAN end
+	if specId == Reminder.shamanReminder.specRestoration then return self:GetShamanRestorationProvider() or PROVIDER_BY_CLASS.SHAMAN end
+	if specId == Reminder.shamanReminder.specElemental then return self:GetShamanGeneralProvider() or PROVIDER_BY_CLASS.SHAMAN end
+	return self:GetShamanGeneralProvider() or PROVIDER_BY_CLASS.SHAMAN
 end
 
 function Reminder:GetDruidProvider()
@@ -2615,6 +2926,16 @@ function Reminder:GetFoodOnlyProvider()
 		displaySpellId = 1,
 	}
 	return self.foodOnlyProvider
+end
+
+function Reminder:GetRuneOnlyProvider()
+	self.runeOnlyProvider = self.runeOnlyProvider or {
+		scope = PROVIDER_SCOPE_SELF,
+		spellIds = Reminder.runeTracking.auraIds,
+		fallbackName = L["ClassBuffReminderAugmentRune"] or "Augment Rune",
+		displaySpellId = normalizeSpellId(Reminder.runeTracking.auraIds[1]),
+	}
+	return self.runeOnlyProvider
 end
 
 function Reminder:GetWeaponBuffOnlyProvider()
@@ -4530,6 +4851,8 @@ function Reminder:UpdateDisplay()
 			provider = self:GetFlaskOnlyProvider()
 		elseif self:CanCheckFoodReminder() then
 			provider = self:GetFoodOnlyProvider()
+		elseif self:CanCheckRuneReminder() then
+			provider = self:GetRuneOnlyProvider()
 		elseif self:CanCheckWeaponBuffReminder() then
 			provider = self:GetWeaponBuffOnlyProvider()
 		else
@@ -4553,6 +4876,8 @@ function Reminder:UpdateDisplay()
 			provider = self:GetFlaskOnlyProvider() or provider
 		elseif primarySupplementalEntry.sourceKind == "FOOD" then
 			provider = self:GetFoodOnlyProvider() or provider
+		elseif primarySupplementalEntry.sourceKind == "RUNES" then
+			provider = self:GetRuneOnlyProvider() or provider
 		elseif primarySupplementalEntry.sourceKind == "WEAPON_BUFF" then
 			provider = self:GetWeaponBuffOnlyProvider() or provider
 		end
@@ -4613,6 +4938,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:MarkAuraStatesDirty()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateRuneCache()
 		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(false)
 		self:ScheduleDeferredAuraResync(0.35)
@@ -4630,6 +4956,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateRuneCache()
 		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(true)
 		return
@@ -4639,6 +4966,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:MarkAuraStatesDirty()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateRuneCache()
 		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(true)
 		self:ScheduleDeferredAuraResync(0.2)
@@ -4677,6 +5005,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateRuneCache()
 		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(true)
 		return
@@ -4687,6 +5016,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 			self:InvalidateSelfProviderStatus()
 			self:InvalidateFlaskCache()
 			self:InvalidateFoodCache()
+			self:InvalidateRuneCache()
 			self:InvalidateWeaponBuffCache()
 			self:RequestUpdate(false)
 		end
@@ -4697,6 +5027,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateRuneCache()
 		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(false)
 		return
@@ -4706,6 +5037,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateRuneCache()
 		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(false)
 		return
@@ -4716,6 +5048,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		self:InvalidateSelfProviderStatus()
 		self:InvalidateFlaskCache()
 		self:InvalidateFoodCache()
+		self:InvalidateRuneCache()
 		self:InvalidateWeaponBuffCache()
 		self:RequestUpdate(true)
 		return
@@ -4733,7 +5066,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		if isPlayerUnit(unit) then self:InvalidatePlayerAuraPresenceSnapshot() end
 		local provider = self:GetProvider()
 		if provider and provider.scope == PROVIDER_SCOPE_GROUP and self:ShouldEvaluateGroupResponsibilities(provider) ~= true then
-			if isPlayerUnit(unit) and (self:CanCheckFlaskReminder() or self:CanCheckFoodReminder() or self:CanCheckWeaponBuffReminder()) then self:RequestUpdate(false) end
+			if isPlayerUnit(unit) and (self:CanCheckFlaskReminder() or self:CanCheckFoodReminder() or self:CanCheckRuneReminder() or self:CanCheckWeaponBuffReminder()) then self:RequestUpdate(false) end
 			return
 		end
 		if provider and provider.scope == PROVIDER_SCOPE_SELF then
@@ -5153,6 +5486,38 @@ function editModeSettingsBuilders.buildConsumables()
 			customDefaultText = _G.NONE or "None",
 			hideSummary = true,
 			isShown = function() return getValue(DB_TRACK_FOOD, defaults.trackFood) == true end,
+		},
+		{
+			name = L["ClassBuffReminderSectionRunes"] or "Augment Runes",
+			kind = SettingType.Collapsible,
+			id = "runes",
+			defaultCollapsed = false,
+		},
+		{
+			name = L["ClassBuffReminderTrackRunes"] or "Track missing augment rune",
+			kind = SettingType.Checkbox,
+			parentId = "runes",
+			default = defaults.trackRunes == true,
+			get = function() return getValue(Reminder.runeTracking.enabledDb, defaults.trackRunes) == true end,
+			set = function(_, value)
+				if addon.db then addon.db[Reminder.runeTracking.enabledDb] = value == true end
+				Reminder:InvalidateRuneCache()
+				Reminder:RequestUpdate(true)
+			end,
+		},
+		{
+			name = L["ClassBuffReminderTrackingContent"] or "Active in content",
+			kind = SettingType.MultiDropdown,
+			parentId = "runes",
+			height = 260,
+			default = defaults.trackRunesContent,
+			options = Reminder:GetTrackingContentOptions(),
+			get = function() return Reminder:GetRuneTrackingContentSelection() end,
+			set = function(_, value) Reminder:SetRuneTrackingContentSelection(value) end,
+			tooltip = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+			customDefaultText = _G.NONE or "None",
+			hideSummary = true,
+			isShown = function() return getValue(Reminder.runeTracking.enabledDb, defaults.trackRunes) == true end,
 		},
 		{
 			name = L["ClassBuffReminderSectionWeaponBuffs"] or "Weapon Buffs",
@@ -5630,6 +5995,7 @@ function Reminder:OnSettingChanged()
 	self:InvalidateRosterCache()
 	self:InvalidateFlaskCache()
 	self:InvalidateFoodCache()
+	self:InvalidateRuneCache()
 	self:InvalidateWeaponBuffCache()
 	self:MarkAuraStatesDirty()
 
