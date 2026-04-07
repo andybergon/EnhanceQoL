@@ -990,6 +990,8 @@ function CDMAuras:UpdateEventRegistration()
 	self:EnsureEventFrame()
 	frame = self.eventFrame
 	if not self.eventsRegistered then
+		frame:RegisterEvent("ADDON_LOADED")
+		frame:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
 		frame:RegisterEvent("PLAYER_LOGIN")
 		frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 		frame:RegisterEvent("PLAYER_TARGET_CHANGED")
@@ -1641,7 +1643,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	local resolvedCooldownID
 	local scanEpoch = runtime.scanEpoch or 0
 	if state.cachedScanEpoch == scanEpoch and state.cachedScanCooldownID == entry.cooldownID
-		and state.cachedScanSpellID == entry.spellID and state.cachedScanSourceType == entry.sourceType then
+		and state.cachedScanSpellID == entry.spellID and state.cachedScanSourceType == entry.sourceType and state.cachedScanInfo ~= nil then
 		scanInfo = state.cachedScanInfo
 		resolvedCooldownID = state.cachedResolvedCooldownID
 	else
@@ -1655,7 +1657,9 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 			if runtimePass and runtime.forcedRescanPass == runtimePass then
 				_, rescanned, rescannedBySpellID, rescannedByCooldownKey = self:ScanTrackedBuffs(false)
 			else
-				self:InvalidateScan()
+				-- A negative first lookup can happen before Cooldown Viewer data or frames are ready.
+				-- Clear cached viewer info too so the forced rescan can recover once Blizzard finishes initialization.
+				self:InvalidateScan(true)
 				local _, rescannedByCooldownID, rescannedBySpellLookup, rescannedCooldownLookup = self:ScanTrackedBuffs(true)
 				rescanned = rescannedByCooldownID
 				rescannedBySpellID = rescannedBySpellLookup
@@ -1664,12 +1668,21 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 			end
 			scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, rescanned, rescannedBySpellID, rescannedByCooldownKey)
 		end
-		state.cachedScanEpoch = runtime.scanEpoch or 0
-		state.cachedScanCooldownID = entry.cooldownID
-		state.cachedScanSpellID = entry.spellID
-		state.cachedScanSourceType = entry.sourceType
-		state.cachedScanInfo = scanInfo
-		state.cachedResolvedCooldownID = resolvedCooldownID
+		if scanInfo ~= nil then
+			state.cachedScanEpoch = runtime.scanEpoch or 0
+			state.cachedScanCooldownID = entry.cooldownID
+			state.cachedScanSpellID = entry.spellID
+			state.cachedScanSourceType = entry.sourceType
+			state.cachedScanInfo = scanInfo
+			state.cachedResolvedCooldownID = resolvedCooldownID
+		else
+			state.cachedScanEpoch = nil
+			state.cachedScanCooldownID = nil
+			state.cachedScanSpellID = nil
+			state.cachedScanSourceType = nil
+			state.cachedScanInfo = nil
+			state.cachedResolvedCooldownID = nil
+		end
 	end
 	if not isValidCooldownID(resolvedCooldownID) then resolvedCooldownID = entry.cooldownID end
 
@@ -1946,6 +1959,10 @@ function CDMAuras:HandleTargetChanged()
 end
 
 function CDMAuras:HandleResetEvent(event, ...)
+	if event == "ADDON_LOADED" then
+		local addonName = ...
+		if addonName ~= "Blizzard_CooldownViewer" then return end
+	end
 	if event == "PLAYER_SPECIALIZATION_CHANGED" then
 		local unit = ...
 		if unit and unit ~= "player" then return end
