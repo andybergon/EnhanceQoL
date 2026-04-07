@@ -16051,6 +16051,8 @@ function CooldownPanels:EnsureVisibilityDriverWatcher()
 				local desired = expr
 				if desired == false then desired = nil end
 				CooldownPanels:ApplyVisibilityDriverToFrame(frame, desired)
+				local panelId = frame.panelId
+				if panelId and CooldownPanels.GetPanel and CooldownPanels:GetPanel(panelId) then CooldownPanels:UpdateVisibility(panelId) end
 			end
 		end
 	end)
@@ -16060,9 +16062,7 @@ end
 function CooldownPanels:ApplyVisibilityDriverToFrame(frame, expression)
 	self.runtime = self.runtime or {}
 	if not frame then return false end
-	local inCombat = (InCombatLockdown and InCombatLockdown()) or false
-	local isProtected = frame.IsProtected and frame:IsProtected()
-	if inCombat and isProtected then
+	if InCombatLockdown and InCombatLockdown() then
 		self.runtime.pendingVisibilityDriverUpdates = self.runtime.pendingVisibilityDriverUpdates or {}
 		self.runtime.pendingVisibilityDriverUpdates[frame] = expression == nil and false or expression
 		self:EnsureVisibilityDriverWatcher()
@@ -16195,10 +16195,15 @@ function CooldownPanels:UpdateVisibility(panelId)
 	self:ApplyVisibilityDriverToFrame(frame, nil)
 	local shouldShow = self:ShouldShowPanel(panelId)
 	local forceAlphaHidden = false
+	local pendingVisibilityUpdates = self.runtime and self.runtime.pendingVisibilityDriverUpdates
+	local driverDetachPending = pendingVisibilityUpdates and pendingVisibilityUpdates[frame] == false
+	local driverStillControlsVisibility = frame._eqolVisibilityDriver ~= nil or driverDetachPending
 	if frame:IsShown() ~= shouldShow then
 		local inCombat = (InCombatLockdown and InCombatLockdown()) or false
 		local isProtected = frame.IsProtected and frame:IsProtected()
-		if not (inCombat and isProtected) then
+		if not shouldShow and inCombat and driverStillControlsVisibility then
+			forceAlphaHidden = true
+		elseif not (inCombat and isProtected) then
 			frame:SetShown(shouldShow)
 		elseif not shouldShow then
 			-- Protected frames cannot be shown/hidden in combat; use alpha fallback.
@@ -16207,7 +16212,7 @@ function CooldownPanels:UpdateVisibility(panelId)
 	elseif not shouldShow then
 		local inCombat = (InCombatLockdown and InCombatLockdown()) or false
 		local isProtected = frame.IsProtected and frame:IsProtected()
-		if inCombat and isProtected then forceAlphaHidden = true end
+		if inCombat and (isProtected or driverStillControlsVisibility) then forceAlphaHidden = true end
 	end
 	self:UpdatePanelOpacity(panelId, forceAlphaHidden and 0 or nil)
 	self:UpdatePanelMouseState(panelId)
@@ -16298,13 +16303,11 @@ function CooldownPanels:RefreshPanel(panelId)
 		if runtime then runtime.visibleCount = 0 end
 		if frame then
 			self:ApplyVisibilityDriverToFrame(frame, nil)
-			local inCombat = (InCombatLockdown and InCombatLockdown()) or false
-			local isProtected = frame.IsProtected and frame:IsProtected()
-			if not (inCombat and isProtected) then
+			if InCombatLockdown and InCombatLockdown() then
+				self:UpdatePanelOpacity(panelId, 0)
+			else
 				frame:Hide()
 				self:UpdatePanelOpacity(panelId, nil)
-			else
-				self:UpdatePanelOpacity(panelId, 0)
 			end
 		end
 		return
@@ -19747,13 +19750,13 @@ local function setUpdateFrameEnabled(frame, enabled)
 		for _, event in ipairs(CooldownPanels.UPDATE_FRAME_EVENTS or {}) do
 			frame:RegisterEvent(event)
 		end
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_STOP", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
+		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
+		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_STOP", "player")
+		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
+		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
+		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
+		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 		frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
 		frame:RegisterUnitEvent("UNIT_ENTERED_VEHICLE", "player")
 		frame:RegisterUnitEvent("UNIT_EXITED_VEHICLE", "player")

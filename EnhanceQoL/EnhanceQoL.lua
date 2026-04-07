@@ -517,6 +517,26 @@ local function copyVisibilityFlags(source, allowedKeys)
 	return result
 end
 
+local function normalizeVisibilityConfigForAllowedKeys(source, allowedKeys)
+	local config
+	if type(source) == "table" then
+		config = copyVisibilityFlags(source, allowedKeys)
+	elseif source == true or source == "MOUSEOVER" then
+		if allowedKeys.MOUSEOVER then config = { MOUSEOVER = true } end
+	elseif source == "hide" then
+		if allowedKeys.ALWAYS_HIDDEN then config = { ALWAYS_HIDDEN = true } end
+	elseif source == "[combat] show; hide" then
+		if allowedKeys.ALWAYS_IN_COMBAT then config = { ALWAYS_IN_COMBAT = true } end
+	elseif source == "[combat] hide; show" then
+		if allowedKeys.ALWAYS_OUT_OF_COMBAT then config = { ALWAYS_OUT_OF_COMBAT = true } end
+	elseif source == false or source == "" then
+		config = nil
+	end
+
+	if config and not next(config) then config = nil end
+	return config
+end
+
 local function NormalizeUnitFrameVisibilityConfig(varName, incoming, opts)
 	local source = incoming
 	local skipSave = opts and opts.skipSave
@@ -529,28 +549,38 @@ local function NormalizeUnitFrameVisibilityConfig(varName, incoming, opts)
 			source = addon.db[varName]
 		end
 	end
-	local config
-
-	if type(source) == "table" then
-		config = copyVisibilityFlags(source, FRAME_VISIBILITY_KEYS)
-	elseif source == true or source == "MOUSEOVER" then
-		config = { MOUSEOVER = true }
-	elseif source == "hide" then
-		config = { ALWAYS_HIDDEN = true }
-	elseif source == "[combat] show; hide" then
-		config = { ALWAYS_IN_COMBAT = true }
-	elseif source == "[combat] hide; show" then
-		config = { ALWAYS_OUT_OF_COMBAT = true }
-	elseif source == false or source == "" then
-		config = nil
-	end
-
-	if config and not next(config) then config = nil end
+	local config = normalizeVisibilityConfigForAllowedKeys(source, FRAME_VISIBILITY_KEYS)
 
 	if not skipSave and addon.db and varName then addon.db[varName] = config end
 	return config
 end
 addon.functions.NormalizeUnitFrameVisibilityConfig = NormalizeUnitFrameVisibilityConfig
+
+addon.functions.NormalizeActionbarVisibilityConfig = function(incoming) return normalizeVisibilityConfigForAllowedKeys(incoming, ACTIONBAR_VISIBILITY_KEYS) end
+
+addon.functions.GetActionbarVisibilityRuleOptions = function()
+	local options = {}
+	for key, data in pairs(visibilityRuleMetadata) do
+		if ACTIONBAR_VISIBILITY_KEYS[key] and key ~= "MOUSEOVER" then
+			options[#options + 1] = {
+				value = key,
+				label = data.label or key,
+				text = data.label or key,
+				order = data.order or 999,
+			}
+		end
+	end
+	table.sort(options, function(a, b)
+		if a.order == b.order then
+			local left = tostring(a.label or a.value or "")
+			local right = tostring(b.label or b.value or "")
+			if strcmputf8i then return strcmputf8i(left, right) < 0 end
+			return left:lower() < right:lower()
+		end
+		return a.order < b.order
+	end)
+	return options
+end
 
 local function SetFrameVisibilityOverride(varName, config)
 	if not varName then return nil end
@@ -762,17 +792,83 @@ local function SafeRegisterUnitEvent(frame, event, ...)
 	return ok
 end
 
-local function BuildUnitFrameDriverExpression(config)
-	if not config then return nil end
-	if config.ALWAYS_HIDDEN then return "hide" end
-	if config.ALWAYS_HIDE_IN_GROUP or config.ALWAYS_HIDE_IN_PARTY or config.ALWAYS_HIDE_IN_RAID then return nil end
-	local inCombat = config.ALWAYS_IN_COMBAT == true
-	local outCombat = config.ALWAYS_OUT_OF_COMBAT == true
-	if inCombat and outCombat then return "show" end
-	if inCombat then return "[combat] show; hide" end
-	if outCombat then return "[combat] hide; show" end
-	return nil
+addon.functions.VisibilityConfigUsesManualEvaluation = function(config, opts)
+	if type(config) ~= "table" or not next(config) then return false end
+	local allowMouseover = not (opts and opts.allowMouseover == false)
+	local allowCasting = not (opts and opts.allowCasting == false)
+	if allowMouseover and config.MOUSEOVER then return true end
+	if allowCasting and config.PLAYER_CASTING then return true end
+	return false
 end
+
+local function BuildUnitFrameDriverExpression(config, opts)
+	if type(config) ~= "table" or not next(config) then return nil end
+	if addon.functions.VisibilityConfigUsesManualEvaluation(config) then return nil end
+	if config.ALWAYS_HIDDEN then return "hide" end
+
+	local hideClauses = {}
+	local hideSeen = {}
+	local showClauses = {}
+	local showSeen = {}
+
+	local function addClause(target, seen, clause)
+		if type(clause) ~= "string" or clause == "" or seen[clause] then return end
+		seen[clause] = true
+		target[#target + 1] = clause
+	end
+
+	local function addSkyridingClauses(target, seen)
+		addClause(target, seen, "advflyable,flyable,mounted,flying")
+		if addon.variables and addon.variables.unitClass == "DRUID" then
+			addClause(target, seen, "advflyable,flyable,stance:3,flying")
+		end
+	end
+
+	if config.ALWAYS_HIDE_IN_GROUP then addClause(hideClauses, hideSeen, "group") end
+	if config.ALWAYS_HIDE_IN_PARTY then addClause(hideClauses, hideSeen, "group:party") end
+	if config.ALWAYS_HIDE_IN_RAID then addClause(hideClauses, hideSeen, "group:raid") end
+	if config.SKYRIDING_INACTIVE then addSkyridingClauses(hideClauses, hideSeen) end
+	if config.FLYING_INACTIVE then addClause(hideClauses, hideSeen, "flying") end
+
+	if config.ALWAYS_IN_COMBAT then addClause(showClauses, showSeen, "combat") end
+	if config.ALWAYS_OUT_OF_COMBAT then addClause(showClauses, showSeen, "nocombat") end
+	if config.SKYRIDING_ACTIVE then addSkyridingClauses(showClauses, showSeen) end
+	if config.FLYING_ACTIVE then addClause(showClauses, showSeen, "flying") end
+	if config.PLAYER_HAS_TARGET then addClause(showClauses, showSeen, "@target,exists") end
+	if config.PLAYER_MOUNTED then addClause(showClauses, showSeen, "mounted") end
+	if config.PLAYER_NOT_MOUNTED then addClause(showClauses, showSeen, "nomounted") end
+	if config.PLAYER_IN_GROUP then addClause(showClauses, showSeen, "group") end
+	if config.PLAYER_IN_PARTY then addClause(showClauses, showSeen, "group:party") end
+	if config.PLAYER_IN_RAID then addClause(showClauses, showSeen, "group:raid") end
+
+	if #hideClauses == 0 and #showClauses == 0 then return nil end
+
+	local expressions = {}
+	local function appendConditionalClauses(clauses, action, prefix)
+		for _, clause in ipairs(clauses) do
+			local condition = clause
+			if type(prefix) == "string" and prefix ~= "" and prefix ~= condition then condition = prefix .. "," .. condition end
+			expressions[#expressions + 1] = ("[%s] %s"):format(condition, action)
+		end
+	end
+
+	local showPrefix = nil
+	if opts and type(opts.showPrefix) == "string" and opts.showPrefix ~= "" then showPrefix = opts.showPrefix end
+	appendConditionalClauses(opts and opts.prependHideClauses or {}, "hide")
+	appendConditionalClauses(hideClauses, "hide")
+	appendConditionalClauses(showClauses, "show", showPrefix)
+
+	local defaultState = (#showClauses == 0 and #hideClauses > 0) and "show" or "hide"
+	if defaultState == "show" and showPrefix then
+		expressions[#expressions + 1] = ("[%s] show"):format(showPrefix)
+		expressions[#expressions + 1] = "hide"
+	else
+		expressions[#expressions + 1] = defaultState
+	end
+
+	return table.concat(expressions, "; ")
+end
+addon.functions.BuildUnitFrameDriverExpression = BuildUnitFrameDriverExpression
 
 local function EnsureUnitFrameDriverWatcher()
 	addon.variables = addon.variables or {}
@@ -861,11 +957,6 @@ local function clampVisibilityAlpha(value)
 	return value
 end
 
-local function getVisibilityFadeAlpha(state)
-	if not state then return nil end
-	return clampVisibilityAlpha(state.fadeAlpha)
-end
-
 local function HasFrameVisibilityInactiveHideRule(cfg)
 	if type(cfg) ~= "table" then return false end
 	return (cfg.SKYRIDING_INACTIVE or cfg.FLYING_INACTIVE or cfg.ALWAYS_HIDE_IN_GROUP or cfg.ALWAYS_HIDE_IN_PARTY or cfg.ALWAYS_HIDE_IN_RAID) and true or false
@@ -932,6 +1023,21 @@ local function EvaluateFrameVisibility(state)
 	if cfg.MOUSEOVER and state.isMouseOver then return true, "MOUSEOVER" end
 
 	return false, nil
+end
+
+addon.functions.ShouldShowVisibilityConfig = function(config, opts)
+	if type(config) ~= "table" or not next(config) then return true, nil end
+	if config.SKYRIDING_ACTIVE or config.SKYRIDING_INACTIVE then EnsureSkyridingStateDriver() end
+	UpdateFrameVisibilityContext()
+	local state = {
+		config = config,
+		isMouseOver = opts and opts.isMouseOver == true or false,
+		supportsPlayerTargetRule = not (opts and opts.supportsPlayerTargetRule == false),
+		supportsPlayerCastingRule = not (opts and opts.supportsPlayerCastingRule == false),
+		supportsPlayerMountedRule = not (opts and opts.supportsPlayerMountedRule == false),
+		supportsGroupRule = not (opts and opts.supportsGroupRule == false),
+	}
+	return EvaluateFrameVisibility(state)
 end
 
 local function ApplyToFrameAndChildren(state, alpha, useFade)
@@ -1008,15 +1114,7 @@ ApplyFrameVisibilityState = function(state)
 	EnsureFrameVisibilityWatcher()
 	local shouldShow, activeRule = EvaluateFrameVisibility(state)
 	local forcedHidden = activeRule == "ALWAYS_HIDDEN" or activeRule == "ALWAYS_HIDE_IN_GROUP" or activeRule == "ALWAYS_HIDE_IN_PARTY" or activeRule == "ALWAYS_HIDE_IN_RAID"
-	local fadeAlpha = getVisibilityFadeAlpha(state)
-	if fadeAlpha == nil and addon.functions and addon.functions.GetFrameFadedAlpha then fadeAlpha = addon.functions.GetFrameFadedAlpha() end
-	if fadeAlpha == nil then fadeAlpha = 0 end
-	local targetAlpha
-	if shouldShow then
-		targetAlpha = 1
-	else
-		targetAlpha = fadeAlpha
-	end
+	local targetAlpha = shouldShow and 1 or 0
 	if forcedHidden then targetAlpha = 0 end
 
 	local lastAlpha = state.lastAlpha
@@ -1118,7 +1216,6 @@ local function ApplyVisibilityToUnitFrame(frameName, cbData, config, opts)
 
 	local state = EnsureFrameState(frame, cbData)
 	state.config = config
-	state.fadeAlpha = clampVisibilityAlpha(opts and opts.fadeAlpha)
 	state.isBossFrame = frameName == BOSS_FRAME_CONTAINER_NAME
 	local unitToken = cbData.unitToken
 	local isPlayerUnit = (unitToken == "player")
@@ -1129,25 +1226,10 @@ local function ApplyVisibilityToUnitFrame(frameName, cbData, config, opts)
 	state.supportsGroupRule = supportsPlayerScopedRules
 
 	local driverExpression = BuildUnitFrameDriverExpression(config)
-	local usesManualRules = config
-		and (
-			config.MOUSEOVER
-			or config.SKYRIDING_ACTIVE
-			or config.SKYRIDING_INACTIVE
-			or config.FLYING_ACTIVE
-			or config.FLYING_INACTIVE
-			or config.PLAYER_HAS_TARGET
-			or config.PLAYER_CASTING
-			or config.PLAYER_MOUNTED
-			or config.PLAYER_NOT_MOUNTED
-			or config.PLAYER_IN_GROUP
-			or config.PLAYER_IN_PARTY
-			or config.PLAYER_IN_RAID
-		)
-	local hasFadeAlpha = type(state.fadeAlpha) == "number"
-	local useDriver = driverExpression and not usesManualRules and not (opts and opts.noStateDriver) and not state.isBossFrame and not hasFadeAlpha
+	local usesManualRules = config and (config.MOUSEOVER or config.PLAYER_CASTING)
+	local useDriver = driverExpression and not usesManualRules and not (opts and opts.noStateDriver) and not state.isBossFrame
 
-	if config and (config.SKYRIDING_ACTIVE or config.SKYRIDING_INACTIVE) then EnsureSkyridingStateDriver() end
+	if not useDriver and config and (config.SKYRIDING_ACTIVE or config.SKYRIDING_INACTIVE) then EnsureSkyridingStateDriver() end
 
 	if useDriver then
 		state.driverActive = true
@@ -2590,9 +2672,9 @@ EnsureSkyridingStateDriver = function()
 	end)
 	local expr
 	if addon.variables.unitClass == "DRUID" then
-		expr = "[advflyable, mounted] show; [advflyable, stance:3] show; hide"
+		expr = "[advflyable,flyable,mounted,flying] show; [advflyable,flyable,stance:3,flying] show; hide"
 	else
-		expr = "[advflyable, mounted] show; hide"
+		expr = "[advflyable,flyable,mounted,flying] show; hide"
 	end
 	local function registerDriver()
 		if addon.variables.skyridingDriverRegistered then return end
