@@ -1311,27 +1311,32 @@ local function registerTooltipHooks()
 		if addon.Tooltip and addon.Tooltip.ApplyScale then addon.Tooltip.ApplyScale() end
 	end)
 
-	hooksecurefunc("GameTooltip_SetDefaultAnchor", function(s, p)
-		if not addon.db then return end
-		if not s or not s.SetOwner then return end
-		if s.IsForbidden and s:IsForbidden() then return end
-		if p and p.IsForbidden and p:IsForbidden() then return end
-		if addon.db["TooltipAnchorType"] == 1 then return end
-		local anchor
-		if addon.db["TooltipAnchorType"] == 2 then anchor = "ANCHOR_CURSOR" end
-		if addon.db["TooltipAnchorType"] == 3 then anchor = "ANCHOR_CURSOR_LEFT" end
-		if addon.db["TooltipAnchorType"] == 4 then anchor = "ANCHOR_CURSOR_RIGHT" end
-		if not anchor then return end
-		local xOffset = addon.db["TooltipAnchorOffsetX"] or 0
-		local yOffset = addon.db["TooltipAnchorOffsetY"] or 0
-		if s.IsShown and s.GetOwner and s.GetAnchorType and s:IsShown() and safeEquals(s:GetOwner(), p) then
-			local currentAnchor, currentX, currentY = s:GetAnchorType()
-			currentX = currentX or 0
-			currentY = currentY or 0
-			if safeEquals(currentAnchor, anchor) and math.abs(currentX - xOffset) <= 0.01 and math.abs(currentY - yOffset) <= 0.01 then return end
-		end
-		s:SetOwner(p, anchor, xOffset, yOffset)
-	end)
+	-- Only register the SetDefaultAnchor hook when custom anchoring is enabled.
+	-- The hook taints the execution context for ALL tooltip types (AreaPOI widget
+	-- layout, world map pins, etc.). Changing the anchor setting requires /reload.
+	if addon.db and addon.db["TooltipAnchorType"] and addon.db["TooltipAnchorType"] ~= 1 then
+		hooksecurefunc("GameTooltip_SetDefaultAnchor", function(s, p)
+			if not addon.db then return end
+			if not s or not s.SetOwner then return end
+			if s.IsForbidden and s:IsForbidden() then return end
+			if p and p.IsForbidden and p:IsForbidden() then return end
+			if addon.db["TooltipAnchorType"] == 1 then return end
+			local anchor
+			if addon.db["TooltipAnchorType"] == 2 then anchor = "ANCHOR_CURSOR" end
+			if addon.db["TooltipAnchorType"] == 3 then anchor = "ANCHOR_CURSOR_LEFT" end
+			if addon.db["TooltipAnchorType"] == 4 then anchor = "ANCHOR_CURSOR_RIGHT" end
+			if not anchor then return end
+			local xOffset = addon.db["TooltipAnchorOffsetX"] or 0
+			local yOffset = addon.db["TooltipAnchorOffsetY"] or 0
+			if s.IsShown and s.GetOwner and s.GetAnchorType and s:IsShown() and safeEquals(s:GetOwner(), p) then
+				local currentAnchor, currentX, currentY = s:GetAnchorType()
+				currentX = currentX or 0
+				currentY = currentY or 0
+				if safeEquals(currentAnchor, anchor) and math.abs(currentX - xOffset) <= 0.01 and math.abs(currentY - yOffset) <= 0.01 then return end
+			end
+			s:SetOwner(p, anchor, xOffset, yOffset)
+		end)
+	end
 
 	if Menu and Menu.ModifyMenu then
 		local function AddTargetWowheadEntry(owner, root)

@@ -330,6 +330,11 @@ local function EQOL_HighlightSearchEntry(entry)
 	EQOL_ApplyEntryVisuals(entry, pass == false, ignored)
 end
 
+-- Search results may be plain numeric IDs or {resultID=N} tables (11.1.5+)
+local function searchResultID(elem)
+	return type(elem) == "table" and elem.resultID or elem
+end
+
 local function FilterResults(panel)
 	if not addon.db["mythicPlusEnableDungeonFilter"] then return end
 	if not panel or panel.categoryID ~= 2 then return end
@@ -345,16 +350,17 @@ local function FilterResults(panel)
 	local selectedID = (type(LFGListSearchPanel_GetSelectedResult) == "function" and LFGListSearchPanel_GetSelectedResult(panel)) or panel.selectedResultID or panel.selectedResult
 
 	local filtered = {}
-	for _, resultID in ipairs(baseResults) do
+	for _, elem in ipairs(baseResults) do
+		local resultID = searchResultID(elem)
 		-- Always keep the selected entry and active applications.
 		local _, appStatus, pendingStatus = C_LFGList.GetApplicationInfo(resultID)
 		local isApplied = (appStatus and appStatus ~= "none") or pendingStatus
 
 		if (selectedID and resultID == selectedID) or isApplied then
-			table.insert(filtered, resultID)
+			table.insert(filtered, elem)
 		else
 			local info = C_LFGList.GetSearchResultInfo(resultID)
-			if info and EntryPassesFilter(info) then table.insert(filtered, resultID) end
+			if info and EntryPassesFilter(info) then table.insert(filtered, elem) end
 		end
 	end
 

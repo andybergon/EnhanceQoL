@@ -6142,6 +6142,45 @@ local function setAllHooks()
 
 	hooksecurefunc("LFGListApplicationViewer_UpdateApplicantMember", function(memberFrame, appID, memberIdx)
 		if addon.db.enableIgnore then ApplyIgnoreHighlight(memberFrame, appID) end
+
+		-- Prepend M+ score to applicant name. If RaiderIO is present and the
+		-- character is an alt, show [main|alt]; otherwise show [score].
+		if not addon.db.lfgSortByRio then return end
+		if not memberFrame or not memberFrame.Name then return end
+		if isSecret(appID) then return end
+		local name, _, _, _, _, _, _, _, _, _, _, charScore = C_LFGList.GetApplicantMemberInfo(appID, memberIdx or 1)
+		if isSecret(charScore) or type(charScore) ~= "number" or charScore <= 0 then return end
+
+		local mainScore
+		if _G.RaiderIO and _G.RaiderIO.GetProfile and type(name) == "string" then
+			local charName, charRealm = strsplit("-", name)
+			if charName then
+				local profile = _G.RaiderIO.GetProfile(charName, charRealm or GetNormalizedRealmName())
+				local kp = profile and profile.mythicKeystoneProfile
+				if kp and kp.mplusMainCurrent and kp.mplusMainCurrent.score and kp.mplusMainCurrent.score > charScore then
+					mainScore = kp.mplusMainCurrent.score
+				end
+			end
+		end
+
+		local scoreColor = C_ChallengeMode.GetDungeonScoreRarityColor(charScore)
+		local r, g, b = 1, 1, 1
+		if scoreColor and scoreColor.GetRGB then r, g, b = scoreColor:GetRGB() end
+
+		local currentText = memberFrame.Name:GetText()
+		if not currentText or isSecret(currentText) then return end
+		if mainScore then
+			-- Alt: show only main's score (Blizzard already shows the alt's in Rating column)
+			local mainColor = C_ChallengeMode.GetDungeonScoreRarityColor(mainScore)
+			local mr, mg, mb = 1, 1, 1
+			if mainColor and mainColor.GetRGB then mr, mg, mb = mainColor:GetRGB() end
+			local mainHex = format("%02x%02x%02x", mr * 255, mg * 255, mb * 255)
+			memberFrame.Name:SetFormattedText("|cff%s[%d]|r %s", mainHex, mainScore, currentText)
+		else
+			-- Main (or no RaiderIO data): show character's own score
+			local scoreHex = format("%02x%02x%02x", r * 255, g * 255, b * 255)
+			memberFrame.Name:SetFormattedText("|cff%s[%d]|r %s", scoreHex, charScore, currentText)
+		end
 	end)
 
 	hooksecurefunc("LFGListApplicationViewer_UpdateResults", function()
@@ -6150,18 +6189,27 @@ local function setAllHooks()
 		FlagIgnoredApplicants(applicants)
 	end)
 
-	local isSortingSearch = false
+	-- Search results may be plain numeric IDs or {resultID=N} tables (11.1.5+)
+	local function searchResultID(elem)
+		return type(elem) == "table" and elem.resultID or elem
+	end
+
 	hooksecurefunc("LFGListSearchPanel_UpdateResults", function(self)
-		if isSortingSearch or addon.functions.isRestrictedContent() then return end
+		if addon.functions.isRestrictedContent() then return end
 		local sortByScore = addon.db.lfgSortSearchByScore
 		local appliedFirst = addon.db.lfgSortSearchAppliedFirst
 		if not sortByScore and not appliedFirst then return end
-		if not self.results or #self.results <= 1 then return end
 
-		-- Cache scores and applied status before sorting to avoid taint mid-comparator
+		local dataProvider = self.ScrollBox and self.ScrollBox:GetDataProvider()
+		if not dataProvider or not dataProvider.SetSortComparator then return end
+
+		-- Cache scores and applied status before sorting to avoid taint mid-comparator.
+		-- Don't call APIs inside the comparator — tainted returns corrupt Lua's sort.
 		local scoreCache = {}
 		local appliedCache = {}
-		for _, resultID in ipairs(self.results) do
+		local results = self.results or {}
+		for _, elem in ipairs(results) do
+			local resultID = searchResultID(elem)
 			if sortByScore then
 				local info = C_LFGList.GetSearchResultInfo(resultID)
 				local score = info and info.leaderOverallDungeonScore or 0
@@ -6176,25 +6224,31 @@ local function setAllHooks()
 			end
 		end
 
-		table.sort(self.results, function(a, b)
+		-- Sort self.results so Blizzard's next re-render uses sorted data.
+		local comparator = function(a, b)
+			local idA, idB = searchResultID(a), searchResultID(b)
 			if appliedFirst then
-				local appA = appliedCache[a] and 1 or 0
-				local appB = appliedCache[b] and 1 or 0
+				local appA = appliedCache[idA] and 1 or 0
+				local appB = appliedCache[idB] and 1 or 0
 				if appA ~= appB then return appA > appB end
 			end
 			if sortByScore then
-				return (scoreCache[a] or 0) > (scoreCache[b] or 0)
+				return (scoreCache[idA] or 0) > (scoreCache[idB] or 0)
 			end
 			return false
-		end)
-
-		isSortingSearch = true
-		LFGListSearchPanel_UpdateResults(self)
-		isSortingSearch = false
+		end
+		if #results > 1 then
+			table.sort(self.results, comparator)
+		end
+		-- Also sort the DataProvider for immediate visual update.
+		dataProvider:SetSortComparator(comparator, true)
+		dataProvider:Sort()
 	end)
 
 	-- Scores load asynchronously — the first UpdateResults often fires before
 	-- scores arrive. Debounce a re-sort when individual results finish loading.
+	-- Use LFGListSearchPanel_UpdateResultList (not UpdateResults) so Blizzard
+	-- re-populates the DataProvider from scratch, then our hook re-sorts it.
 	local sortDebounceTimer
 	local sortDebounceFrame = CreateFrame("Frame")
 	sortDebounceFrame:RegisterEvent("LFG_LIST_SEARCH_RESULT_UPDATED")
@@ -6205,8 +6259,12 @@ local function setAllHooks()
 		sortDebounceTimer = C_Timer.NewTimer(0.3, function()
 			sortDebounceTimer = nil
 			local panel = LFGListFrame and LFGListFrame.SearchPanel
-			if panel and panel:IsShown() and panel.results and #panel.results > 1 then
-				LFGListSearchPanel_UpdateResults(panel)
+			if panel and panel:IsShown() then
+				if type(LFGListSearchPanel_UpdateResultList) == "function" then
+					LFGListSearchPanel_UpdateResultList(panel)
+				elseif panel.results and #panel.results > 1 then
+					LFGListSearchPanel_UpdateResults(panel)
+				end
 			end
 		end)
 	end)

@@ -1793,46 +1793,38 @@ function addon.MythicPlus.functions.InitDungeonPortal()
 	frameAnchor:RegisterEvent("GROUP_ROSTER_UPDATE")
 	frameAnchor:RegisterEvent("GROUP_JOINED")
 
-	if GameTooltip and not addon.MythicPlus.variables.dungeonPortalTooltipHooked then
-		GameTooltip:HookScript("OnShow", function(self)
-			if PVEFrame:IsVisible() then
+	-- Hook LFG search entry frames directly instead of GameTooltip:OnShow/OnHide.
+	-- GameTooltip:HookScript("OnShow") taints the execution context for ALL tooltip
+	-- types (AreaPOI, world map pins, etc.), causing LayoutFrame widget set errors.
+	if not addon.MythicPlus.variables.dungeonPortalTooltipHooked then
+		hooksecurefunc("LFGListSearchEntry_Update", function(entry)
+			if not entry or entry._eqolDungeonPortalHooked then return end
+			entry:HookScript("OnEnter", function(self)
+				if not PVEFrame or not PVEFrame:IsVisible() then return end
 				selectedMapId = nil
-				local owner = self:GetOwner()
-				if
-					owner
-					and owner.GetParent
-					and LFGListFrame
-					and LFGListFrame.SearchPanel
-					and LFGListFrame.SearchPanel.ScrollBox
-					and LFGListFrame.SearchPanel.ScrollBox.ScrollTarget
-					and owner:GetParent() == LFGListFrame.SearchPanel.ScrollBox.ScrollTarget
-				then
-					local resultID = owner.resultID
-					if resultID then
-						local searchResultInfo = C_LFGList.GetSearchResultInfo(resultID)
-						if searchResultInfo then
-							local mapData = C_LFGList.GetActivityInfoTable(searchResultInfo.activityIDs[1])
-							if mapData then
-								if mapIDInfo[mapData.mapID] then selectedMapId = mapIDInfo[mapData.mapID] end
-							end
+				local resultID = self.resultID
+				if resultID then
+					local searchResultInfo = C_LFGList.GetSearchResultInfo(resultID)
+					if searchResultInfo and searchResultInfo.activityIDs and searchResultInfo.activityIDs[1] then
+						local mapData = C_LFGList.GetActivityInfoTable(searchResultInfo.activityIDs[1])
+						if mapData and mapIDInfo[mapData.mapID] then
+							selectedMapId = mapIDInfo[mapData.mapID]
 						end
 					end
-					CreateRioScore()
-					local offsetX = 0
-					if nil ~= RaiderIO_ProfileTooltip then offsetX = GetSafeFrameWidth(RaiderIO_ProfileTooltip) end
-					if gFrameAnchorScore and addon.db["dungeonScoreFrameLocked"] then gFrameAnchorScore:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", offsetX, 0) end
-
-					if addon.db["teleportFrame"] then frameAnchor:SetAlpha(0) end
 				end
-			end
-		end)
-		GameTooltip:HookScript("OnHide", function(self)
-			if PVEFrame:IsVisible() then
+				CreateRioScore()
+				local offsetX = 0
+				if nil ~= RaiderIO_ProfileTooltip then offsetX = GetSafeFrameWidth(RaiderIO_ProfileTooltip) end
+				if gFrameAnchorScore and addon.db["dungeonScoreFrameLocked"] then gFrameAnchorScore:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", offsetX, 0) end
+				if addon.db["teleportFrame"] then frameAnchor:SetAlpha(0) end
+			end)
+			entry:HookScript("OnLeave", function(self)
+				if not PVEFrame or not PVEFrame:IsVisible() then return end
 				selectedMapId = nil
-				local owner = self:GetOwner()
 				CreateRioScore()
 				if addon.db["teleportFrame"] then frameAnchor:SetAlpha(1) end
-			end
+			end)
+			entry._eqolDungeonPortalHooked = true
 		end)
 		addon.MythicPlus.variables.dungeonPortalTooltipHooked = true
 	end

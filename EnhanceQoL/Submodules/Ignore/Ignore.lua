@@ -1121,11 +1121,13 @@ local function EQOL_FormatNote(note, maxChars, wordsPerLine)
 	return cut .. "..."
 end
 
-if not Ignore.tooltipHookInstalled then
-	GameTooltip:HookScript("OnShow", function(tooltip)
+-- Use TooltipDataProcessor with specific Unit type instead of GameTooltip:HookScript("OnShow").
+-- OnShow taints the execution context for ALL tooltip types, causing LayoutFrame widget errors.
+if not Ignore.tooltipHookInstalled and TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall then
+	TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip, data)
+		if tooltip ~= GameTooltip then return end
 		if tooltip:IsForbidden() or tooltip:IsProtected() then return end
 		if not addon.db or not addon.db.ignoreTooltipNote then return end
-		-- local _, unit = tooltip:GetUnit()
 		local unit = "mouseover"
 		if not UnitExists(unit) or not UnitIsPlayer(unit) then return end
 		local name, realm = UnitName(unit)
