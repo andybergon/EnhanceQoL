@@ -29,10 +29,13 @@ local DB_DISPLAY_MODE = "classBuffReminderDisplayMode"
 local DB_GROWTH_DIRECTION = "classBuffReminderGrowthDirection"
 local DB_GROWTH_FROM_CENTER = "classBuffReminderGrowthFromCenter"
 local DB_TRACK_FLASKS = "classBuffReminderTrackFlasks"
+local DB_TRACK_FLASKS_CONTENT = "classBuffReminderTrackFlasksContent"
 local DB_TRACK_FLASKS_INSTANCE_ONLY = "classBuffReminderTrackFlasksInstanceOnly"
 local DB_TRACK_FOOD = "classBuffReminderTrackFood"
+local DB_TRACK_FOOD_CONTENT = "classBuffReminderTrackFoodContent"
 local DB_TRACK_FOOD_INSTANCE_ONLY = "classBuffReminderTrackFoodInstanceOnly"
 local DB_TRACK_WEAPON_BUFFS = "classBuffReminderTrackWeaponBuffs"
+local DB_TRACK_WEAPON_BUFFS_CONTENT = "classBuffReminderTrackWeaponBuffsContent"
 local DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY = "classBuffReminderTrackWeaponBuffsInstanceOnly"
 local DB_SCALE = "classBuffReminderScale"
 local DB_ICON_SIZE = "classBuffReminderIconSize"
@@ -51,6 +54,25 @@ local DB_XY_TEXT_OFFSET_Y = "classBuffReminderXYTextOffsetY"
 local LEGACY_DB_SOUND_DEBUG_TRACE = "classBuffReminderSoundDebugTrace"
 local LEGACY_DB_SHOW_ICON = "classBuffReminderShowIcon"
 local LEGACY_DB_ONLY_WHEN_MISSING = "classBuffReminderOnlyWhenMissing"
+
+local function createDefaultTrackingContentSelection()
+	if Reminder and Reminder.CreateDefaultTrackingContentSelection then return Reminder.CreateDefaultTrackingContentSelection() end
+	return {
+		partyMythic = true,
+		raidNormal = true,
+		raidHeroic = true,
+		raidMythic = true,
+	}
+end
+
+local function copySelection(selection)
+	local copy = {}
+	if type(selection) ~= "table" then return copy end
+	for key, selected in pairs(selection) do
+		if selected == true then copy[key] = true end
+	end
+	return copy
+end
 
 local defaults = (Reminder and Reminder.defaults)
 	or {
@@ -77,10 +99,13 @@ local defaults = (Reminder and Reminder.defaults)
 		growthDirection = "RIGHT",
 		growthFromCenter = false,
 		trackFlasks = false,
+		trackFlasksContent = createDefaultTrackingContentSelection(),
 		trackFlasksInstanceOnly = false,
 		trackFood = false,
+		trackFoodContent = createDefaultTrackingContentSelection(),
 		trackFoodInstanceOnly = false,
 		trackWeaponBuffs = false,
+		trackWeaponBuffsContent = createDefaultTrackingContentSelection(),
 		trackWeaponBuffsInstanceOnly = false,
 		scale = 1,
 		iconSize = 64,
@@ -109,10 +134,12 @@ if defaults.hideForTank == nil then defaults.hideForTank = false end
 if defaults.hideForDamager == nil then defaults.hideForDamager = false end
 if defaults.hideForNoRole == nil then defaults.hideForNoRole = false end
 if defaults.showIfOnlyProvider == nil then defaults.showIfOnlyProvider = true end
+if defaults.trackFlasks == nil then defaults.trackFlasks = false end
+if type(defaults.trackFlasksContent) ~= "table" then defaults.trackFlasksContent = createDefaultTrackingContentSelection() end
 if defaults.trackFood == nil then defaults.trackFood = false end
-if defaults.trackFoodInstanceOnly == nil then defaults.trackFoodInstanceOnly = false end
+if type(defaults.trackFoodContent) ~= "table" then defaults.trackFoodContent = createDefaultTrackingContentSelection() end
 if defaults.trackWeaponBuffs == nil then defaults.trackWeaponBuffs = false end
-if defaults.trackWeaponBuffsInstanceOnly == nil then defaults.trackWeaponBuffsInstanceOnly = false end
+if type(defaults.trackWeaponBuffsContent) ~= "table" then defaults.trackWeaponBuffsContent = createDefaultTrackingContentSelection() end
 if defaults.borderEnabled == nil then defaults.borderEnabled = false end
 if defaults.borderTexture == nil or defaults.borderTexture == "" then defaults.borderTexture = "DEFAULT" end
 if defaults.borderSize == nil then defaults.borderSize = 1 end
@@ -128,6 +155,25 @@ local function normalizeRoleFilterContext(value)
 	if value == "ANY_GROUP" then return "ANY_GROUP" end
 	if value == "PARTY_ONLY" then return "PARTY_ONLY" end
 	return "RAID_ONLY"
+end
+
+local function getTrackingContentOptions()
+	if Reminder and Reminder.GetTrackingContentOptions then return Reminder:GetTrackingContentOptions() end
+	return {}
+end
+
+local function getReminderSelection(getterName, fallback)
+	if Reminder and getterName and Reminder[getterName] then return Reminder[getterName](Reminder) end
+	return copySelection(fallback)
+end
+
+local function setReminderSelection(setterName, dbKey, selection)
+	if Reminder and setterName and Reminder[setterName] then
+		Reminder[setterName](Reminder, selection)
+		return
+	end
+	if addon.db then addon.db[dbKey] = copySelection(selection) end
+	refreshReminder()
 end
 
 local function openFlaskSettings()
@@ -222,6 +268,102 @@ addon.functions.SettingsCreateButton(cat, {
 	parentSection = expandable,
 })
 
+addon.functions.SettingsCreateHeadline(cat, L["ClassBuffReminderSectionFlasks"] or "Flasks", {
+	parentSection = expandable,
+})
+
+local flaskTracking = addon.functions.SettingsCreateCheckbox(cat, {
+	var = DB_TRACK_FLASKS,
+	text = L["ClassBuffReminderTrackFlasks"] or "Track missing flask buff",
+	desc = L["ClassBuffReminderTrackFlasksDesc"] or "Shows a flask reminder only when a matching flask is available in your bags.",
+	func = function(value)
+		addon.db[DB_TRACK_FLASKS] = value == true
+		if Reminder and Reminder.InvalidateFlaskCache then Reminder:InvalidateFlaskCache() end
+		refreshReminder()
+	end,
+	parentSection = expandable,
+})
+
+addon.functions.SettingsCreateMultiDropdown(cat, {
+	var = DB_TRACK_FLASKS_CONTENT,
+	text = L["ClassBuffReminderTrackingContent"] or "Active in content",
+	desc = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+	optionfunc = getTrackingContentOptions,
+	getSelection = function() return getReminderSelection("GetFlaskTrackingContentSelection", defaults.trackFlasksContent) end,
+	setSelection = function(selection) setReminderSelection("SetFlaskTrackingContentSelection", DB_TRACK_FLASKS_CONTENT, selection) end,
+	default = defaults.trackFlasksContent,
+	menuHeight = 260,
+	hideSummary = true,
+	customDefaultText = _G.NONE or "None",
+	element = flaskTracking and flaskTracking.element,
+	parentCheck = function() return addon.db and addon.db[DB_TRACK_FLASKS] == true end,
+	parentSection = expandable,
+})
+
+addon.functions.SettingsCreateHeadline(cat, L["ClassBuffReminderSectionFood"] or "Food", {
+	parentSection = expandable,
+})
+
+local foodTracking = addon.functions.SettingsCreateCheckbox(cat, {
+	var = DB_TRACK_FOOD,
+	text = L["ClassBuffReminderTrackFood"] or "Track missing food buff",
+	desc = L["ClassBuffReminderTrackFoodDesc"] or "Shows a food reminder only when a matching buff food is available in your bags.",
+	func = function(value)
+		addon.db[DB_TRACK_FOOD] = value == true
+		if Reminder and Reminder.InvalidateFoodCache then Reminder:InvalidateFoodCache() end
+		refreshReminder()
+	end,
+	parentSection = expandable,
+})
+
+addon.functions.SettingsCreateMultiDropdown(cat, {
+	var = DB_TRACK_FOOD_CONTENT,
+	text = L["ClassBuffReminderTrackingContent"] or "Active in content",
+	desc = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+	optionfunc = getTrackingContentOptions,
+	getSelection = function() return getReminderSelection("GetFoodTrackingContentSelection", defaults.trackFoodContent) end,
+	setSelection = function(selection) setReminderSelection("SetFoodTrackingContentSelection", DB_TRACK_FOOD_CONTENT, selection) end,
+	default = defaults.trackFoodContent,
+	menuHeight = 260,
+	hideSummary = true,
+	customDefaultText = _G.NONE or "None",
+	element = foodTracking and foodTracking.element,
+	parentCheck = function() return addon.db and addon.db[DB_TRACK_FOOD] == true end,
+	parentSection = expandable,
+})
+
+addon.functions.SettingsCreateHeadline(cat, L["ClassBuffReminderSectionWeaponBuffs"] or "Weapon Buffs", {
+	parentSection = expandable,
+})
+
+local weaponTracking = addon.functions.SettingsCreateCheckbox(cat, {
+	var = DB_TRACK_WEAPON_BUFFS,
+	text = L["ClassBuffReminderTrackWeaponBuffs"] or "Track missing weapon oil/stone",
+	desc = L["ClassBuffReminderTrackWeaponBuffsDesc"] or "Shows a weapon buff reminder only when a supported oil, stone, or similar temporary weapon buff item is available in your bags.",
+	func = function(value)
+		addon.db[DB_TRACK_WEAPON_BUFFS] = value == true
+		if Reminder and Reminder.InvalidateWeaponBuffCache then Reminder:InvalidateWeaponBuffCache() end
+		refreshReminder()
+	end,
+	parentSection = expandable,
+})
+
+addon.functions.SettingsCreateMultiDropdown(cat, {
+	var = DB_TRACK_WEAPON_BUFFS_CONTENT,
+	text = L["ClassBuffReminderTrackingContent"] or "Active in content",
+	desc = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+	optionfunc = getTrackingContentOptions,
+	getSelection = function() return getReminderSelection("GetWeaponBuffTrackingContentSelection", defaults.trackWeaponBuffsContent) end,
+	setSelection = function(selection) setReminderSelection("SetWeaponBuffTrackingContentSelection", DB_TRACK_WEAPON_BUFFS_CONTENT, selection) end,
+	default = defaults.trackWeaponBuffsContent,
+	menuHeight = 260,
+	hideSummary = true,
+	customDefaultText = _G.NONE or "None",
+	element = weaponTracking and weaponTracking.element,
+	parentCheck = function() return addon.db and addon.db[DB_TRACK_WEAPON_BUFFS] == true end,
+	parentSection = expandable,
+})
+
 function addon.functions.initClassBuffReminder()
 	if not addon.functions or not addon.functions.InitDBValue then return end
 	local init = addon.functions.InitDBValue
@@ -249,11 +391,8 @@ function addon.functions.initClassBuffReminder()
 	init(DB_GROWTH_DIRECTION, defaults.growthDirection)
 	init(DB_GROWTH_FROM_CENTER, defaults.growthFromCenter)
 	init(DB_TRACK_FLASKS, defaults.trackFlasks)
-	init(DB_TRACK_FLASKS_INSTANCE_ONLY, defaults.trackFlasksInstanceOnly)
 	init(DB_TRACK_FOOD, defaults.trackFood)
-	init(DB_TRACK_FOOD_INSTANCE_ONLY, defaults.trackFoodInstanceOnly)
 	init(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs)
-	init(DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY, defaults.trackWeaponBuffsInstanceOnly)
 	init(DB_SCALE, defaults.scale)
 	init(DB_ICON_SIZE, defaults.iconSize)
 	init(DB_FONT_SIZE, defaults.fontSize)
@@ -268,6 +407,11 @@ function addon.functions.initClassBuffReminder()
 	init(DB_XY_TEXT_COLOR, defaults.xyTextColor)
 	init(DB_XY_TEXT_OFFSET_X, defaults.xyTextOffsetX)
 	init(DB_XY_TEXT_OFFSET_Y, defaults.xyTextOffsetY)
+	if addon.db then
+		addon.db[DB_TRACK_FLASKS_CONTENT] = getReminderSelection("GetFlaskTrackingContentSelection", defaults.trackFlasksContent)
+		addon.db[DB_TRACK_FOOD_CONTENT] = getReminderSelection("GetFoodTrackingContentSelection", defaults.trackFoodContent)
+		addon.db[DB_TRACK_WEAPON_BUFFS_CONTENT] = getReminderSelection("GetWeaponBuffTrackingContentSelection", defaults.trackWeaponBuffsContent)
+	end
 	if addon.db then addon.db[LEGACY_DB_SOUND_DEBUG_TRACE] = nil end
 	if addon.db then addon.db[LEGACY_DB_SHOW_ICON] = nil end
 	if addon.db then addon.db[LEGACY_DB_ONLY_WHEN_MISSING] = nil end

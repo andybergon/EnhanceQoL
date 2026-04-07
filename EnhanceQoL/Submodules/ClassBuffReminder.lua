@@ -87,6 +87,145 @@ local BORDER_SIZE_MAX = 24
 local BORDER_OFFSET_MIN = -20
 local BORDER_OFFSET_MAX = 20
 
+local TRACKING_CONTENT = {
+	OPEN_WORLD = "openWorld",
+	SCENARIO = "scenario",
+	PARTY_NORMAL = "partyNormal",
+	PARTY_HEROIC = "partyHeroic",
+	PARTY_MYTHIC = "partyMythic",
+	RAID_LFR = "raidLfr",
+	RAID_NORMAL = "raidNormal",
+	RAID_HEROIC = "raidHeroic",
+	RAID_MYTHIC = "raidMythic",
+}
+
+TRACKING_CONTENT.db = {
+	FLASKS = "classBuffReminderTrackFlasksContent",
+	FOOD = "classBuffReminderTrackFoodContent",
+	WEAPON_BUFFS = "classBuffReminderTrackWeaponBuffsContent",
+}
+
+TRACKING_CONTENT.order = {
+	TRACKING_CONTENT.OPEN_WORLD,
+	TRACKING_CONTENT.SCENARIO,
+	TRACKING_CONTENT.PARTY_NORMAL,
+	TRACKING_CONTENT.PARTY_HEROIC,
+	TRACKING_CONTENT.PARTY_MYTHIC,
+	TRACKING_CONTENT.RAID_LFR,
+	TRACKING_CONTENT.RAID_NORMAL,
+	TRACKING_CONTENT.RAID_HEROIC,
+	TRACKING_CONTENT.RAID_MYTHIC,
+}
+
+TRACKING_CONTENT.keys = {
+	[TRACKING_CONTENT.OPEN_WORLD] = true,
+	[TRACKING_CONTENT.SCENARIO] = true,
+	[TRACKING_CONTENT.PARTY_NORMAL] = true,
+	[TRACKING_CONTENT.PARTY_HEROIC] = true,
+	[TRACKING_CONTENT.PARTY_MYTHIC] = true,
+	[TRACKING_CONTENT.RAID_LFR] = true,
+	[TRACKING_CONTENT.RAID_NORMAL] = true,
+	[TRACKING_CONTENT.RAID_HEROIC] = true,
+	[TRACKING_CONTENT.RAID_MYTHIC] = true,
+}
+
+TRACKING_CONTENT.difficulties = {
+	party = {
+		normal = {
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).DungeonNormal or 1] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).DungeonTimewalker or 24] = true,
+			[150] = true,
+			[216] = true,
+		},
+		heroic = {
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).DungeonHeroic or 2] = true,
+		},
+		mythic = {
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).DungeonMythic or 23] = true,
+		},
+	},
+	raid = {
+		lfr = {
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).RaidLFR or 7] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).PrimaryRaidLFR or 17] = true,
+			[151] = true,
+		},
+		normal = {
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).Raid10Normal or 3] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).Raid25Normal or 4] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).Raid40 or 9] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).PrimaryRaidNormal or 14] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).RaidStory or 220] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).RaidTimewalker or 33] = true,
+		},
+		heroic = {
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).Raid10Heroic or 5] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).Raid25Heroic or 6] = true,
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).PrimaryRaidHeroic or 15] = true,
+		},
+		mythic = {
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).PrimaryRaidMythic or 16] = true,
+		},
+	},
+}
+
+function Reminder.CopyTrackingContentSelection(selection)
+	local copy = {}
+	if type(selection) ~= "table" then return copy end
+	for _, key in ipairs(TRACKING_CONTENT.order) do
+		if selection[key] == true then copy[key] = true end
+	end
+	return copy
+end
+
+function Reminder.CreateDefaultTrackingContentSelection()
+	return {
+		[TRACKING_CONTENT.PARTY_MYTHIC] = true,
+		[TRACKING_CONTENT.RAID_NORMAL] = true,
+		[TRACKING_CONTENT.RAID_HEROIC] = true,
+		[TRACKING_CONTENT.RAID_MYTHIC] = true,
+	}
+end
+
+function Reminder.CreateLegacyInstanceTrackingContentSelection()
+	return {
+		[TRACKING_CONTENT.PARTY_NORMAL] = true,
+		[TRACKING_CONTENT.PARTY_HEROIC] = true,
+		[TRACKING_CONTENT.PARTY_MYTHIC] = true,
+		[TRACKING_CONTENT.RAID_LFR] = true,
+		[TRACKING_CONTENT.RAID_NORMAL] = true,
+		[TRACKING_CONTENT.RAID_HEROIC] = true,
+		[TRACKING_CONTENT.RAID_MYTHIC] = true,
+	}
+end
+
+function Reminder.CreateAllTrackingContentSelection()
+	local selection = Reminder.CreateLegacyInstanceTrackingContentSelection()
+	selection[TRACKING_CONTENT.OPEN_WORLD] = true
+	selection[TRACKING_CONTENT.SCENARIO] = true
+	return selection
+end
+
+function Reminder.NormalizeTrackingContentSelection(value, legacyInstanceOnly, fallback)
+	if type(value) == "table" then
+		local normalized = {}
+		local changed = false
+		for key, selected in pairs(value) do
+			if TRACKING_CONTENT.keys[key] and selected == true then
+				normalized[key] = true
+			else
+				changed = true
+			end
+		end
+		return normalized, changed
+	end
+
+	if legacyInstanceOnly == true then return Reminder.CreateLegacyInstanceTrackingContentSelection(), true end
+	if legacyInstanceOnly == false then return Reminder.CreateAllTrackingContentSelection(), true end
+	if type(fallback) == "table" then return Reminder.CopyTrackingContentSelection(fallback), true end
+	return Reminder.CreateDefaultTrackingContentSelection(), true
+end
+
 Reminder.defaults = Reminder.defaults
 	or {
 		enabled = false,
@@ -112,10 +251,13 @@ Reminder.defaults = Reminder.defaults
 		growthDirection = GROWTH_RIGHT,
 		growthFromCenter = false,
 		trackFlasks = false,
+		trackFlasksContent = Reminder.CreateDefaultTrackingContentSelection(),
 		trackFlasksInstanceOnly = false,
 		trackFood = false,
+		trackFoodContent = Reminder.CreateDefaultTrackingContentSelection(),
 		trackFoodInstanceOnly = false,
 		trackWeaponBuffs = false,
+		trackWeaponBuffsContent = Reminder.CreateDefaultTrackingContentSelection(),
 		trackWeaponBuffsInstanceOnly = false,
 		scale = 1,
 		iconSize = 64,
@@ -145,8 +287,15 @@ if defaults.hideForTank == nil then defaults.hideForTank = false end
 if defaults.hideForDamager == nil then defaults.hideForDamager = false end
 if defaults.hideForNoRole == nil then defaults.hideForNoRole = false end
 if defaults.showIfOnlyProvider == nil then defaults.showIfOnlyProvider = true end
+if defaults.trackFlasks == nil then defaults.trackFlasks = false end
+if defaults.trackFlasksInstanceOnly == nil then defaults.trackFlasksInstanceOnly = false end
 if defaults.trackFood == nil then defaults.trackFood = false end
+if type(defaults.trackFlasksContent) ~= "table" then defaults.trackFlasksContent = Reminder.CreateDefaultTrackingContentSelection() end
 if defaults.trackFoodInstanceOnly == nil then defaults.trackFoodInstanceOnly = false end
+if type(defaults.trackFoodContent) ~= "table" then defaults.trackFoodContent = Reminder.CreateDefaultTrackingContentSelection() end
+if defaults.trackWeaponBuffs == nil then defaults.trackWeaponBuffs = false end
+if defaults.trackWeaponBuffsInstanceOnly == nil then defaults.trackWeaponBuffsInstanceOnly = false end
+if type(defaults.trackWeaponBuffsContent) ~= "table" then defaults.trackWeaponBuffsContent = Reminder.CreateDefaultTrackingContentSelection() end
 if defaults.borderEnabled == nil then defaults.borderEnabled = false end
 if defaults.borderTexture == nil or defaults.borderTexture == "" then defaults.borderTexture = "DEFAULT" end
 if defaults.borderSize == nil then defaults.borderSize = 1 end
@@ -415,6 +564,34 @@ local function getValue(key, fallback)
 	local value = addon.db[key]
 	if value == nil then return fallback end
 	return value
+end
+
+function Reminder.GetTrackingContentSelection(dbKey, legacyKey, defaultSelection)
+	local stored = addon.db and addon.db[dbKey] or nil
+	local legacy = addon.db and addon.db[legacyKey] or nil
+	local normalized, changed = Reminder.NormalizeTrackingContentSelection(stored, legacy, defaultSelection)
+	if addon.db and changed then addon.db[dbKey] = Reminder.CopyTrackingContentSelection(normalized) end
+	return normalized
+end
+
+function Reminder.BuildContentDifficultyLabel(contentLabel, difficultyLabel)
+	local left = type(contentLabel) == "string" and contentLabel ~= "" and contentLabel or nil
+	local right = type(difficultyLabel) == "string" and difficultyLabel ~= "" and difficultyLabel or nil
+	if left and right then return left .. ": " .. right end
+	return left or right or ""
+end
+
+function Reminder.GetTrackingContentLabel(key)
+	if key == TRACKING_CONTENT.OPEN_WORLD then return _G.WORLD or "World" end
+	if key == TRACKING_CONTENT.SCENARIO then return _G.SCENARIOS or _G.TRACKER_HEADER_SCENARIO or "Scenarios" end
+	if key == TRACKING_CONTENT.PARTY_NORMAL then return Reminder.BuildContentDifficultyLabel(_G.PARTY or "Party", _G.PLAYER_DIFFICULTY1 or _G.NORMAL or "Normal") end
+	if key == TRACKING_CONTENT.PARTY_HEROIC then return Reminder.BuildContentDifficultyLabel(_G.PARTY or "Party", _G.PLAYER_DIFFICULTY2 or _G.HEROIC or "Heroic") end
+	if key == TRACKING_CONTENT.PARTY_MYTHIC then return Reminder.BuildContentDifficultyLabel(_G.PARTY or "Party", _G.PLAYER_DIFFICULTY6 or "Mythic") end
+	if key == TRACKING_CONTENT.RAID_LFR then return Reminder.BuildContentDifficultyLabel(_G.RAID or "Raid", _G.PLAYER_DIFFICULTY3 or "LFR") end
+	if key == TRACKING_CONTENT.RAID_NORMAL then return Reminder.BuildContentDifficultyLabel(_G.RAID or "Raid", _G.PLAYER_DIFFICULTY1 or _G.NORMAL or "Normal") end
+	if key == TRACKING_CONTENT.RAID_HEROIC then return Reminder.BuildContentDifficultyLabel(_G.RAID or "Raid", _G.PLAYER_DIFFICULTY2 or _G.HEROIC or "Heroic") end
+	if key == TRACKING_CONTENT.RAID_MYTHIC then return Reminder.BuildContentDifficultyLabel(_G.RAID or "Raid", _G.PLAYER_DIFFICULTY6 or "Mythic") end
+	return tostring(key or "")
 end
 
 local function isLikelyFilePath(value)
@@ -938,23 +1115,90 @@ end
 
 function Reminder:IsEnabled() return getValue(DB_ENABLED, defaults.enabled) == true end
 
+function Reminder:GetTrackingContentOptions()
+	local options = {}
+	for _, key in ipairs(TRACKING_CONTENT.order) do
+		options[#options + 1] = {
+			value = key,
+			text = Reminder.GetTrackingContentLabel(key),
+		}
+	end
+	return options
+end
+
 function Reminder:IsFlaskTrackingEnabled() return getValue(DB_TRACK_FLASKS, defaults.trackFlasks) == true end
 
-function Reminder:IsFlaskInstanceOnlyEnabled() return getValue(DB_TRACK_FLASKS_INSTANCE_ONLY, defaults.trackFlasksInstanceOnly) == true end
+function Reminder:GetFlaskTrackingContentSelection()
+	return Reminder.GetTrackingContentSelection(TRACKING_CONTENT.db.FLASKS, DB_TRACK_FLASKS_INSTANCE_ONLY, defaults.trackFlasksContent)
+end
+
+function Reminder:SetFlaskTrackingContentSelection(selection)
+	if addon.db then addon.db[TRACKING_CONTENT.db.FLASKS] = select(1, Reminder.NormalizeTrackingContentSelection(selection, nil, defaults.trackFlasksContent)) end
+	self:InvalidateFlaskCache()
+	self:RequestUpdate(true)
+end
 
 function Reminder:IsFoodTrackingEnabled() return getValue(DB_TRACK_FOOD, defaults.trackFood) == true end
 
-function Reminder:IsFoodInstanceOnlyEnabled() return getValue(DB_TRACK_FOOD_INSTANCE_ONLY, defaults.trackFoodInstanceOnly) == true end
+function Reminder:GetFoodTrackingContentSelection()
+	return Reminder.GetTrackingContentSelection(TRACKING_CONTENT.db.FOOD, DB_TRACK_FOOD_INSTANCE_ONLY, defaults.trackFoodContent)
+end
+
+function Reminder:SetFoodTrackingContentSelection(selection)
+	if addon.db then addon.db[TRACKING_CONTENT.db.FOOD] = select(1, Reminder.NormalizeTrackingContentSelection(selection, nil, defaults.trackFoodContent)) end
+	self:InvalidateFoodCache()
+	self:RequestUpdate(true)
+end
 
 function Reminder:IsWeaponBuffTrackingEnabled() return getValue(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs) == true end
 
-function Reminder:IsWeaponBuffInstanceOnlyEnabled() return getValue(DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY, defaults.trackWeaponBuffsInstanceOnly) == true end
+function Reminder:GetWeaponBuffTrackingContentSelection()
+	return Reminder.GetTrackingContentSelection(TRACKING_CONTENT.db.WEAPON_BUFFS, DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY, defaults.trackWeaponBuffsContent)
+end
+
+function Reminder:SetWeaponBuffTrackingContentSelection(selection)
+	if addon.db then addon.db[TRACKING_CONTENT.db.WEAPON_BUFFS] = select(1, Reminder.NormalizeTrackingContentSelection(selection, nil, defaults.trackWeaponBuffsContent)) end
+	self:InvalidateWeaponBuffCache()
+	self:RequestUpdate(true)
+end
+
+function Reminder:GetConsumableTrackingContentToken()
+	if not IsInInstance then return TRACKING_CONTENT.OPEN_WORLD end
+
+	local inInstance, instanceType = IsInInstance()
+	if inInstance ~= true then return TRACKING_CONTENT.OPEN_WORLD end
+	if instanceType == "scenario" then return TRACKING_CONTENT.SCENARIO end
+
+	local difficultyID = GetInstanceInfo and tonumber((select(3, GetInstanceInfo()))) or nil
+
+	if instanceType == "party" then
+		if difficultyID == (((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).DungeonChallenge or 8) then return nil end
+		if difficultyID and TRACKING_CONTENT.difficulties.party.heroic[difficultyID] then return TRACKING_CONTENT.PARTY_HEROIC end
+		if difficultyID and TRACKING_CONTENT.difficulties.party.mythic[difficultyID] then return TRACKING_CONTENT.PARTY_MYTHIC end
+		return TRACKING_CONTENT.PARTY_NORMAL
+	end
+
+	if instanceType == "raid" then
+		if difficultyID and TRACKING_CONTENT.difficulties.raid.lfr[difficultyID] then return TRACKING_CONTENT.RAID_LFR end
+		if difficultyID and TRACKING_CONTENT.difficulties.raid.heroic[difficultyID] then return TRACKING_CONTENT.RAID_HEROIC end
+		if difficultyID and TRACKING_CONTENT.difficulties.raid.mythic[difficultyID] then return TRACKING_CONTENT.RAID_MYTHIC end
+		return TRACKING_CONTENT.RAID_NORMAL
+	end
+
+	return nil
+end
 
 function Reminder:IsDungeonOrRaidInstance()
 	if not IsInInstance then return false end
 	local inInstance, instanceType = IsInInstance()
 	if inInstance ~= true then return false end
 	return instanceType == "party" or instanceType == "raid"
+end
+
+function Reminder:IsTrackingContentSelected(selection)
+	local token = self:GetConsumableTrackingContentToken()
+	if not token or type(selection) ~= "table" then return false end
+	return selection[token] == true
 end
 
 function Reminder:IsHideInRestedAreaEnabled() return getValue(DB_HIDE_IN_RESTED_AREA, defaults.hideInRestedArea) == true end
@@ -974,8 +1218,7 @@ end
 function Reminder:CanCheckFlaskReminder()
 	if self:IsFlaskEnvironmentRestricted() then return false end
 	if not self:IsFlaskTrackingEnabled() then return false end
-	if not self:IsFlaskInstanceOnlyEnabled() then return true end
-	return self:IsDungeonOrRaidInstance()
+	return self:IsTrackingContentSelected(self:GetFlaskTrackingContentSelection())
 end
 
 function Reminder:IsEarthenPlayer()
@@ -988,8 +1231,7 @@ function Reminder:CanCheckFoodReminder()
 	if self:IsFlaskEnvironmentRestricted() then return false end
 	if self:IsEarthenPlayer() then return false end
 	if not self:IsFoodTrackingEnabled() then return false end
-	if not self:IsFoodInstanceOnlyEnabled() then return true end
-	return self:IsDungeonOrRaidInstance()
+	return self:IsTrackingContentSelected(self:GetFoodTrackingContentSelection())
 end
 
 function Reminder:ShouldSuppressGenericWeaponBuffReminder()
@@ -1010,8 +1252,7 @@ function Reminder:CanCheckWeaponBuffReminder()
 	if self:IsFlaskEnvironmentRestricted() then return false end
 	if self:ShouldSuppressGenericWeaponBuffReminder() then return false end
 	if not self:IsWeaponBuffTrackingEnabled() then return false end
-	if not self:IsWeaponBuffInstanceOnlyEnabled() then return true end
-	return self:IsDungeonOrRaidInstance()
+	return self:IsTrackingContentSelected(self:GetWeaponBuffTrackingContentSelection())
 end
 
 function Reminder:CanEvaluateFoodReminderNow()
@@ -4623,12 +4864,6 @@ local function editModeSetTrackFlasks(value)
 	Reminder:RequestUpdate(true)
 end
 
-local function editModeSetTrackFlasksInstanceOnly(value)
-	if addon.db then addon.db[DB_TRACK_FLASKS_INSTANCE_ONLY] = value == true end
-	Reminder:InvalidateFlaskCache()
-	Reminder:RequestUpdate(true)
-end
-
 local function editModeSetTrackFood(value)
 	if addon.db then addon.db[DB_TRACK_FOOD] = value == true end
 	Reminder:InvalidateFoodCache()
@@ -4878,12 +5113,17 @@ function editModeSettingsBuilders.buildConsumables()
 			set = function(_, value) editModeSetTrackFlasks(value) end,
 		},
 		{
-			name = L["Only in dungeons/raids"] or "Only in dungeons/raids",
-			kind = SettingType.Checkbox,
+			name = L["ClassBuffReminderTrackingContent"] or "Active in content",
+			kind = SettingType.MultiDropdown,
 			parentId = "flasks",
-			default = defaults.trackFlasksInstanceOnly == true,
-			get = function() return getValue(DB_TRACK_FLASKS_INSTANCE_ONLY, defaults.trackFlasksInstanceOnly) == true end,
-			set = function(_, value) editModeSetTrackFlasksInstanceOnly(value) end,
+			height = 260,
+			default = defaults.trackFlasksContent,
+			options = Reminder:GetTrackingContentOptions(),
+			get = function() return Reminder:GetFlaskTrackingContentSelection() end,
+			set = function(_, value) Reminder:SetFlaskTrackingContentSelection(value) end,
+			tooltip = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+			customDefaultText = _G.NONE or "None",
+			hideSummary = true,
 			isShown = function() return getValue(DB_TRACK_FLASKS, defaults.trackFlasks) == true end,
 		},
 		{
@@ -4901,16 +5141,17 @@ function editModeSettingsBuilders.buildConsumables()
 			set = function(_, value) editModeSetTrackFood(value) end,
 		},
 		{
-			name = L["Only in dungeons/raids"] or "Only in dungeons/raids",
-			kind = SettingType.Checkbox,
+			name = L["ClassBuffReminderTrackingContent"] or "Active in content",
+			kind = SettingType.MultiDropdown,
 			parentId = "food",
-			default = defaults.trackFoodInstanceOnly == true,
-			get = function() return getValue(DB_TRACK_FOOD_INSTANCE_ONLY, defaults.trackFoodInstanceOnly) == true end,
-			set = function(_, value)
-				if addon.db then addon.db[DB_TRACK_FOOD_INSTANCE_ONLY] = value == true end
-				Reminder:InvalidateFoodCache()
-				Reminder:RequestUpdate(true)
-			end,
+			height = 260,
+			default = defaults.trackFoodContent,
+			options = Reminder:GetTrackingContentOptions(),
+			get = function() return Reminder:GetFoodTrackingContentSelection() end,
+			set = function(_, value) Reminder:SetFoodTrackingContentSelection(value) end,
+			tooltip = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+			customDefaultText = _G.NONE or "None",
+			hideSummary = true,
 			isShown = function() return getValue(DB_TRACK_FOOD, defaults.trackFood) == true end,
 		},
 		{
@@ -4932,16 +5173,17 @@ function editModeSettingsBuilders.buildConsumables()
 			end,
 		},
 		{
-			name = L["Only in dungeons/raids"] or "Only in dungeons/raids",
-			kind = SettingType.Checkbox,
+			name = L["ClassBuffReminderTrackingContent"] or "Active in content",
+			kind = SettingType.MultiDropdown,
 			parentId = "weaponBuffs",
-			default = defaults.trackWeaponBuffsInstanceOnly == true,
-			get = function() return getValue(DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY, defaults.trackWeaponBuffsInstanceOnly) == true end,
-			set = function(_, value)
-				if addon.db then addon.db[DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY] = value == true end
-				Reminder:InvalidateWeaponBuffCache()
-				Reminder:RequestUpdate(true)
-			end,
+			height = 260,
+			default = defaults.trackWeaponBuffsContent,
+			options = Reminder:GetTrackingContentOptions(),
+			get = function() return Reminder:GetWeaponBuffTrackingContentSelection() end,
+			set = function(_, value) Reminder:SetWeaponBuffTrackingContentSelection(value) end,
+			tooltip = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+			customDefaultText = _G.NONE or "None",
+			hideSummary = true,
 			isShown = function() return getValue(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs) == true end,
 		},
 	}
