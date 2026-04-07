@@ -2067,7 +2067,6 @@ local function copySettings(fromUnit, toUnit, opts)
 			{ "hideInPetBattle" },
 			{ "hideInClientScene" },
 			{ "visibility" },
-			{ "visibilityFade" },
 			{ "width" },
 			{ "anchor" },
 			{ "strata" },
@@ -4238,6 +4237,13 @@ local function applyVisibilityDriver(unit, enabled)
 	local cfg = ensureDB(unit)
 	local def = defaultsFor(unit)
 	local inEdit = addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode()
+	local NormalizeVisibilityConfig = addon.functions and addon.functions.NormalizeUnitFrameVisibilityConfig
+	local BuildVisibilityDriverExpression = addon.functions and addon.functions.BuildUnitFrameDriverExpression
+	local visibilityConfig = nil
+	if enabled and not inEdit and NormalizeVisibilityConfig then
+		visibilityConfig = NormalizeVisibilityConfig(nil, cfg and cfg.visibility, { skipSave = true, ignoreOverride = true })
+	end
+	local visibilityNeedsManualHandling = visibilityConfig and (visibilityConfig.MOUSEOVER or visibilityConfig.PLAYER_CASTING)
 	if isBossUnit(unit) and _G.RegisterUnitWatch and _G.UnregisterUnitWatch then
 		local hideInClientScene = UFHelper and UFHelper.shouldHideInClientScene and UFHelper.shouldHideInClientScene(cfg, def)
 		local forceClientSceneHide = enabled and not inEdit and hideInClientScene and UF._clientSceneActive == true
@@ -4272,22 +4278,39 @@ local function applyVisibilityDriver(unit, enabled)
 	local hideInPetBattle = enabled and unit ~= UNIT.PLAYER and shouldHideInPetBattle(cfg, def)
 	local cond
 	local baseCond
+	local showPrefix
+	local prependHideClauses
 	if not enabled then
 		cond = "hide"
 	elseif unit == UNIT.TARGET then
 		baseCond = "[@target,exists] show; hide"
+		showPrefix = "@target,exists"
 	elseif unit == UNIT.TARGET_TARGET then
 		baseCond = "[@targettarget,exists] show; hide"
+		showPrefix = "@targettarget,exists"
 	elseif unit == UNIT.FOCUS then
 		baseCond = "[@focus,exists] show; hide"
+		showPrefix = "@focus,exists"
 	elseif unit == UNIT.PET then
 		-- Keep pet frame configurable in Edit Mode even when no pet exists.
 		baseCond = inEdit and "show" or "[@pet,exists] show; hide"
+		if not inEdit then showPrefix = "@pet,exists" end
 	elseif isBossUnit(unit) then
 		baseCond = ("[@%s,exists] show; hide"):format(unit)
 	end
 	if enabled then
-		if hideInPetBattle or hideInVehicle or baseCond then
+		if visibilityConfig and not visibilityNeedsManualHandling and BuildVisibilityDriverExpression then
+			if hideInPetBattle then
+				prependHideClauses = prependHideClauses or {}
+				prependHideClauses[#prependHideClauses + 1] = "petbattle"
+			end
+			if hideInVehicle then
+				prependHideClauses = prependHideClauses or {}
+				prependHideClauses[#prependHideClauses + 1] = "vehicleui"
+			end
+			cond = BuildVisibilityDriverExpression(visibilityConfig, { prependHideClauses = prependHideClauses, showPrefix = showPrefix })
+		end
+		if not cond and (hideInPetBattle or hideInVehicle or baseCond) then
 			local clauses = {}
 			if hideInPetBattle then clauses[#clauses + 1] = "[petbattle] hide" end
 			if hideInVehicle then clauses[#clauses + 1] = "[vehicleui] hide" end
@@ -4373,27 +4396,23 @@ local function applyVisibilityRules(unit)
 	local def = defaultsFor(unit)
 	local inEdit = addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode()
 	local useConfig = (not inEdit and cfg and cfg.enabled) and normalizeVisibilityConfig(cfg.visibility) or nil
+	local manualConfig = useConfig
 	local hideInClientScene = UFHelper and UFHelper.shouldHideInClientScene and UFHelper.shouldHideInClientScene(cfg, def)
 	local forceClientSceneHide = not inEdit and cfg and cfg.enabled and hideInClientScene and UF._clientSceneActive == true
-	local fadeAlpha = nil
-	if not inEdit and cfg and type(cfg.visibilityFade) == "number" then
-		fadeAlpha = cfg.visibilityFade
-		if fadeAlpha < 0 then fadeAlpha = 0 end
-		if fadeAlpha > 1 then fadeAlpha = 1 end
-	end
-	local opts = { noStateDriver = true, fadeAlpha = fadeAlpha }
+	if unit ~= "boss" and manualConfig and not manualConfig.MOUSEOVER and not manualConfig.PLAYER_CASTING then manualConfig = nil end
+	local opts = { noStateDriver = true }
 	if unit == "boss" then
 		local bossCount = UF.GetBossFrameCount(cfg)
 		for i = 1, maxBossFrames do
 			local info = UNITS["boss" .. i]
-			local frameConfig = i <= bossCount and useConfig or nil
+			local frameConfig = i <= bossCount and manualConfig or nil
 			if info and info.frameName then ApplyFrameVisibilityConfig(info.frameName, { unitToken = "boss" }, frameConfig, opts) end
 			if UFHelper and UFHelper.applyClientSceneAlphaOverride then UFHelper.applyClientSceneAlphaOverride(states["boss" .. i], forceClientSceneHide) end
 		end
 		return
 	end
 	local info = UNITS[unit]
-	if info and info.frameName then ApplyFrameVisibilityConfig(info.frameName, { unitToken = info.unit }, useConfig, opts) end
+	if info and info.frameName then ApplyFrameVisibilityConfig(info.frameName, { unitToken = info.unit }, manualConfig, opts) end
 	if UFHelper and UFHelper.applyClientSceneAlphaOverride then UFHelper.applyClientSceneAlphaOverride(states[unit], forceClientSceneHide) end
 end
 

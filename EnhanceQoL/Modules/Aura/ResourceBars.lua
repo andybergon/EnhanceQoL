@@ -16,7 +16,6 @@ ResourceBars.ui = ResourceBars.ui or {}
 local LSM = LibStub("LibSharedMedia-3.0")
 
 local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
-local GetVisibilityRuleMetadata = addon.functions and addon.functions.GetVisibilityRuleMetadata
 
 local UnitPower, UnitPowerMax, UnitHealth, UnitHealthMax, UnitGetTotalAbsorbs, UnitStagger, GetTime = UnitPower, UnitPowerMax, UnitHealth, UnitHealthMax, UnitGetTotalAbsorbs, UnitStagger, GetTime
 local CreateFrame = CreateFrame
@@ -5164,7 +5163,9 @@ local function createPowerBar(type, anchor)
 	if not bar._rbSizeChangedHooked then
 		bar:SetScript("OnSizeChanged", function(self)
 			local barType = self._rbType
-			if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ReanchorDependentsOf then addon.Aura.ResourceBars.ReanchorDependentsOf("EQOL" .. tostring(barType) .. "Bar") end
+			if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ReanchorDependentsOf then
+				addon.Aura.ResourceBars.ReanchorDependentsOf("EQOL" .. tostring(barType) .. "Bar")
+			end
 			if barType == "RUNES" then
 				layoutRunes(self)
 				updateBarSeparators("RUNES")
@@ -5375,20 +5376,6 @@ local function resolveBarConfigForFrame(pType, frame)
 end
 
 local visibilityLogic = {
-	fallbackOptions = {
-		{ value = "ALWAYS_IN_COMBAT", label = "Always in combat", order = 20 },
-		{ value = "ALWAYS_OUT_OF_COMBAT", label = "Always out of combat", order = 30 },
-		{ value = "SKYRIDING_ACTIVE", label = "While skyriding", order = 25 },
-		{ value = "SKYRIDING_INACTIVE", label = "Hide while skyriding", order = 26 },
-		{ value = "FLYING_ACTIVE", label = L["visibilityRule_flying"] or "While flying", order = 27 },
-		{ value = "FLYING_INACTIVE", label = L["visibilityRule_hideFlying"] or "Hide while flying", order = 28 },
-		{ value = "PLAYER_CASTING", label = "Player is casting", order = 35 },
-		{ value = "PLAYER_MOUNTED", label = "Mounted", order = 36 },
-		{ value = "PLAYER_NOT_MOUNTED", label = "Not mounted", order = 37 },
-		{ value = "PLAYER_HAS_TARGET", label = "When I have a target", order = 45 },
-		{ value = "PLAYER_IN_GROUP", label = "In party/raid", order = 46 },
-		{ value = "ALWAYS_HIDDEN", label = "Always hidden", order = 100 },
-	},
 	ruleMapCache = nil,
 	optionsCache = nil,
 	sortedRuleKeysCache = nil,
@@ -5410,15 +5397,11 @@ end
 function visibilityLogic:GetRuleMap()
 	if self.ruleMapCache then return self.ruleMapCache end
 	local allowed = {}
-	local metadata = GetVisibilityRuleMetadata and GetVisibilityRuleMetadata() or nil
-	if type(metadata) == "table" then
-		for key, data in pairs(metadata) do
-			local applies = data and data.appliesTo
-			if applies and applies.actionbar and key ~= "MOUSEOVER" then allowed[key] = true end
+	local visibilityKeys = addon.constants and addon.constants.ACTIONBAR_VISIBILITY_KEYS
+	if type(visibilityKeys) == "table" then
+		for key in pairs(visibilityKeys) do
+			if key ~= "MOUSEOVER" then allowed[key] = true end
 		end
-	end
-	for _, option in ipairs(self.fallbackOptions) do
-		if option and option.value and option.value ~= "MOUSEOVER" then allowed[option.value] = true end
 	end
 	self.ruleMapCache = allowed
 	self.sortedRuleKeysCache = nil
@@ -5444,26 +5427,20 @@ function visibilityLogic:GetSortedRuleKeys()
 end
 
 function visibilityLogic:NormalizeConfig(config, legacyCfg)
-	local allowed = self:GetRuleMap()
-	local out
-	if type(config) == "table" then
-		for key in pairs(allowed) do
-			if config[key] == true then
-				out = out or {}
-				out[key] = true
-			end
-		end
-	end
+	local normalizeActionbarVisibilityConfig = addon.functions and addon.functions.NormalizeActionbarVisibilityConfig
+	local out = normalizeActionbarVisibilityConfig and normalizeActionbarVisibilityConfig(config) or nil
 	if not out and type(legacyCfg) == "table" and legacyCfg.visibilityExplicit == true then out = {} end
 	if not out and type(legacyCfg) == "table" and legacyCfg.visibilityExplicit ~= true then
+		local legacy
 		if legacyCfg.hideOutOfCombat == true then
-			out = out or {}
-			out.ALWAYS_IN_COMBAT = true
+			legacy = legacy or {}
+			legacy.ALWAYS_IN_COMBAT = true
 		end
 		if legacyCfg.hideMounted == true then
-			out = out or {}
-			out.PLAYER_NOT_MOUNTED = true
+			legacy = legacy or {}
+			legacy.PLAYER_NOT_MOUNTED = true
 		end
+		if legacy then out = normalizeActionbarVisibilityConfig and normalizeActionbarVisibilityConfig(legacy) or legacy end
 	end
 	if not out then return nil end
 	if out.ALWAYS_HIDDEN then return { ALWAYS_HIDDEN = true } end
@@ -5472,42 +5449,8 @@ end
 
 function visibilityLogic:GetRuleOptions()
 	if self.optionsCache then return self.optionsCache end
-	local options, seen = {}, {}
-	local metadata = GetVisibilityRuleMetadata and GetVisibilityRuleMetadata() or nil
-	if type(metadata) == "table" then
-		for key, data in pairs(metadata) do
-			local applies = data and data.appliesTo
-			if applies and applies.actionbar and key ~= "MOUSEOVER" then
-				options[#options + 1] = {
-					value = key,
-					label = data.label or key,
-					text = data.label or key,
-					order = data.order or 999,
-				}
-				seen[key] = true
-			end
-		end
-	end
-	for _, option in ipairs(self.fallbackOptions) do
-		if option and option.value and not seen[option.value] and option.value ~= "MOUSEOVER" then
-			options[#options + 1] = {
-				value = option.value,
-				label = option.label or option.value,
-				text = option.label or option.value,
-				order = option.order or 999,
-			}
-			seen[option.value] = true
-		end
-	end
-	table.sort(options, function(a, b)
-		if a.order == b.order then
-			local left = tostring(a.label or a.value or "")
-			local right = tostring(b.label or b.value or "")
-			if strcmputf8i then return strcmputf8i(left, right) < 0 end
-			return left:lower() < right:lower()
-		end
-		return a.order < b.order
-	end)
+	local getActionbarVisibilityRuleOptions = addon.functions and addon.functions.GetActionbarVisibilityRuleOptions
+	local options = getActionbarVisibilityRuleOptions and getActionbarVisibilityRuleOptions() or {}
 	self.optionsCache = options
 	return options
 end
@@ -5540,8 +5483,10 @@ function visibilityLogic:IsPlayerSkyriding()
 		if canGlide ~= nil then return canGlide == true end
 	end
 	if SecureCmdOptionParse then
-		if addon.variables.unitClass == "DRUID" then return SecureCmdOptionParse("[advflyable, mounted] 1; [advflyable, stance:3] 1; [advflyable, stance:6] 1; 0") == "1" end
-		return SecureCmdOptionParse("[advflyable, mounted] 1; 0") == "1"
+		if addon.variables.unitClass == "DRUID" then
+			return SecureCmdOptionParse("[advflyable,flyable,mounted,flying] 1; [advflyable,flyable,stance:3,flying] 1; [advflyable,flyable,stance:6,flying] 1; 0") == "1"
+		end
+		return SecureCmdOptionParse("[advflyable,flyable,mounted,flying] 1; 0") == "1"
 	end
 	return addon.variables and addon.variables.isPlayerSkyriding == true
 end
@@ -5692,19 +5637,32 @@ function visibilityLogic:AppendDruidFormHideClauses(clauses, seen, showForms)
 	end
 end
 
+function visibilityLogic:GetDruidFormHideConditions(showForms)
+	local conditions = {}
+	local seen = {}
+	local clauses = {}
+	self:AppendDruidFormHideClauses(clauses, seen, showForms)
+	for i = 1, #clauses do
+		local condition = clauses[i] and clauses[i]:match("^%[([^%]]+)%]%s+hide$")
+		if condition and not seen[condition] then
+			seen[condition] = true
+			conditions[#conditions + 1] = condition
+		end
+	end
+	return conditions
+end
+
 function visibilityLogic:BuildDriver(cfg)
 	cfg = cfg or {}
 	local shouldHideOutOfCombat = ResourceBars.ShouldHideOutOfCombat and ResourceBars.ShouldHideOutOfCombat(cfg)
 	local shouldHideMounted = ResourceBars.ShouldHideMounted and ResourceBars.ShouldHideMounted(cfg)
 	local hideVehicle = ResourceBars.ShouldHideInVehicle and ResourceBars.ShouldHideInVehicle(cfg)
 	local hidePetBattle = ResourceBars.ShouldHideInPetBattle and ResourceBars.ShouldHideInPetBattle(cfg)
-	local visibilityUseAnd = cfg.visibilityMatchAll == true
 	local useDruidFormDriver = shouldUseDruidFormDriver(cfg)
 
 	-- Cache driver generation by a compact signature of visibility-relevant config.
 	local function hashStep(hash, value) return ((hash * 131) + value) % 2147483647 end
 	local driverSignature = 17
-	if visibilityUseAnd then driverSignature = hashStep(driverSignature, 1) end
 	if hideVehicle then driverSignature = hashStep(driverSignature, 2) end
 	if hidePetBattle then driverSignature = hashStep(driverSignature, 3) end
 	if shouldHideOutOfCombat then driverSignature = hashStep(driverSignature, 4) end
@@ -5749,7 +5707,8 @@ function visibilityLogic:BuildDriver(cfg)
 		self.driverCache[cfg] = { signature = driverSignature, expr = "hide", usesManualVisibility = false, visibilityCfg = visibilityCfg }
 		return "hide", false, visibilityCfg
 	end
-	if self:UsesManualRules(visibilityCfg, visibilityUseAnd) then
+	local visibilityConfigUsesManualEvaluation = addon.functions and addon.functions.VisibilityConfigUsesManualEvaluation
+	if visibilityConfigUsesManualEvaluation and visibilityConfigUsesManualEvaluation(visibilityCfg, { allowMouseover = false }) then
 		self.driverCache[cfg] = { signature = driverSignature, expr = nil, usesManualVisibility = true, visibilityCfg = visibilityCfg }
 		return nil, true, visibilityCfg
 	end
@@ -5758,48 +5717,34 @@ function visibilityLogic:BuildDriver(cfg)
 		return nil, false, visibilityCfg
 	end
 
-	local clauses, seen = {}, {}
-	local showRuleCount = 0
+	local prependHideClauses = {}
+	local prependSeen = {}
+	local function addHideClause(condition)
+		if not condition or condition == "" or prependSeen[condition] then return end
+		prependSeen[condition] = true
+		prependHideClauses[#prependHideClauses + 1] = condition
+	end
 
-	if hidePetBattle then clauses[#clauses + 1] = "[petbattle] hide" end
-	if hideVehicle then clauses[#clauses + 1] = "[vehicleui] hide" end
-	if useDruidFormDriver then self:AppendDruidFormHideClauses(clauses, seen, showForms) end
-
-	if visibilityCfg then
-		if visibilityCfg.PLAYER_NOT_MOUNTED then
-			self:AppendDruidTravelClauses(clauses, seen, "hide")
-			self:AppendUniqueClause(clauses, seen, "nomounted", "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.PLAYER_MOUNTED then
-			self:AppendUniqueClause(clauses, seen, "mounted", "show")
-			self:AppendDruidTravelClauses(clauses, seen, "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.ALWAYS_IN_COMBAT then
-			self:AppendUniqueClause(clauses, seen, "combat", "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.ALWAYS_OUT_OF_COMBAT then
-			self:AppendUniqueClause(clauses, seen, "nocombat", "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.PLAYER_HAS_TARGET then
-			self:AppendUniqueClause(clauses, seen, "@target,exists", "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.PLAYER_IN_GROUP then
-			self:AppendUniqueClause(clauses, seen, "group", "show")
-			showRuleCount = showRuleCount + 1
+	if hidePetBattle then addHideClause("petbattle") end
+	if hideVehicle then addHideClause("vehicleui") end
+	if useDruidFormDriver then
+		for _, condition in ipairs(self:GetDruidFormHideConditions(showForms)) do
+			addHideClause(condition)
 		end
 	end
 
-	if showRuleCount > 0 then
-		clauses[#clauses + 1] = "hide"
-	else
+	local expr
+	local buildVisibilityDriverExpression = addon.functions and addon.functions.BuildUnitFrameDriverExpression
+	if visibilityCfg and next(visibilityCfg) and buildVisibilityDriverExpression then expr = buildVisibilityDriverExpression(visibilityCfg, { prependHideClauses = prependHideClauses }) end
+	if not expr and #prependHideClauses > 0 then
+		local clauses = {}
+		local seen = {}
+		for _, condition in ipairs(prependHideClauses) do
+			self:AppendUniqueClause(clauses, seen, condition, "hide")
+		end
 		clauses[#clauses + 1] = "show"
+		expr = table.concat(clauses, "; ")
 	end
-	local expr = table.concat(clauses, "; ")
 	self.driverCache[cfg] = { signature = driverSignature, expr = expr, usesManualVisibility = false, visibilityCfg = visibilityCfg }
 	return expr, false, visibilityCfg
 end
@@ -5818,7 +5763,16 @@ function visibilityLogic:ShouldShowManual(cfg, visibilityCfg)
 	if ResourceBars.ShouldHideInPetBattle and ResourceBars.ShouldHideInPetBattle(cfg) then
 		if self:IsPetBattleActive() then return false end
 	end
-	return self:ShouldShow(visibilityCfg, cfg.visibilityMatchAll == true)
+	local shouldShowVisibilityConfig = addon.functions and addon.functions.ShouldShowVisibilityConfig
+	if shouldShowVisibilityConfig then
+		return shouldShowVisibilityConfig(visibilityCfg, {
+			supportsPlayerTargetRule = true,
+			supportsPlayerCastingRule = true,
+			supportsPlayerMountedRule = true,
+			supportsGroupRule = true,
+		})
+	end
+	return true
 end
 
 function visibilityLogic:ApplyManualFrameVisibility(frame, shouldShow)

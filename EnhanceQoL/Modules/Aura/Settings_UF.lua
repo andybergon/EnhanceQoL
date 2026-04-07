@@ -2872,25 +2872,6 @@ local function buildUnitSettings(unit)
 		end
 		setVisibilitySelection(selection)
 	end
-	local function getVisibilityFadeValue()
-		local cfg = ensureConfig(unit)
-		local fade = cfg and cfg.visibilityFade
-		local value = type(fade) == "number" and fade or nil
-		if value == nil and addon and addon.functions and addon.functions.GetFrameFadedAlpha then value = addon.functions.GetFrameFadedAlpha() end
-		if type(value) ~= "number" then value = 0 end
-		if value < 0 then value = 0 end
-		if value > 1 then value = 1 end
-		return math.floor((value * 100) + 0.5)
-	end
-	local function setVisibilityFadeValue(value)
-		local cfg = ensureConfig(unit)
-		local pct = tonumber(value)
-		if pct == nil then pct = 0 end
-		if pct < 0 then pct = 0 end
-		if pct > 100 then pct = 100 end
-		cfg.visibilityFade = pct / 100
-		if UF and UF.ApplyVisibilityRules then UF.ApplyVisibilityRules(unit) end
-	end
 	local function hideInClientSceneDefault()
 		local value = def.hideInClientScene
 		if value == nil then value = true end
@@ -2985,18 +2966,6 @@ local function buildUnitSettings(unit)
 			isSelected = function(_, value) return isVisibilityRuleSelected(value) end,
 			setSelected = function(_, value, state) setVisibilityRule(value, state) end,
 		}
-		list[#list + 1] = slider(
-			OPACITY or "Opacity",
-			0,
-			100,
-			1,
-			function() return getVisibilityFadeValue() end,
-			function(val) setVisibilityFadeValue(val) end,
-			0,
-			"frame",
-			true,
-			function(val) return tostring(val) .. "%" end
-		)
 	end
 	addDivider("frame")
 

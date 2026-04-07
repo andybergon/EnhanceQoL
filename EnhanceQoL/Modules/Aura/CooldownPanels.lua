@@ -635,29 +635,7 @@ local function getRuntime(panelId)
 end
 
 local PanelVisibility = (function()
-	local fallbackOptions = {
-		{ value = "ALWAYS_IN_COMBAT", label = "In combat", order = 10 },
-		{ value = "ALWAYS_OUT_OF_COMBAT", label = "Out of combat", order = 11 },
-		{ value = "SKYRIDING_ACTIVE", label = "While skyriding", order = 25 },
-		{ value = "SKYRIDING_INACTIVE", label = "Hide while skyriding", order = 26 },
-		{ value = "FLYING_ACTIVE", label = L["visibilityRule_flying"] or "While flying", order = 27 },
-		{ value = "FLYING_INACTIVE", label = L["visibilityRule_hideFlying"] or "Hide while flying", order = 28 },
-		{ value = "PLAYER_CASTING", label = "While casting", order = 35 },
-		{ value = "PLAYER_MOUNTED", label = "Mounted", order = 36 },
-		{ value = "PLAYER_NOT_MOUNTED", label = "Not mounted", order = 37 },
-		{ value = "PLAYER_HAS_TARGET", label = "When I have a target", order = 45 },
-		{ value = "PLAYER_IN_GROUP", label = "In party/raid", order = 46 },
-		{ value = "ALWAYS_HIDDEN", label = "Always hidden", order = 100 },
-	}
 	local optionCache
-	local ruleMapCache
-	local druidTravelFormSpellIds = {
-		[783] = true,
-		[1066] = true,
-		[33943] = true,
-		[40120] = true,
-		[210053] = true,
-	}
 
 	local function copySelectionMap(selection)
 		if type(selection) ~= "table" then return nil end
@@ -671,187 +649,32 @@ local PanelVisibility = (function()
 		return out
 	end
 
-	local function getRuleMap()
-		if ruleMapCache then return ruleMapCache end
-		local allowed = {}
-		local getVisibilityRuleMetadata = addon.functions and addon.functions.GetVisibilityRuleMetadata
-		local metadata = getVisibilityRuleMetadata and getVisibilityRuleMetadata() or nil
-		if type(metadata) == "table" then
-			for key, data in pairs(metadata) do
-				local applies = data and data.appliesTo
-				if applies and applies.actionbar and key ~= "MOUSEOVER" then allowed[key] = true end
-			end
-		end
-		for _, option in ipairs(fallbackOptions) do
-			if option and option.value ~= "MOUSEOVER" then allowed[option.value] = true end
-		end
-		ruleMapCache = allowed
-		return allowed
-	end
-
 	local function normalizeConfig(config)
-		if type(config) ~= "table" then return nil end
-		local allowed = getRuleMap()
-		local out
-		for key in pairs(allowed) do
-			if config[key] == true then
-				out = out or {}
-				out[key] = true
-			end
-		end
-		if not out then return nil end
-		if out.ALWAYS_HIDDEN then return { ALWAYS_HIDDEN = true } end
-		return out
+		local normalize = addon.functions and addon.functions.NormalizeActionbarVisibilityConfig
+		if normalize then return normalize(config) end
+		return nil
 	end
 
 	local function getRuleOptions()
 		if optionCache then return optionCache end
-		local options = {}
-		local seen = {}
-		local getVisibilityRuleMetadata = addon.functions and addon.functions.GetVisibilityRuleMetadata
-		local metadata = getVisibilityRuleMetadata and getVisibilityRuleMetadata() or nil
-		if type(metadata) == "table" then
-			for key, data in pairs(metadata) do
-				local applies = data and data.appliesTo
-				if applies and applies.actionbar and key ~= "MOUSEOVER" then
-					options[#options + 1] = {
-						value = key,
-						label = data.label or key,
-						text = data.label or key,
-						order = data.order or 999,
-					}
-					seen[key] = true
-				end
-			end
-		end
-		for _, option in ipairs(fallbackOptions) do
-			if option and option.value and not seen[option.value] and option.value ~= "MOUSEOVER" then
-				options[#options + 1] = {
-					value = option.value,
-					label = option.label or option.value,
-					text = option.label or option.value,
-					order = option.order or 999,
-				}
-				seen[option.value] = true
-			end
-		end
-		table.sort(options, function(a, b)
-			if a.order == b.order then
-				local left = tostring(a.label or a.value or "")
-				local right = tostring(b.label or b.value or "")
-				if strcmputf8i then return strcmputf8i(left, right) < 0 end
-				return left:lower() < right:lower()
-			end
-			return a.order < b.order
-		end)
-		optionCache = options
-		return options
-	end
-
-	local function isInDruidTravelForm()
-		local class = addon.variables and addon.variables.unitClass
-		if class ~= "DRUID" then
-			local _, eng
-			if UnitClass then
-				_, eng = UnitClass("player")
-			end
-			if eng ~= "DRUID" then return false end
-		end
-		if not GetShapeshiftForm then return false end
-		local form = GetShapeshiftForm()
-		if not form or form == 0 then return false end
-		if GetShapeshiftFormID then
-			local formID = GetShapeshiftFormID()
-			if formID == DRUID_TRAVEL_FORM or formID == DRUID_ACQUATIC_FORM or formID == DRUID_FLIGHT_FORM or formID == 29 then return true end
-		end
-		local spellID = select(4, GetShapeshiftFormInfo(form))
-		if spellID and druidTravelFormSpellIds[spellID] then return true end
-		return form == 3
-	end
-
-	local function isPlayerMounted()
-		if IsMounted and IsMounted() then return true end
-		return isInDruidTravelForm()
-	end
-
-	local function isPlayerCasting()
-		if UnitCastingInfo and UnitCastingInfo("player") then return true end
-		if UnitChannelInfo and UnitChannelInfo("player") then return true end
-		return false
-	end
-
-	local function isPlayerSkyriding()
-		if C_PlayerInfo and C_PlayerInfo.GetGlidingInfo then
-			local _, canGlide = C_PlayerInfo.GetGlidingInfo()
-			if canGlide ~= nil then return canGlide == true end
-		end
-		if SecureCmdOptionParse then
-			if addon.variables and addon.variables.unitClass == "DRUID" then return SecureCmdOptionParse("[advflyable, mounted] 1; [advflyable, stance:3] 1; 0") == "1" end
-			return SecureCmdOptionParse("[advflyable, mounted] 1; 0") == "1"
-		end
-		return addon.variables and addon.variables.isPlayerSkyriding == true
-	end
-
-	local function isPlayerFlying()
-		if C_PlayerInfo and C_PlayerInfo.GetGlidingInfo then
-			local isGliding = C_PlayerInfo.GetGlidingInfo()
-			if isGliding ~= nil then return isGliding == true end
-		end
-		if IsFlying and IsFlying() then return true end
-		return false
-	end
-
-	local function hasShowRules(config)
-		if not config then return false end
-		return config.ALWAYS_IN_COMBAT
-			or config.ALWAYS_OUT_OF_COMBAT
-			or config.SKYRIDING_ACTIVE
-			or config.FLYING_ACTIVE
-			or config.PLAYER_CASTING
-			or config.PLAYER_MOUNTED
-			or config.PLAYER_NOT_MOUNTED
-			or config.PLAYER_HAS_TARGET
-			or config.PLAYER_IN_GROUP
+		local getOptions = addon.functions and addon.functions.GetActionbarVisibilityRuleOptions
+		optionCache = getOptions and getOptions() or {}
+		return optionCache
 	end
 
 	local function shouldShow(config)
 		local cfg = normalizeConfig(config)
 		if not cfg then return true end
-		if cfg.ALWAYS_HIDDEN then return false end
-
-		local inCombat = false
-		if InCombatLockdown and InCombatLockdown() then
-			inCombat = true
-		elseif UnitAffectingCombat then
-			inCombat = UnitAffectingCombat("player") == true
+		local shouldShowConfig = addon.functions and addon.functions.ShouldShowVisibilityConfig
+		if shouldShowConfig then
+			return shouldShowConfig(cfg, {
+				supportsPlayerTargetRule = true,
+				supportsPlayerCastingRule = true,
+				supportsPlayerMountedRule = true,
+				supportsGroupRule = true,
+			})
 		end
-		local hasTarget = UnitExists and UnitExists("target") == true
-		local inGroup = IsInGroup and IsInGroup() == true
-		local mounted = isPlayerMounted()
-		local casting = isPlayerCasting()
-		local skyriding = isPlayerSkyriding()
-		local flying = isPlayerFlying()
-
-		if cfg.SKYRIDING_INACTIVE then
-			if skyriding then return false end
-			if not hasShowRules(cfg) then return true end
-		end
-		if cfg.FLYING_INACTIVE then
-			if flying then return false end
-			if not hasShowRules(cfg) then return true end
-		end
-
-		if cfg.SKYRIDING_ACTIVE and skyriding then return true end
-		if cfg.FLYING_ACTIVE and flying then return true end
-		if cfg.ALWAYS_IN_COMBAT and inCombat then return true end
-		if cfg.ALWAYS_OUT_OF_COMBAT and not inCombat then return true end
-		if cfg.PLAYER_CASTING and casting then return true end
-		if cfg.PLAYER_MOUNTED and mounted then return true end
-		if cfg.PLAYER_NOT_MOUNTED and not mounted then return true end
-		if cfg.PLAYER_HAS_TARGET and hasTarget then return true end
-		if cfg.PLAYER_IN_GROUP and inGroup then return true end
-
-		return false
+		return true
 	end
 
 	return {
@@ -1136,9 +959,7 @@ function CooldownPanels:UpdateCursorAnchorState()
 	end
 end
 
-function CooldownPanels:GetGlowStyleOptions(panelId)
-	return Helper.GLOW_STYLE_OPTIONS or {}
-end
+function CooldownPanels:GetGlowStyleOptions(panelId) return Helper.GLOW_STYLE_OPTIONS or {} end
 
 local ICON_BORDER_TEXTURE_DEFAULT = "DEFAULT"
 
@@ -5926,9 +5747,7 @@ end
 
 function cdp.RUNTIME.HasCooldownWidgetConfigChange(snapshot, data, cooldownUsesAuraDisplay)
 	if not (snapshot and data) then return true end
-	return snapshot.entryId ~= data.entryId
-		or snapshot.cooldownHideCountdownNumbers ~= (not data.showCooldownText)
-		or snapshot.cooldownUsesAuraDisplay ~= (cooldownUsesAuraDisplay == true)
+	return snapshot.entryId ~= data.entryId or snapshot.cooldownHideCountdownNumbers ~= not data.showCooldownText or snapshot.cooldownUsesAuraDisplay ~= (cooldownUsesAuraDisplay == true)
 end
 
 function cdp.RUNTIME.WriteCooldownWidgetConfigSnapshot(snapshot, data, cooldownUsesAuraDisplay)
@@ -11280,7 +11099,10 @@ function CooldownPanels:BuildLayoutFixedGroupStandaloneSettings(panelId, groupId
 					local label = L[option.labelKey] or option.fallback
 					root:CreateRadio(label, function()
 						local layout = getLayout()
-						return Helper.NormalizeGlowStyle(select(1, CooldownPanels:ResolveEntryProcGlowVisual(layout, nil)), layout and layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) == option.value
+						return Helper.NormalizeGlowStyle(
+							select(1, CooldownPanels:ResolveEntryProcGlowVisual(layout, nil)),
+							layout and layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle
+						) == option.value
 					end, function() setOverride("procGlowStyle", option.value) end)
 				end
 			end,
@@ -11372,7 +11194,10 @@ function CooldownPanels:BuildLayoutFixedGroupStandaloneSettings(panelId, groupId
 					local label = L[option.labelKey] or option.fallback
 					root:CreateRadio(label, function()
 						local layout = getLayout()
-						return Helper.NormalizeGlowStyle(select(2, CooldownPanels:ResolveEntryPandemicGlowVisual(layout, nil)), layout and layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) == option.value
+						return Helper.NormalizeGlowStyle(
+							select(2, CooldownPanels:ResolveEntryPandemicGlowVisual(layout, nil)),
+							layout and layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle
+						) == option.value
 					end, function() setOverride("pandemicGlowStyle", option.value) end)
 				end
 			end,
@@ -15638,7 +15463,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			icon.cooldown._eqolEntryId = data.entryId
 			icon.cooldown._eqolCooldownIsGCD = data.cooldownGCD == true
 			-- Spell ready sounds are event-driven from trusted cooldown booleans, not timer callbacks.
-			icon.cooldown._eqolSoundReady = data.soundReady and not data.cooldownGCD and data.resolvedType ~= "SPELL"
+			icon.cooldown._eqolSoundReady = data.soundReady and not data.cooldownGCD --and data.resolvedType ~= "SPELL"
 			icon.cooldown._eqolSoundName = data.soundName
 			icon.cooldown._eqolGlowReady = data.glowReady
 			icon.cooldown._eqolGlowDuration = data.glowDuration
@@ -15900,22 +15725,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			local cooldownDefaultFontPath, cooldownDefaultFontSize, cooldownDefaultFontStyle = cdp.RUNTIME.EnsureCooldownTextDefaults(icon)
 			if
 				data._eqolRuntimePlacementDirty
-				or cdp.RUNTIME.HasCooldownTextStyleChange(
-					icon._eqolRuntimeSnapshot,
-					data,
-					cooldownDefaultFontPath,
-					cooldownDefaultFontSize,
-					cooldownDefaultFontStyle
-				)
+				or cdp.RUNTIME.HasCooldownTextStyleChange(icon._eqolRuntimeSnapshot, data, cooldownDefaultFontPath, cooldownDefaultFontSize, cooldownDefaultFontStyle)
 			then
 				CooldownPanels:ApplyEntryCooldownTextStyle(icon, data.layout, data.entry)
-				cdp.RUNTIME.WriteCooldownTextStyleSnapshot(
-					icon._eqolRuntimeSnapshot,
-					data,
-					cooldownDefaultFontPath,
-					cooldownDefaultFontSize,
-					cooldownDefaultFontStyle
-				)
+				cdp.RUNTIME.WriteCooldownTextStyleSnapshot(icon._eqolRuntimeSnapshot, data, cooldownDefaultFontPath, cooldownDefaultFontSize, cooldownDefaultFontStyle)
 			end
 			if data.spellUnusable then
 				icon.texture:SetVertexColor(unusableTintR or 0.6, unusableTintG or 0.6, unusableTintB or 0.6)
@@ -16223,6 +16036,90 @@ local function isClientSceneActive()
 	return runtime and runtime.clientSceneActive == true
 end
 
+function CooldownPanels:EnsureVisibilityDriverWatcher()
+	self.runtime = self.runtime or {}
+	if self.runtime.visibilityDriverWatcher then return end
+	local watcher = CreateFrame("Frame")
+	watcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+	watcher:SetScript("OnEvent", function()
+		local runtime = CooldownPanels.runtime
+		local pending = runtime and runtime.pendingVisibilityDriverUpdates
+		if not pending then return end
+		runtime.pendingVisibilityDriverUpdates = nil
+		for frame, expr in pairs(pending) do
+			if frame then
+				local desired = expr
+				if desired == false then desired = nil end
+				CooldownPanels:ApplyVisibilityDriverToFrame(frame, desired)
+			end
+		end
+	end)
+	self.runtime.visibilityDriverWatcher = watcher
+end
+
+function CooldownPanels:ApplyVisibilityDriverToFrame(frame, expression)
+	self.runtime = self.runtime or {}
+	if not frame then return false end
+	local inCombat = (InCombatLockdown and InCombatLockdown()) or false
+	local isProtected = frame.IsProtected and frame:IsProtected()
+	if inCombat and isProtected then
+		self.runtime.pendingVisibilityDriverUpdates = self.runtime.pendingVisibilityDriverUpdates or {}
+		self.runtime.pendingVisibilityDriverUpdates[frame] = expression == nil and false or expression
+		self:EnsureVisibilityDriverWatcher()
+		return false
+	end
+	if not expression then
+		if frame._eqolVisibilityDriver then
+			if UnregisterStateDriver then pcall(UnregisterStateDriver, frame, "visibility") end
+			frame._eqolVisibilityDriver = nil
+		end
+		return true
+	end
+	if frame._eqolVisibilityDriver == expression then return true end
+	if RegisterStateDriver then
+		if frame._eqolVisibilityDriver and UnregisterStateDriver then
+			pcall(UnregisterStateDriver, frame, "visibility")
+			frame._eqolVisibilityDriver = nil
+		end
+		local ok = pcall(RegisterStateDriver, frame, "visibility", expression)
+		if ok then
+			frame._eqolVisibilityDriver = expression
+			return true
+		end
+	end
+	return false
+end
+
+function CooldownPanels:BuildVisibilityDriver(panel)
+	if not panel then return nil, false, nil end
+	panel.layout = panel.layout or Helper.CopyTableShallow(Helper.PANEL_LAYOUT_DEFAULTS)
+	local layout = panel.layout
+	local visibilityCfg = PanelVisibility.NormalizeConfig(layout.visibility)
+	local hideInPetBattle = layout.hideInPetBattle == true
+	local hideInVehicle = layout.hideInVehicle == true
+	if visibilityCfg and visibilityCfg.ALWAYS_HIDDEN then return "hide", false, visibilityCfg end
+	local usesManualVisibility = addon.functions and addon.functions.VisibilityConfigUsesManualEvaluation
+	if usesManualVisibility and usesManualVisibility(visibilityCfg, { allowMouseover = false }) then return nil, true, visibilityCfg end
+	if not visibilityCfg and not hideInPetBattle and not hideInVehicle then return nil, false, nil end
+
+	local prependHideClauses = {}
+	if hideInPetBattle then prependHideClauses[#prependHideClauses + 1] = "petbattle" end
+	if hideInVehicle then prependHideClauses[#prependHideClauses + 1] = "vehicleui" end
+
+	local expr
+	local buildDriverExpression = addon.functions and addon.functions.BuildUnitFrameDriverExpression
+	if visibilityCfg and next(visibilityCfg) and buildDriverExpression then expr = buildDriverExpression(visibilityCfg, { prependHideClauses = prependHideClauses }) end
+	if not expr and #prependHideClauses > 0 then
+		local clauses = {}
+		for i = 1, #prependHideClauses do
+			clauses[#clauses + 1] = ("[%s] hide"):format(prependHideClauses[i])
+		end
+		clauses[#clauses + 1] = "show"
+		expr = table.concat(clauses, "; ")
+	end
+	return expr, false, visibilityCfg
+end
+
 function CooldownPanels:ShouldShowPanel(panelId)
 	local panel = self:GetPanel(panelId)
 	if not panel then return false end
@@ -16270,9 +16167,32 @@ function CooldownPanels:UpdatePanelOpacity(panelId, forcedAlpha)
 end
 
 function CooldownPanels:UpdateVisibility(panelId)
+	local panel = self:GetPanel(panelId)
 	local runtime = getRuntime(panelId)
 	local frame = runtime.frame
-	if not frame then return end
+	if not frame or not panel then return end
+	panel.layout = panel.layout or Helper.CopyTableShallow(Helper.PANEL_LAYOUT_DEFAULTS)
+	local layout = panel.layout
+	local inEditMode = self:IsInEditMode() == true
+	local layoutEditActive = self:IsPanelLayoutEditActive(panelId)
+	local visibleCount = runtime.visibleCount or 0
+	local contentVisible = layoutEditActive or inEditMode or visibleCount > 0
+	local hideInClientScene = layout.hideInClientScene
+	if hideInClientScene == nil then hideInClientScene = Helper.PANEL_LAYOUT_DEFAULTS.hideInClientScene == true end
+	local clientSceneHidden = not (inEditMode or layoutEditActive) and hideInClientScene and isClientSceneActive()
+	local canUseDriver = not inEditMode and not layoutEditActive and panel.enabled ~= false and panelAllowsSpec(panel) and contentVisible and not clientSceneHidden
+	local driverExpression
+	local usesManualVisibility = false
+	if canUseDriver then
+		driverExpression, usesManualVisibility = self:BuildVisibilityDriver(panel)
+	end
+	if canUseDriver and driverExpression and not usesManualVisibility then
+		self:ApplyVisibilityDriverToFrame(frame, driverExpression)
+		self:UpdatePanelOpacity(panelId, nil)
+		self:UpdatePanelMouseState(panelId)
+		return
+	end
+	self:ApplyVisibilityDriverToFrame(frame, nil)
 	local shouldShow = self:ShouldShowPanel(panelId)
 	local forceAlphaHidden = false
 	if frame:IsShown() ~= shouldShow then
@@ -18116,7 +18036,10 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 						root:CreateRadio(
 							label,
 							function()
-								return Helper.NormalizeGlowStyle(select(1, CooldownPanels:ResolveEntryProcGlowVisual(layout, nil)), layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) == option.value
+								return Helper.NormalizeGlowStyle(
+									select(1, CooldownPanels:ResolveEntryProcGlowVisual(layout, nil)),
+									layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle
+								) == option.value
 							end,
 							function() applyEditLayout(panelId, "procGlowStyle", option.value) end
 						)
@@ -18169,18 +18092,14 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				parentId = "cooldownPanelGlow",
 				height = 180,
 				default = Helper.NormalizeGlowStyle(layout.pandemicGlowStyle, layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle),
-				get = function()
-					return Helper.NormalizeGlowStyle(layout.pandemicGlowStyle, layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle)
-				end,
+				get = function() return Helper.NormalizeGlowStyle(layout.pandemicGlowStyle, layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) end,
 				set = function(_, value) applyEditLayout(panelId, "pandemicGlowStyle", value) end,
 				generator = function(_, root)
 					for _, option in ipairs(CooldownPanels:GetGlowStyleOptions(panelId)) do
 						local label = L[option.labelKey] or option.fallback
 						root:CreateRadio(
 							label,
-							function()
-								return Helper.NormalizeGlowStyle(layout.pandemicGlowStyle, layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) == option.value
-							end,
+							function() return Helper.NormalizeGlowStyle(layout.pandemicGlowStyle, layout.readyGlowStyle or Helper.PANEL_LAYOUT_DEFAULTS.readyGlowStyle) == option.value end,
 							function() applyEditLayout(panelId, "pandemicGlowStyle", option.value) end
 						)
 					end
