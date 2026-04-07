@@ -6143,9 +6143,8 @@ local function setAllHooks()
 	hooksecurefunc("LFGListApplicationViewer_UpdateApplicantMember", function(memberFrame, appID, memberIdx)
 		if addon.db.enableIgnore then ApplyIgnoreHighlight(memberFrame, appID) end
 
-		-- Prepend M+ score to applicant name. If RaiderIO is present and the
-		-- character is an alt, show [main|alt]; otherwise show [score].
-		if not addon.db.lfgSortByRio then return end
+		-- Prepend M+ score to applicant name (optional, controlled by settings).
+		if not addon.db.lfgShowApplicantScore then return end
 		if not memberFrame or not memberFrame.Name then return end
 		if isSecret(appID) then return end
 		local name, _, _, _, _, _, _, _, _, _, _, charScore = C_LFGList.GetApplicantMemberInfo(appID, memberIdx or 1)
@@ -6163,14 +6162,13 @@ local function setAllHooks()
 			end
 		end
 
-		local scoreColor = C_ChallengeMode.GetDungeonScoreRarityColor(charScore)
-		local r, g, b = 1, 1, 1
-		if scoreColor and scoreColor.GetRGB then r, g, b = scoreColor:GetRGB() end
+		-- Alt-only mode: skip if character is on their main (no mainScore from RaiderIO)
+		if addon.db.lfgShowApplicantScoreAltOnly and not mainScore then return end
 
 		local currentText = memberFrame.Name:GetText()
 		if not currentText or isSecret(currentText) then return end
 		if mainScore then
-			-- Alt: show only main's score (Blizzard already shows the alt's in Rating column)
+			-- Alt: show main's score (Blizzard already shows the alt's in Rating column)
 			local mainColor = C_ChallengeMode.GetDungeonScoreRarityColor(mainScore)
 			local mr, mg, mb = 1, 1, 1
 			if mainColor and mainColor.GetRGB then mr, mg, mb = mainColor:GetRGB() end
@@ -6178,6 +6176,9 @@ local function setAllHooks()
 			memberFrame.Name:SetFormattedText("|cff%s[%d]|r %s", mainHex, mainScore, currentText)
 		else
 			-- Main (or no RaiderIO data): show character's own score
+			local scoreColor = C_ChallengeMode.GetDungeonScoreRarityColor(charScore)
+			local r, g, b = 1, 1, 1
+			if scoreColor and scoreColor.GetRGB then r, g, b = scoreColor:GetRGB() end
 			local scoreHex = format("%02x%02x%02x", r * 255, g * 255, b * 255)
 			memberFrame.Name:SetFormattedText("|cff%s[%d]|r %s", scoreHex, charScore, currentText)
 		end

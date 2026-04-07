@@ -808,6 +808,8 @@ function addon.functions.initDungeonFrame()
 
 	addon.functions.InitDBValue("autoChooseDelvePower", false)
 	addon.functions.InitDBValue("lfgSortByRio", false)
+	addon.functions.InitDBValue("lfgShowApplicantScore", false)
+	addon.functions.InitDBValue("lfgShowApplicantScoreAltOnly", false)
 	addon.functions.InitDBValue("lfgSortSearchByScore", false)
 	addon.functions.InitDBValue("lfgSortSearchAppliedFirst", false)
 	addon.functions.InitDBValue("groupfinderSkipRoleSelect", false)
@@ -1349,6 +1351,18 @@ data = {
 		var = "lfgSortByRio",
 		text = L["lfgSortByRio"],
 		func = function(value) addon.db["lfgSortByRio"] = value end,
+		parentSection = sectionGroupFinder,
+	},
+	{
+		var = "lfgShowApplicantScore",
+		text = L["lfgShowApplicantScore"],
+		func = function(value) addon.db["lfgShowApplicantScore"] = value end,
+		parentSection = sectionGroupFinder,
+	},
+	{
+		var = "lfgShowApplicantScoreAltOnly",
+		text = L["lfgShowApplicantScoreAltOnly"],
+		func = function(value) addon.db["lfgShowApplicantScoreAltOnly"] = value end,
 		parentSection = sectionGroupFinder,
 	},
 	{
