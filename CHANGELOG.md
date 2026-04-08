@@ -5,6 +5,7 @@
 ### 🐛 Fixed
 
 - Chat / ChatIM: Fixed a Blizzard taint error in restricted content such as Mythic+ by no longer pushing protected Battle.net whisper targets into the global last-tell history.
+- Unit Frames (Party / Raid): Fixed `Enable frame scale adjustment` only affecting Blizzard party frames. The setting now also applies to Blizzard raid frames.
 
 ## [10.0.0] - 2026-04-06
 

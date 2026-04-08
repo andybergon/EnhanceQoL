@@ -183,7 +183,6 @@ local function canUpdateLastTellTarget(target, isBN)
 	if issecretvalue and issecretvalue(target) then return false end
 	if canaccessvalue and not canaccessvalue(target) then return false end
 	if ChatIM.IsChatMessagingRestricted and ChatIM:IsChatMessagingRestricted() then return false end
-	if isBN and C_Secrets and C_Secrets.ShouldUnitIdentityBeSecret and C_Secrets.ShouldUnitIdentityBeSecret() then return false end
 	return true
 end
 

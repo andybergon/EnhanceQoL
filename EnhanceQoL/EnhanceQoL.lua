@@ -3528,7 +3528,11 @@ local function initUnitFrame()
 			return
 		end
 		if addon.variables then addon.variables.pendingPartyFrameScale = nil end
-		if CompactPartyFrame then CompactPartyFrame:SetScale(addon.db["unitFrameScale"]) end
+		local scale = addon.db["unitFrameScale"]
+		if CompactPartyFrame and CompactPartyFrame.SetScale then CompactPartyFrame:SetScale(scale) end
+		if CompactRaidFrameContainer and CompactRaidFrameContainer.SetScale then
+			CompactRaidFrameContainer:SetScale(scale)
+		end
 	end
 
 	-- Cast bar visibility handling

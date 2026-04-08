@@ -187,7 +187,12 @@ data = {
 		func = function(v)
 			addon.db["unitFrameScaleEnabled"] = v
 			addon.functions.updatePartyFrameScale()
-			if not v then CompactPartyFrame:SetScale(1) end
+			if not v then
+				if CompactPartyFrame and CompactPartyFrame.SetScale then CompactPartyFrame:SetScale(1) end
+				if CompactRaidFrameContainer and CompactRaidFrameContainer.SetScale then
+					CompactRaidFrameContainer:SetScale(1)
+				end
+			end
 		end,
 		parentSection = expandable,
 		children = {
