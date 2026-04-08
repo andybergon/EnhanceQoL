@@ -6973,13 +6973,32 @@ function CooldownPanels:GetCachedSpellChargeDurationObject(spellId)
 end
 
 local function getItemCooldownInfo(itemID, slotID)
+	local start, duration, enabled
 	if slotID and Api.GetInventoryItemCooldown then
-		local start, duration, enabled = Api.GetInventoryItemCooldown("player", slotID)
-		if start and duration then return start, duration, enabled end
+		start, duration, enabled = Api.GetInventoryItemCooldown("player", slotID)
+		if not (start and duration) then
+			start, duration, enabled = nil, nil, nil
+		end
 	end
-	if not itemID or not Api.GetItemCooldownFn then return 0, 0, false end
-	local start, duration, enabled = Api.GetItemCooldownFn(itemID)
-	return start or 0, duration or 0, enabled
+	if (start == nil or duration == nil) and itemID and Api.GetItemCooldownFn then
+		start, duration, enabled = Api.GetItemCooldownFn(itemID)
+	end
+	start = start or 0
+	duration = duration or 0
+
+	-- Item/slot cooldown queries can briefly collapse to the player's GCD.
+	-- If the linked use spell has its own real cooldown running, prefer that timer.
+	if itemID and CooldownPanels:IsCooldownMatchingGlobalCooldown(start, duration) then
+		local spellId = CooldownPanels:GetItemUseSpellID(itemID)
+		if spellId then
+			local spellStart, spellDuration = getSpellCooldownInfo(spellId)
+			if isCooldownActive(spellStart, spellDuration) and not CooldownPanels:IsCooldownMatchingGlobalCooldown(spellStart, spellDuration) then
+				return spellStart or 0, spellDuration or 0, true
+			end
+		end
+	end
+
+	return start, duration, enabled
 end
 
 function CooldownPanels:GetItemUseSpellID(itemID)
@@ -6998,23 +7017,22 @@ end
 
 function CooldownPanels:IsCooldownMatchingGlobalCooldown(cooldownStart, cooldownDuration)
 	if not isCooldownActive(cooldownStart, cooldownDuration) then return false end
-	local gcdStart, gcdDuration = self:GetCachedSpellCooldownInfo(61304)
+	local gcdStart, gcdDuration = getSpellCooldownInfo(61304)
 	if not isCooldownActive(gcdStart, gcdDuration) then return false end
 	return cooldownStart == gcdStart and cooldownDuration == gcdDuration
 end
 
 function CooldownPanels:IsItemCooldownOnGCD(itemID, cooldownStart, cooldownDuration)
-	-- Never discard a real item cooldown just because the linked use spell is on the player GCD.
 	if not self:IsCooldownMatchingGlobalCooldown(cooldownStart, cooldownDuration) then return false end
 	local spellId = self:GetItemUseSpellID(itemID)
-	if not spellId then return false end
-	local spellStart, spellDuration, _, _, spellIsOnGCD, spellIsActive = self:GetCachedSpellCooldownInfo(spellId)
-	if spellIsOnGCD == true and spellIsActive == true then return true end
-	if spellIsOnGCD == false and spellIsActive == true then return false end
-	if isCooldownActive(spellStart, spellDuration) then
-		return self:IsCooldownMatchingGlobalCooldown(spellStart, spellDuration)
-	end
-	return false
+	if not spellId then return true end
+
+	local spellStart, spellDuration = getSpellCooldownInfo(spellId)
+
+	-- A linked use spell being on cooldown is only relevant if its timer is separate from the GCD.
+	if isCooldownActive(spellStart, spellDuration) and not self:IsCooldownMatchingGlobalCooldown(spellStart, spellDuration) then return false end
+
+	return true
 end
 
 getSpellCooldownDurationObject = function(spellID)
