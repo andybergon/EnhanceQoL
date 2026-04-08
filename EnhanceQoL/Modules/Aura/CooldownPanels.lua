@@ -16256,11 +16256,18 @@ function CooldownPanels:ApplyPanelPosition(panelId)
 	local frame = runtime.frame
 	if not frame then return end
 	local anchor = ensurePanelAnchor(panel)
+	local panelKey = normalizeId(panelId)
+	if panelKey then CooldownPanels.ValidateRelativeFrameChoice(panel, panelKey, runtime) end
 	local point = Helper.NormalizeAnchor(anchor and anchor.point, panel.point or "CENTER")
 	local relativePoint = Helper.NormalizeAnchor(anchor and anchor.relativePoint, point)
 	local x = tonumber(anchor and anchor.x) or 0
 	local y = tonumber(anchor and anchor.y) or 0
 	local relativeFrame = resolveAnchorFrame(anchor)
+	if relativeFrame == frame then
+		anchor.relativeFrame = "UIParent"
+		CooldownPanels.MarkRelativeFrameEntriesDirty()
+		relativeFrame = UIParent
+	end
 	local layoutEditCursorPanelId = self:GetLayoutEditFakeCursorPanel()
 	if layoutEditCursorPanelId ~= nil and normalizeId(layoutEditCursorPanelId) == normalizeId(panelId) and panelUsesFakeCursor(panel) then
 		point = "CENTER"
