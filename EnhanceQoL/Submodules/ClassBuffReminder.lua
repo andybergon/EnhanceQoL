@@ -1269,7 +1269,8 @@ end
 function Reminder:IsFlaskEnvironmentRestricted()
 	if self.consumableTrackingBlockedByCombat == true then return true end
 	if InCombatLockdown and InCombatLockdown() then return true end
-	if addon.functions and addon.functions.isRestrictedContent and addon.functions.isRestrictedContent(true) == true then return true end
+	-- Generic addon restrictions can include transient states unrelated to local consumable checks.
+	-- Mythic+ is already excluded via GetConsumableTrackingContentToken returning nil.
 	return false
 end
 
