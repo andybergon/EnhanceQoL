@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.1.1] - 2026-04-08
+
+### 🐛 Fixed
+
+- Tooltip: Fixed player tooltip details such as item level, specialization, and Mythic+ score sometimes not showing.
+
+---
+
 ## [10.1.0] - 2026-04-08
 
 ### ✨ Added
