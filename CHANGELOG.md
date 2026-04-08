@@ -1,10 +1,17 @@
 # Changelog
 
+## [10.1.2] - 2026-04-08
+
+### 🐛 Fixed
+
+- Cooldown Panels (Tracked Auras): Fixed some spec-specific tracked aura panels and related duplicated panel states not recovering correctly after specialization changes and loading screens.
+
+---
+
 ## [10.1.1] - 2026-04-08
 
 ### 🐛 Fixed
 
-- Cooldown Panels (Tracked Auras): Fixed spec-specific tracked aura panels sometimes not updating correctly after switching specializations and passing through a loading screen.
 - Tooltip: Fixed player tooltip details such as item level, specialization, and Mythic+ score sometimes not showing.
 
 ---
