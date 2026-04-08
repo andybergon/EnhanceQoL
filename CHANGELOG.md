@@ -5,6 +5,7 @@
 ### 🐛 Fixed
 
 - Profiles / Export & Import: Fixed profile export and profile copy sometimes failing.
+- Cooldown Panels: Fixed cooldown ready sounds sometimes not playing when another spell was cast shortly before the cooldown finished.
 
 ## [10.0.2] - 2026-04-08
 

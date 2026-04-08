@@ -630,7 +630,8 @@ function cdp.RUNTIME.AreSpellVariantsEquivalent(owner, firstSpellId, secondSpell
 	if firstCanonicalID == secondCanonicalID then return true end
 	local firstEffectiveID = getEffectiveSpellId(firstID)
 	local secondEffectiveID = getEffectiveSpellId(secondID)
-	return (firstEffectiveID and firstEffectiveID == secondID) or (secondEffectiveID and secondEffectiveID == firstID)
+	return (firstEffectiveID and firstEffectiveID == secondID)
+		or (secondEffectiveID and secondEffectiveID == firstID)
 		or (firstEffectiveID and secondEffectiveID and firstEffectiveID == secondEffectiveID)
 		or false
 end
@@ -641,9 +642,7 @@ function CooldownPanels:ResolveTrackedSpellID(spellId) return cdp.RUNTIME.Resolv
 
 function CooldownPanels:GetSpellAliasIDs(spellId, outIds, seenIds) return cdp.RUNTIME.GetSpellAliasIDs(self, spellId, outIds, seenIds) end
 
-function CooldownPanels:AreSpellVariantsEquivalent(firstSpellId, secondSpellId)
-	return cdp.RUNTIME.AreSpellVariantsEquivalent(self, firstSpellId, secondSpellId)
-end
+function CooldownPanels:AreSpellVariantsEquivalent(firstSpellId, secondSpellId) return cdp.RUNTIME.AreSpellVariantsEquivalent(self, firstSpellId, secondSpellId) end
 
 function CooldownPanels:GetCanonicalSpellVariantID(spellId)
 	self:EnsureStaticSpellVariantGroupsLoaded()
@@ -6693,37 +6692,64 @@ local function triggerReadyGlow(panelId, entryId, glowDuration)
 	runtime.readyAt[entryId] = now
 end
 
-local function onCooldownDone(self)
-	if not self then return end
-
-	-- Never trigger sound/glow for GCD-only cooldowns.
-	local isGCD = self._eqolCooldownIsGCD == true
-
-	if not isGCD then
-		-- Sound should only fire once per displayed cooldown.
-		if self._eqolSoundReady then
-			playSoundName(self._eqolSoundName)
-			self._eqolSoundReady = nil
-		end
-
-		-- Glow trigger is purely event-driven (robust in secret environments).
-		if self._eqolGlowReady then triggerReadyGlow(self._eqolPanelId, self._eqolEntryId, self._eqolGlowDuration) end
-	end
-
-	if CooldownPanels and CooldownPanels.RefreshPanel then CooldownPanels:RequestPanelRefresh(self._eqolPanelId) end
-	-- if CooldownPanels and CooldownPanels.RequestUpdate then CooldownPanels:RequestUpdate() end
-end
-
 local function shouldArmReadySoundOnCooldownDone(data)
 	if type(data) ~= "table" or data.soundReady ~= true or data.cooldownGCD == true then return false end
 	if data.resolvedType == "SPELL" then
 		if data.chargesInfo and data.chargesInfo.maxCharges ~= nil then return false end
 		return CooldownPanels.IsSpellCooldownInfoActive(data.cooldownIsActive, data.cooldownEnabled, data.cooldownStart, data.cooldownDuration)
 	end
-	if data.resolvedType == "ITEM" or data.resolvedType == "SLOT" then
-		return CooldownPanels.IsSpellCooldownInfoActive(nil, true, data.cooldownStart, data.cooldownDuration)
-	end
+	if data.resolvedType == "ITEM" or data.resolvedType == "SLOT" then return CooldownPanels.IsSpellCooldownInfoActive(nil, true, data.cooldownStart, data.cooldownDuration) end
 	return false
+end
+
+local function updateCooldownDoneContext(cooldown, panelId, entryId, data)
+	if not (cooldown and panelId and entryId and type(data) == "table") then return end
+
+	local sameEntry = cooldown._eqolPanelId == panelId and cooldown._eqolEntryId == entryId
+	local armReadySound = shouldArmReadySoundOnCooldownDone(data)
+	local preserveReadySound = not armReadySound and data.cooldownGCD == true and sameEntry and cooldown._eqolSoundReady == true and cooldown._eqolSoundName ~= nil
+
+	cooldown._eqolPanelId = panelId
+	cooldown._eqolEntryId = entryId
+	cooldown._eqolCooldownIsGCD = data.cooldownGCD == true
+	cooldown._eqolSoundName = data.soundName
+	if armReadySound then
+		cooldown._eqolSoundReady = true
+		cooldown._eqolSoundReadyIgnoreGCD = nil
+	elseif preserveReadySound then
+		cooldown._eqolSoundReady = true
+		cooldown._eqolSoundReadyIgnoreGCD = true
+	else
+		cooldown._eqolSoundReady = nil
+		cooldown._eqolSoundReadyIgnoreGCD = nil
+	end
+	cooldown._eqolGlowReady = data.glowReady
+	cooldown._eqolGlowDuration = data.glowDuration
+end
+
+local function onCooldownDone(self)
+	if not self then return end
+
+	-- Never trigger sound/glow for GCD-only cooldowns.
+	local isGCD = self._eqolCooldownIsGCD == true
+	local allowSoundDuringGCD = self._eqolSoundReadyIgnoreGCD == true
+
+	if not isGCD or allowSoundDuringGCD then
+		-- Sound should only fire once per displayed cooldown.
+		if self._eqolSoundReady then
+			playSoundName(self._eqolSoundName)
+			self._eqolSoundReady = nil
+			self._eqolSoundReadyIgnoreGCD = nil
+		end
+	end
+
+	if not isGCD then
+		-- Glow trigger is purely event-driven (robust in secret environments).
+		if self._eqolGlowReady then triggerReadyGlow(self._eqolPanelId, self._eqolEntryId, self._eqolGlowDuration) end
+	end
+
+	if CooldownPanels and CooldownPanels.RefreshPanel then CooldownPanels:RequestPanelRefresh(self._eqolPanelId) end
+	-- if CooldownPanels and CooldownPanels.RequestUpdate then CooldownPanels:RequestUpdate() end
 end
 
 local function isSafeNumber(value) return type(value) == "number" and (not Api.issecretvalue or not Api.issecretvalue(value)) end
@@ -6992,9 +7018,7 @@ local function getItemCooldownInfo(itemID, slotID)
 		local spellId = CooldownPanels:GetItemUseSpellID(itemID)
 		if spellId then
 			local spellStart, spellDuration = getSpellCooldownInfo(spellId)
-			if isCooldownActive(spellStart, spellDuration) and not CooldownPanels:IsCooldownMatchingGlobalCooldown(spellStart, spellDuration) then
-				return spellStart or 0, spellDuration or 0, true
-			end
+			if isCooldownActive(spellStart, spellDuration) and not CooldownPanels:IsCooldownMatchingGlobalCooldown(spellStart, spellDuration) then return spellStart or 0, spellDuration or 0, true end
 		end
 	end
 
@@ -15651,6 +15675,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				icon.cooldown._eqolEntryId = nil
 				icon.cooldown._eqolCooldownIsGCD = nil
 				icon.cooldown._eqolSoundReady = nil
+				icon.cooldown._eqolSoundReadyIgnoreGCD = nil
 				icon.cooldown._eqolSoundName = nil
 				icon.cooldown._eqolGlowReady = nil
 				icon.cooldown._eqolGlowDuration = nil
@@ -15759,13 +15784,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			end
 
 			-- Context for OnCooldownDone (sound/glow) - keep this in sync every update.
-			icon.cooldown._eqolPanelId = panelId
-			icon.cooldown._eqolEntryId = data.entryId
-			icon.cooldown._eqolCooldownIsGCD = data.cooldownGCD == true
-			icon.cooldown._eqolSoundReady = shouldArmReadySoundOnCooldownDone(data)
-			icon.cooldown._eqolSoundName = data.soundName
-			icon.cooldown._eqolGlowReady = data.glowReady
-			icon.cooldown._eqolGlowDuration = data.glowDuration
+			updateCooldownDoneContext(icon.cooldown, panelId, data.entryId, data)
 			if icon.cooldown.Resume then icon.cooldown:Resume() end
 			if icon.cooldown.SetAlpha then icon.cooldown:SetAlpha(1) end
 			CooldownPanels.HidePreviewGlowBorder(icon)
@@ -16229,6 +16248,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 			clearPreviewCooldown(icon.cooldown)
 			icon.cooldown:Clear()
 			icon.cooldown._eqolSoundReady = nil
+			icon.cooldown._eqolSoundReadyIgnoreGCD = nil
 			icon.cooldown._eqolSoundName = nil
 			if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
 			if icon.cooldown.Resume then icon.cooldown:Resume() end
@@ -19270,13 +19290,7 @@ function cdp.ENTRY.ApplyVisibleSpellRuntime(panelId, runtime, icon, data, resolv
 	local readyGlowPrimed = CooldownPanels.GetReadyGlowPrimedState(runtime)
 
 	icon:Show()
-	icon.cooldown._eqolPanelId = panelId
-	icon.cooldown._eqolEntryId = data.entryId
-	icon.cooldown._eqolCooldownIsGCD = data.cooldownGCD == true
-	icon.cooldown._eqolSoundReady = shouldArmReadySoundOnCooldownDone(data)
-	icon.cooldown._eqolSoundName = data.soundName
-	icon.cooldown._eqolGlowReady = data.glowReady
-	icon.cooldown._eqolGlowDuration = data.glowDuration
+	updateCooldownDoneContext(icon.cooldown, panelId, data.entryId, data)
 	if icon.cooldown.Resume then icon.cooldown:Resume() end
 	if icon.cooldown.SetAlpha then icon.cooldown:SetAlpha(1) end
 	icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
@@ -19455,9 +19469,7 @@ function cdp.ENTRY.ApplyVisibleSpellRuntime(panelId, runtime, icon, data, resolv
 	end
 
 	local staticTextCooldown = false
-	if data.entry and data.entry.staticTextShowOnCooldown == true then
-		staticTextCooldown = durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration))
-	end
+	if data.entry and data.entry.staticTextShowOnCooldown == true then staticTextCooldown = durationActive or (cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration)) end
 	applyStaticText(icon, data.layout, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
 	if durationActive and showOnCooldown and data.entry and data.entry.staticTextShowOnCooldown == true and staticTextCooldown and data.entry.spellID then
 		icon.staticText:SetAlpha(cooldownDurationObject:EvaluateRemainingDuration(Helper.FakeCurve))
@@ -19545,13 +19557,7 @@ function cdp.ENTRY.ApplyVisibleItemRuntime(panelId, runtime, icon, data, resolve
 	local desaturate = data.emptyItem == true
 
 	icon:Show()
-	icon.cooldown._eqolPanelId = panelId
-	icon.cooldown._eqolEntryId = data.entryId
-	icon.cooldown._eqolCooldownIsGCD = data.cooldownGCD == true
-	icon.cooldown._eqolSoundReady = shouldArmReadySoundOnCooldownDone(data)
-	icon.cooldown._eqolSoundName = data.soundName
-	icon.cooldown._eqolGlowReady = data.glowReady
-	icon.cooldown._eqolGlowDuration = data.glowDuration
+	updateCooldownDoneContext(icon.cooldown, panelId, data.entryId, data)
 	if icon.cooldown.Resume then icon.cooldown:Resume() end
 	if icon.cooldown.SetAlpha then icon.cooldown:SetAlpha(1) end
 	icon.cooldown:SetHideCountdownNumbers(not data.showCooldownText)
@@ -19600,7 +19606,7 @@ function cdp.ENTRY.ApplyVisibleItemRuntime(panelId, runtime, icon, data, resolve
 	CooldownPanels.SetIconDesaturatedRuntime(icon.texture, desaturate, entryNoDesaturation)
 	if not hidden and data.showOnCooldown ~= true and data.hideOnCooldown ~= true then icon:SetAlpha(1) end
 
-	if ((data.resolvedType == "ITEM" or data.resolvedType == "SLOT") and not cooldownEnabledOk and isSafeGreaterThan(cooldownDuration, 0)) then
+	if (data.resolvedType == "ITEM" or data.resolvedType == "SLOT") and not cooldownEnabledOk and isSafeGreaterThan(cooldownDuration, 0) then
 		icon.texture:SetVertexColor(0.4, 0.4, 0.4)
 	else
 		icon.texture:SetVertexColor(1, 1, 1)
@@ -19614,9 +19620,7 @@ function cdp.ENTRY.ApplyVisibleItemRuntime(panelId, runtime, icon, data, resolve
 	end
 
 	local staticTextCooldown = false
-	if data.entry and data.entry.staticTextShowOnCooldown == true then
-		staticTextCooldown = cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration)
-	end
+	if data.entry and data.entry.staticTextShowOnCooldown == true then staticTextCooldown = cooldownEnabledOk and isCooldownActive(cooldownStart, cooldownDuration) end
 	applyStaticText(icon, data.layout, data.entry, staticFontPath, staticFontSize, staticFontStyle, staticTextCooldown)
 
 	data.readyAt = runtime.readyAt and runtime.readyAt[data.entryId] or nil
@@ -20085,9 +20089,7 @@ function cdp.ENTRY.RefreshChangedTrackedItemEntries()
 	return refreshed
 end
 
-local function refreshTrackedSpellEntries(spellId, baseSpellId, mode, panelsToRefresh)
-	return cdp.ENTRY.RefreshSpellEntries(spellId, baseSpellId, mode, panelsToRefresh) == true
-end
+local function refreshTrackedSpellEntries(spellId, baseSpellId, mode, panelsToRefresh) return cdp.ENTRY.RefreshSpellEntries(spellId, baseSpellId, mode, panelsToRefresh) == true end
 
 local function refreshCooldownEntriesForSpell(spellId, baseSpellId)
 	local runtime = CooldownPanels.runtime
@@ -20434,9 +20436,7 @@ refreshPanelsForCharges = function()
 			refreshed = true
 		else
 			local panels = chargesIndex[trackedSpellId]
-			if not panels and trackedBaseSpellId and trackedBaseSpellId ~= trackedSpellId then
-				panels = chargesIndex[trackedBaseSpellId]
-			end
+			if not panels and trackedBaseSpellId and trackedBaseSpellId ~= trackedSpellId then panels = chargesIndex[trackedBaseSpellId] end
 			if panels then
 				for panelId in pairs(panels) do
 					panelsToRefresh[panelId] = true
