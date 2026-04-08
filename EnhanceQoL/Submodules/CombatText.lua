@@ -67,6 +67,24 @@ local DB_COLOR = "combatTextColor"
 local DB_ENTER_COLOR = "combatTextEnterColor"
 local DB_LEAVE_COLOR = "combatTextLeaveColor"
 
+local function onCombatTextHideTimer()
+	CombatText.hideTimer = nil
+	CombatText:HideText()
+end
+
+local function refreshCombatTextDisplayState()
+	if CombatText.previewing then return end
+	if addon.db and addon.db[DB_ENABLED] then
+		CombatText:RefreshDisplayMode()
+	else
+		CombatText:HideText()
+	end
+end
+
+local function onCombatTextEvent(_, event)
+	CombatText:OnEvent(event)
+end
+
 local function getCachedMediaNames(mediaType)
 	if addon.functions and addon.functions.GetLSMMediaNames then
 		local names = addon.functions.GetLSMMediaNames(mediaType)
@@ -276,10 +294,7 @@ function CombatText:RefreshHideTimer()
 	if self.previewing or self:IsAlwaysVisible() then return end
 	if not self.frame or not self.frame:IsShown() then return end
 	local duration = self:GetDuration()
-	if duration > 0 then self.hideTimer = C_Timer.NewTimer(duration, function()
-		CombatText.hideTimer = nil
-		CombatText:HideText()
-	end) end
+	if duration > 0 then self.hideTimer = C_Timer.NewTimer(duration, onCombatTextHideTimer) end
 end
 
 function CombatText:RefreshDisplayMode()
@@ -346,14 +361,7 @@ function CombatText:ShowEditModeHint(show)
 		if self.frame.bg then self.frame.bg:Hide() end
 		if addon.db and addon.db[DB_ENABLED] then
 			if C_Timer and C_Timer.After then
-				C_Timer.After(0, function()
-					if CombatText.previewing then return end
-					if addon.db and addon.db[DB_ENABLED] then
-						CombatText:RefreshDisplayMode()
-					else
-						CombatText:HideText()
-					end
-				end)
+				C_Timer.After(0, refreshCombatTextDisplayState)
 			else
 				self:RefreshDisplayMode()
 			end
@@ -371,9 +379,7 @@ function CombatText:OnEvent(event)
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		-- Delay one frame so the display state is applied after login/loading transitions.
 		if C_Timer and C_Timer.After then
-			C_Timer.After(0, function()
-				if addon.db and addon.db[DB_ENABLED] then CombatText:RefreshDisplayMode() end
-			end)
+			C_Timer.After(0, refreshCombatTextDisplayState)
 		elseif addon.db and addon.db[DB_ENABLED] then
 			self:RefreshDisplayMode()
 		end
@@ -386,7 +392,7 @@ function CombatText:RegisterEvents()
 	frame:RegisterEvent("PLAYER_REGEN_DISABLED")
 	frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 	frame:RegisterEvent("PLAYER_ENTERING_WORLD")
-	frame:SetScript("OnEvent", function(_, event) CombatText:OnEvent(event) end)
+	frame:SetScript("OnEvent", onCombatTextEvent)
 	self.eventsRegistered = true
 end
 
@@ -527,7 +533,7 @@ function CombatText:RegisterEditMode()
 				end,
 			},
 			{
-				name = L["combatTextFontSize"] or "Font size",
+				name = FONT_SIZE,
 				kind = SettingType.Slider,
 				field = "fontSize",
 				default = defaults.fontSize,
@@ -539,7 +545,7 @@ function CombatText:RegisterEditMode()
 				formatter = function(value) return tostring(math.floor((tonumber(value) or 0) + 0.5)) end,
 			},
 			{
-				name = L["combatTextFont"] or "Font",
+				name = L["Font"] or "Font",
 				kind = SettingType.Dropdown,
 				field = "fontFace",
 				height = 200,

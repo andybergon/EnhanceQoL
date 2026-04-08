@@ -305,7 +305,7 @@ local function createActionBarVisibility(category, expandable)
 
 	addon.functions.SettingsCreateSlider(category, {
 		var = "actionBarFadeStrength",
-		text = L["actionBarFadeStrength"] or "Fade amount",
+		text = L["Fade amount"] or "Fade amount",
 		desc = L["actionBarFadeStrengthDesc"],
 		min = 0,
 		max = 100,
@@ -347,10 +347,10 @@ local function createAnchorControls(category, expandable)
 	addon.functions.SettingsCreateText(category, "|cffff0000" .. warning .. "|r", { parentSection = expandable })
 
 	local anchorOptions = {
-		TOPLEFT = L["topLeft"] or "Top Left",
-		TOPRIGHT = L["topRight"] or "Top Right",
-		BOTTOMLEFT = L["bottomLeft"] or "Bottom Left",
-		BOTTOMRIGHT = L["bottomRight"] or "Bottom Right",
+		TOPLEFT = L["Top Left"] or "Top Left",
+		TOPRIGHT = L["Top Right"] or "Top Right",
+		BOTTOMLEFT = L["Bottom Left"] or "Bottom Left",
+		BOTTOMRIGHT = L["Bottom Right"] or "Bottom Right",
 	}
 	local anchorOrder = ACTION_BAR_ANCHOR_ORDER
 
@@ -394,6 +394,12 @@ local function createButtonAppearanceControls(category, expandable)
 	addon.functions.SettingsCreateHeadline(category, L["actionBarAppearanceHeader"] or "Button appearance", { parentSection = expandable })
 
 	local hideBorders
+	local borderColorModeOptions = {
+		DEFAULT = L["actionBarBorderDefault"] or "Default (Blizzard)",
+		CUSTOM = L["Use custom color"] or "Use custom color",
+		CLASS = L["Use class color"] or "Use class color",
+	}
+	local borderColorModeOrder = { "DEFAULT", "CUSTOM", "CLASS" }
 	local function getBorderStyle()
 		local current = addon.db.actionBarBorderStyle or "DEFAULT"
 		local list = buildBorderDropdown()
@@ -401,6 +407,12 @@ local function createButtonAppearanceControls(category, expandable)
 		return current
 	end
 	local function isDefaultBorderStyle() return getBorderStyle() == "DEFAULT" end
+	local function getBorderColorMode()
+		local current = addon.db.actionBarBorderColorMode
+		if current == nil then current = addon.db.actionBarBorderColoring and "CUSTOM" or "DEFAULT" end
+		if not borderColorModeOptions[current] then current = "DEFAULT" end
+		return current
+	end
 
 	addon.functions.SettingsCreateScrollDropdown(category, {
 		var = "actionBarBorderStyle",
@@ -445,7 +457,7 @@ local function createButtonAppearanceControls(category, expandable)
 
 	addon.functions.SettingsCreateSlider(category, {
 		var = "actionBarBorderEdgeSize",
-		text = L["actionBarBorderEdgeSize"] or "Border size",
+		text = L["Border size"] or "Border size",
 		desc = L["actionBarBorderEdgeSizeDesc"] or "Edge size for SharedMedia borders (e.g., Blizzard Tooltip).",
 		min = 1,
 		max = 32,
@@ -493,12 +505,18 @@ local function createButtonAppearanceControls(category, expandable)
 		parentSection = expandable,
 	})
 
-	local borderColorToggle = addon.functions.SettingsCreateCheckbox(category, {
-		var = "actionBarBorderColoring",
-		text = L["actionBarBorderColoring"] or "Custom border color",
-		desc = L["actionBarBorderColoringDesc"] or "Use a custom color for action button borders.",
-		func = function(value)
-			addon.db.actionBarBorderColoring = value and true or false
+	local borderColorMode = addon.functions.SettingsCreateDropdown(category, {
+		var = "actionBarBorderColorMode",
+		text = L["actionBarBorderColoring"] or "Border coloring",
+		desc = L["actionBarBorderColoringDesc"] or "Choose how custom action button borders are colored.",
+		list = borderColorModeOptions,
+		order = borderColorModeOrder,
+		default = "DEFAULT",
+		get = getBorderColorMode,
+		set = function(key)
+			if not borderColorModeOptions[key] then key = "DEFAULT" end
+			addon.db.actionBarBorderColorMode = key
+			addon.db.actionBarBorderColoring = key == "CUSTOM"
 			if ActionBarLabels and ActionBarLabels.RefreshActionButtonBorders then ActionBarLabels.RefreshActionButtonBorders() end
 		end,
 		parentSection = expandable,
@@ -506,13 +524,12 @@ local function createButtonAppearanceControls(category, expandable)
 
 	addon.functions.SettingsCreateColorPicker(category, {
 		var = "actionBarBorderColor",
-		text = L["actionBarBorderColor"] or "Border color",
+		text = EMBLEM_BORDER_COLOR,
 		callback = function()
 			if ActionBarLabels and ActionBarLabels.RefreshActionButtonBorders then ActionBarLabels.RefreshActionButtonBorders() end
 		end,
-		parent = true,
-		element = borderColorToggle.element,
-		parentCheck = function() return borderColorToggle.setting and borderColorToggle.setting:GetValue() == true end,
+		element = borderColorMode.element,
+		parentCheck = function() return getBorderColorMode() == "CUSTOM" end,
 		colorizeLabel = false,
 		parentSection = expandable,
 	})
@@ -546,10 +563,10 @@ local function createLabelControls(category, expandable)
 
 	local outlineOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "MONOCHROMEOUTLINE" }
 	local outlineOptions = {
-		NONE = L["fontOutlineNone"] or NONE,
-		OUTLINE = L["fontOutlineThin"] or "Outline",
-		THICKOUTLINE = L["fontOutlineThick"] or "Thick Outline",
-		MONOCHROMEOUTLINE = L["fontOutlineMono"] or "Monochrome Outline",
+		NONE = NONE,
+		OUTLINE = L["Outline"] or "Outline",
+		THICKOUTLINE = L["Thick Outline"] or "Thick Outline",
+		MONOCHROMEOUTLINE = L["Monochrome Outline"] or "Monochrome Outline",
 	}
 
 	local macroOverride
@@ -610,7 +627,7 @@ local function createLabelControls(category, expandable)
 
 	addon.functions.SettingsCreateDropdown(category, {
 		var = "actionBarMacroFontOutline",
-		text = L["actionBarFontOutlineLabel"] or "Font outline",
+		text = L["Font outline"] or "Font outline",
 		list = outlineOptions,
 		order = outlineOrder,
 		default = "OUTLINE",
@@ -704,7 +721,7 @@ local function createLabelControls(category, expandable)
 
 	addon.functions.SettingsCreateDropdown(category, {
 		var = "actionBarHotkeyFontOutline",
-		text = L["actionBarFontOutlineLabel"] or "Font outline",
+		text = L["Font outline"] or "Font outline",
 		list = outlineOptions,
 		order = outlineOrder,
 		default = "OUTLINE",
@@ -796,7 +813,7 @@ local function createLabelControls(category, expandable)
 
 	addon.functions.SettingsCreateDropdown(category, {
 		var = "actionBarCountFontOutline",
-		text = L["actionBarFontOutlineLabel"] or "Font outline",
+		text = L["Font outline"] or "Font outline",
 		list = outlineOptions,
 		order = outlineOrder,
 		default = "OUTLINE",
@@ -855,6 +872,11 @@ local function createLabelControls(category, expandable)
 	local barOptions = {}
 	for _, info in ipairs(addon.variables.actionBarNames or {}) do
 		if info.name then table.insert(barOptions, { value = info.name, text = info.text or info.name }) end
+	end
+	if ActionBarLabels and ActionBarLabels.GetAdditionalHotkeyBarOptions then
+		for _, info in ipairs(ActionBarLabels.GetAdditionalHotkeyBarOptions() or {}) do
+			if info and info.value then table.insert(barOptions, info) end
+		end
 	end
 	table.sort(barOptions, function(a, b) return tostring(a.text) < tostring(b.text) end)
 
@@ -989,19 +1011,19 @@ end
 local function createCooldownViewerDropdowns(category, expandable)
 	if not category or #COOLDOWN_VIEWER_FRAMES == 0 then return end
 
-	addon.functions.SettingsCreateHeadline(category, L["cooldownManagerHeader"] or "Show when", { parentSection = expandable })
+	addon.functions.SettingsCreateHeadline(category, L["Show when"] or "Show when", { parentSection = expandable })
 
 	local options = {
-		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.IN_COMBAT, text = L["cooldownManagerShowCombat"] or "In combat" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.IN_COMBAT, text = L["In combat"] or "In combat" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_MOUNTED, text = L["cooldownManagerShowMounted"] or "Mounted" },
-		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED, text = L["cooldownManagerShowNotMounted"] or "Not mounted" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED, text = L["Not mounted"] or "Not mounted" },
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE,
-			text = L["cooldownManagerShowSkyriding"] or (L["visibilityRule_skyriding"] or "While skyriding"),
+			text = L["While skyriding"] or (L["While skyriding"] or "While skyriding"),
 		},
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE,
-			text = L["cooldownManagerHideSkyriding"] or (L["visibilityRule_hideSkyriding"] or "Hide while skyriding"),
+			text = L["Hide while skyriding"] or (L["Hide while skyriding"] or "Hide while skyriding"),
 		},
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE,
@@ -1011,12 +1033,12 @@ local function createCooldownViewerDropdowns(category, expandable)
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE,
 			text = L["visibilityRule_hideFlying"] or "Hide while flying",
 		},
-		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING, text = L["cooldownManagerShowCasting"] or "Player is casting" },
-		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_IN_GROUP, text = L["cooldownManagerShowGrouped"] or "In party/raid" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING, text = L["Player is casting"] or "Player is casting" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_IN_GROUP, text = L["In party/raid"] or "In party/raid" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.MOUSEOVER, text = L["cooldownManagerShowMouseover"] or "On mouseover" },
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET,
-			text = L["cooldownManagerShowTarget"] or L["visibilityRule_playerHasTarget"] or "When I have a target",
+			text = L["When I have a target"] or L["When I have a target"] or "When I have a target",
 		},
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN,
@@ -1067,7 +1089,7 @@ local function createCooldownViewerDropdowns(category, expandable)
 
 	addon.functions.SettingsCreateSlider(category, {
 		var = "cooldownViewerFadeStrength",
-		text = L["cooldownViewerFadeStrength"] or "Fade amount",
+		text = L["Fade amount"] or "Fade amount",
 		desc = L["cooldownViewerFadeStrengthDesc"],
 		min = 0,
 		max = 100,
@@ -1105,15 +1127,15 @@ local function createSpellActivationOverlayDropdown(category, expandable)
 
 	local options = {
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_MOUNTED, text = L["cooldownManagerShowMounted"] or "Mounted" },
-		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED, text = L["cooldownManagerShowNotMounted"] or "Not mounted" },
-		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE, text = L["cooldownManagerShowSkyriding"] or "While skyriding" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.WHILE_NOT_MOUNTED, text = L["Not mounted"] or "Not mounted" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_ACTIVE, text = L["While skyriding"] or "While skyriding" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE, text = L["VisibilityCondNotSkyriding"] or "Not skyriding" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_ACTIVE, text = L["visibilityRule_flying"] or "While flying" },
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE, text = L["VisibilityCondNotFlying"] or "Not flying" },
-		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING, text = L["cooldownManagerShowCasting"] or "Player is casting" },
+		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING, text = L["Player is casting"] or "Player is casting" },
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET,
-			text = L["cooldownManagerShowTarget"] or L["visibilityRule_playerHasTarget"] or "When I have a target",
+			text = L["When I have a target"] or L["When I have a target"] or "When I have a target",
 		},
 	}
 
@@ -1210,7 +1232,7 @@ local function createFrameCategory()
 	})
 	addon.SettingsLayout.uiFramesExpandable = expandable
 
-	addon.functions.SettingsCreateHeadline(category, L["visibilityScenarioGroupTitle"] or (L["ActionBarVisibilityLabel"] or "Visibility"), { parentSection = expandable })
+	addon.functions.SettingsCreateHeadline(category, L["visibilityScenarioGroupTitle"] or (L["Visibility"] or "Visibility"), { parentSection = expandable })
 	if L["visibilityFrameExplain2"] then addon.functions.SettingsCreateText(category, L["visibilityFrameExplain2"], { parentSection = expandable }) end
 
 	local frames = {}
@@ -1256,7 +1278,7 @@ local function createFrameCategory()
 
 	addon.functions.SettingsCreateSlider(category, {
 		var = "frameVisibilityFadeStrength",
-		text = L["frameFadeStrength"] or "Fade amount",
+		text = L["Fade amount"] or "Fade amount",
 		desc = L["frameFadeStrengthDesc"],
 		min = 0,
 		max = 100,
@@ -1462,6 +1484,38 @@ local function createNameplatesCategory()
 
 	local function areMobColorsEnabled() return mobColorsToggle and mobColorsToggle.setting and mobColorsToggle.setting:GetValue() == true end
 
+	local function refreshNameplateMobColorScope()
+		if addon.functions.RefreshDefaultNameplateMobColors then addon.functions.RefreshDefaultNameplateMobColors() end
+	end
+
+	addon.functions.SettingsCreateCheckbox(category, {
+		var = DEFAULT_NAMEPLATE_FEATURE_KEYS.mobColorsInDungeons,
+		text = L["nameplateMobColorsInDungeons"] or "Apply in dungeons",
+		desc = L["nameplateMobColorsInDungeonsDesc"],
+		func = function(value)
+			addon.db[DEFAULT_NAMEPLATE_FEATURE_KEYS.mobColorsInDungeons] = value and true or false
+			refreshNameplateMobColorScope()
+		end,
+		parent = true,
+		element = mobColorsToggle.element,
+		parentCheck = areMobColorsEnabled,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateCheckbox(category, {
+		var = DEFAULT_NAMEPLATE_FEATURE_KEYS.mobColorsOutsideDungeons,
+		text = L["nameplateMobColorsOutsideDungeons"] or "Also apply outside dungeons",
+		desc = L["nameplateMobColorsOutsideDungeonsDesc"],
+		func = function(value)
+			addon.db[DEFAULT_NAMEPLATE_FEATURE_KEYS.mobColorsOutsideDungeons] = value and true or false
+			refreshNameplateMobColorScope()
+		end,
+		parent = true,
+		element = mobColorsToggle.element,
+		parentCheck = areMobColorsEnabled,
+		parentSection = expandable,
+	})
+
 	local function createNameplateMobColorPicker(var, text)
 		addon.functions.SettingsCreateColorPicker(category, {
 			var = var,
@@ -1601,7 +1655,7 @@ local function createCastbarCategory()
 	})
 	addon.functions.SettingsCreateSoundDropdown(category, {
 		var = "focusInterruptTrackerSoundFile",
-		text = L["focusInterruptTrackerSoundFile"] or "Sound",
+		text = SOUND,
 		desc = L["focusInterruptTrackerSoundFileDesc"] or "SharedMedia sound to play for new focus casts.",
 		listFunc = buildFocusInterruptSoundDropdown,
 		order = focusInterruptSoundOrder,

@@ -11,7 +11,7 @@ addon.MythicPlus = addon.MythicPlus or {}
 addon.MythicPlus.functions = addon.MythicPlus.functions or {}
 addon.MythicPlus.variables = addon.MythicPlus.variables or {}
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_MythicPlus")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local EditMode = addon.EditMode
 
 addon.MythicPlus.variables.knownLoadout = {}
@@ -437,7 +437,7 @@ local function registerActiveBuildEditMode()
 		settings = {}
 
 		settings[#settings + 1] = {
-			name = L["talentReminderActiveBuildTextSize"],
+			name = L["Text Size"],
 			kind = settingType.Slider,
 			default = addon.db["talentReminderActiveBuildSize"] or 14,
 			minValue = 6,
@@ -469,7 +469,7 @@ local function registerActiveBuildEditMode()
 					refreshActiveBuildEditMode()
 				end
 				root:CreateCheckbox(
-					L["talentReminderShowActiveBuildOutside"],
+					L["Outside"],
 					function() return addon.db["talentReminderActiveBuildShowOnly"] and addon.db["talentReminderActiveBuildShowOnly"][1] == true end,
 					function() toggle(1) end
 				)
@@ -479,7 +479,7 @@ local function registerActiveBuildEditMode()
 					function() toggle(2) end
 				)
 				root:CreateCheckbox(
-					L["talentReminderShowActiveBuildRaid"],
+					L["Raid"],
 					function() return addon.db["talentReminderActiveBuildShowOnly"] and addon.db["talentReminderActiveBuildShowOnly"][3] == true end,
 					function() toggle(3) end
 				)

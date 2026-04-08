@@ -133,6 +133,21 @@ ChatIM.wasOpenBeforeCombat = false
 ChatIM.soundQueue = {}
 ChatIM.inCombat = false
 
+function ChatIM:IsChatMessagingRestricted()
+	if C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown() then return true end
+
+	local restrictionTypes = Enum and Enum.AddOnRestrictionType
+	local restrictionStates = Enum and Enum.AddOnRestrictionState
+	local restrictedActions = _G.C_RestrictedActions
+	if not (restrictionTypes and restrictedActions and restrictedActions.GetAddOnRestrictionState) then return false end
+
+	local chatRestriction = restrictionTypes.Chat
+	if not chatRestriction then return false end
+
+	local activeState = restrictionStates and restrictionStates.Active or 2
+	return restrictedActions.GetAddOnRestrictionState(chatRestriction) == activeState
+end
+
 function ChatIM:UpdateAlpha()
 	if not addon.db["enableChatIMFade"] then return end
 	if not self.frame then return end
@@ -466,15 +481,19 @@ function ChatIM:CreateTab(sender, isBN, bnetID, battleTag)
 	end)
 	eb:SetScript("OnEnterPressed", function(self)
 		local txt = self:GetText()
-		self:SetText("")
 		local tgt = ChatIM.activeTab or sender
-		if txt ~= "" and tgt then
-			local tab = ChatIM.tabs[tgt]
-			if tab and tab.isBN and tab.bnetID then
-				C_BattleNet.SendWhisper(tab.bnetID, txt)
-			else
-				C_ChatInfo.SendChatMessage(txt, "WHISPER", nil, tgt)
-			end
+		if txt == "" or not tgt then
+			self:ClearFocus()
+			return
+		end
+		if ChatIM:IsChatMessagingRestricted() then return end
+
+		self:SetText("")
+		local tab = ChatIM.tabs[tgt]
+		if tab and tab.isBN and tab.bnetID then
+			C_BattleNet.SendWhisper(tab.bnetID, txt)
+		else
+			C_ChatInfo.SendChatMessage(txt, "WHISPER", nil, tgt)
 		end
 		self:ClearFocus()
 	end)
@@ -792,10 +811,12 @@ end
 
 function ChatIM:StartWhisper(target, bnetID, accountTag)
 	if not target then return end
+	if self:IsChatMessagingRestricted() then return false end
 	if bnetID then
 		self:CreateTab(target, true, bnetID, accountTag)
 	else
 		self:CreateTab(target)
 	end
 	self:FocusConversation(target)
+	return true
 end

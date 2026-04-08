@@ -1,5 +1,5 @@
 local parentAddonName = "EnhanceQoL"
-local addonName, addon = ...
+local addon = select(2, ...)
 
 if _G[parentAddonName] then
 	addon = _G[parentAddonName]
@@ -15,8 +15,7 @@ ResourceBars.ui = ResourceBars.ui or {}
 -- forward declarations to satisfy luacheck for early function
 local LSM = LibStub("LibSharedMedia-3.0")
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
-local GetVisibilityRuleMetadata = addon.functions and addon.functions.GetVisibilityRuleMetadata
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 local UnitPower, UnitPowerMax, UnitHealth, UnitHealthMax, UnitGetTotalAbsorbs, UnitStagger, GetTime = UnitPower, UnitPowerMax, UnitHealth, UnitHealthMax, UnitGetTotalAbsorbs, UnitStagger, GetTime
 local CreateFrame = CreateFrame
@@ -49,12 +48,6 @@ local shouldUseDiscreteSeparatorSegments
 local refreshDiscreteSegmentsForBar
 local ensureEditModeRegistration
 local ensureRelativeFrameFallback
-local lastBarSelectionPerSpec = {}
-local lastSpecCopySelection = {}
-local lastProfileShareScope = {}
-local lastSpecCopyMode = {}
-local lastSpecCopyBar = {}
-local lastSpecCopyCosmetic = {}
 local visibilityDriverWatcher
 local ResourcebarVars = {
 	RESOURCE_SHARE_KIND = "EQOL_RESOURCE_BAR_PROFILE",
@@ -187,6 +180,10 @@ function ResourceBars.RelativeFrameMatchesName(relativeName, frameName)
 end
 
 function ResourceBars.GetRelativeFrameHookTargets(relativeName)
+	ResourceBars._relativeFrameHookTargetsCache = ResourceBars._relativeFrameHookTargetsCache or {}
+	if type(relativeName) ~= "string" or relativeName == "" then return ResourceBars._emptyRelativeFrameHookTargets or {} end
+	local cached = ResourceBars._relativeFrameHookTargetsCache[relativeName]
+	if cached then return cached end
 	local targets = {}
 	local seen = {}
 	local function add(name)
@@ -200,6 +197,7 @@ function ResourceBars.GetRelativeFrameHookTargets(relativeName)
 		add(mapped.uf)
 	end
 	add(relativeName)
+	ResourceBars._relativeFrameHookTargetsCache[relativeName] = targets
 	return targets
 end
 
@@ -235,11 +233,22 @@ local COSMETIC_BAR_KEYS = {
 	"gradientStartColor",
 	"gradientEndColor",
 	"gradientDirection",
+	"staggerLowThreshold",
+	"staggerLowColor",
+	"staggerMediumThreshold",
+	"staggerMediumColor",
+	"staggerBaseHighColor",
 	"staggerHighColors",
+	"useStaggerMaxOverride",
+	"staggerMaxPercent",
 	"staggerHighThreshold",
+	"staggerVeryHighThreshold",
 	"staggerExtremeThreshold",
 	"staggerHighColor",
+	"staggerVeryHighColor",
 	"staggerExtremeColor",
+	"staggerCriticalThreshold",
+	"staggerCriticalColor",
 	"useMaelstromFiveColor",
 	"useMaelstromTenStacks",
 	"useMaelstromCarryFill",
@@ -617,13 +626,20 @@ local function setBarDesaturated(bar, flag)
 	if bar and bar.SetStatusBarDesaturated then bar:SetStatusBarDesaturated(flag and true or false) end
 end
 
-RB.STAGGER_YELLOW_THRESHOLD = 0.30
-RB.STAGGER_RED_THRESHOLD = 0.60
+RB.STAGGER_LOW_THRESHOLD = 30
+RB.STAGGER_MEDIUM_THRESHOLD = 60
+RB.STAGGER_THRESHOLD_MAX = 1000
+RB.STAGGER_YELLOW_THRESHOLD = RB.STAGGER_LOW_THRESHOLD / 100
+RB.STAGGER_RED_THRESHOLD = RB.STAGGER_MEDIUM_THRESHOLD / 100
 RB.STAGGER_EXTRA_THRESHOLD_HIGH = 200
+RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH = 250
 RB.STAGGER_EXTRA_THRESHOLD_EXTREME = 300
+RB.STAGGER_EXTRA_THRESHOLD_CRITICAL = 350
 RB.STAGGER_EXTRA_COLORS = {
 	high = { r = 0.62, g = 0.2, b = 1.0, a = 1 },
+	veryHigh = { r = 0.85, g = 0.2, b = 1.0, a = 1 },
 	extreme = { r = 1.0, g = 0.2, b = 0.8, a = 1 },
+	critical = { r = 1.0, g = 0.1, b = 0.45, a = 1 },
 }
 RB.STAGGER_FALLBACK_COLORS = {
 	green = { r = 0.52, g = 1.0, b = 0.52 },
@@ -638,30 +654,60 @@ local function getColorComponents(color, fallback)
 	return color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1
 end
 
+local function clampStaggerThreshold(value, fallback)
+	local n = tonumber(value)
+	if n == nil then n = fallback end
+	if n == nil then return nil end
+	if n < 0 then
+		n = 0
+	elseif n > RB.STAGGER_THRESHOLD_MAX then
+		n = RB.STAGGER_THRESHOLD_MAX
+	end
+	return n
+end
+
+local function getStaggerThresholds(cfg)
+	local low = clampStaggerThreshold(cfg and cfg.staggerLowThreshold, RB.STAGGER_LOW_THRESHOLD)
+	local medium = clampStaggerThreshold(cfg and cfg.staggerMediumThreshold, RB.STAGGER_MEDIUM_THRESHOLD)
+	local high = clampStaggerThreshold(cfg and cfg.staggerHighThreshold, RB.STAGGER_EXTRA_THRESHOLD_HIGH)
+	local veryHigh = clampStaggerThreshold(cfg and cfg.staggerVeryHighThreshold, RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH)
+	local extreme = clampStaggerThreshold(cfg and cfg.staggerExtremeThreshold, RB.STAGGER_EXTRA_THRESHOLD_EXTREME)
+	local critical = clampStaggerThreshold(cfg and cfg.staggerCriticalThreshold, RB.STAGGER_EXTRA_THRESHOLD_CRITICAL)
+
+	if high < medium then high = medium end
+	if veryHigh < high then veryHigh = high end
+	if extreme < veryHigh then extreme = veryHigh end
+	if critical < extreme then critical = extreme end
+
+	return low / 100, medium / 100, high / 100, veryHigh / 100, extreme / 100, critical / 100
+end
+
+local function getStaggerBaseColor(info, cfg, state)
+	if state == "medium" then
+		return getColorComponents(cfg and cfg.staggerMediumColor, (info and info.yellow) or RB.STAGGER_FALLBACK_COLORS.yellow)
+	elseif state == "high" then
+		return getColorComponents(cfg and cfg.staggerBaseHighColor, (info and info.red) or RB.STAGGER_FALLBACK_COLORS.red)
+	end
+	return getColorComponents(cfg and cfg.staggerLowColor, (info and info.green) or RB.STAGGER_FALLBACK_COLORS.green)
+end
+
 local function getStaggerStateColor(percent, cfg)
 	local info = (GetPowerBarColor and GetPowerBarColor("STAGGER")) or (PowerBarColor and PowerBarColor["STAGGER"])
+	local lowRatio, mediumRatio, highRatio, veryHighRatio, extremeRatio, criticalRatio = getStaggerThresholds(cfg)
 	if cfg and cfg.staggerHighColors == true then
-		local high = tonumber(cfg.staggerHighThreshold) or RB.STAGGER_EXTRA_THRESHOLD_HIGH
-		local extreme = tonumber(cfg.staggerExtremeThreshold) or RB.STAGGER_EXTRA_THRESHOLD_EXTREME
-		if high < 0 then high = 0 end
-		if extreme < high then extreme = high end
-		local highRatio = high / 100
-		local extremeRatio = extreme / 100
-		if percent >= extremeRatio then
+		if percent >= criticalRatio then
+			return getColorComponents(cfg.staggerCriticalColor, RB.STAGGER_EXTRA_COLORS.critical)
+		elseif percent >= extremeRatio then
 			return getColorComponents(cfg.staggerExtremeColor, RB.STAGGER_EXTRA_COLORS.extreme)
+		elseif percent >= veryHighRatio then
+			return getColorComponents(cfg.staggerVeryHighColor, RB.STAGGER_EXTRA_COLORS.veryHigh)
 		elseif percent >= highRatio then
 			return getColorComponents(cfg.staggerHighColor, RB.STAGGER_EXTRA_COLORS.high)
 		end
 	end
-	local key
-	if percent >= RB.STAGGER_RED_THRESHOLD then
-		key = "red"
-	elseif percent >= RB.STAGGER_YELLOW_THRESHOLD then
-		key = "yellow"
-	else
-		key = "green"
-	end
-	return getColorComponents((info and info[key]) or RB.STAGGER_FALLBACK_COLORS[key] or RB.STAGGER_FALLBACK_COLORS.green)
+	if percent >= mediumRatio then return getStaggerBaseColor(info, cfg, "high") end
+	if percent >= lowRatio then return getStaggerBaseColor(info, cfg, "medium") end
+	return getStaggerBaseColor(info, cfg, "low")
 end
 
 local function getPowerBarColor(type)
@@ -1580,15 +1626,15 @@ local function exportErrorMessage(reason)
 end
 
 local function importErrorMessage(reason, extra)
-	if reason == "NO_INPUT" then return L["ImportProfileEmpty"] or "Please enter a code to import." end
-	if reason == "DECODE" or reason == "DECOMPRESS" or reason == "DESERIALIZE" or reason == "WRONG_KIND" then return L["ImportProfileInvalid"] or "The code could not be read." end
+	if reason == "NO_INPUT" then return L["Please enter a code to import."] or "Please enter a code to import." end
+	if reason == "DECODE" or reason == "DECOMPRESS" or reason == "DESERIALIZE" or reason == "WRONG_KIND" then return L["The code could not be read."] or "The code could not be read." end
 	if reason == "WRONG_CLASS" then
 		local className = extra or UNKNOWN or "Unknown class"
 		return (L["ImportProfileWrongClass"] or "This profile belongs to %s."):format(className)
 	end
 	if reason == "NO_SPECS" then return L["ImportProfileNoSpecs"] or "The code does not contain any Resource Bars settings." end
 	if reason == "SPEC_MISMATCH" or reason == "NO_SPEC" then return L["ImportProfileMissingSpec"] or "The code does not contain settings for that specialization." end
-	if reason == "SPEC_EMPTY" then return L["ImportProfileInvalid"] or "The code could not be read." end
+	if reason == "SPEC_EMPTY" then return L["The code could not be read."] or "The code could not be read." end
 	return L["ImportProfileFailed"] or "Could not import the Resource Bars profile."
 end
 
@@ -2671,34 +2717,19 @@ local function SnapFractionToSpan(bar, span, frac)
 	return physicalOffset / s
 end
 
--- Pull saved Edit Mode layout coords into empty anchors.
-local function backfillAnchorFromLayout(anchor, barType)
+-- One-time migration path from old Edit Mode position storage into spec anchors.
+local function backfillAnchorFromLayout(anchor, barType, specIndex)
 	if not anchor or (anchor.x ~= nil and anchor.y ~= nil) then return end
 	if anchor.relativeFrame and anchor.relativeFrame ~= "" and anchor.relativeFrame ~= "UIParent" then return end
-	local editMode = addon and addon.EditMode
-	if not editMode or not editMode.GetLayoutData then return end
-	local layoutName = (editMode.GetActiveLayoutName and editMode:GetActiveLayoutName()) or editMode.activeLayout
-	local frameId = ResourceBars.GetEditModeFrameId(barType, nil, addon.variables and addon.variables.unitSpec)
-	local data = editMode:GetLayoutData(frameId, layoutName)
+	local store = addon and addon.db and addon.db.editModeData
+	local frameId = ResourceBars.GetEditModeFrameId(barType, nil, specIndex)
+	local data = store and store[frameId]
+	if type(data) ~= "table" or data.x == nil or data.y == nil then data = nil end
 	if (not data or data.x == nil or data.y == nil) and ResourceBars.GetEditModeLegacyFrameId then
 		local legacyId = ResourceBars.GetEditModeLegacyFrameId(barType)
 		if legacyId and legacyId ~= frameId then
-			local legacy = editMode:GetLayoutData(legacyId, layoutName)
-			if legacy and legacy.x ~= nil and legacy.y ~= nil then
-				data = legacy
-				-- Seed spec-specific layout from legacy class-wide data once.
-				if editMode.EnsureLayoutData then
-					local target = editMode:EnsureLayoutData(frameId, layoutName)
-					if target then
-						target.point = target.point or legacy.point
-						target.relativePoint = target.relativePoint or legacy.relativePoint or legacy.point
-						target.x = legacy.x
-						target.y = legacy.y
-						if legacy.width ~= nil and target.width == nil then target.width = legacy.width end
-						if legacy.height ~= nil and target.height == nil then target.height = legacy.height end
-					end
-				end
-			end
+			local legacy = store and store[legacyId]
+			if legacy and legacy.x ~= nil and legacy.y ~= nil then data = legacy end
 		end
 	end
 	if not data or data.x == nil or data.y == nil then return end
@@ -2867,6 +2898,14 @@ function ResourceBars.PrepareBarConfigForRuntime(cfg, pType, specInfo)
 	return cfg
 end
 
+function ResourceBars.GetRuntimeBarConfig(pType, frame)
+	local cfg = frame and frame._cfg
+	if cfg then return cfg end
+	cfg = getBarSettings(pType)
+	if frame and cfg then frame._cfg = cfg end
+	return cfg
+end
+
 local function isEQOLBarFrameName(name) return type(name) == "string" and name:match("^EQOL.+Bar$") end
 
 ensureRelativeFrameFallback = function(anchor, pType, specInfo)
@@ -2901,7 +2940,7 @@ function updateHealthBar(evt)
 		end
 		local maxHealth = healthBar._lastMax or newMax or 1
 		local curHealth = UnitHealth("player")
-		local settings = getBarSettings("HEALTH") or {}
+		local settings = ResourceBars.GetRuntimeBarConfig("HEALTH", healthBar) or {}
 		local smooth = settings.smoothFill == true
 		setBarValue(healthBar, curHealth, smooth)
 		healthBar._lastVal = curHealth
@@ -3058,7 +3097,32 @@ function getAnchor(name, spec)
 		anchor.matchEssentialWidth = nil
 	end
 	if (anchor.relativeFrame or "UIParent") == "UIParent" then anchor.matchRelativeWidth = nil end
-	backfillAnchorFromLayout(anchor, name)
+	backfillAnchorFromLayout(anchor, name, spec)
+	do
+		local editMode = addon and addon.EditMode
+		local frameId = ResourceBars.GetEditModeFrameId and ResourceBars.GetEditModeFrameId(name, nil, spec)
+		local legacyId = ResourceBars.GetEditModeLegacyFrameId and ResourceBars.GetEditModeLegacyFrameId(name)
+		local store = addon and addon.db and addon.db.editModeData
+		local cleared = ResourceBars._clearedEditModeAnchorIds
+		if not cleared then
+			cleared = {}
+			ResourceBars._clearedEditModeAnchorIds = cleared
+		end
+		local profileToken = tostring(addon and addon.db)
+		local function clear(id)
+			if not id or id == "" then return end
+			local clearKey = profileToken .. ":" .. tostring(id)
+			if cleared[clearKey] then return end
+			if editMode and editMode.ClearStoredPosition then
+				editMode:ClearStoredPosition(id)
+			elseif type(store) == "table" then
+				store[id] = nil
+			end
+			cleared[clearKey] = true
+		end
+		clear(frameId)
+		if legacyId and legacyId ~= frameId then clear(legacyId) end
+	end
 	return anchor
 end
 
@@ -3404,12 +3468,23 @@ local function syncBarWidthWithAnchor(pType)
 end
 
 local function syncRelativeFrameWidths()
-	local changed = false
-	if healthBar then changed = syncBarWidthWithAnchor("HEALTH") or changed end
-	for pType, bar in pairs(powerbar) do
-		if bar then changed = syncBarWidthWithAnchor(pType) or changed end
+	local changedAny = false
+	local passLimit = 1
+	for _ in pairs(powerbar or {}) do
+		passLimit = passLimit + 1
 	end
-	return changed
+
+	for _ = 1, passLimit do
+		local changedThisPass = false
+		if healthBar then changedThisPass = syncBarWidthWithAnchor("HEALTH") or changedThisPass end
+		for pType, bar in pairs(powerbar or {}) do
+			if bar then changedThisPass = syncBarWidthWithAnchor(pType) or changedThisPass end
+		end
+		changedAny = changedAny or changedThisPass
+		if not changedThisPass then break end
+	end
+
+	return changedAny
 end
 
 ResourceBars.SyncRelativeFrameWidths = syncRelativeFrameWidths
@@ -3428,6 +3503,7 @@ local pendingHookRetries = {}
 ensureRelativeFrameHooks = function(frameName)
 	if not frameName or frameName == "UIParent" then return end
 	local foundFrame = false
+	local hookedAny = false
 	for _, targetName in ipairs(ResourceBars.GetRelativeFrameHookTargets(frameName)) do
 		local frame = _G[targetName]
 		if frame then
@@ -3436,11 +3512,17 @@ ensureRelativeFrameHooks = function(frameName)
 				local okSize = pcall(frame.HookScript, frame, "OnSizeChanged", handleRelativeFrameGeometryChanged)
 				local okShow = pcall(frame.HookScript, frame, "OnShow", handleRelativeFrameGeometryChanged)
 				local okHide = pcall(frame.HookScript, frame, "OnHide", handleRelativeFrameGeometryChanged)
-				if okSize or okShow or okHide then widthMatchHookedFrames[targetName] = true end
+				if okSize or okShow or okHide then
+					widthMatchHookedFrames[targetName] = true
+					hookedAny = true
+				end
 			end
 		end
 	end
-	if foundFrame then return end
+	if foundFrame then
+		if hookedAny then handleRelativeFrameGeometryChanged() end
+		return
+	end
 	if not foundFrame then
 		if After and not pendingHookRetries[frameName] then
 			pendingHookRetries[frameName] = true
@@ -3473,7 +3555,7 @@ function updatePowerBar(type, runeSlot)
 	if not bar or not bar:IsShown() then return end
 	-- Special handling for DK RUNES: six sub-bars that fill as cooldown progresses
 	if type == "RUNES" then
-		local cfg = getBarSettings("RUNES") or {}
+		local cfg = ResourceBars.GetRuntimeBarConfig("RUNES", bar) or {}
 		local readyR, readyG, readyB, readyA = resolveRuneReadyColor(cfg)
 		local cooldownR, cooldownG, cooldownB, cooldownA
 		if ResourceBars.ResolveRuneCooldownColor then
@@ -3809,12 +3891,15 @@ function updatePowerBar(type, runeSlot)
 		return
 	end
 	if type == "STAGGER" then
-		local cfg = getBarSettings(type) or {}
+		local cfg = ResourceBars.GetRuntimeBarConfig(type, bar) or {}
 		local maxHealth = UnitHealthMax("player") or 1
 		if maxHealth <= 0 then return end
-		if bar._lastMax ~= maxHealth then
-			bar._lastMax = maxHealth
-			bar:SetMinMaxValues(0, maxHealth)
+		local maxPercent = cfg.useStaggerMaxOverride == true and (tonumber(cfg.staggerMaxPercent) or 200) or 100
+		if maxPercent < 100 then maxPercent = 100 end
+		local staggerMax = maxHealth * (maxPercent / 100)
+		if bar._lastMax ~= staggerMax then
+			bar._lastMax = staggerMax
+			bar:SetMinMaxValues(0, staggerMax)
 		end
 		local curPower = (UnitStagger and UnitStagger("player")) or 0
 
@@ -3823,8 +3908,9 @@ function updatePowerBar(type, runeSlot)
 		setBarValue(bar, curPower, smooth)
 		bar._lastVal = curPower
 
-		local percent = maxHealth > 0 and (curPower / maxHealth) or 0
-		local percentDisplay = percent * 100
+		local fillPercent = staggerMax > 0 and (curPower / staggerMax) or 0
+		local staggerPercent = maxHealth > 0 and (curPower / maxHealth) or 0
+		local percentDisplay = staggerPercent * 100
 		local percentStr = formatPercentDisplay(percentDisplay, cfg)
 		if bar.text then
 			local useShortNumbers = cfg.shortNumbers ~= false
@@ -3839,7 +3925,7 @@ function updatePowerBar(type, runeSlot)
 					bar._lastText = ""
 				end
 			else
-				local text = ResourceBars.FormatBarTextByStyle(style, formatNumber(curPower, useShortNumbers), formatNumber(maxHealth, useShortNumbers), percentStr)
+				local text = ResourceBars.FormatBarTextByStyle(style, formatNumber(curPower, useShortNumbers), formatNumber(staggerMax, useShortNumbers), percentStr)
 				if (not addon.variables.isMidnight or (issecretvalue and not issecretvalue(text))) and bar._lastText ~= text then
 					bar.text:SetText(text)
 					bar._lastText = text
@@ -3858,7 +3944,7 @@ function updatePowerBar(type, runeSlot)
 			local custom = cfg.barColor or RB.WHITE
 			baseR, baseG, baseB, baseA = custom[1] or 1, custom[2] or 1, custom[3] or 1, custom[4] or 1
 		else
-			local r, g, b, a = getStaggerStateColor(percent, cfg)
+			local r, g, b, a = getStaggerStateColor(staggerPercent, cfg)
 			baseR, baseG, baseB = r or 1, g or 1, b or 1
 			baseA = a or (cfg.barColor and cfg.barColor[4]) or 1
 		end
@@ -3867,7 +3953,7 @@ function updatePowerBar(type, runeSlot)
 
 		local targetR, targetG, targetB, targetA = baseR, baseG, baseB, baseA
 		local flag
-		if cfg.useMaxColor == true and curPower >= max(maxHealth, 1) then
+		if cfg.useMaxColor == true and curPower >= max(staggerMax, 1) then
 			local maxCol = cfg.maxColor or RB.DEFAULT_MAX_COLOR
 			targetR, targetG, targetB, targetA = maxCol[1] or targetR, maxCol[2] or targetG, maxCol[3] or targetB, maxCol[4] or targetA
 			flag = "max"
@@ -3889,7 +3975,7 @@ function updatePowerBar(type, runeSlot)
 		return
 	end
 	if isAuraPowerType(type) then
-		local cfg = getBarSettings(type) or {}
+		local cfg = ResourceBars.GetRuntimeBarConfig(type, bar) or {}
 		if type == "MAELSTROM_WEAPON" then ensureMaelstromWeaponDefaults(cfg) end
 		local stacks, logicalMax, visualMax = getAuraPowerCounts(type)
 		local cfgDef = RB.AURA_POWER_CONFIG[type] or {}
@@ -4005,17 +4091,16 @@ function updatePowerBar(type, runeSlot)
 	end
 	local pType = POWER_ENUM[type]
 	if not pType then return end
-	local cfg = getBarSettings(type) or {}
+	local cfg = ResourceBars.GetRuntimeBarConfig(type, bar) or {}
 	local cfgDef = (RB.POWER_CONFIG and RB.POWER_CONFIG[type]) or {}
 	local thresholdModeForBar = ResourceBars.GetThresholdColorModeAndCap(type)
 	local isSoulShards = type == "SOUL_SHARDS"
 	local useRaw = ResourceBars.ShouldUseRawPowerValues(type)
-	local maxPower = bar._lastMax
-	if not maxPower or bar._lastMaxRaw ~= useRaw then
-		maxPower = UnitPowerMax("player", pType, useRaw)
+	local maxPower = UnitPowerMax("player", pType, useRaw) or 0
+	if bar._lastMax ~= maxPower or bar._lastMaxRaw ~= useRaw then
 		bar._lastMax = maxPower
 		bar._lastMaxRaw = useRaw
-		bar:SetMinMaxValues(0, maxPower)
+		bar:SetMinMaxValues(0, max(maxPower, 1))
 	end
 	local curPower = UnitPower("player", pType, useRaw)
 	local barValue = curPower
@@ -4934,7 +5019,7 @@ local function createPowerBar(type, anchor)
 		bar._rbRefreshOnShow = true
 	end
 
-	local settings = getBarSettings(type)
+	local settings = ResourceBars.GetRuntimeBarConfig(type, bar)
 	local w = max(RB.MIN_RESOURCE_BAR_WIDTH, (settings and settings.width) or RB.DEFAULT_POWER_WIDTH)
 	local h = settings and settings.height or RB.DEFAULT_POWER_HEIGHT
 	bar._cfg = settings
@@ -4943,11 +5028,8 @@ local function createPowerBar(type, anchor)
 	local defaultStyle = (type == "MANA" or type == "STAGGER") and "PERCENT" or "CURMAX"
 	bar._style = settings and settings.textStyle or defaultStyle
 	bar:SetSize(w, h)
-	do
-		local cfg2 = getBarSettings(type) or {}
-		bar:SetStatusBarTexture(resolveTexture(cfg2))
-		configureSpecialTexture(bar, type, cfg2)
-	end
+	bar:SetStatusBarTexture(resolveTexture(settings or {}))
+	configureSpecialTexture(bar, type, settings or {})
 	bar:SetClampedToScreen(true)
 	local stackSpacing = RB.DEFAULT_STACK_SPACING
 
@@ -5078,24 +5160,32 @@ local function createPowerBar(type, anchor)
 	updateBarThresholds(type)
 
 	-- Ensure dependents re-anchor when this bar changes size
-	bar:SetScript("OnSizeChanged", function()
-		if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ReanchorDependentsOf then addon.Aura.ResourceBars.ReanchorDependentsOf("EQOL" .. type .. "Bar") end
-		if type == "RUNES" then
-			layoutRunes(bar)
-			updateBarSeparators("RUNES")
-		elseif type == "ESSENCE" then
-			local cfg = getBarSettings("ESSENCE") or {}
-			local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
-			ResourceBars.LayoutEssences(bar, cfg, count, resolveTexture(cfg))
-			if ResourceBars.separatorEligible[type] then updateBarSeparators(type) end
-		elseif ResourceBars.separatorEligible[type] then
-			updateBarSeparators(type)
-		end
-		updateBarThresholds(type)
-	end)
+	if not bar._rbSizeChangedHooked then
+		bar:SetScript("OnSizeChanged", function(self)
+			local barType = self._rbType
+			if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ReanchorDependentsOf then
+				addon.Aura.ResourceBars.ReanchorDependentsOf("EQOL" .. tostring(barType) .. "Bar")
+			end
+			if barType == "RUNES" then
+				layoutRunes(self)
+				updateBarSeparators("RUNES")
+			elseif barType == "ESSENCE" then
+				local cfg = ResourceBars.GetRuntimeBarConfig("ESSENCE", self) or {}
+				local count = POWER_ENUM and UnitPowerMax("player", POWER_ENUM.ESSENCE) or 0
+				ResourceBars.LayoutEssences(self, cfg, count, resolveTexture(cfg))
+				if ResourceBars.separatorEligible[barType] then updateBarSeparators(barType) end
+			elseif ResourceBars.separatorEligible[barType] then
+				updateBarSeparators(barType)
+			end
+			updateBarThresholds(barType)
+		end)
+		bar._rbSizeChangedHooked = true
+	end
 
-	if ResourceBars and ResourceBars.SyncRelativeFrameWidths then ResourceBars.SyncRelativeFrameWidths() end
-	if ensureEditModeRegistration then ensureEditModeRegistration() end
+	if not ((ResourceBars._barBuildBatchDepth or 0) > 0) then
+		if ResourceBars and ResourceBars.SyncRelativeFrameWidths then ResourceBars.SyncRelativeFrameWidths() end
+		if ensureEditModeRegistration then ensureEditModeRegistration() end
+	end
 end
 
 RB.EVENTS_TO_REGISTER = {
@@ -5162,6 +5252,7 @@ local function setPowerbars(opts)
 	local specCfg = ensureSpecCfg(addon.variables.unitSpec)
 
 	local desiredVisibility = {}
+	ResourceBars._barBuildBatchDepth = (ResourceBars._barBuildBatchDepth or 0) + 1
 
 	if
 		powertypeClasses[addon.variables.unitClass]
@@ -5263,8 +5354,10 @@ local function setPowerbars(opts)
 		end
 	end
 
+	ResourceBars._barBuildBatchDepth = max(0, (ResourceBars._barBuildBatchDepth or 1) - 1)
 	if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ApplyVisibilityPreference then addon.Aura.ResourceBars.ApplyVisibilityPreference("fromSetPowerbars") end
 	if ResourceBars and ResourceBars.SyncRelativeFrameWidths then ResourceBars.SyncRelativeFrameWidths() end
+	if ensureEditModeRegistration then ensureEditModeRegistration() end
 end
 addon.Aura.functions.setPowerBars = setPowerbars
 
@@ -5277,26 +5370,12 @@ local function forEachResourceBarFrame(callback)
 end
 
 local function resolveBarConfigForFrame(pType, frame)
-	local cfg = getBarSettings(pType)
-	if not cfg and frame and frame._cfg then cfg = frame._cfg end
+	local cfg = frame and frame._cfg
+	if not cfg then cfg = getBarSettings(pType) end
 	return cfg
 end
 
 local visibilityLogic = {
-	fallbackOptions = {
-		{ value = "ALWAYS_IN_COMBAT", label = "Always in combat", order = 20 },
-		{ value = "ALWAYS_OUT_OF_COMBAT", label = "Always out of combat", order = 30 },
-		{ value = "SKYRIDING_ACTIVE", label = "While skyriding", order = 25 },
-		{ value = "SKYRIDING_INACTIVE", label = "Hide while skyriding", order = 26 },
-		{ value = "FLYING_ACTIVE", label = L["visibilityRule_flying"] or "While flying", order = 27 },
-		{ value = "FLYING_INACTIVE", label = L["visibilityRule_hideFlying"] or "Hide while flying", order = 28 },
-		{ value = "PLAYER_CASTING", label = "Player is casting", order = 35 },
-		{ value = "PLAYER_MOUNTED", label = "Mounted", order = 36 },
-		{ value = "PLAYER_NOT_MOUNTED", label = "Not mounted", order = 37 },
-		{ value = "PLAYER_HAS_TARGET", label = "When I have a target", order = 45 },
-		{ value = "PLAYER_IN_GROUP", label = "In party/raid", order = 46 },
-		{ value = "ALWAYS_HIDDEN", label = "Always hidden", order = 100 },
-	},
 	ruleMapCache = nil,
 	optionsCache = nil,
 	sortedRuleKeysCache = nil,
@@ -5318,15 +5397,11 @@ end
 function visibilityLogic:GetRuleMap()
 	if self.ruleMapCache then return self.ruleMapCache end
 	local allowed = {}
-	local metadata = GetVisibilityRuleMetadata and GetVisibilityRuleMetadata() or nil
-	if type(metadata) == "table" then
-		for key, data in pairs(metadata) do
-			local applies = data and data.appliesTo
-			if applies and applies.actionbar and key ~= "MOUSEOVER" then allowed[key] = true end
+	local visibilityKeys = addon.constants and addon.constants.ACTIONBAR_VISIBILITY_KEYS
+	if type(visibilityKeys) == "table" then
+		for key in pairs(visibilityKeys) do
+			if key ~= "MOUSEOVER" then allowed[key] = true end
 		end
-	end
-	for _, option in ipairs(self.fallbackOptions) do
-		if option and option.value and option.value ~= "MOUSEOVER" then allowed[option.value] = true end
 	end
 	self.ruleMapCache = allowed
 	self.sortedRuleKeysCache = nil
@@ -5352,26 +5427,20 @@ function visibilityLogic:GetSortedRuleKeys()
 end
 
 function visibilityLogic:NormalizeConfig(config, legacyCfg)
-	local allowed = self:GetRuleMap()
-	local out
-	if type(config) == "table" then
-		for key in pairs(allowed) do
-			if config[key] == true then
-				out = out or {}
-				out[key] = true
-			end
-		end
-	end
+	local normalizeActionbarVisibilityConfig = addon.functions and addon.functions.NormalizeActionbarVisibilityConfig
+	local out = normalizeActionbarVisibilityConfig and normalizeActionbarVisibilityConfig(config) or nil
 	if not out and type(legacyCfg) == "table" and legacyCfg.visibilityExplicit == true then out = {} end
 	if not out and type(legacyCfg) == "table" and legacyCfg.visibilityExplicit ~= true then
+		local legacy = nil
 		if legacyCfg.hideOutOfCombat == true then
-			out = out or {}
-			out.ALWAYS_IN_COMBAT = true
+			legacy = legacy or {}
+			legacy.ALWAYS_IN_COMBAT = true
 		end
 		if legacyCfg.hideMounted == true then
-			out = out or {}
-			out.PLAYER_NOT_MOUNTED = true
+			legacy = legacy or {}
+			legacy.PLAYER_NOT_MOUNTED = true
 		end
+		if legacy then out = normalizeActionbarVisibilityConfig and normalizeActionbarVisibilityConfig(legacy) or legacy end
 	end
 	if not out then return nil end
 	if out.ALWAYS_HIDDEN then return { ALWAYS_HIDDEN = true } end
@@ -5380,42 +5449,8 @@ end
 
 function visibilityLogic:GetRuleOptions()
 	if self.optionsCache then return self.optionsCache end
-	local options, seen = {}, {}
-	local metadata = GetVisibilityRuleMetadata and GetVisibilityRuleMetadata() or nil
-	if type(metadata) == "table" then
-		for key, data in pairs(metadata) do
-			local applies = data and data.appliesTo
-			if applies and applies.actionbar and key ~= "MOUSEOVER" then
-				options[#options + 1] = {
-					value = key,
-					label = data.label or key,
-					text = data.label or key,
-					order = data.order or 999,
-				}
-				seen[key] = true
-			end
-		end
-	end
-	for _, option in ipairs(self.fallbackOptions) do
-		if option and option.value and not seen[option.value] and option.value ~= "MOUSEOVER" then
-			options[#options + 1] = {
-				value = option.value,
-				label = option.label or option.value,
-				text = option.label or option.value,
-				order = option.order or 999,
-			}
-			seen[option.value] = true
-		end
-	end
-	table.sort(options, function(a, b)
-		if a.order == b.order then
-			local left = tostring(a.label or a.value or "")
-			local right = tostring(b.label or b.value or "")
-			if strcmputf8i then return strcmputf8i(left, right) < 0 end
-			return left:lower() < right:lower()
-		end
-		return a.order < b.order
-	end)
+	local getActionbarVisibilityRuleOptions = addon.functions and addon.functions.GetActionbarVisibilityRuleOptions
+	local options = getActionbarVisibilityRuleOptions and getActionbarVisibilityRuleOptions() or {}
 	self.optionsCache = options
 	return options
 end
@@ -5448,8 +5483,10 @@ function visibilityLogic:IsPlayerSkyriding()
 		if canGlide ~= nil then return canGlide == true end
 	end
 	if SecureCmdOptionParse then
-		if addon.variables.unitClass == "DRUID" then return SecureCmdOptionParse("[advflyable, mounted] 1; [advflyable, stance:3] 1; [advflyable, stance:6] 1; 0") == "1" end
-		return SecureCmdOptionParse("[advflyable, mounted] 1; 0") == "1"
+		if addon.variables.unitClass == "DRUID" then
+			return SecureCmdOptionParse("[advflyable,flyable,mounted,flying] 1; [advflyable,flyable,stance:3,flying] 1; [advflyable,flyable,stance:6,flying] 1; 0") == "1"
+		end
+		return SecureCmdOptionParse("[advflyable,flyable,mounted,flying] 1; 0") == "1"
 	end
 	return addon.variables and addon.variables.isPlayerSkyriding == true
 end
@@ -5600,19 +5637,32 @@ function visibilityLogic:AppendDruidFormHideClauses(clauses, seen, showForms)
 	end
 end
 
+function visibilityLogic:GetDruidFormHideConditions(showForms)
+	local conditions = {}
+	local seen = {}
+	local clauses = {}
+	self:AppendDruidFormHideClauses(clauses, seen, showForms)
+	for i = 1, #clauses do
+		local condition = clauses[i] and clauses[i]:match("^%[([^%]]+)%]%s+hide$")
+		if condition and not seen[condition] then
+			seen[condition] = true
+			conditions[#conditions + 1] = condition
+		end
+	end
+	return conditions
+end
+
 function visibilityLogic:BuildDriver(cfg)
 	cfg = cfg or {}
 	local shouldHideOutOfCombat = ResourceBars.ShouldHideOutOfCombat and ResourceBars.ShouldHideOutOfCombat(cfg)
 	local shouldHideMounted = ResourceBars.ShouldHideMounted and ResourceBars.ShouldHideMounted(cfg)
 	local hideVehicle = ResourceBars.ShouldHideInVehicle and ResourceBars.ShouldHideInVehicle(cfg)
 	local hidePetBattle = ResourceBars.ShouldHideInPetBattle and ResourceBars.ShouldHideInPetBattle(cfg)
-	local visibilityUseAnd = cfg.visibilityMatchAll == true
 	local useDruidFormDriver = shouldUseDruidFormDriver(cfg)
 
 	-- Cache driver generation by a compact signature of visibility-relevant config.
 	local function hashStep(hash, value) return ((hash * 131) + value) % 2147483647 end
 	local driverSignature = 17
-	if visibilityUseAnd then driverSignature = hashStep(driverSignature, 1) end
 	if hideVehicle then driverSignature = hashStep(driverSignature, 2) end
 	if hidePetBattle then driverSignature = hashStep(driverSignature, 3) end
 	if shouldHideOutOfCombat then driverSignature = hashStep(driverSignature, 4) end
@@ -5657,7 +5707,8 @@ function visibilityLogic:BuildDriver(cfg)
 		self.driverCache[cfg] = { signature = driverSignature, expr = "hide", usesManualVisibility = false, visibilityCfg = visibilityCfg }
 		return "hide", false, visibilityCfg
 	end
-	if self:UsesManualRules(visibilityCfg, visibilityUseAnd) then
+	local visibilityConfigUsesManualEvaluation = addon.functions and addon.functions.VisibilityConfigUsesManualEvaluation
+	if visibilityConfigUsesManualEvaluation and visibilityConfigUsesManualEvaluation(visibilityCfg, { allowMouseover = false }) then
 		self.driverCache[cfg] = { signature = driverSignature, expr = nil, usesManualVisibility = true, visibilityCfg = visibilityCfg }
 		return nil, true, visibilityCfg
 	end
@@ -5666,48 +5717,34 @@ function visibilityLogic:BuildDriver(cfg)
 		return nil, false, visibilityCfg
 	end
 
-	local clauses, seen = {}, {}
-	local showRuleCount = 0
+	local prependHideClauses = {}
+	local prependSeen = {}
+	local function addHideClause(condition)
+		if not condition or condition == "" or prependSeen[condition] then return end
+		prependSeen[condition] = true
+		prependHideClauses[#prependHideClauses + 1] = condition
+	end
 
-	if hidePetBattle then clauses[#clauses + 1] = "[petbattle] hide" end
-	if hideVehicle then clauses[#clauses + 1] = "[vehicleui] hide" end
-	if useDruidFormDriver then self:AppendDruidFormHideClauses(clauses, seen, showForms) end
-
-	if visibilityCfg then
-		if visibilityCfg.PLAYER_NOT_MOUNTED then
-			self:AppendDruidTravelClauses(clauses, seen, "hide")
-			self:AppendUniqueClause(clauses, seen, "nomounted", "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.PLAYER_MOUNTED then
-			self:AppendUniqueClause(clauses, seen, "mounted", "show")
-			self:AppendDruidTravelClauses(clauses, seen, "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.ALWAYS_IN_COMBAT then
-			self:AppendUniqueClause(clauses, seen, "combat", "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.ALWAYS_OUT_OF_COMBAT then
-			self:AppendUniqueClause(clauses, seen, "nocombat", "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.PLAYER_HAS_TARGET then
-			self:AppendUniqueClause(clauses, seen, "@target,exists", "show")
-			showRuleCount = showRuleCount + 1
-		end
-		if visibilityCfg.PLAYER_IN_GROUP then
-			self:AppendUniqueClause(clauses, seen, "group", "show")
-			showRuleCount = showRuleCount + 1
+	if hidePetBattle then addHideClause("petbattle") end
+	if hideVehicle then addHideClause("vehicleui") end
+	if useDruidFormDriver then
+		for _, condition in ipairs(self:GetDruidFormHideConditions(showForms)) do
+			addHideClause(condition)
 		end
 	end
 
-	if showRuleCount > 0 then
-		clauses[#clauses + 1] = "hide"
-	else
+	local expr
+	local buildVisibilityDriverExpression = addon.functions and addon.functions.BuildUnitFrameDriverExpression
+	if visibilityCfg and next(visibilityCfg) and buildVisibilityDriverExpression then expr = buildVisibilityDriverExpression(visibilityCfg, { prependHideClauses = prependHideClauses }) end
+	if not expr and #prependHideClauses > 0 then
+		local clauses = {}
+		local seen = {}
+		for _, condition in ipairs(prependHideClauses) do
+			self:AppendUniqueClause(clauses, seen, condition, "hide")
+		end
 		clauses[#clauses + 1] = "show"
+		expr = table.concat(clauses, "; ")
 	end
-	local expr = table.concat(clauses, "; ")
 	self.driverCache[cfg] = { signature = driverSignature, expr = expr, usesManualVisibility = false, visibilityCfg = visibilityCfg }
 	return expr, false, visibilityCfg
 end
@@ -5726,7 +5763,16 @@ function visibilityLogic:ShouldShowManual(cfg, visibilityCfg)
 	if ResourceBars.ShouldHideInPetBattle and ResourceBars.ShouldHideInPetBattle(cfg) then
 		if self:IsPetBattleActive() then return false end
 	end
-	return self:ShouldShow(visibilityCfg, cfg.visibilityMatchAll == true)
+	local shouldShowVisibilityConfig = addon.functions and addon.functions.ShouldShowVisibilityConfig
+	if shouldShowVisibilityConfig then
+		return shouldShowVisibilityConfig(visibilityCfg, {
+			supportsPlayerTargetRule = true,
+			supportsPlayerCastingRule = true,
+			supportsPlayerMountedRule = true,
+			supportsGroupRule = true,
+		})
+	end
+	return true
 end
 
 function visibilityLogic:ApplyManualFrameVisibility(frame, shouldShow)
@@ -5961,10 +6007,37 @@ local function updateStaggerBarIfShown()
 	if powerbar["STAGGER"] and powerbar["STAGGER"]:IsShown() then updatePowerBar("STAGGER") end
 end
 
+function ResourceBars.ResetPowerBarRuntimeCaches()
+	for pType, bar in pairs(powerbar or {}) do
+		if bar then
+			bar._lastMax = nil
+			bar._lastMaxRaw = nil
+			if pType == "ESSENCE" then
+				bar._essenceNextTick = nil
+				bar._essenceFraction = 0
+				bar._essenceLastPower = nil
+				if ResourceBars.InvalidateEssenceSegmentCaches then ResourceBars.InvalidateEssenceSegmentCaches(bar) end
+			end
+		end
+	end
+end
+
+function ResourceBars.RefreshBarsAfterPlayerStateChange(reason)
+	ResourceBars.ResetPowerBarRuntimeCaches()
+	if setPowerbars then setPowerbars() end
+	if healthBar then
+		healthBar._lastMax = nil
+		if healthBar:IsShown() then updateHealthBar(reason or "PLAYER_STATE_CHANGED") end
+	end
+	for pType, bar in pairs(powerbar or {}) do
+		if bar and bar:IsShown() then updatePowerBar(pType) end
+	end
+end
+
 local function eventHandler(self, event, unit, arg1)
 	if event == "UNIT_DISPLAYPOWER" and unit == "player" then
 		setPowerbars()
-	elseif event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
+	elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
 		ResourceBars.SyncRuntimeSpecContext()
 		scheduleSpecRefresh()
 		if scheduleRelativeFrameWidthSync then scheduleRelativeFrameWidthSync() end
@@ -5972,6 +6045,12 @@ local function eventHandler(self, event, unit, arg1)
 		ResourceBars.SyncRuntimeSpecContext()
 		scheduleSpecRefresh()
 		if scheduleRelativeFrameWidthSync then scheduleRelativeFrameWidthSync() end
+	elseif event == "PLAYER_DEAD" or event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+		ResourceBars.RefreshBarsAfterPlayerStateChange(event)
+		if After and event ~= "PLAYER_DEAD" then After(0.20, function()
+			if frameAnchor then ResourceBars.RefreshBarsAfterPlayerStateChange(event .. "_DELAYED") end
+		end) end
+		return
 	elseif event == "PET_BATTLE_OPENING_START" then
 		ResourceBars._petBattleOpen = true
 		ResourceBars.ApplyVisibilityPreference(event)
@@ -6108,7 +6187,14 @@ function ResourceBars.EnableResourceBars()
 		end
 	end
 	frameAnchor:RegisterEvent("PLAYER_ENTERING_WORLD")
-	frameAnchor:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+	frameAnchor:RegisterEvent("PLAYER_DEAD")
+	frameAnchor:RegisterEvent("PLAYER_ALIVE")
+	frameAnchor:RegisterEvent("PLAYER_UNGHOST")
+	if frameAnchor.RegisterUnitEvent then
+		frameAnchor:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
+	else
+		frameAnchor:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+	end
 	frameAnchor:RegisterEvent("TRAIT_CONFIG_UPDATED")
 	frameAnchor:RegisterEvent("CLIENT_SCENE_OPENED")
 	frameAnchor:RegisterEvent("CLIENT_SCENE_CLOSED")
@@ -6774,9 +6860,15 @@ ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS = RB.ABSOLUTE_THRESHOLD_COLOR_DEF
 ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_VOID_METAMORPHOSIS = RB.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_VOID_METAMORPHOSIS
 ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_CONTINUOUS = RB.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_CONTINUOUS
 ResourceBars.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_PERCENT = RB.ABSOLUTE_THRESHOLD_COLOR_DEFAULTS_PERCENT
+ResourceBars.STAGGER_LOW_THRESHOLD = RB.STAGGER_LOW_THRESHOLD
+ResourceBars.STAGGER_MEDIUM_THRESHOLD = RB.STAGGER_MEDIUM_THRESHOLD
+ResourceBars.STAGGER_THRESHOLD_MAX = RB.STAGGER_THRESHOLD_MAX
 ResourceBars.STAGGER_EXTRA_THRESHOLD_HIGH = RB.STAGGER_EXTRA_THRESHOLD_HIGH
+ResourceBars.STAGGER_EXTRA_THRESHOLD_VERY_HIGH = RB.STAGGER_EXTRA_THRESHOLD_VERY_HIGH
 ResourceBars.STAGGER_EXTRA_THRESHOLD_EXTREME = RB.STAGGER_EXTRA_THRESHOLD_EXTREME
+ResourceBars.STAGGER_EXTRA_THRESHOLD_CRITICAL = RB.STAGGER_EXTRA_THRESHOLD_CRITICAL
 ResourceBars.STAGGER_EXTRA_COLORS = RB.STAGGER_EXTRA_COLORS
+ResourceBars.STAGGER_FALLBACK_COLORS = RB.STAGGER_FALLBACK_COLORS
 ResourceBars.getBarSettings = getBarSettings
 ResourceBars.getAnchor = getAnchor
 ResourceBars.BehaviorOptionsForType = behaviorOptionsForType

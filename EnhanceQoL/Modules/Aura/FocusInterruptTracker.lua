@@ -19,7 +19,7 @@ local LSM = LibStub("LibSharedMedia-3.0", true)
 local UIParent = _G.UIParent
 local CreateFrame = _G.CreateFrame
 local STANDARD_TEXT_FONT = _G.STANDARD_TEXT_FONT
-local NONE = _G.NONE or "None"
+local NONE = _G.NONE
 local DEFAULT = _G.DEFAULT or "Default"
 local PlaySound = _G.PlaySound
 local PlaySoundFile = _G.PlaySoundFile
@@ -972,7 +972,7 @@ function Tracker:RegisterEditMode()
 				defaultCollapsed = true,
 			},
 			{
-				name = L["FocusInterruptTrackerBackgroundEnabled"] or "Use background",
+				name = L["Use background"] or "Use background",
 				kind = SettingType.Checkbox,
 				field = "backgroundEnabled",
 				parentId = "focusInterruptTrackerBackground",
@@ -980,7 +980,7 @@ function Tracker:RegisterEditMode()
 				set = function(_, value) Tracker:ApplyLayoutData({ backgroundEnabled = value == true }) end,
 			},
 			{
-				name = L["FocusInterruptTrackerBackgroundColor"] or "Background color",
+				name = L["Background color"] or "Background color",
 				kind = SettingType.Color,
 				field = "backgroundColor",
 				parentId = "focusInterruptTrackerBackground",
@@ -993,7 +993,7 @@ function Tracker:RegisterEditMode()
 				isEnabled = function() return Tracker:GetConfig().background.enabled end,
 			},
 			{
-				name = L["FocusInterruptTrackerAnchorHeader"] or "Anchor",
+				name = L["Anchor"] or "Anchor",
 				kind = SettingType.Collapsible,
 				id = "focusInterruptTrackerAnchor",
 				defaultCollapsed = false,
@@ -1019,7 +1019,7 @@ function Tracker:RegisterEditMode()
 				end,
 			},
 			{
-				name = L["FocusInterruptTrackerStrata"] or "Frame strata",
+				name = L["Frame strata"] or "Frame strata",
 				kind = SettingType.Dropdown,
 				field = "strata",
 				parentId = "focusInterruptTrackerAnchor",
@@ -1036,13 +1036,13 @@ function Tracker:RegisterEditMode()
 				end,
 			},
 			{
-				name = L["FocusInterruptTrackerDisplayHeader"] or "Display",
+				name = L["Display"] or "Display",
 				kind = SettingType.Collapsible,
 				id = "focusInterruptTrackerDisplay",
 				defaultCollapsed = false,
 			},
 			{
-				name = L["FocusInterruptTrackerDisplayMode"] or "Display mode",
+				name = DISPLAY_MODE,
 				kind = SettingType.Dropdown,
 				field = "displayMode",
 				parentId = "focusInterruptTrackerDisplay",
@@ -1050,16 +1050,16 @@ function Tracker:RegisterEditMode()
 				get = function() return Tracker:GetConfig().displayMode end,
 				set = function(_, value) Tracker:ApplyLayoutData({ displayMode = value }) end,
 				generator = function(_, root)
-					root:CreateRadio(L["FocusInterruptTrackerModeText"] or "Text", function() return Tracker:GetConfig().displayMode == "TEXT" end, function()
+					root:CreateRadio(LOCALE_TEXT_LABEL, function() return Tracker:GetConfig().displayMode == "TEXT" end, function()
 						Tracker:ApplyLayoutData({ displayMode = "TEXT" })
 					end)
-					root:CreateRadio(L["FocusInterruptTrackerModeIcon"] or "Icon", function() return Tracker:GetConfig().displayMode == "ICON" end, function()
+					root:CreateRadio(L["Icon"] or "Icon", function() return Tracker:GetConfig().displayMode == "ICON" end, function()
 						Tracker:ApplyLayoutData({ displayMode = "ICON" })
 					end)
 				end,
 			},
 			{
-				name = L["FocusInterruptTrackerTextHeader"] or "Text",
+				name = LOCALE_TEXT_LABEL,
 				kind = SettingType.Collapsible,
 				id = "focusInterruptTrackerText",
 				defaultCollapsed = true,
@@ -1141,7 +1141,7 @@ function Tracker:RegisterEditMode()
 				isShown = function() return Tracker:GetConfig().displayMode == "TEXT" end,
 			},
 			{
-				name = L["FocusInterruptTrackerIconHeader"] or "Icon",
+				name = L["Icon"] or "Icon",
 				kind = SettingType.Collapsible,
 				id = "focusInterruptTrackerIcon",
 				defaultCollapsed = true,
@@ -1176,7 +1176,7 @@ function Tracker:RegisterEditMode()
 				isShown = function() return Tracker:GetConfig().displayMode == "ICON" end,
 			},
 			{
-				name = L["FocusInterruptTrackerBorderHeader"] or "Border",
+				name = L["Border"] or "Border",
 				kind = SettingType.Collapsible,
 				id = "focusInterruptTrackerBorder",
 				defaultCollapsed = true,
@@ -1240,7 +1240,7 @@ function Tracker:RegisterEditMode()
 				isShown = function() return Tracker:GetConfig().displayMode == "ICON" end,
 			},
 			{
-				name = L["Border color"] or "Border color",
+				name = EMBLEM_BORDER_COLOR,
 				kind = SettingType.Color,
 				field = "borderColor",
 				parentId = "focusInterruptTrackerBorder",

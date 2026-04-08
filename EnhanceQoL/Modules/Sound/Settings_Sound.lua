@@ -9,10 +9,55 @@ end
 
 if not addon.Sounds or not addon.Sounds.soundFiles then return end
 
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Sound")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local wipeTable = _G.wipe or table.wipe
 
-local function GetLabel(key) return L[key] or key end
+local SOUND_LABEL_ALIASES = {
+	auctionhouse = { locale = "Auction House", fallback = "Auction House" },
+	chat = { locale = "Chat", fallback = "Chat" },
+	dungeon = { locale = "Dungeon", fallback = "Dungeon" },
+	general = { locale = "General", fallback = "General" },
+	mounts = { locale = "Mounts", fallback = "Mounts" },
+	professions = { locale = "Professions", fallback = "Professions" },
+	quest = { locale = "Quest", fallback = "Quest" },
+	soundExtraEventChatWhisper = { global = "WHISPER", fallback = "Whisper" },
+	whisper = { global = "WHISPER", fallback = "Whisper" },
+}
+
+local function GetLocaleIfPresent(key)
+	if type(key) ~= "string" or key == "" then return nil end
+	return rawget(L, key)
+end
+
+local function GetGlobalStringIfPresent(key)
+	if type(key) ~= "string" or key == "" then return nil end
+	local value = rawget(_G, key)
+	if type(value) == "string" and value ~= "" then return value end
+	return nil
+end
+
+local function GetLabel(key)
+	if type(key) ~= "string" or key == "" then return key end
+
+	local alias = SOUND_LABEL_ALIASES[key]
+	if alias then
+		local globalValue = GetGlobalStringIfPresent(alias.global)
+		if globalValue then return globalValue end
+
+		local localeValue = GetLocaleIfPresent(alias.locale)
+		if localeValue then return localeValue end
+
+		if alias.fallback then return alias.fallback end
+	end
+
+	local localeValue = GetLocaleIfPresent(key)
+	if localeValue then return localeValue end
+
+	local globalValue = GetGlobalStringIfPresent(key)
+	if globalValue then return globalValue end
+
+	return key
+end
 
 local function IsPureNumbersTable(tbl)
 	local hasEntries
@@ -208,7 +253,7 @@ local extraSoundOptionsVersion = -1
 local extraSoundOptionsNoneLabel
 
 local function buildExtraSoundOptions()
-	local noneLabel = L["soundExtraNone"] or NONE
+	local noneLabel = NONE
 	local version = (addon.functions and addon.functions.GetLSMMediaVersion and addon.functions.GetLSMMediaVersion("sound")) or 0
 	if extraSoundOptionsCache and extraSoundOptionsVersion == version and extraSoundOptionsNoneLabel == noneLabel then return extraSoundOptionsCache end
 
@@ -266,7 +311,7 @@ if type(extraEvents) == "table" then
 	for _, entry in ipairs(extraEvents) do
 		local eventName = entry and entry.event
 		if type(eventName) == "string" and eventName ~= "" then
-			local label = (entry.label and L[entry.label]) or entry.label or eventName
+			local label = GetLabel(entry.label) or eventName
 			ordered[#ordered + 1] = {
 				event = eventName,
 				label = label,
@@ -294,7 +339,7 @@ if type(extraEvents) == "table" then
 			element = extraEnable.element,
 			parentCheck = isExtraEnabled,
 			parentSection = extraSoundExpandable,
-			placeholderText = L["soundExtraNone"] or NONE,
+			placeholderText = NONE,
 			playbackChannel = "Master",
 		})
 		addon.functions.SettingsAttachNotify(extraEnable.setting, varName)

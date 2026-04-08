@@ -14,6 +14,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate repo-managed locales
+        run: python3 scripts/validate_repo_locales.py
+
       - name: Hack around https://github.com/actions/checkout/issues/290
         run: |
           git fetch --tags --force
@@ -24,12 +27,6 @@ jobs:
           args: "--no-color -q"
           annotate: warning
 
-      - name: Update CurseForge Translations
-        # Run only for beta or release tags (skip alpha)
-        if: startsWith(github.ref, 'refs/tags/') && (contains(github.ref, '-beta') || !contains(github.ref, '-alpha'))
-        run: ./update_translations.sh
-        env:
-          CF_API_KEY: ${{ secrets.CURSE_API_TOKEN }}
       # - name: Generate Changelog
       #   run: ./generate_changelog.sh
 

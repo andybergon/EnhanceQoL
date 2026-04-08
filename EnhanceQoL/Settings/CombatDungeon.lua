@@ -1,7 +1,6 @@
 local addonName, addon = ...
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
-local LMP = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_MythicPlus")
 local issecretvalue = _G.issecretvalue
 
 ---- REGION Functions
@@ -32,6 +31,8 @@ local combatLogInstanceMap = {
 local LEGACY_NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY = "experimentalNameplateAuraClickthrough"
 local NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY = "nameplateAuraClickthrough"
 local NAMEPLATE_MOB_COLORS_DB_KEY = "nameplateMobColors"
+local NAMEPLATE_MOB_COLORS_DUNGEONS_DB_KEY = "nameplateMobColorsInDungeons"
+local NAMEPLATE_MOB_COLORS_OUTSIDE_DUNGEONS_DB_KEY = "nameplateMobColorsOutsideDungeons"
 local NAMEPLATE_MOB_COLOR_BOSS_DB_KEY = "nameplateMobColorBoss"
 local NAMEPLATE_MOB_COLOR_MINIBOSS_DB_KEY = "nameplateMobColorMiniboss"
 local NAMEPLATE_MOB_COLOR_CASTER_DB_KEY = "nameplateMobColorCaster"
@@ -46,6 +47,7 @@ local nameplateMobColorHooksInstalled = false
 local nameplateMobColorsActive = false
 local nameplateMobColorState = {
 	isActive = false,
+	contextKey = nil,
 	lastLFGInstanceID = nil,
 	referenceLevel = nil,
 	lieutenantLevel = nil,
@@ -61,6 +63,8 @@ addon.constants = addon.constants or {}
 addon.constants.DEFAULT_NAMEPLATE_FEATURE_KEYS = {
 	auraClickthrough = NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY,
 	mobColors = NAMEPLATE_MOB_COLORS_DB_KEY,
+	mobColorsInDungeons = NAMEPLATE_MOB_COLORS_DUNGEONS_DB_KEY,
+	mobColorsOutsideDungeons = NAMEPLATE_MOB_COLORS_OUTSIDE_DUNGEONS_DB_KEY,
 	mobColorBoss = NAMEPLATE_MOB_COLOR_BOSS_DB_KEY,
 	mobColorMiniboss = NAMEPLATE_MOB_COLOR_MINIBOSS_DB_KEY,
 	mobColorCaster = NAMEPLATE_MOB_COLOR_CASTER_DB_KEY,
@@ -281,28 +285,86 @@ end
 
 local function isNameplateMobColorsActive() return nameplateMobColorsActive == true end
 
-local function updateNameplateMobColorContext(forceRefresh)
-	local isFeatureEnabled = isNameplateMobColorsActive()
+local function isNameplateMobColorScopeEnabled(dbKey, defaultValue)
+	if not addon.db then return defaultValue and true or false end
+	local value = addon.db[dbKey]
+	if value == nil then return defaultValue and true or false end
+	return value == true
+end
+
+local function isNameplateMobColorPvpContext(instanceType, zonePvpType)
+	if instanceType == "pvp" or instanceType == "arena" then return true end
+	return zonePvpType == "arena" or zonePvpType == "combat" or zonePvpType == "ffapvp"
+end
+
+local function getNameplateMobColorContext()
 	local _, instanceType, _, _, _, _, _, _, _, lfgDungeonID = GetInstanceInfo()
 	if isSecretValue(instanceType) then instanceType = nil end
 	if isSecretValue(lfgDungeonID) then lfgDungeonID = nil end
+	if type(instanceType) ~= "string" or instanceType == "" then instanceType = "none" end
 
-	if not isFeatureEnabled then
+	local zonePvpType
+	if C_PvP and type(C_PvP.GetZonePVPInfo) == "function" then
+		zonePvpType = C_PvP.GetZonePVPInfo()
+		if isSecretValue(zonePvpType) then zonePvpType = nil end
+	end
+
+	local allowInDungeons = isNameplateMobColorScopeEnabled(NAMEPLATE_MOB_COLORS_DUNGEONS_DB_KEY, true)
+	local allowOutsideDungeons = isNameplateMobColorScopeEnabled(NAMEPLATE_MOB_COLORS_OUTSIDE_DUNGEONS_DB_KEY, false)
+	local isDungeon = instanceType == "party"
+	local isPvp = isNameplateMobColorPvpContext(instanceType, zonePvpType)
+	local isAllowedByScope = (isDungeon and allowInDungeons) or ((not isDungeon) and allowOutsideDungeons)
+
+	return {
+		instanceType = instanceType,
+		lfgDungeonID = lfgDungeonID,
+		zonePvpType = zonePvpType,
+		isDungeon = isDungeon,
+		isPvp = isPvp,
+		isAllowed = isAllowedByScope and not isPvp,
+	}
+end
+
+local function isPlayerControlledNameplateUnit(unit)
+	if not isNameplateUnitToken(unit) then return false end
+
+	local isPlayerUnit = type(UnitIsPlayer) == "function" and UnitIsPlayer(unit) or false
+	if isSecretValue(isPlayerUnit) then isPlayerUnit = false end
+	if isPlayerUnit then return true end
+
+	local isPlayerControlled = type(UnitPlayerControlled) == "function" and UnitPlayerControlled(unit) or false
+	if isSecretValue(isPlayerControlled) then isPlayerControlled = false end
+	return isPlayerControlled == true
+end
+
+local function updateNameplateMobColorContext(forceRefresh)
+	local isFeatureEnabled = isNameplateMobColorsActive()
+	local context = getNameplateMobColorContext()
+	local contextKey = table.concat({
+		context.instanceType or "none",
+		tostring(context.lfgDungeonID or 0),
+		context.zonePvpType or "",
+		context.isAllowed and "1" or "0",
+	}, "|")
+
+	if not isFeatureEnabled or not context.isAllowed then
 		nameplateMobColorState.isActive = false
-		nameplateMobColorState.lastLFGInstanceID = lfgDungeonID
+		nameplateMobColorState.contextKey = contextKey
+		nameplateMobColorState.lastLFGInstanceID = context.lfgDungeonID
 		nameplateMobColorState.referenceLevel = nil
 		nameplateMobColorState.lieutenantLevel = nil
 		return
 	end
 
-	if not forceRefresh and nameplateMobColorState.isActive == true and nameplateMobColorState.lastLFGInstanceID == lfgDungeonID and nameplateMobColorState.referenceLevel ~= nil then return end
+	if not forceRefresh and nameplateMobColorState.contextKey == contextKey and nameplateMobColorState.isActive == true then return end
 
 	nameplateMobColorState.isActive = true
-	nameplateMobColorState.lastLFGInstanceID = lfgDungeonID
+	nameplateMobColorState.contextKey = contextKey
+	nameplateMobColorState.lastLFGInstanceID = context.lfgDungeonID
 	nameplateMobColorState.lieutenantLevel = nil
 
 	local referenceLevel
-	if lfgDungeonID and instanceType == "party" and type(_G.GetMaximumExpansionLevel) == "function" and type(_G.GetMaxLevelForExpansionLevel) == "function" then
+	if context.lfgDungeonID and context.isDungeon and type(_G.GetMaximumExpansionLevel) == "function" and type(_G.GetMaxLevelForExpansionLevel) == "function" then
 		local maximumExpansionLevel = _G.GetMaximumExpansionLevel()
 		if not isSecretValue(maximumExpansionLevel) then
 			referenceLevel = _G.GetMaxLevelForExpansionLevel(maximumExpansionLevel)
@@ -345,6 +407,7 @@ local function computeNameplateMobColor(unit)
 	if not nameplateMobColorState.isActive then return nil end
 	if not isNameplateUnitToken(unit) then return nil end
 	if isNeutralUnit(unit) then return nil end
+	if isPlayerControlledNameplateUnit(unit) then return nil end
 
 	local canAttack = UnitCanAttack("player", unit)
 	if isSecretValue(canAttack) or not canAttack then return nil end
@@ -749,6 +812,8 @@ function addon.functions.initDungeonFrame()
 	addon.functions.InitDBValue("enableChatIMRaiderIO", false)
 	addon.functions.InitDBValue(NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY, false)
 	addon.functions.InitDBValue(NAMEPLATE_MOB_COLORS_DB_KEY, false)
+	addon.functions.InitDBValue(NAMEPLATE_MOB_COLORS_DUNGEONS_DB_KEY, true)
+	addon.functions.InitDBValue(NAMEPLATE_MOB_COLORS_OUTSIDE_DUNGEONS_DB_KEY, false)
 	addon.functions.InitDBValue(NAMEPLATE_MOB_COLOR_BOSS_DB_KEY, NAMEPLATE_MOB_COLOR_DEFAULTS[NAMEPLATE_MOB_COLOR_BOSS_DB_KEY])
 	addon.functions.InitDBValue(NAMEPLATE_MOB_COLOR_MINIBOSS_DB_KEY, NAMEPLATE_MOB_COLOR_DEFAULTS[NAMEPLATE_MOB_COLOR_MINIBOSS_DB_KEY])
 	addon.functions.InitDBValue(NAMEPLATE_MOB_COLOR_CASTER_DB_KEY, NAMEPLATE_MOB_COLOR_DEFAULTS[NAMEPLATE_MOB_COLOR_CASTER_DB_KEY])
@@ -814,7 +879,7 @@ function addon.functions.initDungeonFrame()
 		})
 	end
 
-	createCombatLogToggle("combatLogPvp", L["combatLogPvp"] or "PvP", L["combatLogPvpDesc"] or "Automatically toggle combat logging in PvP instances.")
+	createCombatLogToggle("combatLogPvp", L["PvP"] or "PvP", L["combatLogPvpDesc"] or "Automatically toggle combat logging in PvP instances.")
 	createCombatLogToggle("combatLogScenario", L["combatLogScenario"] or "Scenarios", L["combatLogScenarioDesc"] or "Automatically toggle combat logging in scenarios.")
 	createCombatLogToggle("combatLogDelve", L["combatLogDelve"] or "Delves", L["combatLogDelveDesc"] or "Automatically toggle combat logging in delves.")
 
@@ -890,9 +955,11 @@ function addon.functions.initDungeonFrame()
 
 		local function AddLFGApplicantRIO(owner, root, ctx)
 			if not addon.db["enableChatIMRaiderIO"] then return end
+			if addon.functions and addon.functions.hasSecretRestrictions and addon.functions.hasSecretRestrictions() then return end
 
-			local appID = owner and owner._eqolApplicantID or (ctx and (ctx.applicantID or ctx.appID))
-			local memberIdx = owner and owner._eqolMemberIdx or (ctx and (ctx.memberIdx or ctx.memberIndex))
+			local ownerParent = owner and owner.GetParent and owner:GetParent() or nil
+			local appID = (ownerParent and ownerParent.applicantID) or (ctx and (ctx.applicantID or ctx.appID))
+			local memberIdx = (owner and owner.memberIdx) or (ctx and (ctx.memberIdx or ctx.memberIndex))
 			if issecretvalue and (issecretvalue(appID) or issecretvalue(memberIdx)) then return end
 			if not appID or not memberIdx then return end
 
@@ -1043,8 +1110,8 @@ if cChar and sectionDungeon then
 	-- Keystone Helper
 	keystoneEnable = addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "enableKeystoneHelper",
-		text = LMP["enableKeystoneHelper"],
-		desc = LMP["enableKeystoneHelperDesc"],
+		text = L["enableKeystoneHelper"],
+		desc = L["enableKeystoneHelperDesc"],
 		func = function(v)
 			addon.db["enableKeystoneHelper"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.toggleFrame then addon.MythicPlus.functions.toggleFrame() end
@@ -1053,13 +1120,13 @@ if cChar and sectionDungeon then
 	})
 
 	local keystoneChildren = {
-		{ var = "autoInsertKeystone", text = LMP["Automatically insert keystone"], func = function(v) addon.db["autoInsertKeystone"] = v end, parentSection = sectionDungeon },
-		{ var = "closeBagsOnKeyInsert", text = LMP["Close all bags on keystone insert"], func = function(v) addon.db["closeBagsOnKeyInsert"] = v end, parentSection = sectionDungeon },
-		{ var = "autoKeyStart", text = LMP["autoKeyStart"], func = function(v) addon.db["autoKeyStart"] = v end, parentSection = sectionDungeon },
+		{ var = "autoInsertKeystone", text = L["Automatically insert keystone"], func = function(v) addon.db["autoInsertKeystone"] = v end, parentSection = sectionDungeon },
+		{ var = "closeBagsOnKeyInsert", text = L["Close all bags on keystone insert"], func = function(v) addon.db["closeBagsOnKeyInsert"] = v end, parentSection = sectionDungeon },
+		{ var = "autoKeyStart", text = L["autoKeyStart"], func = function(v) addon.db["autoKeyStart"] = v end, parentSection = sectionDungeon },
 		{
 			var = "mythicPlusShowChestTimers",
-			text = LMP["mythicPlusShowChestTimers"],
-			desc = LMP["mythicPlusShowChestTimersDesc"],
+			text = L["mythicPlusShowChestTimers"],
+			desc = L["mythicPlusShowChestTimersDesc"],
 			func = function(v) addon.db["mythicPlusShowChestTimers"] = v end,
 			parentSection = sectionDungeon,
 		},
@@ -1072,14 +1139,14 @@ if cChar and sectionDungeon then
 	end
 
 	local listPull, orderPull = addon.functions.prepareListForDropdown({
-		[1] = LMP["None"],
-		[2] = LMP["Blizzard Pull Timer"],
-		[3] = LMP["DBM / BigWigs Pull Timer"],
-		[4] = LMP["Both"],
+		[1] = _G.NONE,
+		[2] = L["Blizzard Pull Timer"],
+		[3] = L["DBM / BigWigs Pull Timer"],
+		[4] = _G.STATUS_TEXT_BOTH,
 	})
 	addon.functions.SettingsCreateDropdown(cChar, {
 		var = "PullTimerType",
-		text = LMP["PullTimer"],
+		text = L["Pull Timer"],
 		type = Settings.VarType.Number,
 		default = 2,
 		list = listPull,
@@ -1094,7 +1161,7 @@ if cChar and sectionDungeon then
 
 	addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "noChatOnPullTimer",
-		text = LMP["noChatOnPullTimer"],
+		text = L["noChatOnPullTimer"],
 		func = function(v) addon.db["noChatOnPullTimer"] = v end,
 		parent = true,
 		element = keystoneEnable.element,
@@ -1104,7 +1171,7 @@ if cChar and sectionDungeon then
 
 	addon.functions.SettingsCreateSlider(cChar, {
 		var = "pullTimerLongTime",
-		text = LMP["sliderLongTime"],
+		text = L["Pull Timer"],
 		min = 0,
 		max = 60,
 		step = 1,
@@ -1119,7 +1186,7 @@ if cChar and sectionDungeon then
 
 	addon.functions.SettingsCreateSlider(cChar, {
 		var = "pullTimerShortTime",
-		text = LMP["sliderShortTime"],
+		text = L["sliderShortTime"],
 		min = 0,
 		max = 60,
 		step = 1,
@@ -1135,8 +1202,8 @@ if cChar and sectionDungeon then
 	-- Objective Tracker
 	local objEnable = addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "mythicPlusEnableObjectiveTracker",
-		text = LMP["mythicPlusEnableObjectiveTracker"],
-		desc = LMP["mythicPlusEnableObjectiveTrackerDesc"],
+		text = L["mythicPlusEnableObjectiveTracker"],
+		desc = L["mythicPlusEnableObjectiveTrackerDesc"],
 		func = function(v)
 			addon.db["mythicPlusEnableObjectiveTracker"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.setObjectiveFrames then addon.MythicPlus.functions.setObjectiveFrames() end
@@ -1145,10 +1212,10 @@ if cChar and sectionDungeon then
 	})
 	local function isObjectiveEnabled() return objEnable and objEnable.setting and objEnable.setting:GetValue() == true end
 
-	local listObj, orderObj = addon.functions.prepareListForDropdown({ [1] = LMP["HideTracker"], [2] = LMP["collapse"] })
+	local listObj, orderObj = addon.functions.prepareListForDropdown({ [1] = L["HideTracker"], [2] = L["collapse"] })
 	addon.functions.SettingsCreateDropdown(cChar, {
 		var = "mythicPlusObjectiveTrackerSetting",
-		text = LMP["mythicPlusObjectiveTrackerSetting"],
+		text = L["Behavior"],
 		type = Settings.VarType.Number,
 		default = (addon.db and addon.db["mythicPlusObjectiveTrackerSetting"]) or 1,
 		list = listObj,
@@ -1167,8 +1234,8 @@ if cChar and sectionDungeon then
 	-- BR Tracker
 	addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "mythicPlusBRTrackerEnabled",
-		text = LMP["mythicPlusBRTrackerEnabled"],
-		desc = LMP["mythicPlusBRTrackerEditModeHint"],
+		text = L["mythicPlusBRTrackerEnabled"],
+		desc = L["mythicPlusBRTrackerEditModeHint"],
 		func = function(v)
 			addon.db["mythicPlusBRTrackerEnabled"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.createBRFrame then
@@ -1182,8 +1249,8 @@ if cChar and sectionDungeon then
 
 	addon.functions.SettingsCreateCheckbox(cChar, {
 		var = "mythicPlusBloodlustTrackerEnabled",
-		text = LMP["mythicPlusBloodlustTrackerEnabled"],
-		desc = LMP["mythicPlusBloodlustTrackerEditModeHint"],
+		text = L["mythicPlusBloodlustTrackerEnabled"],
+		desc = L["mythicPlusBloodlustTrackerEditModeHint"],
 		func = function(v)
 			addon.db["mythicPlusBloodlustTrackerEnabled"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.syncBloodlustUnitAuraRegistration then addon.MythicPlus.functions.syncBloodlustUnitAuraRegistration() end
@@ -1213,7 +1280,7 @@ addon.functions.SettingsCreateCheckboxes(cChar, data)
 local sectionGroupFinder = addon.SettingsLayout.gameplayGroupFinderSection
 if not sectionGroupFinder then
 	sectionGroupFinder = addon.functions.SettingsCreateExpandableSection(cChar, {
-		name = L["GroupFinder"],
+		name = L["Group Finder"],
 		expanded = false,
 		colorizeTitle = false,
 	})
@@ -1294,8 +1361,8 @@ data = {
 if keystoneEnable then
 	table.insert(data, {
 		var = "groupfinderShowPartyKeystone",
-		text = LMP["groupfinderShowPartyKeystone"],
-		desc = LMP["groupfinderShowPartyKeystoneDesc"],
+		text = L["groupfinderShowPartyKeystone"],
+		desc = L["groupfinderShowPartyKeystoneDesc"],
 		func = function(v)
 			addon.db["groupfinderShowPartyKeystone"] = v
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.togglePartyKeystone then addon.MythicPlus.functions.togglePartyKeystone() end
@@ -1309,7 +1376,7 @@ end
 
 table.insert(data, {
 	var = "groupfinderShowDungeonScoreFrame",
-	text = LMP["groupfinderShowDungeonScoreFrame"]:format(DUNGEON_SCORE),
+	text = L["groupfinderShowDungeonScoreFrame"]:format(DUNGEON_SCORE),
 	func = function(v)
 		addon.db["groupfinderShowDungeonScoreFrame"] = v
 		if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.toggleFrame then addon.MythicPlus.functions.toggleFrame() end
@@ -1319,8 +1386,8 @@ table.insert(data, {
 
 table.insert(data, {
 	var = "mythicPlusEnableDungeonFilter",
-	text = LMP["mythicPlusEnableDungeonFilter"],
-	desc = LMP["mythicPlusEnableDungeonFilterDesc"]:format(REPORT_GROUP_FINDER_ADVERTISEMENT),
+	text = L["mythicPlusEnableDungeonFilter"],
+	desc = L["mythicPlusEnableDungeonFilterDesc"]:format(REPORT_GROUP_FINDER_ADVERTISEMENT),
 	func = function(v)
 		addon.db["mythicPlusEnableDungeonFilter"] = v
 		if addon.MythicPlus and addon.MythicPlus.functions then
@@ -1335,7 +1402,7 @@ table.insert(data, {
 	children = {
 		{
 			var = "mythicPlusEnableDungeonFilterClearReset",
-			text = LMP["mythicPlusEnableDungeonFilterClearReset"],
+			text = L["mythicPlusEnableDungeonFilterClearReset"],
 			func = function(v) addon.db["mythicPlusEnableDungeonFilterClearReset"] = v end,
 			parentCheck = function()
 				return addon.SettingsLayout.elements["mythicPlusEnableDungeonFilter"]

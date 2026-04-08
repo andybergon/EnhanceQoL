@@ -27,7 +27,7 @@ local function createRootSlashCommandHints(category)
 
 	local sections = {
 		{
-			title = L["rootSlashCommandsGeneralHeader"] or "General",
+			title = L["General"] or "General",
 			entries = {
 				{
 					commands = { "/eqol" },
@@ -70,7 +70,7 @@ local function createRootSlashCommandHints(category)
 			},
 		},
 		{
-			title = L["rootSlashCommandsUnitFramesHeader"] or "Unit Frames",
+			title = L["Unit Frames"] or "Unit Frames",
 			entries = {
 				{
 					commands = { "/eqol hbp" },

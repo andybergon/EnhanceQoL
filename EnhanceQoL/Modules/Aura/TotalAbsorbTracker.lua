@@ -22,9 +22,12 @@ local UnitGetDetailedHealPrediction = _G.UnitGetDetailedHealPrediction
 local UnitExists = _G.UnitExists
 local AbbreviateNumbers = _G.AbbreviateNumbers
 local STANDARD_TEXT_FONT = _G.STANDARD_TEXT_FONT
-local NONE = _G.NONE or "None"
+local NONE = _G.NONE
 local DEFAULT = _G.DEFAULT or "Default"
 local Enum = _G.Enum
+local BORDER_LABEL = EMBLEM_BORDER
+local BORDER_COLOR_LABEL = EMBLEM_BORDER_COLOR
+local TEXT_LABEL = LOCALE_TEXT_LABEL
 
 local EDITMODE_ID = "totalAbsorbTracker"
 local DEFAULT_SETTINGS_MAX_HEIGHT = 900
@@ -620,7 +623,7 @@ function Tracker:RegisterEditMode()
 				set = function(_, value) Tracker:ApplyLayoutData({ iconOffsetY = value }) end,
 			},
 			{
-				name = L["Border"] or "Border",
+				name = BORDER_LABEL,
 				kind = SettingType.Collapsible,
 				id = "totalAbsorbTrackerBorder",
 				defaultCollapsed = true,
@@ -677,7 +680,7 @@ function Tracker:RegisterEditMode()
 				isEnabled = function() return Tracker:GetBorderEnabled() end,
 			},
 			{
-				name = L["Border color"] or "Border color",
+				name = BORDER_COLOR_LABEL,
 				kind = SettingType.Color,
 				field = "borderColor",
 				parentId = "totalAbsorbTrackerBorder",
@@ -690,7 +693,7 @@ function Tracker:RegisterEditMode()
 				isEnabled = function() return Tracker:GetBorderEnabled() end,
 			},
 			{
-				name = L["Text"] or "Text",
+				name = TEXT_LABEL,
 				kind = SettingType.Collapsible,
 				id = "totalAbsorbTrackerText",
 				defaultCollapsed = true,

@@ -12,8 +12,12 @@ addon.Aura.CooldownPanels = addon.Aura.CooldownPanels or {}
 local CooldownPanels = addon.Aura.CooldownPanels
 CooldownPanels.helper = CooldownPanels.helper or {}
 local Helper = CooldownPanels.helper
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local LSM = LibStub("LibSharedMedia-3.0", true)
+local DIRECTION_LEFT_LABEL = HUD_EDIT_MODE_SETTING_ENCOUNTER_EVENTS_ICON_DIRECTION_LEFT
+local DIRECTION_RIGHT_LABEL = HUD_EDIT_MODE_SETTING_ENCOUNTER_EVENTS_ICON_DIRECTION_RIGHT
+local DIRECTION_TOP_LABEL = HUD_EDIT_MODE_SETTING_ENCOUNTER_EVENTS_ICON_DIRECTION_TOP
+local DIRECTION_BOTTOM_LABEL = HUD_EDIT_MODE_SETTING_ENCOUNTER_EVENTS_ICON_DIRECTION_BOTTOM
 
 Helper.Api = Helper.Api or {}
 local Api = Helper.Api
@@ -41,6 +45,13 @@ Api.GetBaseSpell = C_Spell and C_Spell.GetBaseSpell
 Api.GetOverrideSpell = C_Spell and C_Spell.GetOverrideSpell
 Api.GetSpellPowerCost = C_Spell and C_Spell.GetSpellPowerCost
 Api.EnableSpellRangeCheck = C_Spell and C_Spell.EnableSpellRangeCheck
+Api.GetActiveTalentConfigID = C_ClassTalents and C_ClassTalents.GetActiveConfigID
+Api.GetTraitConfigInfo = C_Traits and C_Traits.GetConfigInfo
+Api.GetTraitTreeNodes = C_Traits and C_Traits.GetTreeNodes
+Api.GetTraitNodeInfo = C_Traits and C_Traits.GetNodeInfo
+Api.GetTraitEntryInfo = C_Traits and C_Traits.GetEntryInfo
+Api.GetTraitDefinitionInfo = C_Traits and C_Traits.GetDefinitionInfo
+Api.TraitNodeTypeSelection = Enum and Enum.TraitNodeType and Enum.TraitNodeType.Selection
 Api.IsSpellUsableFn = C_Spell and C_Spell.IsSpellUsable or IsUsableSpell
 Api.IsSpellPassiveFn = C_Spell and C_Spell.IsSpellPassive or IsPassiveSpell
 Api.GetAssistedCombatNextSpell = C_AssistedCombat and C_AssistedCombat.GetNextCastSpell
@@ -86,28 +97,30 @@ Helper.LayoutModeOptions = {
 }
 Helper.AnchorOptions = {
 	{ value = "TOPLEFT", label = L["Top Left"] or "Top Left" },
-	{ value = "TOP", label = L["Top"] or "Top" },
+	{ value = "TOP", label = DIRECTION_TOP_LABEL },
 	{ value = "TOPRIGHT", label = L["Top Right"] or "Top Right" },
-	{ value = "LEFT", label = L["Left"] or "Left" },
+	{ value = "LEFT", label = DIRECTION_LEFT_LABEL },
 	{ value = "CENTER", label = L["Center"] or "Center" },
-	{ value = "RIGHT", label = L["Right"] or "Right" },
+	{ value = "RIGHT", label = DIRECTION_RIGHT_LABEL },
 	{ value = "BOTTOMLEFT", label = L["Bottom Left"] or "Bottom Left" },
-	{ value = "BOTTOM", label = L["Bottom"] or "Bottom" },
+	{ value = "BOTTOM", label = DIRECTION_BOTTOM_LABEL },
 	{ value = "BOTTOMRIGHT", label = L["Bottom Right"] or "Bottom Right" },
 }
 Helper.GrowthPointOptions = {
-	{ value = "TOPLEFT", label = L["Left"] or "Left" },
+	{ value = "TOPLEFT", label = DIRECTION_LEFT_LABEL },
 	{ value = "TOP", label = L["Center"] or "Center" },
-	{ value = "TOPRIGHT", label = L["Right"] or "Right" },
+	{ value = "TOPRIGHT", label = DIRECTION_RIGHT_LABEL },
 }
 Helper.FixedGroupStartPointOptions = {
 	{ value = "TOPLEFT", label = L["Top Left"] or "Top Left" },
+	{ value = "TOP", label = DIRECTION_TOP_LABEL },
 	{ value = "TOPRIGHT", label = L["Top Right"] or "Top Right" },
 	{ value = "BOTTOMLEFT", label = L["Bottom Left"] or "Bottom Left" },
+	{ value = "BOTTOM", label = DIRECTION_BOTTOM_LABEL },
 	{ value = "BOTTOMRIGHT", label = L["Bottom Right"] or "Bottom Right" },
 }
 Helper.FontStyleOptions = {
-	{ value = "NONE", label = L["None"] or "None" },
+	{ value = "NONE", label = _G.NONE },
 	{ value = "OUTLINE", label = L["Outline"] or "Outline" },
 	{ value = "THICKOUTLINE", label = L["Thick Outline"] or "Thick Outline" },
 	{ value = "MONOCHROMEOUTLINE", label = L["Monochrome Outline"] or "Monochrome Outline" },
@@ -290,6 +303,8 @@ Helper.ENTRY_DEFAULTS = {
 	stateTextureDouble = false,
 	stateTextureMirror = false,
 	stateTextureMirrorSecond = true,
+	stateTextureMirrorVertical = false,
+	stateTextureMirrorVerticalSecond = false,
 	stateTextureSpacingX = 0,
 	stateTextureSpacingY = 0,
 }
@@ -309,9 +324,9 @@ Helper.RADIAL_ARC_DEGREES_MIN = 15
 Helper.RADIAL_ARC_DEGREES_MAX = 360
 Helper.EXAMPLE_COOLDOWN_PERCENT = 0.55
 Helper.GLOW_STYLE_OPTIONS = {
-	{ value = "MARCHING_ANTS", labelKey = "CooldownPanelGlowStyleMarchingAnts", fallback = "Marching ants" },
-	{ value = "FLASH", labelKey = "CooldownPanelGlowStyleFlash", fallback = "Flash" },
-	{ value = "BLIZZARD", labelKey = "CooldownPanelGlowStyleBlizzard", fallback = "Blizzard" },
+	{ value = "MARCHING_ANTS", labelKey = "Marching ants", fallback = "Marching ants" },
+	{ value = "FLASH", labelKey = "Flash", fallback = "Flash" },
+	{ value = "BLIZZARD", labelKey = "Blizzard", fallback = "Blizzard" },
 }
 Helper.VALID_DIRECTIONS = {
 	RIGHT = true,
@@ -321,21 +336,32 @@ Helper.VALID_DIRECTIONS = {
 }
 Helper.VALID_FIXED_GROUP_START_POINTS = {
 	TOPLEFT = true,
+	TOP = true,
 	TOPRIGHT = true,
 	BOTTOMLEFT = true,
+	BOTTOM = true,
 	BOTTOMRIGHT = true,
 }
 Helper.FIXED_GROUP_DYNAMIC_DIRECTIONS_BY_START_POINT = {
 	TOPLEFT = { RIGHT = true, DOWN = true },
+	TOP = { CENTER = true },
 	TOPRIGHT = { LEFT = true, DOWN = true },
 	BOTTOMLEFT = { RIGHT = true, UP = true },
+	BOTTOM = { CENTER = true },
 	BOTTOMRIGHT = { LEFT = true, UP = true },
 }
 Helper.FIXED_GROUP_DIRECTION_OPTIONS_BY_START_POINT = {}
+local fixedGroupDirectionOptionByValue = {
+	CENTER = { value = "CENTER", label = L["Center"] or "Center" },
+}
+for _, option in ipairs(Helper.DirectionOptions) do
+	if option and option.value then fixedGroupDirectionOptionByValue[option.value] = option end
+end
 for startPoint, validDirections in pairs(Helper.FIXED_GROUP_DYNAMIC_DIRECTIONS_BY_START_POINT) do
 	local options = {}
-	for _, option in ipairs(Helper.DirectionOptions) do
-		if option and validDirections[option.value] then options[#options + 1] = option end
+	for _, direction in ipairs({ "LEFT", "RIGHT", "UP", "DOWN", "CENTER" }) do
+		local option = validDirections[direction] and fixedGroupDirectionOptionByValue[direction] or nil
+		if option then options[#options + 1] = option end
 	end
 	Helper.FIXED_GROUP_DIRECTION_OPTIONS_BY_START_POINT[startPoint] = options
 end
@@ -508,6 +534,7 @@ end
 
 function Helper.GetDefaultFixedGroupDynamicDirection(startPoint)
 	startPoint = Helper.NormalizeFixedGroupStartPoint(startPoint, "TOPLEFT")
+	if startPoint == "TOP" or startPoint == "BOTTOM" then return "CENTER" end
 	if startPoint == "TOPRIGHT" or startPoint == "BOTTOMRIGHT" then return "LEFT" end
 	return "RIGHT"
 end
@@ -590,6 +617,7 @@ end
 function Helper.NormalizeFixedGroupLayoutOverrides(value)
 	if type(value) ~= "table" then return nil end
 	local normalized = {}
+	if value.spacing ~= nil then normalized.spacing = Helper.ClampInt(value.spacing, 0, Helper.SPACING_RANGE or 200, Helper.PANEL_LAYOUT_DEFAULTS.spacing or 2) end
 	if value.iconOffsetX ~= nil then normalized.iconOffsetX = Helper.ClampInt(value.iconOffsetX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if value.iconOffsetY ~= nil then normalized.iconOffsetY = Helper.ClampInt(value.iconOffsetY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if type(value.procGlowEnabled) == "boolean" then normalized.procGlowEnabled = value.procGlowEnabled == true end
@@ -678,6 +706,20 @@ local function appendFixedGroupRange(target, firstValue, count, ascending)
 	return target
 end
 
+local fixedGroupOrderedCellsCache = setmetatable({}, { __mode = "k" })
+local fixedGroupDynamicPlacementCache = setmetatable({}, { __mode = "k" })
+
+local function getFixedGroupPlacementSignature(columns, rows, originColumn, originRow, startPoint, direction)
+	return table.concat({
+		tostring(columns),
+		tostring(rows),
+		tostring(originColumn),
+		tostring(originRow),
+		tostring(startPoint),
+		tostring(direction),
+	}, ":")
+end
+
 function Helper.GetFixedGroupOrderedCells(group)
 	local cells = {}
 	if type(group) ~= "table" then return cells end
@@ -689,10 +731,14 @@ function Helper.GetFixedGroupOrderedCells(group)
 
 	local startPoint = Helper.NormalizeFixedGroupStartPoint(group.dynamicStartPoint, "TOPLEFT")
 	local direction = Helper.NormalizeFixedGroupDynamicDirection(startPoint, group.dynamicDirection, nil)
-	local horizontalFirst = direction == "RIGHT" or direction == "LEFT"
-	local topToBottom = direction == "DOWN" or (horizontalFirst and (startPoint == "TOPLEFT" or startPoint == "TOPRIGHT"))
+	local signature = getFixedGroupPlacementSignature(columns, rows, originColumn, originRow, startPoint, direction)
+	local cached = fixedGroupOrderedCellsCache[group]
+	if cached and cached.signature == signature and type(cached.cells) == "table" then return cached.cells end
+	local centerGrowth = direction == "CENTER"
+	local horizontalFirst = centerGrowth or direction == "RIGHT" or direction == "LEFT"
+	local topToBottom = centerGrowth and startPoint ~= "BOTTOM" or direction == "DOWN" or (horizontalFirst and (startPoint == "TOPLEFT" or startPoint == "TOPRIGHT"))
 	local leftToRight = direction == "RIGHT" or ((not horizontalFirst) and (startPoint == "TOPLEFT" or startPoint == "BOTTOMLEFT"))
-	local orderedColumns = appendFixedGroupRange({}, originColumn, columns, leftToRight)
+	local orderedColumns = centerGrowth and appendFixedGroupRange({}, originColumn, columns, true) or appendFixedGroupRange({}, originColumn, columns, leftToRight)
 	local orderedRows = appendFixedGroupRange({}, originRow, rows, topToBottom)
 
 	if horizontalFirst then
@@ -717,7 +763,98 @@ function Helper.GetFixedGroupOrderedCells(group)
 		end
 	end
 
+	fixedGroupOrderedCellsCache[group] = {
+		signature = signature,
+		cells = cells,
+	}
 	return cells
+end
+
+function Helper.IsFixedGroupCenterGrowth(group)
+	if type(group) ~= "table" or Helper.FixedGroupUsesStaticSlots(group) == true then return false end
+	local startPoint = Helper.NormalizeFixedGroupStartPoint(group.dynamicStartPoint, "TOPLEFT")
+	local direction = Helper.NormalizeFixedGroupDynamicDirection(startPoint, group.dynamicDirection, nil)
+	return direction == "CENTER" and (startPoint == "TOP" or startPoint == "BOTTOM")
+end
+
+function Helper.GetFixedGroupDynamicPlacement(group, localIndex, itemCount)
+	if type(group) ~= "table" then return nil end
+	local columns = Helper.NormalizeFixedGridSize(group.columns, 0)
+	local rows = Helper.NormalizeFixedGridSize(group.rows, 0)
+	local originColumn = Helper.NormalizeSlotCoordinate(group.column)
+	local originRow = Helper.NormalizeSlotCoordinate(group.row)
+	if not (originColumn and originRow) or columns <= 0 or rows <= 0 then return nil end
+
+	local count = math.floor(tonumber(itemCount) or 0)
+	local index = math.floor(tonumber(localIndex) or 0)
+	local capacity = columns * rows
+	if count < 1 or index < 1 then return nil end
+	if count > capacity then count = capacity end
+	if index > count then return nil end
+
+	local startPoint = Helper.NormalizeFixedGroupStartPoint(group.dynamicStartPoint, "TOPLEFT")
+	local direction = Helper.NormalizeFixedGroupDynamicDirection(startPoint, group.dynamicDirection, nil)
+	local signature = getFixedGroupPlacementSignature(columns, rows, originColumn, originRow, startPoint, direction)
+	local dynamicCache = fixedGroupDynamicPlacementCache[group]
+	if not dynamicCache or dynamicCache.signature ~= signature then
+		dynamicCache = {
+			signature = signature,
+			counts = {},
+		}
+		fixedGroupDynamicPlacementCache[group] = dynamicCache
+	end
+	local countCache = dynamicCache.counts[count]
+	if type(countCache) ~= "table" then
+		countCache = {}
+		dynamicCache.counts[count] = countCache
+	end
+	local cached = countCache[index]
+	if cached ~= nil then
+		if cached == false then return nil end
+		return cached
+	end
+	if direction == "CENTER" and (startPoint == "TOP" or startPoint == "BOTTOM") then
+		local zeroIndex = index - 1
+		local rowIndex = math.floor(zeroIndex / columns)
+		if rowIndex >= rows then return nil end
+		local rowCount = math.min(columns, count - (rowIndex * columns))
+		if rowCount <= 0 then return nil end
+		local columnIndex = zeroIndex % columns
+		local startOffset = (columns - rowCount) / 2
+		local baseStart = math.floor(startOffset)
+		local fractionalStart = startOffset - baseStart
+		local row = startPoint == "BOTTOM" and (originRow + rows - 1 - rowIndex) or (originRow + rowIndex)
+		local placement = {
+			column = originColumn + baseStart + columnIndex,
+			row = row,
+			offsetSlotsX = fractionalStart,
+			offsetSlotsY = 0,
+			rowCount = rowCount,
+			rowIndex = rowIndex,
+			columnIndex = columnIndex,
+			count = count,
+			index = index,
+		}
+		countCache[index] = placement
+		return placement
+	end
+
+	local orderedCells = Helper.GetFixedGroupOrderedCells(group)
+	local cell = orderedCells[index]
+	if not cell then
+		countCache[index] = false
+		return nil
+	end
+	local placement = {
+		column = cell.column,
+		row = cell.row,
+		offsetSlotsX = 0,
+		offsetSlotsY = 0,
+		count = count,
+		index = index,
+	}
+	countCache[index] = placement
+	return placement
 end
 
 function Helper.NormalizeFixedGroupId(value)
@@ -1096,20 +1233,22 @@ function Helper.GetFixedLayoutCache(panel)
 		for i = 1, #fixedGroups do
 			local group = fixedGroups[i]
 			if group and not Helper.FixedGroupUsesStaticSlots(group) then
+				local list = dynamicGroupEntries[group.id] or nil
 				local capacity = Helper.GetFixedGroupCapacity(group)
+				local dynamicCount = list and #list or 0
+				local targetCount = Helper.IsFixedGroupCenterGrowth(group) and dynamicCount or capacity
 				local targetIndices = group._eqolDynamicTargetIndices or {}
-				local orderedCells = Helper.GetFixedGroupOrderedCells(group)
-				for groupIndex = 1, capacity do
-					local cell = orderedCells[groupIndex]
-					local column = cell and cell.column or nil
-					local row = cell and cell.row or nil
+				for groupIndex = 1, targetCount do
+					local placement = Helper.GetFixedGroupDynamicPlacement(group, groupIndex, targetCount)
+					local column = placement and placement.column or nil
+					local row = placement and placement.row or nil
 					if column and row and column <= boundsColumns and row <= boundsRows then
 						targetIndices[groupIndex] = ((row - 1) * boundsColumns) + column
 					else
 						targetIndices[groupIndex] = nil
 					end
 				end
-				for groupIndex = capacity + 1, #targetIndices do
+				for groupIndex = targetCount + 1, #targetIndices do
 					targetIndices[groupIndex] = nil
 				end
 				group._eqolDynamicTargetIndices = targetIndices
@@ -1290,7 +1429,8 @@ function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 		local group = groups[i]
 		local list = group and not Helper.FixedGroupUsesStaticSlots(group) and dynamicGroupEntries[group.id] or nil
 		if list then
-			local usePreparedTargets = cache and cache.boundsColumns == columns and cache.boundsRows == rows and group._eqolDynamicTargetIndices
+			local useCenterGrowth = Helper.IsFixedGroupCenterGrowth(group)
+			local usePreparedTargets = cache and cache.boundsColumns == columns and cache.boundsRows == rows and group._eqolDynamicTargetIndices and not useCenterGrowth
 			if usePreparedTargets then
 				local targetIndices = group._eqolDynamicTargetIndices
 				local limit = math.min(targetIndices and #targetIndices or 0, #list)
@@ -1300,12 +1440,12 @@ function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 				end
 			else
 				local capacity = Helper.GetFixedGroupCapacity(group)
-				local orderedCells = Helper.GetFixedGroupOrderedCells(group)
-				local limit = math.min(capacity, #list)
+				local placementCount = useCenterGrowth and #list or capacity
+				local limit = math.min(placementCount, #list)
 				for groupIndex = 1, limit do
-					local cell = orderedCells[groupIndex]
-					local column = cell and cell.column or nil
-					local row = cell and cell.row or nil
+					local placement = Helper.GetFixedGroupDynamicPlacement(group, groupIndex, placementCount)
+					local column = placement and placement.column or nil
+					local row = placement and placement.row or nil
 					if column and row and column <= columns and row <= rows then slotEntryIds[((row - 1) * columns) + column] = list[groupIndex] end
 				end
 			end
@@ -1972,6 +2112,8 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.stateTextureDouble = entry.stateTextureDouble == true
 	entry.stateTextureMirror = entry.stateTextureMirror == true
 	if type(entry.stateTextureMirrorSecond) ~= "boolean" then entry.stateTextureMirrorSecond = Helper.ENTRY_DEFAULTS.stateTextureMirrorSecond == true end
+	entry.stateTextureMirrorVertical = entry.stateTextureMirrorVertical == true
+	if type(entry.stateTextureMirrorVerticalSecond) ~= "boolean" then entry.stateTextureMirrorVerticalSecond = Helper.ENTRY_DEFAULTS.stateTextureMirrorVerticalSecond == true end
 	entry.stateTextureSpacingX = Helper.ClampInt(entry.stateTextureSpacingX, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, Helper.ENTRY_DEFAULTS.stateTextureSpacingX or 0)
 	entry.stateTextureSpacingY = Helper.ClampInt(entry.stateTextureSpacingY, 0, Helper.STATE_TEXTURE_SPACING_RANGE or 2000, Helper.ENTRY_DEFAULTS.stateTextureSpacingY or 0)
 	if entry.stateTextureInput == "" then
@@ -2698,8 +2840,6 @@ function CooldownPanels:RequestPanelRefresh(panelId)
 			if CooldownPanels:GetPanel(id) then CooldownPanels:RefreshPanel(id) end
 		end
 
-		if startedRuntimeQueryBatch and CooldownPanels.EndRuntimeQueryBatch then
-			CooldownPanels:EndRuntimeQueryBatch()
-		end
+		if startedRuntimeQueryBatch and CooldownPanels.EndRuntimeQueryBatch then CooldownPanels:EndRuntimeQueryBatch() end
 	end)
 end

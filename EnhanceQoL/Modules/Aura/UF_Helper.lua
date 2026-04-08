@@ -122,7 +122,7 @@ local npcColorUnits = {
 	focus = true,
 	boss = true,
 }
-for i = 1, (MAX_BOSS_FRAMES or 5) do
+for i = 1, 8 do
 	npcColorUnits["boss" .. i] = true
 end
 
@@ -546,6 +546,7 @@ function H.resolveBorderTexture(key)
 end
 
 function H.resolveAuraBorderTexture(key)
+	if type(key) == "string" and key:upper() == "SOLID" then return "Interface\\Buttons\\WHITE8x8", nil, true end
 	if not key or key == "" or key == "DEFAULT" then return DEFAULT_AURA_BORDER_TEX, DEFAULT_AURA_BORDER_COORDS, false end
 	if LSM then
 		local tex = LSM:Fetch("border", key)
@@ -931,16 +932,25 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 	if amount < 1 then amount = 1 end
 	local minSize = floor(tonumber(iconCfg.minSize) or 4)
 	if minSize < 4 then minSize = 4 end
-	local maxSize = floor(tonumber(iconCfg.maxSize) or 60)
+	local maxSize = floor(tonumber(iconCfg.maxSize) or 100)
 	if maxSize < minSize then maxSize = minSize end
-	if maxSize > 256 then maxSize = 256 end
+	if maxSize > 100 then maxSize = 100 end
 	local size = floor(tonumber(iconCfg.size) or 24)
 	if size > maxSize then size = maxSize end
 	if size < minSize then size = minSize end
+	local textScale = tonumber(cfg.textScale) or 1
+	if textScale < 0.5 then
+		textScale = 0.5
+	elseif textScale > 3 then
+		textScale = 3
+	end
+	-- Keep the icon's visual size unchanged while letting the private aura frame scale its text.
+	local logicalSize = size / textScale
 	local iconPoint = tostring(iconCfg.point or "RIGHT"):upper()
 	local iconOffset = tonumber(iconCfg.offset or iconCfg.spacing or 2) or 0
 	local borderScale = tonumber(iconCfg.borderScale)
 	if borderScale == nil then borderScale = (size / 32) * 2 end
+	borderScale = borderScale / textScale
 	local layoutEnabled = layoutCfg.enabled == true or layoutCfg.wrapCount ~= nil or layoutCfg.direction ~= nil or layoutCfg.wrapDirection ~= nil
 	local layoutDirection = H.PrivateAuraNormalizeDirection(layoutCfg.direction or iconCfg.direction or iconPoint, iconPoint)
 	local primaryHorizontal = layoutDirection == "LEFT" or layoutDirection == "RIGHT"
@@ -983,6 +993,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		or state.countdownFrame ~= showFrame
 		or state.countdownNumbers ~= showNumbers
 		or state.borderScale ~= borderScale
+		or state.textScale ~= textScale
 		or state.durationEnabled ~= durationEnabled
 		or state.durationPoint ~= durationPoint
 		or state.durationOffsetX ~= durationOffsetX
@@ -996,6 +1007,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		state.countdownFrame = showFrame
 		state.countdownNumbers = showNumbers
 		state.borderScale = borderScale
+		state.textScale = textScale
 		state.durationEnabled = durationEnabled
 		state.durationPoint = durationPoint
 		state.durationOffsetX = durationOffsetX
@@ -1072,7 +1084,8 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 			local prevLayout = (anchors[i - 1] and anchors[i - 1]._eqolPrivateAuraLayout) or anchors[i - 1]
 			layout:SetPoint(attachPoint, prevLayout, iconPoint, ox, oy)
 		end
-		layout:SetSize(size, size)
+		layout:SetScale(textScale)
+		layout:SetSize(logicalSize, logicalSize)
 		layout:Show()
 		anchor:ClearAllPoints()
 		anchor:SetPoint("CENTER", layout, "CENTER", 0, 0)
@@ -1115,7 +1128,8 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		end
 		if changed or not anchor.anchorID then
 			removePrivateAuraAnchor(anchor)
-			anchor.anchorID = buildPrivateAuraAnchor(anchor, effectiveUnit, i, size, borderScale, showFrame, showNumbers, durationEnabled, durationPoint, durationOffsetX, durationOffsetY, layout)
+			anchor.anchorID =
+				buildPrivateAuraAnchor(anchor, effectiveUnit, i, logicalSize, borderScale, showFrame, showNumbers, durationEnabled, durationPoint, durationOffsetX, durationOffsetY, layout)
 		end
 		stripCooldownEdge(anchor)
 	end
@@ -1216,9 +1230,7 @@ function H.applyHighlightStyle(st, highlightCfg)
 		st._highlightFrame = nil
 		return
 	end
-	if st._highlightFrame and st._highlightFrame.GetParent and st._highlightFrame:GetParent() ~= host then
-		st._highlightFrame:Hide()
-	end
+	if st._highlightFrame and st._highlightFrame.GetParent and st._highlightFrame:GetParent() ~= host then st._highlightFrame:Hide() end
 	highlight = ensureHighlightFrame(host)
 	if not highlight then return end
 	st._highlightFrame = highlight
@@ -1792,7 +1804,7 @@ end
 
 function H.GetSecondaryPowerTokenOptions(includeNone)
 	local options = {}
-	if includeNone == true then options[#options + 1] = { value = "NONE", label = _G.NONE or "None" } end
+	if includeNone == true then options[#options + 1] = { value = "NONE", label = _G.NONE } end
 	for _, token in ipairs(getSecondaryPowerTokens()) do
 		options[#options + 1] = { value = token, label = H.getPowerLabel(token) }
 	end
@@ -2897,13 +2909,27 @@ function H.applyNameCharLimit(st, scfg, defStatus)
 	if maxChars <= 0 then
 		if st.nameText.SetMaxLines then st.nameText:SetMaxLines(1) end
 		if st.nameText.SetWordWrap then st.nameText:SetWordWrap(false) end
-		st.nameText:SetWidth(0)
+		if st._eqolNameTextWidth ~= 0 then
+			st.nameText:SetWidth(0)
+			st._eqolNameTextWidth = 0
+		end
 		return
 	end
 	if st.nameText.SetMaxLines then st.nameText:SetMaxLines(1) end
 	if st.nameText.SetWordWrap then st.nameText:SetWordWrap(false) end
 	local width = H.getNameLimitWidth(scfg and scfg.font, scfg and scfg.fontSize or 14, scfg and scfg.fontOutline or "OUTLINE", maxChars)
-	if width and width > 0 then st.nameText:SetWidth(width) end
+	if width and width > 0 then
+		local snappedWidth = width
+		local scale = (st.nameText.GetEffectiveScale and st.nameText:GetEffectiveScale()) or (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale()) or 1
+		if _G.PixelUtil and _G.PixelUtil.GetNearestPixelSize then
+			-- Centered name regions blur easily on odd pixel widths; keep the width on an even pixel count.
+			snappedWidth = _G.PixelUtil.GetNearestPixelSize(width * 0.5, scale, 1) * 2
+		end
+		if st._eqolNameTextWidth ~= snappedWidth then
+			st.nameText:SetWidth(snappedWidth)
+			st._eqolNameTextWidth = snappedWidth
+		end
+	end
 end
 
 function H.truncateTextToWidth(fontPath, fontSize, fontOutline, text, maxWidth)

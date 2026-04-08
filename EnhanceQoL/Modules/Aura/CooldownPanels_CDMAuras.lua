@@ -12,10 +12,12 @@ addon.Aura.CooldownPanels = addon.Aura.CooldownPanels or {}
 local CooldownPanels = addon.Aura.CooldownPanels
 local Helper = CooldownPanels.helper or {}
 local Api = Helper.Api or {}
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_Aura")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 CooldownPanels.CDMAuras = CooldownPanels.CDMAuras or {}
 local CDMAuras = CooldownPanels.CDMAuras
+CDMAuras._eqolPerf = CDMAuras._eqolPerf or {}
+local cdm = CDMAuras._eqolPerf
 
 local ENTRY_TYPE = "CDM_AURA"
 local ICON_VIEWER = "BuffIconCooldownViewer"
@@ -43,6 +45,46 @@ local function normalizeTrackedUnit(unit)
 	return nil
 end
 
+function cdm.EnsureWeakKeyTable(value)
+	if type(value) == "table" then return value end
+	return setmetatable({}, { __mode = "k" })
+end
+
+function cdm.GetFrameEpoch(runtime, frame)
+	if not (runtime and frame) then return 0 end
+	return tonumber(runtime.frameEpochByFrame and runtime.frameEpochByFrame[frame]) or 0
+end
+
+function cdm.BumpFrameEpoch(runtime, frame)
+	if not (runtime and frame) then return 0 end
+	runtime.frameEpochByFrame = cdm.EnsureWeakKeyTable(runtime.frameEpochByFrame)
+	local nextEpoch = (tonumber(runtime.frameEpochByFrame[frame]) or 0) + 1
+	runtime.frameEpochByFrame[frame] = nextEpoch
+	if runtime.frameAuraSnapshotByFrame then runtime.frameAuraSnapshotByFrame[frame] = nil end
+	return nextEpoch
+end
+
+function cdm.GetUnitAuraEpoch(runtime, unit)
+	unit = normalizeTrackedUnit(unit)
+	if not (runtime and unit) then return 0 end
+	return tonumber(runtime.unitAuraEpoch and runtime.unitAuraEpoch[unit]) or 0
+end
+
+function cdm.BumpUnitAuraEpoch(runtime, unit)
+	unit = normalizeTrackedUnit(unit)
+	if not (runtime and unit) then return 0 end
+	runtime.unitAuraEpoch = runtime.unitAuraEpoch or { player = 0, target = 0 }
+	local nextEpoch = (tonumber(runtime.unitAuraEpoch[unit]) or 0) + 1
+	runtime.unitAuraEpoch[unit] = nextEpoch
+	return nextEpoch
+end
+
+function cdm.ResetPersistentFrameCaches(runtime)
+	if not runtime then return end
+	runtime.frameEpochByFrame = cdm.EnsureWeakKeyTable(nil)
+	runtime.frameAuraSnapshotByFrame = cdm.EnsureWeakKeyTable(nil)
+end
+
 local function getRuntime()
 	CooldownPanels.runtime = CooldownPanels.runtime or {}
 	local runtime = CooldownPanels.runtime.cdmAuras
@@ -59,6 +101,10 @@ local function getRuntime()
 		runtime.scratchSeenInfo = runtime.scratchSeenInfo or {}
 		runtime.scratchNumericKeys = runtime.scratchNumericKeys or {}
 		runtime.scratchChildren = runtime.scratchChildren or {}
+		runtime.frameEpochByFrame = cdm.EnsureWeakKeyTable(runtime.frameEpochByFrame)
+		runtime.frameAuraSnapshotByFrame = cdm.EnsureWeakKeyTable(runtime.frameAuraSnapshotByFrame)
+		runtime.unitAuraEpoch = runtime.unitAuraEpoch or { player = 0, target = 0 }
+		runtime.scanEpoch = tonumber(runtime.scanEpoch) or 0
 		return runtime
 	end
 	runtime = {
@@ -77,6 +123,10 @@ local function getRuntime()
 		scratchSeenInfo = {},
 		scratchNumericKeys = {},
 		scratchChildren = {},
+		frameEpochByFrame = cdm.EnsureWeakKeyTable(nil),
+		frameAuraSnapshotByFrame = cdm.EnsureWeakKeyTable(nil),
+		unitAuraEpoch = { player = 0, target = 0 },
+		scanEpoch = 0,
 		targetEpoch = 0,
 	}
 	CooldownPanels.runtime.cdmAuras = runtime
@@ -679,14 +729,13 @@ function CDMAuras:InvalidateScan(clearCooldownViewerInfo)
 	local runtime = getRuntime()
 	runtime.scan = nil
 	runtime.forcedRescanPass = nil
+	runtime.scanEpoch = (tonumber(runtime.scanEpoch) or 0) + 1
 	if clearCooldownViewerInfo then wipe(runtime.cooldownViewerInfoByID) end
 end
 
 function CDMAuras:ScanTrackedBuffs(force)
 	local runtime = getRuntime()
-	if not force and runtime.scan and runtime.scan.list and runtime.scan.byCooldownID then
-		return runtime.scan.list, runtime.scan.byCooldownID, runtime.scan.bySpellID, runtime.scan.byCooldownKey
-	end
+	if not force and runtime.scan and runtime.scan.list and runtime.scan.byCooldownID then return runtime.scan.list, runtime.scan.byCooldownID, runtime.scan.bySpellID, runtime.scan.byCooldownKey end
 
 	local scan = runtime.scan or {}
 	scan.list = scan.list or {}
@@ -755,15 +804,19 @@ local function clearAuraMapping(runtime, key, state, clearTrackedAura)
 end
 
 local function registerAuraMapping(runtime, key, state, auraID, auraUnit)
-	if not state then return end
+	if not state then return false end
 	auraUnit = normalizeTrackedUnit(auraUnit)
-	if auraID and state.mappedAuraInstanceID == auraID and state.mappedAuraUnit == auraUnit then return end
+	local mapped = auraUnit and auraID and runtime.auraEntries[auraUnit] and runtime.auraEntries[auraUnit][auraID] or nil
+	local mappingRegistered = mapped and mapped[key] == true or false
+	local changed = state.mappedAuraInstanceID ~= auraID or state.mappedAuraUnit ~= auraUnit or not mappingRegistered
+	if auraID and state.mappedAuraInstanceID == auraID and state.mappedAuraUnit == auraUnit and mappingRegistered then return false end
 	clearAuraMapping(runtime, key, state, false)
-	if not (auraID and auraUnit) then return end
+	if not (auraID and auraUnit) then return changed end
 	runtime.auraEntries[auraUnit][auraID] = runtime.auraEntries[auraUnit][auraID] or {}
 	runtime.auraEntries[auraUnit][auraID][key] = true
 	state.mappedAuraInstanceID = auraID
 	state.mappedAuraUnit = auraUnit
+	return changed
 end
 
 local function unregisterFrameBinding(runtime, key, frame)
@@ -829,6 +882,19 @@ local function clearEntryState(key, state, clearTrackedAura)
 	state.lastActive = nil
 	state.pandemicActive = nil
 	state.targetAuraEpoch = nil
+	state.cachedScanEpoch = nil
+	state.cachedScanCooldownID = nil
+	state.cachedScanSpellID = nil
+	state.cachedScanSourceType = nil
+	state.cachedScanInfo = nil
+	state.cachedResolvedCooldownID = nil
+	state.cachedFrameMatchFrame = nil
+	state.cachedFrameMatchFrameEpoch = nil
+	state.cachedFrameMatchTargetEpoch = nil
+	state.cachedFrameMatchTrackedUnit = nil
+	state.cachedFrameMatchSpellID = nil
+	state.cachedFrameMatchCooldownID = nil
+	state.cachedFrameMatchResult = nil
 end
 
 function CDMAuras:SweepInvalidStates()
@@ -924,6 +990,8 @@ function CDMAuras:UpdateEventRegistration()
 	self:EnsureEventFrame()
 	frame = self.eventFrame
 	if not self.eventsRegistered then
+		frame:RegisterEvent("ADDON_LOADED")
+		frame:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
 		frame:RegisterEvent("PLAYER_LOGIN")
 		frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 		frame:RegisterEvent("PLAYER_TARGET_CHANGED")
@@ -1020,6 +1088,29 @@ local function isFrameShowingTrackedSpell(frame, entry, trackedUnit)
 	return result
 end
 
+function cdm.GetCachedFrameSpellMatch(runtime, state, frame, trackedUnit)
+	if not (runtime and state and frame) then return false end
+	local normalizedTrackedUnit = normalizeTrackedUnit(trackedUnit)
+	local targetEpoch = runtime.targetEpoch or 0
+	local frameEpoch = cdm.GetFrameEpoch(runtime, frame)
+	if state.cachedFrameMatchFrame == frame and state.cachedFrameMatchFrameEpoch == frameEpoch
+		and state.cachedFrameMatchTargetEpoch == targetEpoch
+		and state.cachedFrameMatchTrackedUnit == normalizedTrackedUnit
+		and state.cachedFrameMatchSpellID == state.signatureSpellID
+		and cooldownIDsEqual(state.cachedFrameMatchCooldownID, state.signatureCooldownID) then
+		return state.cachedFrameMatchResult == true
+	end
+	local result = isFrameShowingTrackedSpell(frame, state, trackedUnit) == true
+	state.cachedFrameMatchFrame = frame
+	state.cachedFrameMatchFrameEpoch = frameEpoch
+	state.cachedFrameMatchTargetEpoch = targetEpoch
+	state.cachedFrameMatchTrackedUnit = normalizedTrackedUnit
+	state.cachedFrameMatchSpellID = state.signatureSpellID
+	state.cachedFrameMatchCooldownID = state.signatureCooldownID
+	state.cachedFrameMatchResult = result
+	return result
+end
+
 local function getFrameAuraUnit(frame)
 	if not frame then return nil end
 	if type(frame.GetAuraDataUnit) == "function" then
@@ -1037,23 +1128,39 @@ local function getFrameAuraData(frame)
 		if cached then return cached.auraData, cached.auraUnit, cached.auraInstanceID end
 	end
 	if not frame then return nil, nil, nil end
+	local runtime = getRuntime()
 	local auraUnit = getFrameAuraUnit(frame)
 	local auraInstanceID = hasAuraInstanceID(frame.auraInstanceID) and frame.auraInstanceID or nil
-	if auraUnit and auraInstanceID then
-		local auraData = getAuraDataByAuraInstanceIDCached(auraUnit, auraInstanceID)
+	local frameEpoch = cdm.GetFrameEpoch(runtime, frame)
+	local unitAuraEpoch = cdm.GetUnitAuraEpoch(runtime, auraUnit)
+	local persistentCache = runtime.frameAuraSnapshotByFrame and runtime.frameAuraSnapshotByFrame[frame] or nil
+	if persistentCache and persistentCache.frameEpoch == frameEpoch and persistentCache.unitAuraEpoch == unitAuraEpoch
+		and persistentCache.auraUnit == auraUnit and persistentCache.auraInstanceID == auraInstanceID then
 		if passCache then
 			passCache[frame] = passCache[frame] or {}
-			passCache[frame].auraData = auraData
-			passCache[frame].auraUnit = auraUnit
-			passCache[frame].auraInstanceID = auraInstanceID
+			passCache[frame].auraData = persistentCache.auraData
+			passCache[frame].auraUnit = persistentCache.auraUnit
+			passCache[frame].auraInstanceID = persistentCache.auraInstanceID
 		end
-		if auraData then return auraData, auraUnit, auraInstanceID end
-	elseif passCache then
+		return persistentCache.auraData, persistentCache.auraUnit, persistentCache.auraInstanceID
+	end
+	local auraData = nil
+	if auraUnit and auraInstanceID then auraData = getAuraDataByAuraInstanceIDCached(auraUnit, auraInstanceID) end
+	runtime.frameAuraSnapshotByFrame = cdm.EnsureWeakKeyTable(runtime.frameAuraSnapshotByFrame)
+	runtime.frameAuraSnapshotByFrame[frame] = {
+		auraData = auraData,
+		auraUnit = auraUnit,
+		auraInstanceID = auraInstanceID,
+		frameEpoch = frameEpoch,
+		unitAuraEpoch = unitAuraEpoch,
+	}
+	if passCache then
 		passCache[frame] = passCache[frame] or {}
-		passCache[frame].auraData = nil
+		passCache[frame].auraData = auraData
 		passCache[frame].auraUnit = auraUnit
 		passCache[frame].auraInstanceID = auraInstanceID
 	end
+	if auraData then return auraData, auraUnit, auraInstanceID end
 	return nil, auraUnit, auraInstanceID
 end
 
@@ -1064,35 +1171,70 @@ local function frameHasPandemicState(frame)
 	return ok and shown == true
 end
 
+local function clearTrackedAuraState(runtime, key, state)
+	if not state then return false end
+	local hadTrackedState = state.trackedAuraInstanceID ~= nil or state.trackedAuraUnit ~= nil or state.pandemicActive ~= nil or state.targetAuraEpoch ~= nil
+	local hadMappedState = state.mappedAuraInstanceID ~= nil or state.mappedAuraUnit ~= nil
+	clearAuraMapping(runtime, key, state, false)
+	state.trackedAuraInstanceID = nil
+	state.trackedAuraUnit = nil
+	state.pandemicActive = nil
+	state.targetAuraEpoch = nil
+	return hadTrackedState or hadMappedState
+end
+
 function CDMAuras:HandleFrameAuraMutation(frame, wasCleared)
 	if not frame then return end
 	local runtime = getRuntime()
+	cdm.BumpFrameEpoch(runtime, frame)
 	local keys = runtime.frameEntries[frame]
 	if not keys then return end
 	local auraData, auraUnit, newAuraID = getFrameAuraData(frame)
+	local normalizedAuraUnit = normalizeTrackedUnit(auraUnit)
 	local refreshedPanels = {}
 
 	for key in pairs(keys) do
 		local state = runtime.entryStates[key]
 		if state then
+			local changed = false
 			local _, entry = getPanelEntry(state.panelId, state.entryId)
 			if not entry or entry.type ~= ENTRY_TYPE then
 				clearEntryState(key, state, true)
-			elseif wasCleared then
-				clearAuraMapping(runtime, key, state, false)
-				state.trackedAuraInstanceID = nil
-				state.trackedAuraUnit = nil
-				state.pandemicActive = nil
-				state.targetAuraEpoch = nil
-			elseif newAuraID and isFrameShowingTrackedSpell(frame, state, state.trackUnit or auraUnit) then
-				state.trackUnit = normalizeTrackedUnit(auraUnit) or state.trackUnit
-				state.trackedAuraInstanceID = newAuraID
-				state.trackedAuraUnit = auraUnit or state.trackedAuraUnit
-				state.pandemicActive = normalizeTrackedUnit(auraUnit) == "target" and frameHasPandemicState(frame) or nil
-				if normalizeTrackedUnit(auraUnit) == "target" then state.targetAuraEpoch = runtime.targetEpoch or 0 end
-				registerAuraMapping(runtime, key, state, newAuraID, auraUnit)
+				changed = true
+			else
+				local frameMatchesTrackedSpell = newAuraID and cdm.GetCachedFrameSpellMatch(runtime, state, frame, state.trackUnit or auraUnit) or false
+				if wasCleared or (newAuraID and not frameMatchesTrackedSpell) or (not newAuraID and not auraData) then
+					changed = clearTrackedAuraState(runtime, key, state)
+				elseif frameMatchesTrackedSpell then
+					local nextTrackUnit = normalizedAuraUnit or state.trackUnit
+					local nextTrackedAuraUnit = auraUnit or state.trackedAuraUnit
+					local nextPandemicActive = normalizedAuraUnit == "target" and frameHasPandemicState(frame) or nil
+					local nextTargetAuraEpoch = normalizedAuraUnit == "target" and (runtime.targetEpoch or 0) or nil
+
+					if state.trackUnit ~= nextTrackUnit then
+						state.trackUnit = nextTrackUnit
+						changed = true
+					end
+					if state.trackedAuraInstanceID ~= newAuraID then
+						state.trackedAuraInstanceID = newAuraID
+						changed = true
+					end
+					if state.trackedAuraUnit ~= nextTrackedAuraUnit then
+						state.trackedAuraUnit = nextTrackedAuraUnit
+						changed = true
+					end
+					if state.pandemicActive ~= nextPandemicActive then
+						state.pandemicActive = nextPandemicActive
+						changed = true
+					end
+					if state.targetAuraEpoch ~= nextTargetAuraEpoch then
+						state.targetAuraEpoch = nextTargetAuraEpoch
+						changed = true
+					end
+					if registerAuraMapping(runtime, key, state, newAuraID, auraUnit) then changed = true end
+				end
 			end
-			refreshedPanels[state.panelId] = true
+			if changed then refreshedPanels[state.panelId] = true end
 		end
 	end
 
@@ -1115,7 +1257,7 @@ function CDMAuras:HandleFramePandemicStateChanged(frame, isActive)
 		local state = runtime.entryStates[key]
 		if state then
 			local nextPandemicActive = false
-			if pandemicActive and isFrameShowingTrackedSpell(frame, state, state.trackUnit or auraUnit) then nextPandemicActive = true end
+			if pandemicActive and cdm.GetCachedFrameSpellMatch(runtime, state, frame, state.trackUnit or auraUnit) then nextPandemicActive = true end
 			if (state.pandemicActive == true) ~= nextPandemicActive then
 				state.pandemicActive = nextPandemicActive or nil
 				refreshedPanels[state.panelId] = true
@@ -1325,12 +1467,21 @@ function CDMAuras:AppendAddMenu(rootDescription, panelId)
 			local icon = tostring(info.iconTextureID or Helper.PREVIEW_ICON)
 			local nameText = tostring(info.buffName or info.cooldownID)
 			local label = string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", icon, nameText)
+			local sourceType = normalizeSourceType(info.sourceType or (info.availableSources and info.availableSources[SOURCE_ICON] and SOURCE_ICON or SOURCE_BAR))
+			local addInfo = {
+				cooldownID = info.cooldownID,
+				spellID = info.spellID,
+				buffName = info.buffName,
+				iconTextureID = info.iconTextureID,
+				sourceType = sourceType,
+				sourceViewer = info.sourceViewer or (sourceType == SOURCE_BAR and BAR_VIEWER or ICON_VIEWER),
+			}
 			if (duplicateNames[string.lower(nameText)] or 0) > 1 then
 				label = string.format("%s |cff888888(CD:%s, Spell:%s)|r", label, tostring(info.cooldownID or "?"), tostring(info.spellID or "?"))
 			end
 			buffsMenu:CreateButton(label, function()
 				if CooldownPanels.AddEntrySafe then
-					CooldownPanels:AddEntrySafe(panelId, ENTRY_TYPE, info)
+					CooldownPanels:AddEntrySafe(panelId, ENTRY_TYPE, addInfo)
 					CooldownPanels:RefreshEditor()
 				end
 			end)
@@ -1415,21 +1566,43 @@ function CDMAuras:ImportEntries(panelId, sourceKind)
 end
 
 function CDMAuras:AddEntrySafe(panelId, idValue, overrides)
-	local info = idValue
-	if type(info) ~= "table" then
+	local lookupCooldownID = type(idValue) == "table" and idValue.cooldownID or idValue
+	local info = nil
+	local panel = CooldownPanels.GetPanel and CooldownPanels:GetPanel(panelId) or nil
+	if isValidCooldownID(lookupCooldownID) then
 		local _, byCooldownID = self:ScanTrackedBuffs(false)
-		info = byCooldownID and byCooldownID[idValue] or nil
+		info = byCooldownID and byCooldownID[lookupCooldownID] or nil
+	end
+	if type(info) ~= "table" and type(idValue) == "table" and isValidCooldownID(idValue.cooldownID) then
+		info = {
+			cooldownID = idValue.cooldownID,
+			spellID = idValue.spellID,
+			buffName = idValue.buffName,
+			iconTextureID = idValue.iconTextureID,
+			sourceType = normalizeSourceType(idValue.sourceType),
+			sourceViewer = idValue.sourceViewer,
+		}
 	end
 	if type(info) ~= "table" or not isValidCooldownID(info.cooldownID) then
 		showErrorMessage(L["CooldownPanelCDMAuraNotFound"] or "Tracked aura not found in Cooldown Manager.")
 		return nil
 	end
-	if CooldownPanels.FindEntryByValue and CooldownPanels:FindEntryByValue(panelId, ENTRY_TYPE, info) then
+	local effectiveOverrides = overrides
+	if panel and Helper.IsFixedLayout and Helper.IsFixedLayout(panel.layout) and CooldownPanels.ResolveFixedEntryAddOverrides then
+		local resolvedOverrides, fixedError = CooldownPanels:ResolveFixedEntryAddOverrides(panel, overrides)
+		if fixedError then
+			showErrorMessage(fixedError)
+			return nil
+		end
+		effectiveOverrides = resolvedOverrides
+	end
+	local existingEntryId = CooldownPanels.FindEntryByValue and CooldownPanels:FindEntryByValue(panelId, ENTRY_TYPE, info.cooldownID) or nil
+	if existingEntryId then
 		showErrorMessage("Entry already exists.")
 		return nil
 	end
 	if not CooldownPanels.AddEntry then return nil end
-	return CooldownPanels:AddEntry(panelId, ENTRY_TYPE, info, overrides)
+	return CooldownPanels:AddEntry(panelId, ENTRY_TYPE, info, effectiveOverrides)
 end
 
 function CDMAuras:HandleRootRefresh()
@@ -1468,11 +1641,11 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 
 	local scanInfo
 	local resolvedCooldownID
-	local scanCache = getRuntimePassCacheTable("runtimePassScanInfoByEntry")
-	local cachedScan = scanCache and scanCache[entry] or nil
-	if cachedScan and cachedScan.cooldownID == entry.cooldownID and cachedScan.spellID == entry.spellID and cachedScan.sourceType == entry.sourceType then
-		scanInfo = cachedScan.scanInfo
-		resolvedCooldownID = cachedScan.resolvedCooldownID
+	local scanEpoch = runtime.scanEpoch or 0
+	if state.cachedScanEpoch == scanEpoch and state.cachedScanCooldownID == entry.cooldownID
+		and state.cachedScanSpellID == entry.spellID and state.cachedScanSourceType == entry.sourceType and state.cachedScanInfo ~= nil then
+		scanInfo = state.cachedScanInfo
+		resolvedCooldownID = state.cachedResolvedCooldownID
 	else
 		local _, byCooldownID, bySpellID, byCooldownKey = self:ScanTrackedBuffs(false)
 		scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, byCooldownID, bySpellID, byCooldownKey)
@@ -1484,7 +1657,9 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 			if runtimePass and runtime.forcedRescanPass == runtimePass then
 				_, rescanned, rescannedBySpellID, rescannedByCooldownKey = self:ScanTrackedBuffs(false)
 			else
-				self:InvalidateScan()
+				-- A negative first lookup can happen before Cooldown Viewer data or frames are ready.
+				-- Clear cached viewer info too so the forced rescan can recover once Blizzard finishes initialization.
+				self:InvalidateScan(true)
 				local _, rescannedByCooldownID, rescannedBySpellLookup, rescannedCooldownLookup = self:ScanTrackedBuffs(true)
 				rescanned = rescannedByCooldownID
 				rescannedBySpellID = rescannedBySpellLookup
@@ -1493,14 +1668,20 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 			end
 			scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, rescanned, rescannedBySpellID, rescannedByCooldownKey)
 		end
-		if scanCache then
-			scanCache[entry] = {
-				cooldownID = entry.cooldownID,
-				spellID = entry.spellID,
-				sourceType = entry.sourceType,
-				scanInfo = scanInfo,
-				resolvedCooldownID = resolvedCooldownID,
-			}
+		if scanInfo ~= nil then
+			state.cachedScanEpoch = runtime.scanEpoch or 0
+			state.cachedScanCooldownID = entry.cooldownID
+			state.cachedScanSpellID = entry.spellID
+			state.cachedScanSourceType = entry.sourceType
+			state.cachedScanInfo = scanInfo
+			state.cachedResolvedCooldownID = resolvedCooldownID
+		else
+			state.cachedScanEpoch = nil
+			state.cachedScanCooldownID = nil
+			state.cachedScanSpellID = nil
+			state.cachedScanSourceType = nil
+			state.cachedScanInfo = nil
+			state.cachedResolvedCooldownID = nil
 		end
 	end
 	if not isValidCooldownID(resolvedCooldownID) then resolvedCooldownID = entry.cooldownID end
@@ -1560,9 +1741,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	local canUseTargetAuraCache = normalizedTrackUnit ~= "target" or state.targetAuraEpoch == targetEpoch
 	local frameMatchesTrackedSpell = false
 
-	if chosenFrame and canUseTargetAuraCache then
-		frameMatchesTrackedSpell = isFrameShowingTrackedSpell(chosenFrame, state, state.trackUnit)
-	end
+	if chosenFrame and canUseTargetAuraCache then frameMatchesTrackedSpell = cdm.GetCachedFrameSpellMatch(runtime, state, chosenFrame, state.trackUnit) end
 
 	if chosenFrame and canUseTargetAuraCache and frameMatchesTrackedSpell then
 		local currentAuraData, currentAuraUnit, currentAuraID = getFrameAuraData(chosenFrame)
@@ -1607,8 +1786,12 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 		end
 	end
 	state.pandemicActive = pandemicActive or nil
-	local iconTextureID = auraData and auraData.icon or getFrameIconTexture(chosenFrame) or entry.iconTextureID or (scanInfo and scanInfo.iconTextureID)
-		or getSpellTexture(entry.spellID) or Helper.PREVIEW_ICON
+	local iconTextureID = auraData and auraData.icon
+		or getFrameIconTexture(chosenFrame)
+		or entry.iconTextureID
+		or (scanInfo and scanInfo.iconTextureID)
+		or getSpellTexture(entry.spellID)
+		or Helper.PREVIEW_ICON
 	local applications = auraData and auraData.applications or nil
 	local stackCount = resolveAuraStackCount(auraUnit, auraInstanceID, applications)
 	local rawDuration = auraData and auraData.duration or nil
@@ -1668,6 +1851,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	data.spellID = entry.spellID
 	data.buffName = entry.buffName or (scanInfo and scanInfo.buffName) or getSpellName(entry.spellID) or tostring(resolvedCooldownID or entry.cooldownID)
 	data.iconTextureID = iconTextureID
+	data.rawApplications = applications
 	data.stackCount = stackCount
 	data.pandemicActive = pandemicActive
 	data.auraInstanceID = auraInstanceID
@@ -1701,14 +1885,10 @@ local function refreshAllTrackedPanels(unit)
 	end
 end
 
-local function clearTrackedUnitAuras(unit)
+local function clearTrackedUnitAuraIndex(unit)
 	unit = normalizeTrackedUnit(unit)
 	if not unit then return end
 	local runtime = getRuntime()
-	for _, state in pairs(runtime.entryStates) do
-		local trackedUnit = normalizeTrackedUnit(state.trackUnit) or normalizeTrackedUnit(state.trackedAuraUnit) or normalizeTrackedUnit(state.mappedAuraUnit)
-		if trackedUnit == unit then clearAuraMapping(runtime, getEntryKey(state.panelId, state.entryId), state, true) end
-	end
 	wipe(runtime.auraEntries[unit])
 end
 
@@ -1716,6 +1896,7 @@ function CDMAuras:HandleUnitAura(_, unit, updateInfo)
 	unit = normalizeTrackedUnit(unit)
 	if not unit then return end
 	local runtime = getRuntime()
+	cdm.BumpUnitAuraEpoch(runtime, unit)
 	local auraEntries = runtime.auraEntries[unit]
 	if not (auraEntries and next(auraEntries) ~= nil) then return end
 
@@ -1772,12 +1953,16 @@ end
 function CDMAuras:HandleTargetChanged()
 	local runtime = getRuntime()
 	runtime.targetEpoch = (runtime.targetEpoch or 0) + 1
-	self:InvalidateScan()
-	clearTrackedUnitAuras("target")
+	cdm.BumpUnitAuraEpoch(runtime, "target")
+	clearTrackedUnitAuraIndex("target")
 	refreshAllTrackedPanels("target")
 end
 
 function CDMAuras:HandleResetEvent(event, ...)
+	if event == "ADDON_LOADED" then
+		local addonName = ...
+		if addonName ~= "Blizzard_CooldownViewer" then return end
+	end
 	if event == "PLAYER_SPECIALIZATION_CHANGED" then
 		local unit = ...
 		if unit and unit ~= "player" then return end
@@ -1785,6 +1970,9 @@ function CDMAuras:HandleResetEvent(event, ...)
 	self:InvalidateScan(true)
 	self:SweepInvalidStates()
 	local runtime = getRuntime()
+	cdm.BumpUnitAuraEpoch(runtime, "player")
+	cdm.BumpUnitAuraEpoch(runtime, "target")
+	cdm.ResetPersistentFrameCaches(runtime)
 	for key, state in pairs(runtime.entryStates) do
 		clearEntryState(key, state, true)
 	end
@@ -1793,7 +1981,6 @@ function CDMAuras:HandleResetEvent(event, ...)
 end
 
 function CDMAuras:HandleTotemUpdate()
-	self:InvalidateScan()
 	refreshAllTrackedPanels("player")
 end
 

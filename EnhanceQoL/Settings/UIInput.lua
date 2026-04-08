@@ -257,7 +257,7 @@ function addon.functions.SettingsCreateClassSpecificResourceBars(category, paren
 		addTotemCheckbox("druid_HideTotemBar")
 		table.insert(data, {
 			var = "druid_HideComboPoint",
-			text = L["druid_HideComboPoint"],
+			text = L["Hide Combopointbar"],
 			func = function(value)
 				addon.db["druid_HideComboPoint"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
@@ -294,7 +294,7 @@ function addon.functions.SettingsCreateClassSpecificResourceBars(category, paren
 	elseif classTag == "ROGUE" then
 		table.insert(data, {
 			var = "rogue_HideComboPoint",
-			text = L["rogue_HideComboPoint"],
+			text = L["Hide Combopointbar"],
 			func = function(value)
 				addon.db["rogue_HideComboPoint"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
@@ -504,7 +504,7 @@ data = {
 	},
 	{
 		var = "hideRaidTools",
-		text = L["hideRaidTools"],
+		text = L["Hide Raid Tools in Party"],
 		func = function(v)
 			local wasEnabled = addon.db["hideRaidTools"] == true
 			addon.db["hideRaidTools"] = v and true or false

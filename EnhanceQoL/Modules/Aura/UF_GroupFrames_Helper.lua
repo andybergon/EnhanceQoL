@@ -245,7 +245,11 @@ local NotifyInspect = NotifyInspect
 local ClearInspectPlayer = ClearInspectPlayer
 local C_SpecializationInfo = C_SpecializationInfo
 local C_CreatureInfo = C_CreatureInfo
+local abs = math.abs
 local floor = math.floor
+local ceil = math.ceil
+local max = math.max
+local GetPhysicalScreenSize = GetPhysicalScreenSize
 local UnitIsUnit = UnitIsUnit
 local UnitExists = UnitExists
 local UnitIsPlayer = UnitIsPlayer
@@ -273,23 +277,330 @@ function H.GetEffectiveScale(frame)
 	return 1
 end
 
-function H.RoundToPixel(value, scale)
-	value = tonumber(value) or 0
-	scale = tonumber(scale) or 1
-	if scale <= 0 then return value end
-	if value == 0 then return 0 end
-	local scaled = value * scale
-	if scaled >= 0 then
-		scaled = floor(scaled + 0.5)
-	else
-		scaled = ceil(scaled - 0.5)
+H.Pixel = H.Pixel or {}
+local Pixel = H.Pixel
+
+local function roundNearestInt(value)
+	if value >= 0 then
+		return floor(value + 0.5)
 	end
-	return scaled / scale
+	return ceil(value - 0.5)
+end
+
+local function isSecretValue(value)
+	local issecretvalue = _G.issecretvalue
+	return issecretvalue and issecretvalue(value) or false
+end
+
+function Pixel.GetScale(regionOrScale)
+	if type(regionOrScale) == "number" then
+		local scale = tonumber(regionOrScale) or 1
+		if scale > 0 then return scale end
+		return 1
+	end
+	return H.GetEffectiveScale(regionOrScale)
+end
+
+function Pixel.GetPixelToUIUnitFactor()
+	local _, physicalHeight = GetPhysicalScreenSize()
+	physicalHeight = tonumber(physicalHeight) or 0
+	if physicalHeight <= 0 then return 1 end
+	return 768 / physicalHeight
+end
+
+function Pixel.Round(value, regionOrScale, minPixels)
+	value = tonumber(value) or 0
+	local scale = Pixel.GetScale(regionOrScale)
+	if value == 0 and (not minPixels or minPixels == 0) then return 0 end
+
+	if _G.PixelUtil and _G.PixelUtil.GetNearestPixelSize then
+		return _G.PixelUtil.GetNearestPixelSize(value, scale, minPixels)
+	end
+
+	local factor = Pixel.GetPixelToUIUnitFactor()
+	local pixels = roundNearestInt((value * scale) / factor)
+	if minPixels then
+		minPixels = tonumber(minPixels) or 0
+		if value < 0 then
+			if pixels > -minPixels then pixels = -minPixels end
+		elseif pixels < minPixels then
+			pixels = minPixels
+		end
+	end
+	return (pixels * factor) / scale
+end
+
+function Pixel.RoundMultiple(value, regionOrScale, pixelMultiple, minPixels)
+	value = tonumber(value) or 0
+	pixelMultiple = max(1, floor((tonumber(pixelMultiple) or 1) + 0.5))
+	if value == 0 and (not minPixels or minPixels == 0) then return 0 end
+
+	local scale = Pixel.GetScale(regionOrScale)
+	local factor = Pixel.GetPixelToUIUnitFactor()
+	local pixels = roundNearestInt((value * scale) / factor)
+	local sign = pixels < 0 and -1 or 1
+	pixels = abs(pixels)
+	pixels = roundNearestInt(pixels / pixelMultiple) * pixelMultiple
+	if minPixels then
+		minPixels = tonumber(minPixels) or 0
+		if pixels < minPixels then pixels = minPixels end
+	end
+	return ((pixels * sign) * factor) / scale
+end
+
+function Pixel.RoundEven(value, regionOrScale, minEvenPixels)
+	return Pixel.RoundMultiple(value, regionOrScale, 2, minEvenPixels or 2)
+end
+
+function Pixel.RoundPoint(x, y, regionOrScale, minXPixels, minYPixels)
+	return Pixel.Round(x, regionOrScale, minXPixels), Pixel.Round(y, regionOrScale, minYPixels)
+end
+
+function Pixel.SetPoint(region, point, relativeTo, relativePoint, x, y, minXPixels, minYPixels)
+	if not region then return end
+	region:SetPoint(
+		point,
+		relativeTo,
+		relativePoint,
+		Pixel.Round(x, region, minXPixels),
+		Pixel.Round(y, region, minYPixels)
+	)
+end
+
+function Pixel.SetWidth(region, width, minPixels)
+	if not region then return end
+	region:SetWidth(Pixel.Round(width, region, minPixels))
+end
+
+function Pixel.SetHeight(region, height, minPixels)
+	if not region then return end
+	region:SetHeight(Pixel.Round(height, region, minPixels))
+end
+
+function Pixel.SetSize(region, width, height, minWidthPixels, minHeightPixels)
+	if not region then return end
+	Pixel.SetWidth(region, width, minWidthPixels)
+	Pixel.SetHeight(region, height, minHeightPixels)
+end
+
+function Pixel.DisableSnap(object)
+	if not object then return object end
+	if object.SetSnapToPixelGrid then object:SetSnapToPixelGrid(false) end
+	if object.SetTexelSnappingBias then object:SetTexelSnappingBias(0) end
+	if object.GetStatusBarTexture then
+		local texture = object:GetStatusBarTexture()
+		if texture and texture ~= object then Pixel.DisableSnap(texture) end
+	end
+	return object
+end
+
+function Pixel.CreateTexture(parent, ...)
+	if not (parent and parent.CreateTexture) then return nil end
+	local texture = parent:CreateTexture(...)
+	return Pixel.DisableSnap(texture)
+end
+
+function Pixel.SetTexture(texture, ...)
+	if not (texture and texture.SetTexture) then return nil end
+	texture:SetTexture(...)
+	return Pixel.DisableSnap(texture)
+end
+
+function Pixel.SetAtlas(texture, ...)
+	if not (texture and texture.SetAtlas) then return nil end
+	local ok, width, height = texture:SetAtlas(...)
+	Pixel.DisableSnap(texture)
+	return ok, width, height
+end
+
+function Pixel.SetColorTexture(texture, ...)
+	if not (texture and texture.SetColorTexture) then return nil end
+	texture:SetColorTexture(...)
+	return Pixel.DisableSnap(texture)
+end
+
+function Pixel.SetStatusBarTexture(bar, ...)
+	if not (bar and bar.SetStatusBarTexture) then return nil end
+	bar:SetStatusBarTexture(...)
+	Pixel.DisableSnap(bar)
+	local texture = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+	if texture then
+		if texture.SetHorizTile then texture:SetHorizTile(false) end
+		if texture.SetVertTile then texture:SetVertTile(false) end
+		if texture.SetTexCoord then texture:SetTexCoord(0, 1, 0, 1) end
+	end
+	return texture
+end
+
+function Pixel.GetStatusBarPixelLength(bar)
+	if not bar then return 0, 0, false end
+	local orientation = bar.GetOrientation and bar:GetOrientation()
+	local axisLength
+	if orientation == "VERTICAL" then
+		axisLength = bar.GetHeight and bar:GetHeight() or 0
+	else
+		axisLength = bar.GetWidth and bar:GetWidth() or 0
+	end
+	if isSecretValue(axisLength) then return nil, nil, true end
+	axisLength = tonumber(axisLength) or 0
+	if axisLength <= 0 then return axisLength, 0, false end
+	local axisPixels = roundNearestInt((axisLength * Pixel.GetScale(bar)) / Pixel.GetPixelToUIUnitFactor())
+	if axisPixels < 0 then axisPixels = 0 end
+	return axisLength, axisPixels, false
+end
+
+function Pixel.GetSnappedStatusBarValue(bar, value, minValue, maxValue)
+	if isSecretValue(value) or isSecretValue(minValue) or isSecretValue(maxValue) then
+		return value, nil, nil, true
+	end
+	value = tonumber(value) or 0
+	minValue = tonumber(minValue)
+	maxValue = tonumber(maxValue)
+	if minValue == nil or maxValue == nil then
+		if bar and bar.GetMinMaxValues then
+			minValue, maxValue = bar:GetMinMaxValues()
+		end
+		if isSecretValue(minValue) or isSecretValue(maxValue) then
+			return value, nil, nil, true
+		end
+	end
+	minValue = tonumber(minValue) or 0
+	maxValue = tonumber(maxValue) or minValue
+	if maxValue < minValue then
+		minValue, maxValue = maxValue, minValue
+	end
+	if value < minValue then value = minValue end
+	if value > maxValue then value = maxValue end
+	local range = maxValue - minValue
+	if range <= 0 then return value, 0, 0 end
+
+	local _, axisPixels, bypassSnap = Pixel.GetStatusBarPixelLength(bar)
+	if bypassSnap then return value, nil, nil, true end
+	if axisPixels <= 0 then return value, nil, axisPixels, false end
+
+	local normalized = (value - minValue) / range
+	local filledPixels = roundNearestInt(normalized * axisPixels)
+	if filledPixels < 0 then
+		filledPixels = 0
+	elseif filledPixels > axisPixels then
+		filledPixels = axisPixels
+	end
+	return minValue + ((filledPixels / axisPixels) * range), filledPixels, axisPixels, false
+end
+
+function Pixel.ClearStatusBarValueCache(bar)
+	if not bar then return end
+	bar._eqolPixelStatusBarValue = nil
+	bar._eqolPixelStatusBarPixels = nil
+	bar._eqolPixelStatusBarAxisPixels = nil
+	bar._eqolPixelStatusBarMin = nil
+	bar._eqolPixelStatusBarMax = nil
+end
+
+function Pixel.SetStatusBarValue(bar, value, smooth, forceImmediate)
+	if not (bar and bar.SetValue) or value == nil then return end
+	local minValue, maxValue = 0, 1
+	if bar.GetMinMaxValues then
+		minValue, maxValue = bar:GetMinMaxValues()
+	end
+	local snappedValue, filledPixels, axisPixels, bypassSnap = Pixel.GetSnappedStatusBarValue(bar, value, minValue, maxValue)
+	if bypassSnap then
+		Pixel.ClearStatusBarValueCache(bar)
+		if smooth and not forceImmediate and Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut then
+			bar:SetValue(value, Enum.StatusBarInterpolation.ExponentialEaseOut)
+		else
+			bar:SetValue(value)
+		end
+		return
+	end
+	if not forceImmediate then
+		if
+			bar._eqolPixelStatusBarValue == snappedValue
+			and bar._eqolPixelStatusBarPixels == filledPixels
+			and bar._eqolPixelStatusBarAxisPixels == axisPixels
+			and bar._eqolPixelStatusBarMin == minValue
+			and bar._eqolPixelStatusBarMax == maxValue
+		then
+			return
+		end
+	end
+	bar._eqolPixelStatusBarValue = snappedValue
+	bar._eqolPixelStatusBarPixels = filledPixels
+	bar._eqolPixelStatusBarAxisPixels = axisPixels
+	bar._eqolPixelStatusBarMin = minValue
+	bar._eqolPixelStatusBarMax = maxValue
+	if smooth and not forceImmediate and Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut then
+		bar:SetValue(snappedValue, Enum.StatusBarInterpolation.ExponentialEaseOut)
+	else
+		bar:SetValue(snappedValue)
+	end
+end
+
+function H.RoundToPixel(value, scale)
+	return Pixel.Round(value, scale)
 end
 
 function H.SnapPointOffsets(relativeFrame, relativePoint, x, y, scale)
-	scale = scale or H.GetEffectiveScale(relativeFrame)
-	return H.RoundToPixel(x, scale), H.RoundToPixel(y, scale)
+	scale = scale or relativeFrame
+	return Pixel.RoundPoint(x, y, scale)
+end
+
+function H.IsCenteredHorizontalAnchor(point)
+	local p = tostring(point or "CENTER"):upper()
+	return p:find("LEFT", 1, true) == nil and p:find("RIGHT", 1, true) == nil
+end
+
+function H.GetCenteredFontStringHalfPixelOffset(fs)
+	if not (fs and fs.GetStringWidth and Pixel and Pixel.GetPixelToUIUnitFactor) then return 0 end
+	local width = fs:GetStringWidth()
+	if isSecretValue(width) then return nil, true end
+	width = tonumber(width) or 0
+	if width <= 0 then return 0, false end
+	local scale = (Pixel.GetScale and Pixel.GetScale(fs)) or (fs.GetEffectiveScale and fs:GetEffectiveScale()) or 1
+	scale = tonumber(scale) or 1
+	if scale <= 0 then scale = 1 end
+	local factor = Pixel.GetPixelToUIUnitFactor()
+	local widthPixels = floor(((width * scale) / factor) + 0.5)
+	if widthPixels <= 0 or (widthPixels % 2) == 0 then return 0, false end
+	return (factor / scale) * 0.5, false
+end
+
+function H.SetCenteredFontStringAnchorState(fs, point, relativeTo, relativePoint, x, y, centered)
+	if not fs then return end
+	if centered ~= true or not relativeTo then
+		fs._eqolCenteredTextAnchor = nil
+		fs._eqolCenteredTextNudgeX = nil
+		return
+	end
+	fs._eqolCenteredTextAnchor = {
+		centered = true,
+		point = point,
+		relativeTo = relativeTo,
+		relativePoint = relativePoint,
+		x = x,
+		y = y,
+	}
+end
+
+function H.ApplyCenteredFontStringNudge(fs)
+	if not fs then return end
+	local anchor = fs._eqolCenteredTextAnchor
+	if not (anchor and anchor.centered and anchor.relativeTo) then
+		fs._eqolCenteredTextNudgeX = nil
+		return
+	end
+	local nudgeX, bypassNudge = H.GetCenteredFontStringHalfPixelOffset(fs)
+	if bypassNudge then
+		if fs._eqolCenteredTextNudgeX == nil then return end
+		fs._eqolCenteredTextNudgeX = nil
+		fs:ClearAllPoints()
+		fs:SetPoint(anchor.point, anchor.relativeTo, anchor.relativePoint, anchor.x, anchor.y)
+		return
+	end
+	if fs._eqolCenteredTextNudgeX == nudgeX then return end
+	fs._eqolCenteredTextNudgeX = nudgeX
+	fs:ClearAllPoints()
+	fs:SetPoint(anchor.point, anchor.relativeTo, anchor.relativePoint, anchor.x + nudgeX, anchor.y)
 end
 
 function H.LayoutTexts(bar, leftFS, centerFS, rightFS, cfg, scale, anchorFrame)
@@ -308,16 +619,20 @@ function H.LayoutTexts(bar, leftFS, centerFS, rightFS, cfg, scale, anchorFrame)
 		leftFS:ClearAllPoints()
 		leftFS:SetPoint("LEFT", anchorFrame, "LEFT", lx, ly)
 		leftFS:SetJustifyH("LEFT")
+		H.SetCenteredFontStringAnchorState(leftFS, nil, nil, nil, 0, 0, false)
 	end
 	if centerFS then
 		centerFS:ClearAllPoints()
 		centerFS:SetPoint("CENTER", anchorFrame, "CENTER", cx, cy)
 		centerFS:SetJustifyH("CENTER")
+		H.SetCenteredFontStringAnchorState(centerFS, "CENTER", anchorFrame, "CENTER", cx, cy, true)
+		H.ApplyCenteredFontStringNudge(centerFS)
 	end
 	if rightFS then
 		rightFS:ClearAllPoints()
 		rightFS:SetPoint("RIGHT", anchorFrame, "RIGHT", rx, ry)
 		rightFS:SetJustifyH("RIGHT")
+		H.SetCenteredFontStringAnchorState(rightFS, nil, nil, nil, 0, 0, false)
 	end
 end
 
@@ -438,19 +753,7 @@ function H.SetPointFromCfg(frame, cfg)
 	local rp = cfg.relativePoint or p
 	local x = tonumber(cfg.x) or 0
 	local y = tonumber(cfg.y) or 0
-	if x >= 0 then
-		x = floor(x + 0.5)
-	else
-		x = ceil(x - 0.5)
-	end
-	if y >= 0 then
-		y = floor(y + 0.5)
-	else
-		y = ceil(y - 0.5)
-	end
-	if cfg.x ~= x then cfg.x = x end
-	if cfg.y ~= y then cfg.y = y end
-	frame:SetPoint(p, rel, rp, x, y)
+	Pixel.SetPoint(frame, p, rel, rp, x, y)
 end
 local LOCALIZED_CLASS_NAMES_FEMALE = LOCALIZED_CLASS_NAMES_FEMALE
 local RAID_CLASS_COLORS = RAID_CLASS_COLORS
@@ -1801,6 +2104,10 @@ end
 H.AuraFilters = {
 	helpful = "HELPFUL|INCLUDE_NAME_PLATE_ONLY|RAID_IN_COMBAT|PLAYER",
 	harmful = "HARMFUL|INCLUDE_NAME_PLATE_ONLY",
+	harmfulCrowdControl = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|CROWD_CONTROL",
+	harmfulImportant = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|IMPORTANT",
+	harmfulRaid = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|RAID",
+	harmfulRaidInCombat = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|RAID_IN_COMBAT",
 	dispellable = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|RAID_PLAYER_DISPELLABLE",
 	bigDefensive = "HELPFUL|BIG_DEFENSIVE",
 }

@@ -12,7 +12,7 @@ addon.MythicPlus.functions = addon.MythicPlus.functions or {}
 addon.MythicPlus.variables = addon.MythicPlus.variables or {}
 
 local openRaidLib = LibStub:GetLibrary("LibOpenKeystone-1.0", true)
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_MythicPlus")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 local cModeIDs
 local portalSpells = {}
@@ -22,6 +22,7 @@ local mapIDInfo = {} -- TODO 11.2: remove mapIDInfo after new mapID from GetMapU
 local selectedMapId
 local faction = select(2, UnitFactionGroup("player"))
 local checkCooldown
+local issecretvalue = _G.issecretvalue
 
 local minFrameSize = 0
 
@@ -1098,13 +1099,17 @@ local measureFontString
 local EnsureMeasureFontString
 
 local function TryGetSafeNumber(getter)
-	local ok, value = pcall(function()
-		local result = getter()
-		if result == nil then return nil end
-		return result + 0
-	end)
-	if ok and type(value) == "number" then return value end
-	return nil
+	local ok, value = pcall(getter)
+	if not ok or type(value) ~= "number" then return nil end
+	if issecretvalue and issecretvalue(value) then return nil end
+	return value
+end
+
+local function TryGetSafeAnchorMetric(getter)
+	local ok, value = pcall(getter)
+	if not ok or type(value) ~= "number" then return nil end
+	if issecretvalue and issecretvalue(value) then return nil end
+	return value
 end
 
 local function ConfigureMeasureFont(fontString, fontObject, fontPath, fontSize, fontFlags)
@@ -1141,12 +1146,14 @@ end
 
 local function GetSafeElementBottomOffset(element)
 	if not (element and element.GetPoint and element.GetHeight) then return nil end
-	local ok, yOffset, height = pcall(function()
+	local ok, pointY = pcall(function()
 		local _, _, _, _, y = element:GetPoint()
-		if y == nil then return nil, nil end
-		return y + 0, element:GetHeight() + 0
+		return y
 	end)
-	if not ok or type(yOffset) ~= "number" or type(height) ~= "number" then return nil end
+	if not ok then return nil end
+	local yOffset = TryGetSafeAnchorMetric(function() return pointY end)
+	local height = TryGetSafeAnchorMetric(function() return element:GetHeight() end)
+	if yOffset == nil or height == nil then return nil end
 	return yOffset - height
 end
 
@@ -1176,11 +1183,14 @@ local function hideUnusedRioText()
 end
 
 local function createString(textLeft, textRight, colorLeft, colorRight, anchor, selected, fallbackY)
-	local yOffset = GetSafeElementBottomOffset(anchor)
-	if yOffset then
-		yOffset = yOffset - 10
-	else
-		yOffset = fallbackY or -30
+	local yOffset = fallbackY
+	if yOffset == nil then
+		yOffset = GetSafeElementBottomOffset(anchor)
+		if yOffset then
+			yOffset = yOffset - 10
+		else
+			yOffset = -30
+		end
 	end
 
 	textListUsed = textListUsed + 1

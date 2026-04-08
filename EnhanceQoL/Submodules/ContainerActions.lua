@@ -415,7 +415,7 @@ function ContainerActions:EnsureAnchor()
 		if settingType then
 			settings = {
 				{
-					name = L["containerActionsShowBorder"] or "Show button border",
+					name = L["Show button border"] or "Show button border",
 					kind = settingType.Checkbox,
 					default = true,
 					get = function() return ContainerActions:GetButtonBorderEnabled() end,

@@ -291,10 +291,10 @@ local questingData = {
 				desc = L["questAutomationModifierDesc"],
 				listFunc = function()
 					return {
-						NONE = L["modifierNone"] or "None",
-						SHIFT = L["modifierShift"] or "Shift",
-						CTRL = L["modifierCtrl"] or "Ctrl",
-						ALT = L["modifierAlt"] or "Alt",
+						NONE = NONE,
+						SHIFT = SHIFT_KEY_TEXT,
+						CTRL = CTRL_KEY_TEXT,
+						ALT = ALT_KEY_TEXT,
 					}
 				end,
 				get = function() return addon.db and addon.db.autoChooseQuestModifier or "NONE" end,
@@ -431,7 +431,7 @@ local trackerData = {
 		children = {
 			{
 				var = "questTrackerQuestCountOffsetX",
-				text = L["questTrackerQuestCountOffsetX"],
+				text = L["Horizontal offset"],
 				parentCheck = function()
 					return addon.SettingsLayout.elements["questTrackerShowQuestCount"]
 						and addon.SettingsLayout.elements["questTrackerShowQuestCount"].setting
@@ -451,7 +451,7 @@ local trackerData = {
 			},
 			{
 				var = "questTrackerQuestCountOffsetY",
-				text = L["questTrackerQuestCountOffsetY"],
+				text = L["Vertical offset"],
 				parentCheck = function()
 					return addon.SettingsLayout.elements["questTrackerShowQuestCount"]
 						and addon.SettingsLayout.elements["questTrackerShowQuestCount"].setting
@@ -487,10 +487,10 @@ local trackerData = {
 				desc = L["questTrackerMinimizeButtonAnchor_desc"],
 				listFunc = function()
 					return {
-						TOPLEFT = L["topLeft"] or "Top Left",
-						TOPRIGHT = L["topRight"] or "Top Right",
-						BOTTOMLEFT = L["bottomLeft"] or "Bottom Left",
-						BOTTOMRIGHT = L["bottomRight"] or "Bottom Right",
+						TOPLEFT = L["Top Left"] or "Top Left",
+						TOPRIGHT = L["Top Right"] or "Top Right",
+						BOTTOMLEFT = L["Bottom Left"] or "Bottom Left",
+						BOTTOMRIGHT = L["Bottom Right"] or "Bottom Right",
 					}
 				end,
 				get = function() return addon.db and addon.db.questTrackerMinimizeButtonAnchor or "TOPRIGHT" end,

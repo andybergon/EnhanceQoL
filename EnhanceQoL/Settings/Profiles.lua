@@ -223,7 +223,7 @@ end
 
 local function importErrorMessage(reason)
 	if reason == "NO_INPUT" then return L["ProfileImportEmpty"] or "Please paste a code to import." end
-	if reason == "INVALID" or reason == "DECODE" or reason == "DECOMPRESS" or reason == "DESERIALIZE" then return L["ProfileImportInvalid"] or "The code could not be read." end
+	if reason == "INVALID" or reason == "DECODE" or reason == "DECOMPRESS" or reason == "DESERIALIZE" then return L["The code could not be read."] or "The code could not be read." end
 	if reason == "NO_ACTIVE" or reason == "NO_DB" then return L["ProfileExportNoActive"] or "No active profile found." end
 	return L["ProfileImportFailed"] or "Profile import failed."
 end
@@ -231,7 +231,7 @@ end
 local data = {
 	listFunc = function() return buildSortedProfileList(profileOrderActive) end,
 	order = profileOrderActive,
-	text = L["ProfileActive"],
+	text = L["Active profile"],
 	get = function() return EnhanceQoLDB.profileKeys[UnitGUID("player")] or EnhanceQoLDB.profileGlobal end,
 	set = function(value)
 		EnhanceQoLDB.profileKeys[UnitGUID("player")] = value
@@ -248,7 +248,7 @@ addon.functions.SettingsCreateDropdown(cProfiles, data)
 data = {
 	listFunc = function() return buildSortedProfileList(profileOrderGlobal) end,
 	order = profileOrderGlobal,
-	text = L["ProfileUseGlobal"],
+	text = L["Global profile"],
 	get = function() return EnhanceQoLDB.profileGlobal end,
 	set = function(value) EnhanceQoLDB.profileGlobal = value end,
 	default = "",
@@ -284,7 +284,7 @@ data = {
 		return buildSortedProfileList(profileOrderCopy, function(name) return name == currentProfile end, true)
 	end,
 	order = profileOrderCopy,
-	text = L["ProfileCopy"],
+	text = L["Copy settings from profile"],
 	get = function() return "" end,
 	set = function(value)
 		if value ~= "" then
@@ -326,7 +326,7 @@ data = {
 		return buildSortedProfileList(profileOrderDelete, function(name) return name == currentProfile or name == globalProfile end, true)
 	end,
 	order = profileOrderDelete,
-	text = L["ProfileDelete"],
+	text = L["Delete profile"],
 	get = function() return "" end,
 	set = function(value)
 		if value ~= "" then
@@ -364,11 +364,11 @@ data = {
 }
 addon.functions.SettingsCreateButton(cProfiles, data)
 
-addon.functions.SettingsCreateHeadline(cProfiles, L["ProfileShareHeader"] or "Export / Import", { parentSection = expandable })
+addon.functions.SettingsCreateHeadline(cProfiles, L["Export / Import"] or "Export / Import", { parentSection = expandable })
 
 addon.functions.SettingsCreateButton(cProfiles, {
 	var = "profileExport",
-	text = L["ProfileExport"] or (L["Export"] or "Export"),
+	text = L["Export profile"] or (L["Export"] or "Export"),
 	func = function()
 		local code, reason = exportActiveProfile()
 		if not code then
@@ -377,7 +377,7 @@ addon.functions.SettingsCreateButton(cProfiles, {
 		end
 		StaticPopupDialogs["EQOL_PROFILE_EXPORT"] = StaticPopupDialogs["EQOL_PROFILE_EXPORT"]
 			or {
-				text = L["ProfileExportTitle"] or "Export profile",
+				text = L["Export profile"] or "Export profile",
 				button1 = CLOSE,
 				hasEditBox = true,
 				editBoxWidth = 320,
@@ -400,7 +400,7 @@ addon.functions.SettingsCreateButton(cProfiles, {
 
 addon.functions.SettingsCreateButton(cProfiles, {
 	var = "profileImport",
-	text = L["ProfileImport"] or (L["Import"] or "Import"),
+	text = L["Import profile"] or (L["Import"] or "Import"),
 	func = function()
 		StaticPopupDialogs["EQOL_PROFILE_IMPORT"] = StaticPopupDialogs["EQOL_PROFILE_IMPORT"]
 			or {

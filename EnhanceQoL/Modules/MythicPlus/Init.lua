@@ -12,7 +12,7 @@ addon.MythicPlus.functions = addon.MythicPlus.functions or {}
 addon.MythicPlus.Buttons = addon.MythicPlus.Buttons or {}
 addon.MythicPlus.nrOfButtons = addon.MythicPlus.nrOfButtons or 0
 addon.MythicPlus.variables = addon.MythicPlus.variables or {}
-local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL_MythicPlus")
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 _G["BINDING_NAME_CLICK EQOLRandomHearthstoneButton:LeftButton"] = L["teleportsRandomHearthstoneBinding"] or "Random Hearthstone"
 
@@ -57,6 +57,31 @@ function addon.MythicPlus.functions.InitDB()
 	init("mythicPlusBRTrackerPoint", "CENTER")
 	init("mythicPlusBRTrackerX", 0)
 	init("mythicPlusBRTrackerY", 0)
+	init("mythicPlusBRTrackerIconZoom", 0)
+	init("mythicPlusBRTrackerBorderEnabled", true)
+	init("mythicPlusBRTrackerBorderTexture", "DEFAULT")
+	init("mythicPlusBRTrackerBorderSize", 1)
+	init("mythicPlusBRTrackerBorderOffset", 0)
+	init("mythicPlusBRTrackerBorderColor", { 1, 1, 1, 1 })
+	init("mythicPlusBRTrackerCooldownTextEnabled", true)
+	init("mythicPlusBRTrackerCooldownDrawSwipe", true)
+	init("mythicPlusBRTrackerCooldownDrawEdge", false)
+	init("mythicPlusBRTrackerCooldownDrawBling", false)
+	init("mythicPlusBRTrackerCooldownFontFace", globalFontKey)
+	init("mythicPlusBRTrackerCooldownTextSize", 16)
+	init("mythicPlusBRTrackerCooldownTextOutline", "OUTLINE")
+	init("mythicPlusBRTrackerCooldownTextColor", { 1, 1, 1, 1 })
+	init("mythicPlusBRTrackerCooldownTextPoint", "CENTER")
+	init("mythicPlusBRTrackerCooldownTextOffsetX", 0)
+	init("mythicPlusBRTrackerCooldownTextOffsetY", 0)
+	init("mythicPlusBRTrackerChargesEnabled", true)
+	init("mythicPlusBRTrackerChargesFontFace", globalFontKey)
+	init("mythicPlusBRTrackerChargesTextSize", 16)
+	init("mythicPlusBRTrackerChargesTextOutline", "OUTLINE")
+	init("mythicPlusBRTrackerChargesTextColor", { 0, 1, 0, 1 })
+	init("mythicPlusBRTrackerChargesTextPoint", "BOTTOMRIGHT")
+	init("mythicPlusBRTrackerChargesTextOffsetX", -3)
+	init("mythicPlusBRTrackerChargesTextOffsetY", 3)
 
 	-- Bloodlust Tracker
 	init("mythicPlusBloodlustTrackerEnabled", false)
@@ -65,6 +90,7 @@ function addon.MythicPlus.functions.InitDB()
 	init("mythicPlusBloodlustTrackerX", 0)
 	init("mythicPlusBloodlustTrackerY", 0)
 	init("mythicPlusBloodlustTrackerIcon", 136090)
+	init("mythicPlusBloodlustTrackerIconZoom", 0)
 	init("mythicPlusBloodlustTrackerBorderEnabled", true)
 	init("mythicPlusBloodlustTrackerBorderTexture", "DEFAULT")
 	init("mythicPlusBloodlustTrackerBorderSize", 1)
@@ -82,6 +108,7 @@ function addon.MythicPlus.functions.InitDB()
 	init("mythicPlusBloodlustTrackerSoundOnDebuffActive", false)
 	init("mythicPlusBloodlustTrackerUseCustomDebuffSound", false)
 	init("mythicPlusBloodlustTrackerDebuffSoundFile", "")
+	init("mythicPlusBloodlustTrackerSoundOnDebuffFade", false)
 	init("mythicPlusBloodlustTrackerReadySoundOnEncounterStart", false)
 	init("mythicPlusBloodlustTrackerUseCustomReadySound", false)
 	init("mythicPlusBloodlustTrackerReadySoundFile", "")
@@ -517,7 +544,7 @@ addon.MythicPlus.variables.portalCompendium = {
 			[1254563] = { text = "NPX", cId = { [559] = true }, mapID = 2556, locID = 2405, x = 0.6484, y = 0.6158, zoneID = 2556 },
 			[1254572] = { text = "MT", cId = { [558] = true }, mapID = 2511, locID = 2424, x = 0.6329, y = 0.1549, zoneID = 2511 },
 			-- [1254580] = { text = "DON", mapID = 2514, locID = 2437, x = 0.2969, y = 0.8454, zoneID = 2514 },
-			[1254400] = { text = "WRS", cId = { [557] = true }, mapID = 2494, locID = 2395, x = 0.3543, y = 0.7908, zoneID = 2494 },
+			[1254400] = { text = "WS", cId = { [557] = true }, mapID = 2494, locID = 2395, x = 0.3543, y = 0.7908, zoneID = 2494 },
 			[1271425] = { text = "ABUN", isItem = true, itemID = 252607, icon = 1362642, locID = 2437, x = 0.31263855520737, y = 0.26260265863074, zoneID = 2437 }, -- Abundont Beacon
 			[1259190] = { text = "SMC", isClassTP = "MAGE", locID = 2393, x = 0.5279, y = 0.6556, zoneID = 2393 }, -- Teleport: Silvermoon City
 			[1259194] = { text = "SMC", isMagePortal = true, locID = 2393, x = 0.5279, y = 0.6556, zoneID = 2393 }, -- Portal: Silvermoon City
@@ -684,7 +711,7 @@ addon.MythicPlus.variables.portalCompendium = {
 			-- Dalaran (Broken Isles, Legion)
 			[224869] = { text = "DalB", isClassTP = "MAGE", locID = 627, x = 0.6042, y = 0.4440, zoneID = 627 },
 			[224871] = { text = "DalB", isMagePortal = true, locID = 627, x = 0.6042, y = 0.4440, zoneID = 627 },
-			[1254551] = { text = "SotT", cId = { [239] = true }, mapID = 903, locID = 882, x = 0.2503, y = 0.528, zoneID = 903 },
+			[1254551] = { text = "SEAT", cId = { [239] = true }, mapID = 903, locID = 882, x = 0.2503, y = 0.528, zoneID = 903 },
 			[227334] = { text = "FMW", isToy = true, toyID = 141605, isHearthstone = true, icon = 132161 },
 			[82674] = { text = addon.MythicPlus.variables.hearthstoneName or "HS", isItem = true, itemID = 64457, isHearthstone = true, icon = 458240 },
 			[223444] = {
@@ -1039,9 +1066,13 @@ addon.MythicPlus.variables.portalCompendium = {
 -- Pre-Stage all icon to have less calls to LUA API
 local RANDOM_HS_ID = 999999
 local hearthstoneID = {
+	-- Midnight
+	{ isToy = true, id = 263933, spellID = 1270814 }, -- Preyseeker's Hearthstone
+
 	-- 11.2
 	{ isToy = true, icon = 133469, id = 245970, spellID = 1240219 }, -- P.O.S.T. Master's Express Hearthstone
 	{ isToy = true, icon = 5852174, id = 246565, spellID = 1242509 }, -- Cosmic Hearthstone
+	{ isToy = true, icon = 135981, id = 257736, spellID = 1261979 }, -- Lightcalled Hearthstone
 
 	--TWW
 	{ isToy = true, icon = 4622300, id = 235016, spellID = 1217281 }, -- Redeployment Module
@@ -1110,6 +1141,8 @@ end
 local pendingHearthstoneItemLoads = {}
 local hearthstoneNameFallbackByID = {
 	[263489] = "Naaru's Enfold",
+	[263933] = "Preyseeker's Hearthstone",
+	[257736] = "Lightcalled Hearthstone",
 }
 
 local function normalizeHearthstoneName(name)
@@ -1327,8 +1360,8 @@ local challengeMapIDDefaults = {
 	[560] = "MC",
 	[559] = "NPX",
 	[558] = "MT",
-	[557] = "WRS",
-	[239] = "SOTT",
+	[557] = "WS",
+	[239] = "SEAT",
 	[556] = "POS",
 	[542] = "ED",
 	[501] = "SV",

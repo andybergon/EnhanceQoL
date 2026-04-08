@@ -2130,7 +2130,15 @@ addon.functions.FindBindingIndex = function(data)
 	return found
 end
 
+function addon.functions.hasSecretRestrictions()
+	local secrets = _G.C_Secrets
+	if not (secrets and secrets.HasSecretRestrictions) then return false end
+	local ok, hasRestrictions = pcall(secrets.HasSecretRestrictions)
+	return ok and hasRestrictions == true
+end
+
 function addon.functions.isRestrictedContent(ignoreMap)
+	if addon.functions.hasSecretRestrictions and addon.functions.hasSecretRestrictions() then return true end
 	local restrictionTypes = Enum and Enum.AddOnRestrictionType
 	local restrictedActions = _G.C_RestrictedActions
 	if not (restrictionTypes and restrictedActions and restrictedActions.GetAddOnRestrictionState) then return false end

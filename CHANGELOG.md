@@ -1,12 +1,42 @@
 # Changelog
 
-## [9.12.0] - 2026-03-27
+## [9.12.0] - 2026-04-06
+
+### ✨ Added
+
+- Cooldown Panels: Added an `Only show Panels of my Spec` editor filter and vertical mirroring for state textures.
+- Group Frames: Added role-aware `Main Tank / Main Assist` controls, a separate raid `MT / MA` icon option, per-group raid visibility toggles, private-aura text scaling, and `Name` / `Level` frame strata and level settings.
+- Group Frames / Auras: Added multi-select debuff filters for `Party` and `Raid` debuffs plus configurable aura borders for `Buffs`, `Debuffs`, and `Externals`, including custom external border colors and a new `Solid` style.
+- Class Buff Reminder: Added food tracking with shared macro settings, per-consumable content filters for flasks, food, and weapon buffs, a global `Don't show in rested areas` option, a configurable glow color, Druid party tracking for `Symbiotic Relationship`, and an optional configurable border in Edit Mode.
+- Class Buff Reminder: Added augment-rune tracking with shared bag-cache support, content-based reminder visibility, and Shaman shield reminders for `Lightning Shield`, `Water Shield`, and `Earth Shield`.
+- Action Tracker: Added optional Edit Mode border styling with SharedMedia border selection, size, offset, color, and preview support.
+- UI / Action Buttons: Added `Use class color` as an alternative to `Custom border color` for custom action-button borders.
+- Data Panels: Added new display options for `Item Level`, `Stats`, and `Pet Tracker`, including pet reminder layouts and rested hiding.
+- UI: Added standalone cast-icon border styling, expanded Square Minimap border/background styling, a detached `Minimap Button Sink` toggle, and a new Experience Bar `Current / Max (needed)` text mode.
+- Mythic+: Expanded Combat Resurrection / Bloodlust tracker styling and added `Lightcalled Hearthstone` and `Preyseeker's Hearthstone` to the hearthstone list.
+- Resource Bars (Brewmaster / Stagger): Added scaling beyond `100%` plus configurable `Low`, `Medium`, `High`, `Very high`, `Extreme`, `Critical`, and `Deadly` stagger colors and thresholds.
+- Sound: Added mute toggles for `Belath Dawnblade`, `Lirath Windrunner`, and `Zul'Jarra`.
+- Unit Frames (Boss): Increased the configurable boss-frame count to `8`.
+- Group Frames (Healer Buffs / Mistweaver Monk): Added PTR prep for `Coalescence` (`1292922`) with a fallback icon.
 
 ### 🐛 Fixed
 
-- Class Buff Reminder (Holy Paladin): Added tracking for `Beacon of Light` and `Beacon of Faith`. The reminder now behaves correctly in groups, counts self-casts properly.
-- Cooldown Panels (Tracked Auras): Fixed heavy lag spikes caused by tracked-aura panels doing too much repeated refresh work in some situations.
-- Cooldown Panels (Spells): Fixed some spell icons not dimming correctly after use.
+- Cooldown Panels: Fixed centered fixed-slot subgroup anchoring, tracked-aura lag spikes, spell icon dimming, charges and text overrides snapping back after refreshes, ghost previews after Edit Mode, ready sounds failing in combat, dynamic icons, and a module loading error.
+- UI / Action Buttons: Fixed `Hide Border` and custom action-button borders not applying to `ZoneAbilityFrame` buttons.
+- Cooldown Panels (Tracked Auras / Fixed Slots): Full fixed-slot panels now show the proper full-panel error when adding another tracked aura.
+- Resource Bars / Group Frames: Fixed resource bars losing their configured positions or resolving relative-width anchors incorrectly after spec, zone, or instance changes, and corrected specialization update event handling.
+- Unit Frames: Fixed boss frame reliability in some encounters, spec-mapped profile updates after role changes, and missing specialization assignments in profile export/import.
+- Group Frames / Auras: Fixed centered aura layouts drifting off-center and raid `Group Growth` issues when raid frames were grouped by role.
+- GCD Bar: Fixed the bar sometimes starting from `0` or briefly filling the wrong way before smoothing into the active global cooldown progress.
+- Class Buff Reminder: Fixed Holy Paladin beacon tracking, Rogue poison reminders, and role-based hiding when no group role was assigned.
+- Class Buff Reminder: Fixed Shaman shield detection to fall back more reliably for known spells and active shield auras.
+- Chat / Group Finder: Fixed truncated copied chat history, prevented ChatIM from opening its own whisper window during chat lockdown, and reduced Blizzard UI errors on the Mythic+ score panel.
+- UI: Fixed some glows not showing reliably after login or other state changes, and restored shortened actionbar labels for `Backspace` and `Space`.
+
+### ❌ Removed
+
+- Masque: Removed the integration from `EnhanceQoL` for now due to multiple bugs and inconsistent behavior across several modules.
+- Mouse & Accessibility: Removed the separate `Enable Mouseover Cast` option.
 
 ---
 
