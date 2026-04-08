@@ -10,12 +10,16 @@
 
 - Cooldown Panels (Tracked Auras): Fixed tracked aura panels sometimes not showing correctly in combat unless a tracked aura was already active beforehand.
 
+---
+
 ## [10.0.3] - 2026-04-08
 
 ### 🐛 Fixed
 
 - Profiles / Export & Import: Fixed profile export and profile copy sometimes failing.
 - Cooldown Panels: Fixed cooldown ready sounds sometimes not playing when another spell was cast shortly before the cooldown finished.
+
+---
 
 ## [10.0.2] - 2026-04-08
 
@@ -24,6 +28,8 @@
 - Class Buff Reminder: Fixed Shaman `Water Shield` and `Lightning Shield` sometimes still showing as missing in Mythic+ and similar content even though the correct shield was active.
 - GCD Bar: Reverted the recent GCD timing change so the bar and spark feel smooth and stable again.
 
+---
+
 ## [10.0.1] - 2026-04-08
 
 ### 🐛 Fixed
@@ -31,6 +37,8 @@
 - Chat / ChatIM: Fixed a Blizzard taint error in restricted content such as Mythic+ by no longer pushing protected Battle.net whisper targets into the global last-tell history.
 - Unit Frames (Party / Raid): Fixed `Enable frame scale adjustment` only affecting Blizzard party frames. The setting now also applies to Blizzard raid frames.
 - Cooldown Panels (Tracked Auras): Fixed some tracked auras such as `Hunter's Mark` not showing immediately after `/reload` or on the first target.
+
+---
 
 ## [10.0.0] - 2026-04-06
 
