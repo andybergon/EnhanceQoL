@@ -44,7 +44,7 @@ Bait;180
 Battle Res;190;"[[pbas -60]]";Battle Res
 Beam;190;"[[pbas -40]]"
 Bleed;180
-Bloodlust;190;"[[pbas -60]]"
+Bloodlust;190;"[[pbas -60]]";;|TInterface\\ICONS\\Spell_Nature_BloodLust:16|t
 Blue;190;"[[pbas -40]]"
 Big Heal;160;"[[pbas -40]]";Big Heal
 Bommbs;160;"[[pbas -40]]";Bombs
@@ -310,6 +310,7 @@ Healing Tide;200;"[[pbas -60]]";Healing Tide;|T538569:16|t
 Purge;190;"[[pbas -60]]";;|T136075:16|t
 Spirit Link;180;"[[pbas -60]]";Spirit Link;|T237586:16|t
 SLT;200;"[[pbas -30]]";;|T237586:16|t
+Stormkeeper;180;"[[pbas -60]]";;|TInterface\\ICONS\\Stormspear_Empowered_Icon:16|t
 Water Walking;180;"[[pbas -60]]";Water Walking;|T135863:16|t
 Windrrush;180;"[[pbas -60]]";Windrush;|T538576:16|t
 

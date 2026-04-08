@@ -13,6 +13,24 @@ LIST="$SCRIPT_DIR/wordlist.txt"
 DEST="/Volumes/T7 Shield/Git/WoWAddons/Raizor/EnhanceQoLSharedMedia/Sounds/Voiceovers"
 PATHW='voiceoverPath'
 VOLUME_GAIN_DB=5            # Lautstärkeanhebung in dB (positiv = lauter, negativ = leiser)
+OGG_ENCODER="libvorbis"
+OGG_ENCODER_ARGS=()
+
+if ! ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'A..X.D vorbis'; then
+  if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'A....D libvorbis'; then
+    OGG_ENCODER="libvorbis"
+  elif ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'A..X.D vorbis'; then
+    OGG_ENCODER="vorbis"
+    OGG_ENCODER_ARGS=(-strict -2)
+  else
+    echo "No Vorbis encoder found in ffmpeg. Install ffmpeg with libvorbis or native vorbis support."
+    exit 1
+  fi
+else
+  OGG_ENCODER="vorbis"
+  OGG_ENCODER_ARGS=(-strict -2)
+fi
+
 mkdir -p "$DEST"
 # ---------- 1) Text-to-Speech -------------------------------------------------
 while IFS=';' read -r WORD SPEED PITCH FNAME ICON PNAME || [[ -n "$WORD" ]]; do
@@ -41,7 +59,7 @@ while IFS=';' read -r WORD SPEED PITCH FNAME ICON PNAME || [[ -n "$WORD" ]]; do
   say -v "$VOICE" -r "$RATE_LOCAL" -o "$OUT" "${PITCH_CLEAN}${WORD}"
 
   # 2) AIFF -> OGG konvertieren
-  ffmpeg -loglevel error -y -i "$OUT" -af "volume=${VOLUME_GAIN_DB}dB" -c:a libvorbis -q:a 4 "$OGG"
+  ffmpeg -loglevel error -y -i "$OUT" -af "volume=${VOLUME_GAIN_DB}dB" "${OGG_ENCODER_ARGS[@]}" -c:a "$OGG_ENCODER" -q:a 4 "$OGG"
 
   KEY_NAME="${WORD//\"/\\\"}"
   LABEL_NAME="$NAME_PREFIX$BASENAME"
