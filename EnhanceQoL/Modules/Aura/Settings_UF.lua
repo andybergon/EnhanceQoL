@@ -1221,6 +1221,136 @@ local copyFrameLabels = {
 	focus = L["UFFocusFrame"] or FOCUS,
 	boss = L["UFBossFrame"] or BOSS or "Boss Frame",
 }
+local UnitAnchor = {
+	optionOrder = { "player", "target", "targettarget", "focus", "pet", "boss" },
+	frameNames = {
+		player = "EQOLUFPlayerFrame",
+		target = "EQOLUFTargetFrame",
+		targettarget = "EQOLUFToTFrame",
+		pet = "EQOLUFPetFrame",
+		focus = "EQOLUFFocusFrame",
+		boss = "EQOLUFBossContainer",
+	},
+}
+
+function UnitAnchor.GetFrameName(unit)
+	if UF and UF.GetAnchorFrameName then return UF.GetAnchorFrameName(unit) end
+	return UnitAnchor.frameNames[unit]
+end
+
+function UnitAnchor.GetRelativeName(unit)
+	local cfg = ensureConfig(unit)
+	local def = defaultsFor(unit)
+	local anchor = (cfg and cfg.anchor) or (def and def.anchor) or {}
+	return anchor.relativeTo or anchor.relativeFrame or "UIParent"
+end
+
+function UnitAnchor.ResolveEditModeFrame(unit)
+	local relativeName = UnitAnchor.GetRelativeName(unit)
+	if UF and UF.ResolveRelativeAnchorFrame then return UF.ResolveRelativeAnchorFrame(relativeName, UnitAnchor.GetFrameName(unit)) end
+	if relativeName == "UIParent" then return UIParent end
+	return _G[relativeName] or UIParent
+end
+
+function UnitAnchor.AddOption(list, seen, value, label)
+	if type(value) ~= "string" or value == "" or seen[value] then return end
+	seen[value] = true
+	list[#list + 1] = { value = value, label = label or value }
+end
+
+function UnitAnchor.AppendResourceBars(list, seen)
+	local rb = addon.Aura and addon.Aura.ResourceBars
+	if not rb then return end
+	local classToken = addon.variables and addon.variables.unitClass
+	local specIndex = addon.variables and addon.variables.unitSpec
+	local settings = addon.db and addon.db.personalResourceBarSettings
+	local classCfg = settings and classToken and settings[classToken]
+	local specCfg = classCfg and specIndex and classCfg[specIndex]
+	local entries = {}
+	if (type(specCfg) == "table" and type(specCfg.HEALTH) == "table" and specCfg.HEALTH.enabled == true) or _G.EQOLHealthBar then
+		entries[#entries + 1] = {
+			value = "EQOLHealthBar",
+			label = string.format("%s: %s", L["Resource Bars"] or "Resource Bars", HEALTH or _G.HEALTH or "Health"),
+		}
+	end
+	if type(specCfg) == "table" then
+		for barType, barCfg in pairs(specCfg) do
+			if barType ~= "HEALTH" and type(barCfg) == "table" then
+				local frameName = "EQOL" .. tostring(barType) .. "Bar"
+				if barCfg.enabled == true or _G[frameName] then
+					local barLabel = (rb.PowerLabels and rb.PowerLabels[barType]) or tostring(barType)
+					entries[#entries + 1] = {
+						value = frameName,
+						label = string.format("%s: %s", L["Resource Bars"] or "Resource Bars", tostring(barLabel)),
+					}
+				end
+			end
+		end
+	end
+	table.sort(entries, function(a, b) return tostring(a.label) < tostring(b.label) end)
+	for _, entry in ipairs(entries) do
+		UnitAnchor.AddOption(list, seen, entry.value, entry.label)
+	end
+end
+
+function UnitAnchor.AppendCooldownPanels(list, seen)
+	local cp = addon.Aura and addon.Aura.CooldownPanels
+	if not (cp and cp.GetRoot and cp.GetPanel) then return end
+	local root = cp:GetRoot()
+	if not (root and root.panels) then return end
+	local entries = {}
+	local handled = {}
+	local function addPanel(panelId)
+		if panelId == nil or handled[panelId] then return end
+		handled[panelId] = true
+		local panel = cp:GetPanel(panelId) or root.panels[panelId] or root.panels[tostring(panelId)]
+		if not panel then return end
+		entries[#entries + 1] = {
+			value = "EQOL_CooldownPanel" .. tostring(panelId),
+			label = string.format("%s: %s", L["VisibilityCooldownPanel"] or L["Cooldown Panels"] or "Cooldown Panel", panel.name or tostring(panelId)),
+		}
+	end
+	for _, panelId in ipairs(root.order or {}) do
+		addPanel(panelId)
+	end
+	for panelId in pairs(root.panels) do
+		addPanel(panelId)
+	end
+	table.sort(entries, function(a, b) return tostring(a.label) < tostring(b.label) end)
+	for _, entry in ipairs(entries) do
+		UnitAnchor.AddOption(list, seen, entry.value, entry.label)
+	end
+end
+
+function UnitAnchor.GetOptions(unit)
+	local list = {}
+	local seen = {}
+	UnitAnchor.AddOption(list, seen, "UIParent", L["Screen (UIParent)"] or "Screen (UIParent)")
+	for _, otherUnit in ipairs(UnitAnchor.optionOrder) do
+		if otherUnit ~= unit then
+			local frameName = UnitAnchor.GetFrameName(otherUnit)
+			if frameName then UnitAnchor.AddOption(list, seen, frameName, copyFrameLabels[otherUnit] or frameName) end
+		end
+	end
+	UnitAnchor.AppendResourceBars(list, seen)
+	UnitAnchor.AppendCooldownPanels(list, seen)
+	return list
+end
+
+function UnitAnchor.IsKnownTarget(unit, relativeName)
+	if type(relativeName) ~= "string" or relativeName == "" or relativeName == "UIParent" then return true end
+	for _, option in ipairs(UnitAnchor.GetOptions(unit)) do
+		if option.value == relativeName then return true end
+	end
+	return false
+end
+
+function UnitAnchor.GetTargetValue(unit)
+	local relativeName = UnitAnchor.GetRelativeName(unit)
+	if relativeName == UnitAnchor.GetFrameName(unit) then return "UIParent" end
+	if UF and UF.WouldRelativeAnchorLoop and UF.WouldRelativeAnchorLoop(unit, relativeName) then return "UIParent" end
+	return relativeName
+end
 
 local function availableCopySources(unit)
 	local opts = {}
@@ -1891,13 +2021,7 @@ local function createRangeFadeSpellPickerSetting(unit, isRangeFadeEnabled, refre
 	}
 end
 
-local function anchorUsesUIParent(unit)
-	local cfg = ensureConfig(unit)
-	local def = defaultsFor(unit)
-	local anchor = (cfg and cfg.anchor) or (def and def.anchor) or {}
-	local rel = anchor.relativeTo or anchor.relativeFrame or "UIParent"
-	return rel == "UIParent"
-end
+local function anchorUsesUIParent(unit) return UnitAnchor.GetTargetValue(unit) == "UIParent" end
 
 local function calcLayout(unit, frame)
 	local cfg = ensureConfig(unit)
@@ -2973,6 +3097,22 @@ local function buildUnitSettings(unit)
 		setValue(unit, { "width" }, math.max(MIN_WIDTH, val or MIN_WIDTH))
 		refreshSelf()
 	end, def.width or MIN_WIDTH, "frame", true)
+
+	list[#list + 1] = radioDropdown(L["Anchor to"] or "Anchor to", function() return UnitAnchor.GetOptions(unit) end, function()
+		return UnitAnchor.GetTargetValue(unit)
+	end, function(val)
+		local target = type(val) == "string" and val ~= "" and val or "UIParent"
+		if not UnitAnchor.IsKnownTarget(unit, target) then target = "UIParent" end
+		if target == UnitAnchor.GetFrameName(unit) then target = "UIParent" end
+		if UF and UF.WouldRelativeAnchorLoop and UF.WouldRelativeAnchorLoop(unit, target) then target = "UIParent" end
+		local cfg = ensureConfig(unit)
+		cfg.anchor = cfg.anchor or {}
+		if cfg.anchor.relativeTo == target and cfg.anchor.relativeFrame == target then return end
+		cfg.anchor.relativeTo = target
+		cfg.anchor.relativeFrame = target
+		refreshSelf(true)
+		refreshSettingsUI()
+	end, (def.anchor and (def.anchor.relativeTo or def.anchor.relativeFrame)) or "UIParent", "frame")
 
 	list[#list + 1] = radioDropdown(L["Anchor point"] or "Anchor point", anchorOptions9, function()
 		local fallback = (def.anchor and def.anchor.point) or "CENTER"
@@ -7792,7 +7932,7 @@ local function registerUnitFrame(unit, info)
 	local layout = calcLayout(unit, frame)
 	local settingsList = buildUnitSettings(unit)
 	local function applyAnchorFromEditModeData(data)
-		if type(data) ~= "table" or not data.point then return end
+		if type(data) ~= "table" or not data.point or not anchorUsesUIParent(unit) then return end
 		local cfg = ensureConfig(unit)
 		cfg.anchor = cfg.anchor or {}
 		local oldPoint = cfg.anchor.point
@@ -7803,7 +7943,8 @@ local function registerUnitFrame(unit, info)
 		local newRelativePoint = data.relativePoint or data.point
 		local newX = data.x or 0
 		local newY = data.y or 0
-		cfg.anchor.relativeTo = cfg.anchor.relativeTo or "UIParent"
+		cfg.anchor.relativeTo = cfg.anchor.relativeTo or cfg.anchor.relativeFrame or "UIParent"
+		cfg.anchor.relativeFrame = cfg.anchor.relativeTo
 		if oldPoint == newPoint and oldRelativePoint == newRelativePoint and oldX == newX and oldY == newY then return end
 		cfg.anchor.point = newPoint
 		cfg.anchor.relativePoint = newRelativePoint
@@ -7822,6 +7963,7 @@ local function registerUnitFrame(unit, info)
 		layoutDefaults = layout,
 		settingsMaxHeight = DEFAULT_SETTINGS_MAX_HEIGHT,
 		onPositionChanged = function(_, _, data) applyAnchorFromEditModeData(data) end,
+		relativeTo = function() return UnitAnchor.ResolveEditModeFrame(unit) end,
 		onEnter = function(activeFrame) syncEditModeSelectionStrata(activeFrame) end,
 		isEnabled = function() return ensureConfig(unit).enabled == true end,
 		settings = settingsList,

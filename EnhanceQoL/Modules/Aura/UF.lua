@@ -196,40 +196,169 @@ local BLIZZ_FRAME_NAMES = {
 	focus = "FocusFrame",
 	pet = "PetFrame",
 }
-local RELATIVE_ANCHOR_FRAME_MAP = {
-	PlayerFrame = { uf = UF_FRAME_NAMES.player.frame, blizz = BLIZZ_FRAME_NAMES.player, ufKey = "player" },
-	EQOLUFPlayerFrame = { uf = UF_FRAME_NAMES.player.frame, blizz = BLIZZ_FRAME_NAMES.player, ufKey = "player" },
-	TargetFrame = { uf = UF_FRAME_NAMES.target.frame, blizz = BLIZZ_FRAME_NAMES.target, ufKey = "target" },
-	EQOLUFTargetFrame = { uf = UF_FRAME_NAMES.target.frame, blizz = BLIZZ_FRAME_NAMES.target, ufKey = "target" },
-	TargetFrameToT = { uf = UF_FRAME_NAMES.targettarget.frame, blizz = BLIZZ_FRAME_NAMES.targettarget, ufKey = "targettarget" },
-	EQOLUFToTFrame = { uf = UF_FRAME_NAMES.targettarget.frame, blizz = BLIZZ_FRAME_NAMES.targettarget, ufKey = "targettarget" },
-	FocusFrame = { uf = UF_FRAME_NAMES.focus.frame, blizz = BLIZZ_FRAME_NAMES.focus, ufKey = "focus" },
-	EQOLUFFocusFrame = { uf = UF_FRAME_NAMES.focus.frame, blizz = BLIZZ_FRAME_NAMES.focus, ufKey = "focus" },
-	PetFrame = { uf = UF_FRAME_NAMES.pet.frame, blizz = BLIZZ_FRAME_NAMES.pet, ufKey = "pet" },
-	EQOLUFPetFrame = { uf = UF_FRAME_NAMES.pet.frame, blizz = BLIZZ_FRAME_NAMES.pet, ufKey = "pet" },
-	BossTargetFrameContainer = { uf = "EQOLUFBossContainer", blizz = "BossTargetFrameContainer", ufKey = "boss" },
-	EQOLUFBossContainer = { uf = "EQOLUFBossContainer", blizz = "BossTargetFrameContainer", ufKey = "boss" },
+local RelativeAnchor = {
+	bossFrameName = "EQOLUFBossContainer",
+	map = {
+		PlayerFrame = { uf = UF_FRAME_NAMES.player.frame, blizz = BLIZZ_FRAME_NAMES.player, ufKey = "player" },
+		EQOLUFPlayerFrame = { uf = UF_FRAME_NAMES.player.frame, blizz = BLIZZ_FRAME_NAMES.player, ufKey = "player" },
+		TargetFrame = { uf = UF_FRAME_NAMES.target.frame, blizz = BLIZZ_FRAME_NAMES.target, ufKey = "target" },
+		EQOLUFTargetFrame = { uf = UF_FRAME_NAMES.target.frame, blizz = BLIZZ_FRAME_NAMES.target, ufKey = "target" },
+		TargetFrameToT = { uf = UF_FRAME_NAMES.targettarget.frame, blizz = BLIZZ_FRAME_NAMES.targettarget, ufKey = "targettarget" },
+		EQOLUFToTFrame = { uf = UF_FRAME_NAMES.targettarget.frame, blizz = BLIZZ_FRAME_NAMES.targettarget, ufKey = "targettarget" },
+		FocusFrame = { uf = UF_FRAME_NAMES.focus.frame, blizz = BLIZZ_FRAME_NAMES.focus, ufKey = "focus" },
+		EQOLUFFocusFrame = { uf = UF_FRAME_NAMES.focus.frame, blizz = BLIZZ_FRAME_NAMES.focus, ufKey = "focus" },
+		PetFrame = { uf = UF_FRAME_NAMES.pet.frame, blizz = BLIZZ_FRAME_NAMES.pet, ufKey = "pet" },
+		EQOLUFPetFrame = { uf = UF_FRAME_NAMES.pet.frame, blizz = BLIZZ_FRAME_NAMES.pet, ufKey = "pet" },
+		BossTargetFrameContainer = { uf = "EQOLUFBossContainer", blizz = "BossTargetFrameContainer", ufKey = "boss" },
+		EQOLUFBossContainer = { uf = "EQOLUFBossContainer", blizz = "BossTargetFrameContainer", ufKey = "boss" },
+	},
 }
 
-local function isMappedUFEnabled(ufKey)
+function RelativeAnchor.GetFrameNameForKey(ufKey)
+	if ufKey == "boss" then return RelativeAnchor.bossFrameName end
+	local names = UF_FRAME_NAMES[ufKey]
+	return names and names.frame or nil
+end
+
+function RelativeAnchor.IsMappedUFEnabled(ufKey)
 	local ufCfg = addon.db and addon.db.ufFrames
 	local cfg = ufCfg and ufCfg[ufKey]
 	return cfg and cfg.enabled == true
 end
 
-local function resolveRelativeAnchorFrame(relativeName)
+function RelativeAnchor.GetUFRelativeName(relativeName)
+	local mapped = RelativeAnchor.map[relativeName]
+	if not (mapped and mapped.ufKey) then return nil end
+	local ufCfg = addon.db and addon.db.ufFrames
+	local cfg = ufCfg and ufCfg[mapped.ufKey]
+	local anchor = cfg and cfg.anchor
+	return anchor and (anchor.relativeTo or anchor.relativeFrame) or nil
+end
+
+function RelativeAnchor.GetResourceBarRelativeName(relativeName)
+	if type(relativeName) ~= "string" then return nil end
+	local barType = relativeName == "EQOLHealthBar" and "HEALTH" or relativeName:match("^EQOL(.+)Bar$")
+	if not barType then return nil end
+	local classToken = addon.variables and addon.variables.unitClass
+	local specIndex = addon.variables and addon.variables.unitSpec
+	local settings = addon.db and addon.db.personalResourceBarSettings
+	local classCfg = settings and classToken and settings[classToken]
+	local specCfg = classCfg and specIndex and classCfg[specIndex]
+	local barCfg = specCfg and specCfg[barType]
+	local anchor = type(barCfg) == "table" and barCfg.anchor or nil
+	return anchor and anchor.relativeFrame or nil
+end
+
+function RelativeAnchor.GetCooldownPanelRelativeName(relativeName)
+	if type(relativeName) ~= "string" then return nil end
+	local panelIdText = relativeName:match("^EQOL_CooldownPanel(.+)$")
+	if not panelIdText then return nil end
+	local cooldownPanels = addon.Aura and addon.Aura.CooldownPanels
+	local panelId = tonumber(panelIdText) or panelIdText
+	local panel = cooldownPanels and cooldownPanels.GetPanel and cooldownPanels:GetPanel(panelId)
+	local anchor = panel and panel.anchor
+	return anchor and anchor.relativeFrame or nil
+end
+
+function RelativeAnchor.GetNextRelativeName(relativeName)
+	return RelativeAnchor.GetUFRelativeName(relativeName) or RelativeAnchor.GetResourceBarRelativeName(relativeName) or RelativeAnchor.GetCooldownPanelRelativeName(relativeName)
+end
+
+function RelativeAnchor.WouldLoop(relativeName, ownerFrameName)
+	if type(relativeName) ~= "string" or relativeName == "" or relativeName == "UIParent" then return false end
+	local visited = {}
+	if type(ownerFrameName) == "string" and ownerFrameName ~= "" then visited[ownerFrameName] = true end
+	local current = relativeName
+	local limit = 16
+	while type(current) == "string" and current ~= "" and current ~= "UIParent" and limit > 0 do
+		if visited[current] then return true, current end
+		visited[current] = true
+		current = RelativeAnchor.GetNextRelativeName(current)
+		limit = limit - 1
+	end
+	if limit <= 0 then return true, relativeName end
+	return false
+end
+
+function RelativeAnchor.WouldLiveFrameLoop(relativeName, ownerFrameName)
+	if type(relativeName) ~= "string" or relativeName == "" or relativeName == "UIParent" then return false end
+	local ownerFrame = type(ownerFrameName) == "string" and _G[ownerFrameName] or ownerFrameName
+	if not ownerFrame then return false end
+	local current = RelativeAnchor.ResolveSingle(relativeName)
+	if not current or current == UIParent then return false end
+	if current == ownerFrame then return true, ownerFrameName or (ownerFrame.GetName and ownerFrame:GetName()) or relativeName end
+	local visited = {}
+	local limit = 16
+	while current and current ~= UIParent and limit > 0 do
+		if current == ownerFrame then return true, ownerFrameName or (current.GetName and current:GetName()) or relativeName end
+		if visited[current] then break end
+		visited[current] = true
+		if not current.GetPoint then break end
+		local _, relativeTo = current:GetPoint(1)
+		if relativeTo == ownerFrame then return true, ownerFrameName or (ownerFrame.GetName and ownerFrame:GetName()) or relativeName end
+		if type(relativeTo) == "string" and relativeTo ~= "" then
+			current = _G[relativeTo]
+		else
+			current = relativeTo
+		end
+		limit = limit - 1
+	end
+	if limit <= 0 then return true, relativeName end
+	return false
+end
+
+function RelativeAnchor.ResolveSingle(relativeName)
 	if type(relativeName) ~= "string" or relativeName == "" or relativeName == "UIParent" then return UIParent end
-	local mapped = RELATIVE_ANCHOR_FRAME_MAP[relativeName]
+	local mapped = RelativeAnchor.map[relativeName]
 	if mapped then
-		if mapped.ufKey and isMappedUFEnabled(mapped.ufKey) then
+		if mapped.ufKey and RelativeAnchor.IsMappedUFEnabled(mapped.ufKey) then
 			local ufFrame = _G[mapped.uf]
 			if ufFrame then return ufFrame end
 		end
 		local blizzFrame = _G[mapped.blizz]
 		if blizzFrame then return blizzFrame end
 	end
+
+	local resourceBars = addon.Aura and addon.Aura.ResourceBars
+	if resourceBars and resourceBars.ResolveRelativeFrameByName then
+		local relFrame = resourceBars.ResolveRelativeFrameByName(relativeName)
+		if relFrame and relFrame ~= UIParent then return relFrame end
+	end
+
+	local cooldownPanels = addon.Aura and addon.Aura.CooldownPanels
+	local panelIdText = relativeName:match("^EQOL_CooldownPanel(.+)$")
+	if panelIdText and cooldownPanels then
+		local panelId = tonumber(panelIdText) or panelIdText
+		local runtime = cooldownPanels.runtime and cooldownPanels.runtime[panelId]
+		local panelFrame = runtime and runtime.frame or _G[relativeName]
+		if panelFrame then return panelFrame end
+	end
+
 	return _G[relativeName] or UIParent
 end
+
+local function resolveRelativeAnchorFrame(relativeName, ownerFrameName)
+	if type(relativeName) ~= "string" or relativeName == "" or relativeName == "UIParent" then return UIParent end
+	local looped, culprit = RelativeAnchor.WouldLoop(relativeName, ownerFrameName)
+	if not looped then looped, culprit = RelativeAnchor.WouldLiveFrameLoop(relativeName, ownerFrameName) end
+	if looped then
+		print("|cff00ff98Enhance QoL|r: " .. (L["AnchorLoop"] or 'Anchor loop detected for "%s". Resetting to UIParent.'):format(culprit or relativeName))
+		return UIParent
+	end
+	return RelativeAnchor.ResolveSingle(relativeName)
+end
+
+function UF.GetAnchorFrameName(unit) return RelativeAnchor.GetFrameNameForKey(unit) end
+
+function UF.ResolveRelativeAnchorFrame(relativeName, ownerFrameName) return resolveRelativeAnchorFrame(relativeName, ownerFrameName) end
+
+function UF.WouldRelativeAnchorLoop(unit, relativeName)
+	local ownerFrameName = RelativeAnchor.GetFrameNameForKey(unit)
+	local looped = RelativeAnchor.WouldLoop(relativeName, ownerFrameName)
+	if not looped then looped = RelativeAnchor.WouldLiveFrameLoop(relativeName, ownerFrameName) end
+	return looped == true
+end
+
 local MIN_WIDTH = 50
 local classResourceFramesByClass = {
 	DEATHKNIGHT = {
@@ -2964,7 +3093,7 @@ local function anchorBossContainer(cfg)
 	local def = defaultsFor("boss")
 	local anchor = (cfg and cfg.anchor) or (def and def.anchor) or { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", x = 0, y = 0 }
 	bossContainer:ClearAllPoints()
-	bossContainer:SetPoint(anchor.point or "CENTER", resolveRelativeAnchorFrame(anchor.relativeTo), anchor.relativePoint or anchor.point or "CENTER", anchor.x or 0, anchor.y or 0)
+	bossContainer:SetPoint(anchor.point or "CENTER", resolveRelativeAnchorFrame(anchor.relativeTo or anchor.relativeFrame, RelativeAnchor.bossFrameName), anchor.relativePoint or anchor.point or "CENTER", anchor.x or 0, anchor.y or 0)
 end
 
 local function ensureBossContainer()
@@ -3228,18 +3357,23 @@ function AuraUtil.ensureAuraButton(container, icons, index, ac)
 		btn.overlay:SetAllPoints(btn)
 		btn.overlay:SetFrameStrata(btn.cd:GetFrameStrata())
 		btn.overlay:SetFrameLevel(btn.cd:GetFrameLevel() + 5)
+		btn.foreground = CreateFrame("Frame", nil, btn)
+		btn.foreground:EnableMouse(false)
+		btn.foreground:SetAllPoints(btn)
+		btn.foreground:SetFrameStrata(btn.overlay:GetFrameStrata())
+		btn.foreground:SetFrameLevel(btn.overlay:GetFrameLevel() + 2)
 
-		btn.count = btn.overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		btn.count:SetPoint("BOTTOMRIGHT", btn.overlay, "BOTTOMRIGHT", -2, 2)
+		btn.count = btn.foreground:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		btn.count:SetPoint("BOTTOMRIGHT", btn.foreground, "BOTTOMRIGHT", -2, 2)
 		btn.count:SetDrawLayer("OVERLAY", 2)
-		btn.drText = btn.overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		btn.drText:SetPoint("TOPLEFT", btn.overlay, "TOPLEFT", 2, -2)
+		btn.drText = btn.foreground:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		btn.drText:SetPoint("TOPLEFT", btn.foreground, "TOPLEFT", 2, -2)
 		btn.drText:SetDrawLayer("OVERLAY", 2)
 		btn.drText:Hide()
 		btn.border = btn.overlay:CreateTexture(nil, "OVERLAY")
 		btn.border:SetAllPoints(btn)
 		btn.border:SetDrawLayer("OVERLAY", 1)
-		btn.dispelIcon = btn.overlay:CreateTexture(nil, "OVERLAY")
+		btn.dispelIcon = btn.foreground:CreateTexture(nil, "OVERLAY")
 		btn.dispelIcon:SetTexture("Interface\\Icons\\Spell_Holy_DispelMagic")
 		btn.dispelIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 		btn.dispelIcon:SetDrawLayer("OVERLAY", 1)
@@ -3287,19 +3421,39 @@ function AuraUtil.ensureAuraButton(container, icons, index, ac)
 			btn.overlay:SetFrameStrata(btn.cd:GetFrameStrata())
 			btn.overlay:SetFrameLevel(btn.cd:GetFrameLevel() + 5)
 		end
+		if not btn.foreground then
+			btn.foreground = CreateFrame("Frame", nil, btn)
+			btn.foreground:EnableMouse(false)
+			btn.foreground:SetAllPoints(btn)
+		end
+		if btn.foreground and btn.overlay then
+			btn.foreground:SetFrameStrata(btn.overlay:GetFrameStrata())
+			btn.foreground:SetFrameLevel(btn.overlay:GetFrameLevel() + 2)
+		end
+		if btn.foreground and btn.count and btn.count:GetParent() ~= btn.foreground then
+			btn.count:SetParent(btn.foreground)
+			btn.count:SetDrawLayer("OVERLAY", 2)
+			btn._countStyleAnchor, btn._countStyleOx, btn._countStyleOy = nil, nil, nil
+			btn._countStyleFontKey, btn._countStyleSize, btn._countStyleFlags = nil, nil, nil
+		end
 		if btn.overlay and btn.border and btn.border:GetParent() ~= btn.overlay then
 			btn.border:SetParent(btn.overlay)
 			btn.border:SetDrawLayer("OVERLAY", 1)
 		end
 		if not btn.drText then
-			local parent = btn.overlay or btn
+			local parent = btn.foreground or btn.overlay or btn
 			btn.drText = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 			btn.drText:SetPoint("TOPLEFT", parent, "TOPLEFT", 2, -2)
 			btn.drText:SetDrawLayer("OVERLAY", 2)
 			btn.drText:Hide()
+		elseif btn.foreground and btn.drText:GetParent() ~= btn.foreground then
+			btn.drText:SetParent(btn.foreground)
+			btn.drText:SetDrawLayer("OVERLAY", 2)
+			btn._drStyleAnchor, btn._drStyleOx, btn._drStyleOy = nil, nil, nil
+			btn._drStyleFontKey, btn._drStyleSize, btn._drStyleFlags = nil, nil, nil
 		end
-		if btn.overlay and btn.dispelIcon and btn.dispelIcon:GetParent() ~= btn.overlay then
-			btn.dispelIcon:SetParent(btn.overlay)
+		if btn.foreground and btn.dispelIcon and btn.dispelIcon:GetParent() ~= btn.foreground then
+			btn.dispelIcon:SetParent(btn.foreground)
 			btn.dispelIcon:SetDrawLayer("OVERLAY", 1)
 		end
 	end
@@ -3341,7 +3495,7 @@ function AuraUtil.styleAuraCount(btn, ac, countFontSizeOverride)
 	btn._countStyleSize = size
 	btn._countStyleFlags = flags
 	btn.count:ClearAllPoints()
-	btn.count:SetPoint(anchor, btn.overlay or btn, anchor, ox, oy)
+	btn.count:SetPoint(anchor, btn.foreground or btn.overlay or btn, anchor, ox, oy)
 	if size == nil or flags == nil then
 		local _, curSize, curFlags = btn.count:GetFont()
 		if size == nil then size = curSize or 14 end
@@ -3412,7 +3566,7 @@ function AuraUtil.styleAuraDRText(btn, ac, drFontSizeOverride)
 	btn._drStyleSize = size
 	btn._drStyleFlags = flags
 	btn.drText:ClearAllPoints()
-	btn.drText:SetPoint(anchor, btn.overlay or btn, anchor, ox, oy)
+	btn.drText:SetPoint(anchor, btn.foreground or btn.overlay or btn, anchor, ox, oy)
 	if size == nil or flags == nil then
 		local _, curSize, curFlags = btn.drText:GetFont()
 		if size == nil then size = curSize or 12 end
@@ -5162,11 +5316,23 @@ function UF._getCastIconBorderOutset(ccfg, defc)
 	return size + offset
 end
 
+local function ensureCastEdgeTextures(border)
+	if not border then return nil end
+	if border._ufCastEdgeTextures then return border._ufCastEdgeTextures end
+	local textures = {}
+	for _, key in ipairs({ "Top", "Bottom", "Left", "Right" }) do
+		local tex = border:CreateTexture(nil, "OVERLAY")
+		textures[key] = tex
+	end
+	border._ufCastEdgeTextures = textures
+	return textures
+end
+
 function UF._ensureCastIconBorderFrame(st)
 	if not st or not st.castBar or not st.castIcon or not st.castIconLayer then return nil end
 	local border = st.castIconBorder
 	if not border then
-		border = CreateFrame("Frame", nil, st.castIconLayer, "BackdropTemplate")
+		border = CreateFrame("Frame", nil, st.castIconLayer)
 		border:EnableMouse(false)
 		st.castIconBorder = border
 	end
@@ -5191,6 +5357,7 @@ function UF._applyCastIconBorder(st, ccfg, defc)
 		local color = (type(borderCfg) == "table" and borderCfg.color) or (type(borderDef) == "table" and borderDef.color) or { 0, 0, 0, 0.8 }
 		local colorR, colorG, colorB, colorA = unpackColor(color, 0, 0, 0, 0.8)
 		local cache = border._ufCastIconBorderCache
+		local textures = ensureCastEdgeTextures(border)
 		local styleChanged = not cache or cache.edgeFile ~= edgeFile or cache.edgeSize ~= size
 		local colorChanged = not cache
 			or cache.colorR ~= colorR
@@ -5201,18 +5368,38 @@ function UF._applyCastIconBorder(st, ccfg, defc)
 		border:ClearAllPoints()
 		border:SetPoint("TOPLEFT", st.castIcon, "TOPLEFT", -offset, offset)
 		border:SetPoint("BOTTOMRIGHT", st.castIcon, "BOTTOMRIGHT", offset, -offset)
-		if styleChanged then
-			local style = {
-				bgFile = "Interface\\Buttons\\WHITE8x8",
-				edgeFile = edgeFile,
-				edgeSize = size,
-				insets = { left = size, right = size, top = size, bottom = size },
-			}
-			border._ufCastIconBorderStyle = style
-			border:SetBackdrop(style)
-			border:SetBackdropColor(0, 0, 0, 0)
+		if textures then
+			textures.Top:ClearAllPoints()
+			textures.Top:SetPoint("TOPLEFT", border, "TOPLEFT", 0, 0)
+			textures.Top:SetPoint("TOPRIGHT", border, "TOPRIGHT", 0, 0)
+			textures.Top:SetHeight(size)
+
+			textures.Bottom:ClearAllPoints()
+			textures.Bottom:SetPoint("BOTTOMLEFT", border, "BOTTOMLEFT", 0, 0)
+			textures.Bottom:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 0, 0)
+			textures.Bottom:SetHeight(size)
+
+			textures.Left:ClearAllPoints()
+			textures.Left:SetPoint("TOPLEFT", border, "TOPLEFT", 0, 0)
+			textures.Left:SetPoint("BOTTOMLEFT", border, "BOTTOMLEFT", 0, 0)
+			textures.Left:SetWidth(size)
+
+			textures.Right:ClearAllPoints()
+			textures.Right:SetPoint("TOPRIGHT", border, "TOPRIGHT", 0, 0)
+			textures.Right:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 0, 0)
+			textures.Right:SetWidth(size)
 		end
-		if styleChanged or colorChanged then border:SetBackdropBorderColor(colorR, colorG, colorB, colorA) end
+		if styleChanged and textures then
+			for _, tex in pairs(textures) do
+				tex:SetTexture(edgeFile)
+			end
+		end
+		if (styleChanged or colorChanged) and textures then
+			for _, tex in pairs(textures) do
+				tex:SetVertexColor(colorR, colorG, colorB, colorA)
+				tex:Show()
+			end
+		end
 		cache = cache or {}
 		cache.edgeFile = edgeFile
 		cache.edgeSize = size
@@ -5224,7 +5411,14 @@ function UF._applyCastIconBorder(st, ccfg, defc)
 		border:SetShown(st.castIcon:IsShown())
 	else
 		local border = st.castIconBorder
-		if border then border:Hide() end
+		if border then
+			if border._ufCastEdgeTextures then
+				for _, tex in pairs(border._ufCastEdgeTextures) do
+					tex:Hide()
+				end
+			end
+			border:Hide()
+		end
 	end
 end
 
@@ -7426,7 +7620,7 @@ local function layoutFrame(cfg, unit)
 		if st.frame.SetParent then st.frame:SetParent(container) end
 		if st.frame:GetNumPoints() == 0 then st.frame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0) end
 	else
-		local rel = resolveRelativeAnchorFrame(anchor and anchor.relativeTo)
+		local rel = resolveRelativeAnchorFrame(anchor and (anchor.relativeTo or anchor.relativeFrame), st.frame and st.frame:GetName())
 		st.frame:ClearAllPoints()
 		st.frame:SetPoint(anchor.point or "CENTER", rel or UIParent, anchor.relativePoint or anchor.point or "CENTER", anchor.x or 0, anchor.y or 0)
 	end

@@ -131,6 +131,7 @@ local hooksecurefunc = hooksecurefunc
 local BAR_TEX_INHERIT = "__PER_BAR__"
 local AURA_FILTERS = GFH.AuraFilters
 local FONT_DROPDOWN_SCROLL_HEIGHT = 220
+local GROUP_FRAME_MAX_SPACING = 100
 GF._FRAME_STRATA_INDEX = GF._FRAME_STRATA_INDEX or {
 	BACKGROUND = true,
 	LOW = true,
@@ -1429,7 +1430,7 @@ function GF.ComputePartyCenterGrowthAnchorOffset(cfg, growth, scale, countOverri
 	scale = scale or (GFH and GFH.GetEffectiveScale and GFH.GetEffectiveScale(UIParent)) or 1
 	if count <= 0 then return 0, 0, 0 end
 
-	local spacing = roundToPixel(clampNumber(tonumber(cfg.spacing) or 0, 0, 40, 0), scale)
+	local spacing = roundToPixel(clampNumber(tonumber(cfg.spacing) or 0, 0, GROUP_FRAME_MAX_SPACING, 0), scale)
 	local w = roundToEvenPixel(clampNumber(tonumber(cfg.width) or 100, 40, 600, 100), scale)
 	local h = roundToEvenPixel(clampNumber(tonumber(cfg.height) or 24, 10, 200, 24), scale)
 
@@ -10469,7 +10470,7 @@ function GF:UpdateAnchorSize(kind)
 	w = roundToEvenPixel(w, scale)
 	h = roundToEvenPixel(h, scale)
 
-	local spacing = roundToPixel(clampNumber(tonumber(cfg.spacing) or 0, 0, 40, 0), scale)
+	local spacing = roundToPixel(clampNumber(tonumber(cfg.spacing) or 0, 0, GROUP_FRAME_MAX_SPACING, 0), scale)
 	local columnSpacing = spacing
 	if isRaidLikeKind(kind) then columnSpacing = roundToPixel(clampNumber(tonumber(cfg.columnSpacing) or spacing, 0, 40, spacing), scale) end
 	local growthMode, growth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
@@ -10651,7 +10652,7 @@ function GF:UpdatePreviewLayout(kind)
 	w = roundToEvenPixel(w, scale)
 	h = roundToEvenPixel(h, scale)
 
-	local spacing = clampNumber(tonumber(cfg.spacing) or 0, 0, 40, 0)
+	local spacing = clampNumber(tonumber(cfg.spacing) or 0, 0, GROUP_FRAME_MAX_SPACING, 0)
 	spacing = roundToPixel(spacing, scale)
 
 	local startPoint = getGrowthStartPoint(growth)
@@ -12032,7 +12033,7 @@ function GF:ApplyHeaderAttributes(kind, options)
 		return
 	end
 
-	local spacing = clampNumber(tonumber(cfg.spacing) or 0, 0, 40, 0)
+	local spacing = clampNumber(tonumber(cfg.spacing) or 0, 0, GROUP_FRAME_MAX_SPACING, 0)
 	local growthMode, growth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
 	if not GF.SupportsCenterGrowth(kind) and (growthMode == "CENTER_HORIZONTAL" or growthMode == "CENTER_VERTICAL") then growthMode = growth end
 	if cfg.growth ~= growthMode then cfg.growth = growthMode end
@@ -14881,7 +14882,7 @@ local function buildEditModeSettings(kind, editModeId)
 			allowInput = true,
 			field = "spacing",
 			minValue = 0,
-			maxValue = 40,
+			maxValue = GROUP_FRAME_MAX_SPACING,
 			valueStep = 1,
 			default = (DEFAULTS[kind] and DEFAULTS[kind].spacing) or 0,
 			parentId = "layout",
@@ -14892,7 +14893,7 @@ local function buildEditModeSettings(kind, editModeId)
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
-				local v = clampNumber(value, 0, 40, cfg.spacing or 0)
+				local v = clampNumber(value, 0, GROUP_FRAME_MAX_SPACING, cfg.spacing or 0)
 				cfg.spacing = v
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "spacing", v, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
@@ -24878,7 +24879,7 @@ local function applyEditModeData(kind, data)
 		ac.externals.showTooltip = enabled
 		refreshAuras = true
 	end
-	if data.spacing ~= nil then cfg.spacing = clampNumber(data.spacing, 0, 40, cfg.spacing or 0) end
+	if data.spacing ~= nil then cfg.spacing = clampNumber(data.spacing, 0, GROUP_FRAME_MAX_SPACING, cfg.spacing or 0) end
 	if data.growth then
 		local mode, baseGrowth = GF.ResolveUnitGrowthDirection(data.growth, cfg.growth or "DOWN")
 		if not GF.SupportsCenterGrowth(kind) and (mode == "CENTER_HORIZONTAL" or mode == "CENTER_VERTICAL") then mode = baseGrowth end

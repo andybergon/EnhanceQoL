@@ -47,6 +47,7 @@ General\functions.lua
 General\Glow.lua
 Core\EditModeLib.lua
 Core\EditMode.lua
+Core\SharedAnchors.lua
 Modules\ActionBarLabels.lua
 Core\Cleanup.lua
 EnhanceQoL.lua

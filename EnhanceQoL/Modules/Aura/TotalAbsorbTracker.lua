@@ -15,6 +15,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local LSM = LibStub("LibSharedMedia-3.0", true)
+local SharedAnchors = addon.SharedAnchors
 
 local UIParent = _G.UIParent
 local CreateUnitHealPredictionCalculator = _G.CreateUnitHealPredictionCalculator
@@ -59,6 +60,7 @@ Tracker.defaults = Tracker.defaults
 	or {
 		point = "CENTER",
 		relativePoint = "CENTER",
+		relativeFrame = "UIParent",
 		x = 0,
 		y = -80,
 		iconSize = 44,
@@ -87,6 +89,7 @@ Tracker.currentAmount = Tracker.currentAmount or 0
 local DB_ENABLED = "totalAbsorbTrackerEnabled"
 local DB_POINT = "totalAbsorbTrackerPoint"
 local DB_RELATIVE_POINT = "totalAbsorbTrackerRelativePoint"
+local DB_RELATIVE_FRAME = "totalAbsorbTrackerRelativeFrame"
 local DB_X = "totalAbsorbTrackerX"
 local DB_Y = "totalAbsorbTrackerY"
 local DB_ICON_SIZE = "totalAbsorbTrackerIconSize"
@@ -115,6 +118,39 @@ local editModeRegistered = false
 local function getDBValue(key, fallback)
 	if addon.db and addon.db[key] ~= nil then return addon.db[key] end
 	return fallback
+end
+
+local function normalizeRelativeFrame(value, current)
+	if SharedAnchors and SharedAnchors.ValidateTarget then return SharedAnchors:ValidateTarget(value, current, { includeCursor = false }) end
+	if type(value) ~= "string" or value == "" then return "UIParent" end
+	return value
+end
+
+local function resolveRelativeFrame(value)
+	if SharedAnchors and SharedAnchors.ResolveFrame then return SharedAnchors:ResolveFrame(value) end
+	return UIParent
+end
+
+local function anchorUsesUIParent(value)
+	if SharedAnchors and SharedAnchors.IsUIParentTarget then return SharedAnchors:IsUIParentTarget(value) end
+	return value == nil or value == "" or value == "UIParent"
+end
+
+local function getAnchorTargetEntries(current)
+	if SharedAnchors and SharedAnchors.GetEntries then return SharedAnchors:GetEntries(current, { includeCursor = false }) end
+	return {
+		{ key = "UIParent", label = "UIParent" },
+	}
+end
+
+local function getAnchorDefaults(target)
+	if SharedAnchors and SharedAnchors.GetDefaultAnchorData then return SharedAnchors:GetDefaultAnchorData(target) end
+	return {
+		point = "CENTER",
+		relativePoint = "CENTER",
+		x = 0,
+		y = 0,
+	}
 end
 
 local function copyColor(value, fallback)
@@ -185,6 +221,11 @@ function Tracker:GetPoint() return getDBValue(DB_POINT, defaults.point) end
 
 function Tracker:GetRelativePoint() return getDBValue(DB_RELATIVE_POINT, getDBValue(DB_POINT, defaults.relativePoint or defaults.point)) end
 
+function Tracker:GetRelativeFrame()
+	local current = getDBValue(DB_RELATIVE_FRAME, defaults.relativeFrame or "UIParent")
+	return normalizeRelativeFrame(current, current)
+end
+
 function Tracker:GetOffsetX() return getDBValue(DB_X, defaults.x) end
 
 function Tracker:GetOffsetY() return getDBValue(DB_Y, defaults.y) end
@@ -220,6 +261,10 @@ function Tracker:GetTextAnchor() return getDBValue(DB_TEXT_ANCHOR, defaults.text
 function Tracker:GetTextOffsetX() return getDBValue(DB_TEXT_OFFSET_X, defaults.textOffsetX) end
 
 function Tracker:GetTextOffsetY() return getDBValue(DB_TEXT_OFFSET_Y, defaults.textOffsetY) end
+
+function Tracker:ResolveAnchorFrame() return resolveRelativeFrame(self:GetRelativeFrame()) end
+
+function Tracker:AnchorUsesUIParent() return anchorUsesUIParent(self:GetRelativeFrame()) end
 
 function Tracker:GetTextOnly() return getDBValue(DB_TEXT_ONLY, defaults.textOnly) == true end
 
@@ -273,6 +318,7 @@ function Tracker:BuildLayoutRecordFromProfile()
 	return {
 		point = self:GetPoint(),
 		relativePoint = self:GetRelativePoint(),
+		anchorTarget = self:GetRelativeFrame(),
 		x = self:GetOffsetX(),
 		y = self:GetOffsetY(),
 		iconSize = self:GetIconSize(),
@@ -310,6 +356,8 @@ function Tracker:ApplyLayoutData(data)
 	if point == nil then point = self:GetPoint() end
 	local relativePoint = record.relativePoint
 	if relativePoint == nil then relativePoint = self:GetRelativePoint() end
+	local currentTarget = self:GetRelativeFrame()
+	local relativeFrame = normalizeRelativeFrame(record.anchorTarget or currentTarget, currentTarget)
 	local x = record.x
 	if x == nil then x = self:GetOffsetX() end
 	local y = record.y
@@ -354,6 +402,7 @@ function Tracker:ApplyLayoutData(data)
 	addon.db = addon.db or {}
 	addon.db[DB_POINT] = point
 	addon.db[DB_RELATIVE_POINT] = relativePoint
+	addon.db[DB_RELATIVE_FRAME] = relativeFrame
 	addon.db[DB_X] = x
 	addon.db[DB_Y] = y
 	addon.db[DB_ICON_SIZE] = iconSize
@@ -378,7 +427,7 @@ function Tracker:ApplyLayoutData(data)
 	if not frame then return end
 
 	frame:ClearAllPoints()
-	frame:SetPoint(point, UIParent, relativePoint or point, x or 0, y or 0)
+	frame:SetPoint(point, self:ResolveAnchorFrame(), relativePoint or point, x or 0, y or 0)
 
 	frame.icon:ClearAllPoints()
 	frame.icon:SetPoint("CENTER", frame, "CENTER", iconOffsetX or 0, iconOffsetY or 0)
@@ -564,6 +613,135 @@ function Tracker:RegisterEditMode()
 	local settings
 	if SettingType then
 		settings = {
+			{
+				name = L["Anchor"] or "Anchor",
+				kind = SettingType.Collapsible,
+				id = "totalAbsorbTrackerAnchor",
+				defaultCollapsed = false,
+			},
+			{
+				name = L["Anchor to"] or "Anchor to",
+				kind = SettingType.Dropdown,
+				field = "anchorTarget",
+				parentId = "totalAbsorbTrackerAnchor",
+				height = 220,
+				get = function() return Tracker:GetRelativeFrame() end,
+				set = function(_, value)
+					local current = Tracker:GetRelativeFrame()
+					local target = normalizeRelativeFrame(value, current)
+					local defaults = getAnchorDefaults(target)
+					if EditMode and EditMode.SetValue then
+						EditMode:SetValue(EDITMODE_ID, "anchorTarget", target, nil, true)
+						EditMode:SetValue(EDITMODE_ID, "point", defaults.point, nil, true)
+						EditMode:SetValue(EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
+						EditMode:SetValue(EDITMODE_ID, "x", defaults.x, nil, true)
+						EditMode:SetValue(EDITMODE_ID, "y", defaults.y, nil, true)
+					end
+					Tracker:ApplyLayoutData({
+						anchorTarget = target,
+						point = defaults.point,
+						relativePoint = defaults.relativePoint,
+						x = defaults.x,
+						y = defaults.y,
+					})
+				end,
+				generator = function(_, root)
+					local entries = getAnchorTargetEntries(Tracker:GetRelativeFrame())
+					local current = Tracker:GetRelativeFrame()
+					for i = 1, #entries do
+						local option = entries[i]
+						root:CreateRadio(option.label, function() return current == option.key end, function()
+							local defaults = getAnchorDefaults(option.key)
+							if EditMode and EditMode.SetValue then
+								EditMode:SetValue(EDITMODE_ID, "anchorTarget", option.key, nil, true)
+								EditMode:SetValue(EDITMODE_ID, "point", defaults.point, nil, true)
+								EditMode:SetValue(EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
+								EditMode:SetValue(EDITMODE_ID, "x", defaults.x, nil, true)
+								EditMode:SetValue(EDITMODE_ID, "y", defaults.y, nil, true)
+							end
+							Tracker:ApplyLayoutData({
+								anchorTarget = option.key,
+								point = defaults.point,
+								relativePoint = defaults.relativePoint,
+								x = defaults.x,
+								y = defaults.y,
+							})
+						end)
+					end
+				end,
+			},
+			{
+				name = L["Anchor point"] or "Anchor point",
+				kind = SettingType.Dropdown,
+				field = "point",
+				parentId = "totalAbsorbTrackerAnchor",
+				height = 180,
+				get = function() return Tracker:GetPoint() end,
+				set = function(_, value)
+					if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, "point", value, nil, true) end
+					Tracker:ApplyLayoutData({ point = value })
+				end,
+				generator = function(_, root)
+					for i = 1, #ANCHOR_POINTS do
+						local anchor = ANCHOR_POINTS[i]
+						root:CreateRadio(anchor, function() return Tracker:GetPoint() == anchor end, function()
+							if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, "point", anchor, nil, true) end
+							Tracker:ApplyLayoutData({ point = anchor })
+						end)
+					end
+				end,
+			},
+			{
+				name = L["Relative point"] or "Relative point",
+				kind = SettingType.Dropdown,
+				field = "relativePoint",
+				parentId = "totalAbsorbTrackerAnchor",
+				height = 180,
+				get = function() return Tracker:GetRelativePoint() end,
+				set = function(_, value)
+					if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, "relativePoint", value, nil, true) end
+					Tracker:ApplyLayoutData({ relativePoint = value })
+				end,
+				generator = function(_, root)
+					for i = 1, #ANCHOR_POINTS do
+						local anchor = ANCHOR_POINTS[i]
+						root:CreateRadio(anchor, function() return Tracker:GetRelativePoint() == anchor end, function()
+							if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, "relativePoint", anchor, nil, true) end
+							Tracker:ApplyLayoutData({ relativePoint = anchor })
+						end)
+					end
+				end,
+			},
+			{
+				name = L["X Offset"] or "X Offset",
+				kind = SettingType.Slider,
+				field = "x",
+				parentId = "totalAbsorbTrackerAnchor",
+				minValue = -1000,
+				maxValue = 1000,
+				valueStep = 1,
+				allowInput = true,
+				get = function() return Tracker:GetOffsetX() end,
+				set = function(_, value)
+					if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, "x", value, nil, true) end
+					Tracker:ApplyLayoutData({ x = value })
+				end,
+			},
+			{
+				name = L["Y Offset"] or "Y Offset",
+				kind = SettingType.Slider,
+				field = "y",
+				parentId = "totalAbsorbTrackerAnchor",
+				minValue = -1000,
+				maxValue = 1000,
+				valueStep = 1,
+				allowInput = true,
+				get = function() return Tracker:GetOffsetY() end,
+				set = function(_, value)
+					if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_ID, "y", value, nil, true) end
+					Tracker:ApplyLayoutData({ y = value })
+				end,
+			},
 			{
 				name = L["Icon"] or "Icon",
 				kind = SettingType.Collapsible,
@@ -830,6 +1008,10 @@ function Tracker:RegisterEditMode()
 		onExit = function() self:ShowEditModeHint(false) end,
 		isEnabled = function() return self:IsEnabled() end,
 		settings = settings,
+		relativeTo = function() return Tracker:ResolveAnchorFrame() end,
+		allowDrag = function() return Tracker:AnchorUsesUIParent() end,
+		managePosition = false,
+		persistPosition = false,
 		settingsMaxHeight = DEFAULT_SETTINGS_MAX_HEIGHT,
 		showOutsideEditMode = false,
 		collapseExclusive = true,

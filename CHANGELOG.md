@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.2.0] - 2026-04-09
+
+### ✨ Added
+
+- Edit Mode / Anchoring: Combat Resurrection Tracker, Bloodlust Tracker, Standalone Private Auras, Combat Text, and Total Absorb Tracker can now be anchored to the same supported UI elements as Cooldown Panels.
+
+### 🐛 Fixed
+
+- Edit Mode / Anchoring: Improved anchor handling for those trackers so anchored layouts stay attached more reliably and avoid problematic anchor loops.
+- Group Frames / Party: Increased the party frame spacing limit from `40` to `100`.
+- Group Frames / Auras: Fixed buff and debuff stack counts sometimes rendering behind custom aura borders.
+- Unit Frames / Cast Bar: Fixed cast icon borders sometimes triggering a `Backdrop.lua` secret-number taint error.
+- Cooldown Panels: Fixed some spells occasionally showing a global cooldown swipe or timer when they should not.
+
+---
+
 ## [10.1.4] - 2026-04-09
 
 ### 🐛 Fixed

@@ -588,7 +588,7 @@ local function ensureCastIconBorderFrame()
 	if not state.castBar or not state.castIcon or not state.castIconLayer then return nil end
 	local border = state.castIconBorder
 	if not border then
-		border = CreateFrame("Frame", nil, state.castIconLayer, "BackdropTemplate")
+		border = CreateFrame("Frame", nil, state.castIconLayer)
 		border:EnableMouse(false)
 		state.castIconBorder = border
 	end
@@ -596,6 +596,18 @@ local function ensureCastIconBorderFrame()
 	local baseLevel = state.castBar:GetFrameLevel() or 0
 	border:SetFrameLevel(baseLevel + 4)
 	return border
+end
+
+local function ensureCastIconBorderTextures(border)
+	if not border then return nil end
+	if border._eqolEdgeTextures then return border._eqolEdgeTextures end
+	local textures = {}
+	for _, key in ipairs({ "Top", "Bottom", "Left", "Right" }) do
+		local tex = border:CreateTexture(nil, "OVERLAY")
+		textures[key] = tex
+	end
+	border._eqolEdgeTextures = textures
+	return textures
 end
 
 local function applyCastIconBorder(castCfg, castDefaults)
@@ -606,23 +618,48 @@ local function applyCastIconBorder(castCfg, castDefaults)
 		local border = ensureCastIconBorderFrame()
 		if not border then return end
 		local size, offset = getCastIconBorderMetrics(borderCfg, borderDef)
+		local textures = ensureCastIconBorderTextures(border)
+		local edgeFile = UFHelper.resolveBorderTexture((type(borderCfg) == "table" and borderCfg.texture) or (type(borderDef) == "table" and borderDef.texture))
+		local color = (type(borderCfg) == "table" and borderCfg.color) or (type(borderDef) == "table" and borderDef.color) or { 0, 0, 0, 0.8 }
 		border:ClearAllPoints()
 		border:SetPoint("TOPLEFT", state.castIcon, "TOPLEFT", -offset, offset)
 		border:SetPoint("BOTTOMRIGHT", state.castIcon, "BOTTOMRIGHT", offset, -offset)
-		border:SetBackdrop({
-			bgFile = "Interface\\Buttons\\WHITE8x8",
-			edgeFile = UFHelper.resolveBorderTexture((type(borderCfg) == "table" and borderCfg.texture) or (type(borderDef) == "table" and borderDef.texture)),
-			edgeSize = size,
-			insets = { left = size, right = size, top = size, bottom = size },
-		})
-		border:SetBackdropColor(0, 0, 0, 0)
-		local color = (type(borderCfg) == "table" and borderCfg.color) or (type(borderDef) == "table" and borderDef.color) or { 0, 0, 0, 0.8 }
-		border:SetBackdropBorderColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
+		if textures then
+			textures.Top:ClearAllPoints()
+			textures.Top:SetPoint("TOPLEFT", border, "TOPLEFT", 0, 0)
+			textures.Top:SetPoint("TOPRIGHT", border, "TOPRIGHT", 0, 0)
+			textures.Top:SetHeight(size)
+
+			textures.Bottom:ClearAllPoints()
+			textures.Bottom:SetPoint("BOTTOMLEFT", border, "BOTTOMLEFT", 0, 0)
+			textures.Bottom:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 0, 0)
+			textures.Bottom:SetHeight(size)
+
+			textures.Left:ClearAllPoints()
+			textures.Left:SetPoint("TOPLEFT", border, "TOPLEFT", 0, 0)
+			textures.Left:SetPoint("BOTTOMLEFT", border, "BOTTOMLEFT", 0, 0)
+			textures.Left:SetWidth(size)
+
+			textures.Right:ClearAllPoints()
+			textures.Right:SetPoint("TOPRIGHT", border, "TOPRIGHT", 0, 0)
+			textures.Right:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 0, 0)
+			textures.Right:SetWidth(size)
+
+			for _, tex in pairs(textures) do
+				tex:SetTexture(edgeFile)
+				tex:SetVertexColor(color[1] or 0, color[2] or 0, color[3] or 0, color[4] or 1)
+				tex:Show()
+			end
+		end
 		border:Show()
 	else
 		local border = state.castIconBorder
 		if border then
-			border:SetBackdrop(nil)
+			if border._eqolEdgeTextures then
+				for _, tex in pairs(border._eqolEdgeTextures) do
+					tex:Hide()
+				end
+			end
 			border:Hide()
 		end
 	end

@@ -15,6 +15,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local EditMode = addon.EditMode
 local SettingType = EditMode and EditMode.lib and EditMode.lib.SettingType
 local UFHelper = addon.Aura and addon.Aura.UFHelper
+local SharedAnchors = addon.SharedAnchors
 local DIRECTION_LEFT_LABEL = HUD_EDIT_MODE_SETTING_ENCOUNTER_EVENTS_ICON_DIRECTION_LEFT
 local DIRECTION_RIGHT_LABEL = HUD_EDIT_MODE_SETTING_ENCOUNTER_EVENTS_ICON_DIRECTION_RIGHT
 local DIRECTION_UP_LABEL = HUD_EDIT_MODE_SETTING_BAGS_DIRECTION_UP
@@ -52,6 +53,45 @@ local anchorOptions = {
 	{ value = "BOTTOMRIGHT", label = "BOTTOMRIGHT" },
 }
 
+local function normalizeRelativeFrame(value, current)
+	if SharedAnchors and SharedAnchors.ValidateTarget then return SharedAnchors:ValidateTarget(value, current, { includeCursor = false }) end
+	if type(value) ~= "string" or value == "" then return "UIParent" end
+	return value
+end
+
+local function resolveRelativeFrame(value)
+	if SharedAnchors and SharedAnchors.ResolveFrame then return SharedAnchors:ResolveFrame(value) end
+	return UIParent
+end
+
+local function anchorUsesUIParent(value)
+	if SharedAnchors and SharedAnchors.IsUIParentTarget then return SharedAnchors:IsUIParentTarget(value) end
+	return value == nil or value == "" or value == "UIParent"
+end
+
+local function getAnchorTargetEntries(current)
+	if SharedAnchors and SharedAnchors.GetEntries then return SharedAnchors:GetEntries(current, { includeCursor = false }) end
+	return {
+		{ key = "UIParent", label = "UIParent" },
+	}
+end
+
+local function getAnchorDefaults(target)
+	if SharedAnchors and SharedAnchors.GetDefaultAnchorData then return SharedAnchors:GetDefaultAnchorData(target) end
+	return {
+		point = "CENTER",
+		relativePoint = "CENTER",
+		x = 0,
+		y = 0,
+	}
+end
+
+local function refreshEditModeSettingValues()
+	if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then
+		addon.EditModeLib.internal:RefreshSettingValues()
+	end
+end
+
 local function createDefaultConfig()
 	return {
 		version = 1,
@@ -59,6 +99,7 @@ local function createDefaultConfig()
 		anchor = {
 			point = "CENTER",
 			relativePoint = "CENTER",
+			relativeFrame = "UIParent",
 			x = 0,
 			y = -140,
 		},
@@ -178,6 +219,7 @@ function PrivateAuras:GetConfig()
 	local anchor = cfg.anchor
 	anchor.point = normalizeAnchorPoint(anchor.point, defaults.anchor.point)
 	anchor.relativePoint = normalizeAnchorPoint(anchor.relativePoint or anchor.point, defaults.anchor.relativePoint or anchor.point)
+	anchor.relativeFrame = normalizeRelativeFrame(anchor.relativeFrame or defaults.anchor.relativeFrame, anchor.relativeFrame or defaults.anchor.relativeFrame)
 	anchor.x = clampInt(anchor.x, -4096, 4096, defaults.anchor.x)
 	anchor.y = clampInt(anchor.y, -4096, 4096, defaults.anchor.y)
 
@@ -212,6 +254,11 @@ function PrivateAuras:IsEnabled() return self:GetConfig().enabled == true end
 function PrivateAuras:GetEditModeValue(field)
 	local cfg = self:GetConfig()
 	if field == "amount" then return cfg.icon.amount end
+	if field == "anchorTarget" then return cfg.anchor.relativeFrame end
+	if field == "point" then return cfg.anchor.point end
+	if field == "relativePoint" then return cfg.anchor.relativePoint end
+	if field == "x" then return cfg.anchor.x end
+	if field == "y" then return cfg.anchor.y end
 	if field == "size" then return cfg.icon.size end
 	if field == "spacing" then return cfg.icon.offset end
 	if field == "direction" then return cfg.layout.direction end
@@ -285,6 +332,9 @@ function PrivateAuras:Refresh()
 	if not visible and not self.frame then return end
 
 	local frame = self:EnsureFrame()
+	local anchorFrame = resolveRelativeFrame(cfg.anchor.relativeFrame)
+	frame:ClearAllPoints()
+	frame:SetPoint(cfg.anchor.point, anchorFrame, cfg.anchor.relativePoint, cfg.anchor.x or 0, cfg.anchor.y or 0)
 
 	if not visible then
 		if UFHelper and UFHelper.RemovePrivateAuras then UFHelper.RemovePrivateAuras(frame.container) end
@@ -317,6 +367,7 @@ function PrivateAuras:ApplyLayoutData(data)
 
 	if data.point ~= nil then anchor.point = normalizeAnchorPoint(data.point, anchor.point or defaults.anchor.point) end
 	if data.relativePoint ~= nil then anchor.relativePoint = normalizeAnchorPoint(data.relativePoint, anchor.relativePoint or anchor.point or defaults.anchor.relativePoint) end
+	if data.anchorTarget ~= nil then anchor.relativeFrame = normalizeRelativeFrame(data.anchorTarget, anchor.relativeFrame or defaults.anchor.relativeFrame) end
 	if data.x ~= nil then anchor.x = clampInt(data.x, -4096, 4096, anchor.x or defaults.anchor.x) end
 	if data.y ~= nil then anchor.y = clampInt(data.y, -4096, 4096, anchor.y or defaults.anchor.y) end
 
@@ -386,6 +437,123 @@ function PrivateAuras:RegisterEditMode()
 	if self.editModeRegistered or not (EditMode and EditMode.RegisterFrame and SettingType) then return end
 
 	local settings = {
+		{
+			name = L["Anchor"] or "Anchor",
+			kind = SettingType.Collapsible,
+			id = "standalonePrivateAurasAnchor",
+			defaultCollapsed = false,
+		},
+		{
+			name = L["Anchor to"] or "Anchor to",
+			kind = SettingType.Dropdown,
+			field = "anchorTarget",
+			parentId = "standalonePrivateAurasAnchor",
+			height = 220,
+			get = function() return self:GetEditModeValue("anchorTarget") end,
+			set = function(_, value)
+				local current = self:GetEditModeValue("anchorTarget") or "UIParent"
+				local target = normalizeRelativeFrame(value, current)
+				local defaults = getAnchorDefaults(target)
+				self:ApplyLayoutData({
+					anchorTarget = target,
+					point = defaults.point,
+					relativePoint = defaults.relativePoint,
+					x = defaults.x,
+					y = defaults.y,
+				})
+				if EditMode and EditMode.SetValue then
+					EditMode:SetValue(EDITMODE_ID, "anchorTarget", self:GetEditModeValue("anchorTarget"), nil, true)
+					EditMode:SetValue(EDITMODE_ID, "point", self:GetEditModeValue("point"), nil, true)
+					EditMode:SetValue(EDITMODE_ID, "relativePoint", self:GetEditModeValue("relativePoint"), nil, true)
+					EditMode:SetValue(EDITMODE_ID, "x", self:GetEditModeValue("x"), nil, true)
+					EditMode:SetValue(EDITMODE_ID, "y", self:GetEditModeValue("y"), nil, true)
+				end
+				refreshEditModeSettingValues()
+				if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(EDITMODE_ID) end
+			end,
+			generator = function(_, root)
+				local entries = getAnchorTargetEntries(self:GetEditModeValue("anchorTarget") or "UIParent")
+				local current = self:GetEditModeValue("anchorTarget")
+				for i = 1, #entries do
+					local option = entries[i]
+					root:CreateRadio(option.label, function() return current == option.key end, function()
+						local defaults = getAnchorDefaults(option.key)
+						self:ApplyLayoutData({
+							anchorTarget = option.key,
+							point = defaults.point,
+							relativePoint = defaults.relativePoint,
+							x = defaults.x,
+							y = defaults.y,
+						})
+						if EditMode and EditMode.SetValue then
+							EditMode:SetValue(EDITMODE_ID, "anchorTarget", self:GetEditModeValue("anchorTarget"), nil, true)
+							EditMode:SetValue(EDITMODE_ID, "point", self:GetEditModeValue("point"), nil, true)
+							EditMode:SetValue(EDITMODE_ID, "relativePoint", self:GetEditModeValue("relativePoint"), nil, true)
+							EditMode:SetValue(EDITMODE_ID, "x", self:GetEditModeValue("x"), nil, true)
+							EditMode:SetValue(EDITMODE_ID, "y", self:GetEditModeValue("y"), nil, true)
+						end
+						refreshEditModeSettingValues()
+						if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(EDITMODE_ID) end
+					end)
+				end
+			end,
+		},
+		{
+			name = L["Anchor point"] or "Anchor point",
+			kind = SettingType.Dropdown,
+			field = "point",
+			parentId = "standalonePrivateAurasAnchor",
+			height = 180,
+			get = function() return self:GetEditModeValue("point") end,
+			set = function(_, value) self:SetLayoutField("point", value) end,
+			generator = function(_, root)
+				for i = 1, #anchorOptions do
+					local option = anchorOptions[i]
+					root:CreateRadio(option.label, function() return self:GetEditModeValue("point") == option.value end, function() self:SetLayoutField("point", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["Relative point"] or "Relative point",
+			kind = SettingType.Dropdown,
+			field = "relativePoint",
+			parentId = "standalonePrivateAurasAnchor",
+			height = 180,
+			get = function() return self:GetEditModeValue("relativePoint") end,
+			set = function(_, value) self:SetLayoutField("relativePoint", value) end,
+			generator = function(_, root)
+				for i = 1, #anchorOptions do
+					local option = anchorOptions[i]
+					root:CreateRadio(option.label, function() return self:GetEditModeValue("relativePoint") == option.value end, function() self:SetLayoutField("relativePoint", option.value) end)
+				end
+			end,
+		},
+		{
+			name = L["X Offset"] or "X Offset",
+			kind = SettingType.Slider,
+			field = "x",
+			parentId = "standalonePrivateAurasAnchor",
+			minValue = -1000,
+			maxValue = 1000,
+			valueStep = 1,
+			allowInput = true,
+			get = function() return self:GetEditModeValue("x") end,
+			set = function(_, value) self:SetLayoutField("x", value) end,
+			formatter = formatSliderValue,
+		},
+		{
+			name = L["Y Offset"] or "Y Offset",
+			kind = SettingType.Slider,
+			field = "y",
+			parentId = "standalonePrivateAurasAnchor",
+			minValue = -1000,
+			maxValue = 1000,
+			valueStep = 1,
+			allowInput = true,
+			get = function() return self:GetEditModeValue("y") end,
+			set = function(_, value) self:SetLayoutField("y", value) end,
+			formatter = formatSliderValue,
+		},
 		{
 			name = L["UFPrivateAurasAmount"] or "Private aura amount",
 			kind = SettingType.Slider,
@@ -557,6 +725,7 @@ function PrivateAuras:RegisterEditMode()
 		layoutDefaults = {
 			point = self:GetConfig().anchor.point,
 			relativePoint = self:GetConfig().anchor.relativePoint,
+			anchorTarget = self:GetConfig().anchor.relativeFrame,
 			x = self:GetConfig().anchor.x,
 			y = self:GetConfig().anchor.y,
 			amount = self:GetEditModeValue("amount"),
@@ -578,6 +747,7 @@ function PrivateAuras:RegisterEditMode()
 			local cfg = self:GetConfig()
 			seedMissing(record, "point", cfg.anchor.point)
 			seedMissing(record, "relativePoint", cfg.anchor.relativePoint)
+			seedMissing(record, "anchorTarget", cfg.anchor.relativeFrame)
 			seedMissing(record, "x", cfg.anchor.x)
 			seedMissing(record, "y", cfg.anchor.y)
 			seedMissing(record, "amount", self:GetEditModeValue("amount"))
@@ -599,6 +769,10 @@ function PrivateAuras:RegisterEditMode()
 		onExit = function() self:Refresh() end,
 		isEnabled = function() return self:IsEnabled() end,
 		settings = settings,
+		relativeTo = function() return resolveRelativeFrame(self:GetConfig().anchor.relativeFrame) end,
+		allowDrag = function() return anchorUsesUIParent(self:GetConfig().anchor.relativeFrame) end,
+		managePosition = false,
+		persistPosition = false,
 		showOutsideEditMode = true,
 		enableOverlayToggle = true,
 	})

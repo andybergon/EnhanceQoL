@@ -6813,6 +6813,28 @@ local function getSpellCooldownInfo(spellID)
 	return startTime, duration, isEnabled, d or 1, nil, CooldownPanels.IsSpellCooldownInfoActive(nil, isEnabled, startTime, duration)
 end
 
+local function getGCDStateKey()
+	local startTime, duration, enabled, _, isOnGCD, isActive = getSpellCooldownInfo(61304)
+	local active = CooldownPanels.IsSpellCooldownInfoActive(isActive, enabled, startTime, duration)
+	local comparableStart = isSafeNumber(startTime) and startTime or false
+	local comparableDuration = isSafeNumber(duration) and duration or false
+	return table.concat({
+		tostring(active == true),
+		tostring(isOnGCD == true),
+		tostring(comparableStart),
+		tostring(comparableDuration),
+	}, "\031")
+end
+
+function CooldownPanels:UpdateGlobalGCDState()
+	self.runtime = self.runtime or {}
+	local runtime = self.runtime
+	local nextKey = getGCDStateKey()
+	local changed = runtime._eqolGlobalGCDStateKey == nil or runtime._eqolGlobalGCDStateKey ~= nextKey
+	runtime._eqolGlobalGCDStateKey = nextKey
+	return changed
+end
+
 local getSpellCooldownDurationObject
 
 function CooldownPanels:EnsureSpellQueryCaches()
@@ -21235,9 +21257,16 @@ local function ensureUpdateFrame()
 				end
 				invalidateCooldownCachesForId(spellId)
 				if baseSpellId ~= spellId then invalidateCooldownCachesForId(baseSpellId) end
+				local gcdChanged = CooldownPanels:UpdateGlobalGCDState()
+				if gcdChanged then
+					CooldownPanels:InvalidateSpellQueryCaches("duration")
+					CooldownPanels:InvalidateSpellQueryCaches("info")
+				end
 				CooldownPanels:HandleReadySoundSpellEvent(spellId, baseSpellId, true)
 				CooldownPanels.TraceChargeSpellSnapshot("trace51505_event_SPELL_UPDATE_COOLDOWN_after", spellId, { event = event })
-				if spellId ~= nil then
+				if gcdChanged then
+					if not CooldownPanels.RequestEnabledPanelRefreshes() then CooldownPanels:RefreshAllPanels() end
+				elseif spellId ~= nil then
 					refreshPanelsForSpell(spellId)
 				elseif baseSpellId ~= nil then
 					refreshPanelsForSpell(baseSpellId)

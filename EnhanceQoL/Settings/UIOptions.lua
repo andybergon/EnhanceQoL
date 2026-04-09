@@ -1366,6 +1366,7 @@ function addon.functions.initUIOptions()
 	if addon.Aura and addon.Aura.ExperienceBar and addon.Aura.ExperienceBar.OnSettingChanged then addon.Aura.ExperienceBar:OnSettingChanged(addon.db["xpBarEnabled"]) end
 	addon.functions.InitDBValue("totalAbsorbTrackerEnabled", false)
 	addon.functions.InitDBValue("totalAbsorbTrackerTextOnly", false)
+	addon.functions.InitDBValue("totalAbsorbTrackerRelativeFrame", "UIParent")
 	if addon.Aura and addon.Aura.TotalAbsorbTracker and addon.Aura.TotalAbsorbTracker.OnSettingChanged then addon.Aura.TotalAbsorbTracker:OnSettingChanged(addon.db["totalAbsorbTrackerEnabled"]) end
 	addon.db.focusInterruptTracker = type(addon.db.focusInterruptTracker) == "table" and addon.db.focusInterruptTracker or {}
 	if addon.db.focusInterruptTracker.enabled == nil then addon.db.focusInterruptTracker.enabled = false end
@@ -1395,6 +1396,7 @@ function addon.functions.initUIOptions()
 	addon.functions.InitDBValue("combatTextAlwaysVisibleMode", alwaysVisibleMode)
 	addon.functions.InitDBValue("combatTextFont", combatFont)
 	addon.functions.InitDBValue("combatTextFontSize", combatDefaults.fontSize or 32)
+	addon.functions.InitDBValue("combatTextAnchorTarget", "UIParent")
 	local defaultCombatColor = cloneColor(addon.db["combatTextColor"], combatDefaults.enterColor or combatDefaults.color or { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("combatTextColor", cloneColor(defaultCombatColor, defaultCombatColor))
 	addon.functions.InitDBValue("combatTextEnterColor", cloneColor(defaultCombatColor, defaultCombatColor))

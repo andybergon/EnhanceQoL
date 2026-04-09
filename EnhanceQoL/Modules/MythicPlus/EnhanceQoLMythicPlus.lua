@@ -15,6 +15,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 local LSM = LibStub("LibSharedMedia-3.0")
 local issecretvalue = _G.issecretvalue
 local wipe = _G.wipe or (table and table.wipe)
+local SharedAnchors = addon.SharedAnchors
 
 local frameLoad = CreateFrame("Frame")
 
@@ -125,6 +126,56 @@ for i = 1, #BR_TEXT_POINT_OPTIONS do
 	BR_TEXT_POINT_SET[BR_TEXT_POINT_OPTIONS[i].value] = true
 end
 local brCooldownDeferredApplyPending = false
+
+local function normalizeTrackerAnchorPoint(value, fallback)
+	if SharedAnchors and SharedAnchors.NormalizePoint then return SharedAnchors:NormalizePoint(value, fallback or "CENTER") end
+	local point = type(value) == "string" and string.upper(value) or nil
+	if point and BR_TEXT_POINT_SET[point] then return point end
+	local fallbackPoint = type(fallback) == "string" and string.upper(fallback) or "CENTER"
+	if BR_TEXT_POINT_SET[fallbackPoint] then return fallbackPoint end
+	return "CENTER"
+end
+
+local function getTrackerAnchorPointOptions()
+	if SharedAnchors and SharedAnchors.GetAnchorPointOptions then return SharedAnchors:GetAnchorPointOptions() end
+	return BR_TEXT_POINT_OPTIONS
+end
+
+local function getTrackerAnchorEntries(currentTarget)
+	if SharedAnchors and SharedAnchors.GetEntries then return SharedAnchors:GetEntries(currentTarget, { includeCursor = false }) end
+	return {
+		{ key = "UIParent", label = "UIParent" },
+	}
+end
+
+local function validateTrackerAnchorTarget(value, currentTarget)
+	if SharedAnchors and SharedAnchors.ValidateTarget then return SharedAnchors:ValidateTarget(value, currentTarget, { includeCursor = false }) end
+	return "UIParent"
+end
+
+local function resolveTrackerAnchorFrame(target)
+	if SharedAnchors and SharedAnchors.ResolveFrame then return SharedAnchors:ResolveFrame(target) end
+	return UIParent
+end
+
+local function trackerAnchorUsesUIParent(target)
+	if SharedAnchors and SharedAnchors.IsUIParentTarget then return SharedAnchors:IsUIParentTarget(target) end
+	return target == nil or target == "" or target == "UIParent"
+end
+
+local function getTrackerAnchorDefaults(target)
+	if SharedAnchors and SharedAnchors.GetDefaultAnchorData then return SharedAnchors:GetDefaultAnchorData(target) end
+	return {
+		point = "CENTER",
+		relativePoint = "CENTER",
+		x = 0,
+		y = 0,
+	}
+end
+
+local function maybeScheduleTrackerAnchorRefresh(target)
+	if SharedAnchors and SharedAnchors.MaybeScheduleRefresh then SharedAnchors:MaybeScheduleRefresh(target) end
+end
 
 local function normalizeBRSize(value)
 	local size = tonumber(value) or defaultButtonSize
@@ -531,9 +582,13 @@ local function syncBloodlustUnitAuraRegistration()
 end
 
 local function buildBRLayoutSnapshot()
+	local currentTarget = addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent"
+	local relativeFrame = validateTrackerAnchorTarget(currentTarget, currentTarget)
+	local point = normalizeTrackerAnchorPoint(addon.db["mythicPlusBRTrackerPoint"], "CENTER")
 	return {
-		point = addon.db["mythicPlusBRTrackerPoint"] or "CENTER",
-		relativePoint = addon.db["mythicPlusBRTrackerPoint"] or "CENTER",
+		point = point,
+		relativePoint = normalizeTrackerAnchorPoint(addon.db["mythicPlusBRTrackerRelativePoint"] or point, point),
+		anchorTarget = relativeFrame,
 		x = addon.db["mythicPlusBRTrackerX"] or 0,
 		y = addon.db["mythicPlusBRTrackerY"] or 0,
 		size = normalizeBRSize(addon.db["mythicPlusBRButtonSize"] or defaultButtonSize),
@@ -545,6 +600,7 @@ local function seedBREditModeRecordFromProfile(record)
 	local snapshot = buildBRLayoutSnapshot()
 	record.point = snapshot.point or "CENTER"
 	record.relativePoint = snapshot.relativePoint or record.point
+	record.anchorTarget = snapshot.anchorTarget or "UIParent"
 	record.x = snapshot.x or 0
 	record.y = snapshot.y or 0
 	record.size = snapshot.size or defaultButtonSize
@@ -552,8 +608,10 @@ end
 
 local function applyBRLayoutData(data)
 	local config = data or buildBRLayoutSnapshot()
-	local point = config.point or addon.db["mythicPlusBRTrackerPoint"] or "CENTER"
-	local relativePoint = config.relativePoint or point
+	local currentTarget = addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent"
+	local relativeFrame = validateTrackerAnchorTarget(config.anchorTarget or config.relativeFrame or currentTarget, currentTarget)
+	local point = normalizeTrackerAnchorPoint(config.point or addon.db["mythicPlusBRTrackerPoint"], "CENTER")
+	local relativePoint = normalizeTrackerAnchorPoint(config.relativePoint or addon.db["mythicPlusBRTrackerRelativePoint"] or point, point)
 	local x = config.x
 	if x == nil then x = addon.db["mythicPlusBRTrackerX"] or 0 end
 	local y = config.y
@@ -587,6 +645,8 @@ local function applyBRLayoutData(data)
 
 	if addon.db then
 		addon.db["mythicPlusBRTrackerPoint"] = point
+		addon.db["mythicPlusBRTrackerRelativePoint"] = relativePoint
+		addon.db["mythicPlusBRTrackerRelativeFrame"] = relativeFrame
 		addon.db["mythicPlusBRTrackerX"] = x
 		addon.db["mythicPlusBRTrackerY"] = y
 		addon.db["mythicPlusBRButtonSize"] = size
@@ -617,10 +677,13 @@ local function applyBRLayoutData(data)
 		addon.db["mythicPlusBRTrackerChargesTextOffsetY"] = chargesTextOffsetY
 	end
 
+	local resolvedAnchorFrame = resolveTrackerAnchorFrame(relativeFrame)
+	maybeScheduleTrackerAnchorRefresh(relativeFrame)
+
 	if brAnchor then
 		brAnchor:SetSize(size, size)
 		brAnchor:ClearAllPoints()
-		brAnchor:SetPoint(point, UIParent, relativePoint, x, y)
+		brAnchor:SetPoint(point, resolvedAnchorFrame, relativePoint, x, y)
 		if brAnchor.previewIcon then brAnchor.previewIcon:SetAllPoints(brAnchor) end
 		if brAnchor.previewIcon then applyTrackerIconZoom(brAnchor.previewIcon, iconZoom) end
 	end
@@ -628,7 +691,7 @@ local function applyBRLayoutData(data)
 	if brButton then
 		brButton:SetSize(size, size)
 		brButton:ClearAllPoints()
-		brButton:SetPoint(point, UIParent, relativePoint, x, y)
+		brButton:SetPoint(point, resolvedAnchorFrame, relativePoint, x, y)
 		if brButton.cooldownFrame then brButton.cooldownFrame:SetScale(1) end
 		if brButton.icon then applyTrackerIconZoom(brButton.icon, iconZoom) end
 	end
@@ -713,10 +776,178 @@ local function ensureBRAnchor()
 
 			settings = {
 				{
+					name = L["Anchor"] or "Anchor",
+					kind = settingType.Collapsible,
+					id = "mythicPlusBRTrackerAnchor",
+					defaultCollapsed = false,
+				},
+				{
+					field = "anchorTarget",
+					name = L["Anchor to"] or "Anchor to",
+					kind = settingType.Dropdown,
+					parentId = "mythicPlusBRTrackerAnchor",
+					height = 220,
+					default = addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent",
+					get = function()
+						return validateTrackerAnchorTarget(addon.db["mythicPlusBRTrackerRelativeFrame"], addon.db["mythicPlusBRTrackerRelativeFrame"])
+					end,
+					set = function(_, value)
+						local current = addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent"
+						local target = validateTrackerAnchorTarget(value, current)
+						local defaults = getTrackerAnchorDefaults(target)
+						addon.db["mythicPlusBRTrackerRelativeFrame"] = target
+						addon.db["mythicPlusBRTrackerPoint"] = defaults.point
+						addon.db["mythicPlusBRTrackerRelativePoint"] = defaults.relativePoint
+						addon.db["mythicPlusBRTrackerX"] = defaults.x
+						addon.db["mythicPlusBRTrackerY"] = defaults.y
+						if EditMode and EditMode.SetValue then
+							EditMode:SetValue(BR_EDITMODE_ID, "anchorTarget", target, nil, true)
+							EditMode:SetValue(BR_EDITMODE_ID, "point", defaults.point, nil, true)
+							EditMode:SetValue(BR_EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
+							EditMode:SetValue(BR_EDITMODE_ID, "x", defaults.x, nil, true)
+							EditMode:SetValue(BR_EDITMODE_ID, "y", defaults.y, nil, true)
+						end
+						applyBRLayoutData({
+							anchorTarget = target,
+							point = defaults.point,
+							relativePoint = defaults.relativePoint,
+							x = defaults.x,
+							y = defaults.y,
+						})
+						if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then
+							addon.EditModeLib.internal:RefreshSettingValues()
+						end
+						if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(BR_EDITMODE_ID) end
+					end,
+					generator = function(_, root)
+						local entries = getTrackerAnchorEntries(addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent")
+						local current = validateTrackerAnchorTarget(addon.db["mythicPlusBRTrackerRelativeFrame"], addon.db["mythicPlusBRTrackerRelativeFrame"])
+						for i = 1, #entries do
+							local entry = entries[i]
+							root:CreateRadio(entry.label, function() return current == entry.key end, function()
+								local currentTarget = addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent"
+								local target = validateTrackerAnchorTarget(entry.key, currentTarget)
+								local defaults = getTrackerAnchorDefaults(target)
+								addon.db["mythicPlusBRTrackerRelativeFrame"] = target
+								addon.db["mythicPlusBRTrackerPoint"] = defaults.point
+								addon.db["mythicPlusBRTrackerRelativePoint"] = defaults.relativePoint
+								addon.db["mythicPlusBRTrackerX"] = defaults.x
+								addon.db["mythicPlusBRTrackerY"] = defaults.y
+								if EditMode and EditMode.SetValue then
+									EditMode:SetValue(BR_EDITMODE_ID, "anchorTarget", target, nil, true)
+									EditMode:SetValue(BR_EDITMODE_ID, "point", defaults.point, nil, true)
+									EditMode:SetValue(BR_EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
+									EditMode:SetValue(BR_EDITMODE_ID, "x", defaults.x, nil, true)
+									EditMode:SetValue(BR_EDITMODE_ID, "y", defaults.y, nil, true)
+								end
+								applyBRLayoutData({
+									anchorTarget = target,
+									point = defaults.point,
+									relativePoint = defaults.relativePoint,
+									x = defaults.x,
+									y = defaults.y,
+								})
+								if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then
+									addon.EditModeLib.internal:RefreshSettingValues()
+								end
+								if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(BR_EDITMODE_ID) end
+							end)
+						end
+					end,
+				},
+				{
+					field = "point",
+					name = L["Anchor point"] or "Anchor point",
+					kind = settingType.Dropdown,
+					parentId = "mythicPlusBRTrackerAnchor",
+					height = 180,
+					default = normalizeTrackerAnchorPoint(addon.db["mythicPlusBRTrackerPoint"], "CENTER"),
+					get = function() return normalizeTrackerAnchorPoint(addon.db["mythicPlusBRTrackerPoint"], "CENTER") end,
+					set = function(_, value)
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "point", value, nil, true) end
+						applyBRLayoutData({ point = value })
+					end,
+					generator = function(_, root)
+						local options = getTrackerAnchorPointOptions()
+						for i = 1, #options do
+							local option = options[i]
+							root:CreateRadio(option.label, function() return normalizeTrackerAnchorPoint(addon.db["mythicPlusBRTrackerPoint"], "CENTER") == option.value end, function()
+								if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "point", option.value, nil, true) end
+								applyBRLayoutData({ point = option.value })
+							end)
+						end
+					end,
+				},
+				{
+					field = "relativePoint",
+					name = L["Relative point"] or "Relative point",
+					kind = settingType.Dropdown,
+					parentId = "mythicPlusBRTrackerAnchor",
+					height = 180,
+					default = normalizeTrackerAnchorPoint(addon.db["mythicPlusBRTrackerRelativePoint"] or addon.db["mythicPlusBRTrackerPoint"], "CENTER"),
+					get = function()
+						return normalizeTrackerAnchorPoint(addon.db["mythicPlusBRTrackerRelativePoint"] or addon.db["mythicPlusBRTrackerPoint"], addon.db["mythicPlusBRTrackerPoint"] or "CENTER")
+					end,
+					set = function(_, value)
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "relativePoint", value, nil, true) end
+						applyBRLayoutData({ relativePoint = value })
+					end,
+					generator = function(_, root)
+						local options = getTrackerAnchorPointOptions()
+						for i = 1, #options do
+							local option = options[i]
+							root:CreateRadio(
+								option.label,
+								function()
+									return normalizeTrackerAnchorPoint(addon.db["mythicPlusBRTrackerRelativePoint"] or addon.db["mythicPlusBRTrackerPoint"], addon.db["mythicPlusBRTrackerPoint"] or "CENTER") == option.value
+								end,
+								function()
+									if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "relativePoint", option.value, nil, true) end
+									applyBRLayoutData({ relativePoint = option.value })
+								end
+							)
+						end
+					end,
+				},
+				{
+					field = "x",
+					name = L["X Offset"] or "X Offset",
+					kind = settingType.Slider,
+					parentId = "mythicPlusBRTrackerAnchor",
+					minValue = -1000,
+					maxValue = 1000,
+					valueStep = 1,
+					allowInput = true,
+					default = addon.db["mythicPlusBRTrackerX"] or 0,
+					get = function() return addon.db["mythicPlusBRTrackerX"] or 0 end,
+					set = function(_, value)
+						local x = tonumber(value) or 0
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "x", x, nil, true) end
+						applyBRLayoutData({ x = x })
+					end,
+				},
+				{
+					field = "y",
+					name = L["Y Offset"] or "Y Offset",
+					kind = settingType.Slider,
+					parentId = "mythicPlusBRTrackerAnchor",
+					minValue = -1000,
+					maxValue = 1000,
+					valueStep = 1,
+					allowInput = true,
+					default = addon.db["mythicPlusBRTrackerY"] or 0,
+					get = function() return addon.db["mythicPlusBRTrackerY"] or 0 end,
+					set = function(_, value)
+						local y = tonumber(value) or 0
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "y", y, nil, true) end
+						applyBRLayoutData({ y = y })
+					end,
+				},
+				{
 					name = "Layout",
 					kind = settingType.Collapsible,
 					id = "mythicPlusBRTrackerLayout",
-					defaultCollapsed = false,
+					defaultCollapsed = true,
 				},
 				{
 					field = "size",
@@ -1207,7 +1438,8 @@ local function ensureBRAnchor()
 			title = L["mythicPlusBRTrackerAnchor"],
 			layoutDefaults = {
 				point = addon.db["mythicPlusBRTrackerPoint"] or "CENTER",
-				relativePoint = addon.db["mythicPlusBRTrackerPoint"] or "CENTER",
+				relativePoint = addon.db["mythicPlusBRTrackerRelativePoint"] or addon.db["mythicPlusBRTrackerPoint"] or "CENTER",
+				anchorTarget = addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent",
 				x = addon.db["mythicPlusBRTrackerX"] or 0,
 				y = addon.db["mythicPlusBRTrackerY"] or 0,
 				size = addon.db["mythicPlusBRButtonSize"] or defaultButtonSize,
@@ -1234,6 +1466,10 @@ local function ensureBRAnchor()
 				applyBRLayoutData(data)
 			end,
 			settings = settings,
+			relativeTo = function() return resolveTrackerAnchorFrame(addon.db and addon.db["mythicPlusBRTrackerRelativeFrame"]) end,
+			allowDrag = function() return trackerAnchorUsesUIParent(addon.db and addon.db["mythicPlusBRTrackerRelativeFrame"]) end,
+			managePosition = false,
+			persistPosition = false,
 		})
 		brEditModeRegistered = true
 	end
@@ -1593,9 +1829,13 @@ local function removeBloodlustFrame()
 end
 
 local function buildBloodlustLayoutSnapshot()
+	local currentTarget = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent"
+	local relativeFrame = validateTrackerAnchorTarget(currentTarget, currentTarget)
+	local point = normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER")
 	return {
-		point = addon.db["mythicPlusBloodlustTrackerPoint"] or "CENTER",
-		relativePoint = addon.db["mythicPlusBloodlustTrackerPoint"] or "CENTER",
+		point = point,
+		relativePoint = normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerRelativePoint"] or point, point),
+		anchorTarget = relativeFrame,
 		x = addon.db["mythicPlusBloodlustTrackerX"] or 0,
 		y = addon.db["mythicPlusBloodlustTrackerY"] or 0,
 		size = normalizeBloodlustSize(addon.db["mythicPlusBloodlustButtonSize"] or defaultButtonSize),
@@ -1607,6 +1847,7 @@ local function seedBloodlustEditModeRecordFromProfile(record)
 	local snapshot = buildBloodlustLayoutSnapshot()
 	record.point = snapshot.point or "CENTER"
 	record.relativePoint = snapshot.relativePoint or record.point
+	record.anchorTarget = snapshot.anchorTarget or "UIParent"
 	record.x = snapshot.x or 0
 	record.y = snapshot.y or 0
 	record.size = snapshot.size or defaultButtonSize
@@ -1614,8 +1855,10 @@ end
 
 local function applyBloodlustLayoutData(data)
 	local config = data or buildBloodlustLayoutSnapshot()
-	local point = config.point or addon.db["mythicPlusBloodlustTrackerPoint"] or "CENTER"
-	local relativePoint = config.relativePoint or point
+	local currentTarget = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent"
+	local relativeFrame = validateTrackerAnchorTarget(config.anchorTarget or config.relativeFrame or currentTarget, currentTarget)
+	local point = normalizeTrackerAnchorPoint(config.point or addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER")
+	local relativePoint = normalizeTrackerAnchorPoint(config.relativePoint or addon.db["mythicPlusBloodlustTrackerRelativePoint"] or point, point)
 	local x = config.x
 	if x == nil then x = addon.db["mythicPlusBloodlustTrackerX"] or 0 end
 	local y = config.y
@@ -1637,6 +1880,8 @@ local function applyBloodlustLayoutData(data)
 
 	if addon.db then
 		addon.db["mythicPlusBloodlustTrackerPoint"] = point
+		addon.db["mythicPlusBloodlustTrackerRelativePoint"] = relativePoint
+		addon.db["mythicPlusBloodlustTrackerRelativeFrame"] = relativeFrame
 		addon.db["mythicPlusBloodlustTrackerX"] = x
 		addon.db["mythicPlusBloodlustTrackerY"] = y
 		addon.db["mythicPlusBloodlustButtonSize"] = size
@@ -1655,10 +1900,13 @@ local function applyBloodlustLayoutData(data)
 		addon.db["mythicPlusBloodlustTrackerBorderColor"] = borderColor
 	end
 
+	local resolvedAnchorFrame = resolveTrackerAnchorFrame(relativeFrame)
+	maybeScheduleTrackerAnchorRefresh(relativeFrame)
+
 	if bloodlustAnchor then
 		bloodlustAnchor:SetSize(size, size)
 		bloodlustAnchor:ClearAllPoints()
-		bloodlustAnchor:SetPoint(point, UIParent, relativePoint, x, y)
+		bloodlustAnchor:SetPoint(point, resolvedAnchorFrame, relativePoint, x, y)
 		if bloodlustAnchor.previewIcon then bloodlustAnchor.previewIcon:SetAllPoints(bloodlustAnchor) end
 		applyBloodlustAnchorPreviewIcon()
 	end
@@ -1666,7 +1914,7 @@ local function applyBloodlustLayoutData(data)
 	if bloodlustButton then
 		bloodlustButton:SetSize(size, size)
 		bloodlustButton:ClearAllPoints()
-		bloodlustButton:SetPoint(point, UIParent, relativePoint, x, y)
+		bloodlustButton:SetPoint(point, resolvedAnchorFrame, relativePoint, x, y)
 		local scaleFactor = size / defaultButtonSize
 		local timerFontSize = math.floor(defaultFontSize * 0.75 * scaleFactor + 0.5)
 		if timerFontSize < 10 then timerFontSize = 10 end
@@ -1781,6 +2029,173 @@ local function ensureBloodlustAnchor()
 			end
 
 			settings = {
+				{
+					field = "anchorTarget",
+					name = L["Anchor to"] or "Anchor to",
+					kind = settingType.Dropdown,
+					height = 220,
+					default = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent",
+					get = function()
+						return validateTrackerAnchorTarget(addon.db["mythicPlusBloodlustTrackerRelativeFrame"], addon.db["mythicPlusBloodlustTrackerRelativeFrame"])
+					end,
+					set = function(_, value)
+						local current = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent"
+						local target = validateTrackerAnchorTarget(value, current)
+						local defaults = getTrackerAnchorDefaults(target)
+						addon.db["mythicPlusBloodlustTrackerRelativeFrame"] = target
+						addon.db["mythicPlusBloodlustTrackerPoint"] = defaults.point
+						addon.db["mythicPlusBloodlustTrackerRelativePoint"] = defaults.relativePoint
+						addon.db["mythicPlusBloodlustTrackerX"] = defaults.x
+						addon.db["mythicPlusBloodlustTrackerY"] = defaults.y
+						if EditMode and EditMode.SetValue then
+							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "anchorTarget", target, nil, true)
+							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "point", defaults.point, nil, true)
+							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
+							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "x", defaults.x, nil, true)
+							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "y", defaults.y, nil, true)
+						end
+						applyBloodlustLayoutData({
+							anchorTarget = target,
+							point = defaults.point,
+							relativePoint = defaults.relativePoint,
+							x = defaults.x,
+							y = defaults.y,
+						})
+						if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then
+							addon.EditModeLib.internal:RefreshSettingValues()
+						end
+						if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(BLOODLUST_EDITMODE_ID) end
+					end,
+					generator = function(_, root)
+						local entries = getTrackerAnchorEntries(addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent")
+						local current = validateTrackerAnchorTarget(addon.db["mythicPlusBloodlustTrackerRelativeFrame"], addon.db["mythicPlusBloodlustTrackerRelativeFrame"])
+						for i = 1, #entries do
+							local entry = entries[i]
+							root:CreateRadio(entry.label, function() return current == entry.key end, function()
+								local currentTarget = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent"
+								local target = validateTrackerAnchorTarget(entry.key, currentTarget)
+								local defaults = getTrackerAnchorDefaults(target)
+								addon.db["mythicPlusBloodlustTrackerRelativeFrame"] = target
+								addon.db["mythicPlusBloodlustTrackerPoint"] = defaults.point
+								addon.db["mythicPlusBloodlustTrackerRelativePoint"] = defaults.relativePoint
+								addon.db["mythicPlusBloodlustTrackerX"] = defaults.x
+								addon.db["mythicPlusBloodlustTrackerY"] = defaults.y
+								if EditMode and EditMode.SetValue then
+									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "anchorTarget", target, nil, true)
+									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "point", defaults.point, nil, true)
+									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
+									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "x", defaults.x, nil, true)
+									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "y", defaults.y, nil, true)
+								end
+								applyBloodlustLayoutData({
+									anchorTarget = target,
+									point = defaults.point,
+									relativePoint = defaults.relativePoint,
+									x = defaults.x,
+									y = defaults.y,
+								})
+								if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then
+									addon.EditModeLib.internal:RefreshSettingValues()
+								end
+								if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(BLOODLUST_EDITMODE_ID) end
+							end)
+						end
+					end,
+				},
+				{
+					field = "point",
+					name = L["Anchor point"] or "Anchor point",
+					kind = settingType.Dropdown,
+					height = 180,
+					default = normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER"),
+					get = function() return normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER") end,
+					set = function(_, value)
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BLOODLUST_EDITMODE_ID, "point", value, nil, true) end
+						applyBloodlustLayoutData({ point = value })
+					end,
+					generator = function(_, root)
+						local options = getTrackerAnchorPointOptions()
+						for i = 1, #options do
+							local option = options[i]
+							root:CreateRadio(option.label, function() return normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER") == option.value end, function()
+								if EditMode and EditMode.SetValue then EditMode:SetValue(BLOODLUST_EDITMODE_ID, "point", option.value, nil, true) end
+								applyBloodlustLayoutData({ point = option.value })
+							end)
+						end
+					end,
+				},
+				{
+					field = "relativePoint",
+					name = L["Relative point"] or "Relative point",
+					kind = settingType.Dropdown,
+					height = 180,
+					default = normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerRelativePoint"] or addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER"),
+					get = function()
+						return normalizeTrackerAnchorPoint(
+							addon.db["mythicPlusBloodlustTrackerRelativePoint"] or addon.db["mythicPlusBloodlustTrackerPoint"],
+							addon.db["mythicPlusBloodlustTrackerPoint"] or "CENTER"
+						)
+					end,
+					set = function(_, value)
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BLOODLUST_EDITMODE_ID, "relativePoint", value, nil, true) end
+						applyBloodlustLayoutData({ relativePoint = value })
+					end,
+					generator = function(_, root)
+						local options = getTrackerAnchorPointOptions()
+						for i = 1, #options do
+							local option = options[i]
+							root:CreateRadio(
+								option.label,
+								function()
+									return normalizeTrackerAnchorPoint(
+										addon.db["mythicPlusBloodlustTrackerRelativePoint"] or addon.db["mythicPlusBloodlustTrackerPoint"],
+										addon.db["mythicPlusBloodlustTrackerPoint"] or "CENTER"
+									) == option.value
+								end,
+								function()
+									if EditMode and EditMode.SetValue then EditMode:SetValue(BLOODLUST_EDITMODE_ID, "relativePoint", option.value, nil, true) end
+									applyBloodlustLayoutData({ relativePoint = option.value })
+								end
+							)
+						end
+					end,
+				},
+				{
+					field = "x",
+					name = L["X Offset"] or "X Offset",
+					kind = settingType.Slider,
+					minValue = -1000,
+					maxValue = 1000,
+					valueStep = 1,
+					allowInput = true,
+					default = addon.db["mythicPlusBloodlustTrackerX"] or 0,
+					get = function() return addon.db["mythicPlusBloodlustTrackerX"] or 0 end,
+					set = function(_, value)
+						local x = tonumber(value) or 0
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BLOODLUST_EDITMODE_ID, "x", x, nil, true) end
+						applyBloodlustLayoutData({ x = x })
+					end,
+				},
+				{
+					field = "y",
+					name = L["Y Offset"] or "Y Offset",
+					kind = settingType.Slider,
+					minValue = -1000,
+					maxValue = 1000,
+					valueStep = 1,
+					allowInput = true,
+					default = addon.db["mythicPlusBloodlustTrackerY"] or 0,
+					get = function() return addon.db["mythicPlusBloodlustTrackerY"] or 0 end,
+					set = function(_, value)
+						local y = tonumber(value) or 0
+						if EditMode and EditMode.SetValue then EditMode:SetValue(BLOODLUST_EDITMODE_ID, "y", y, nil, true) end
+						applyBloodlustLayoutData({ y = y })
+					end,
+				},
+				{
+					name = "",
+					kind = settingType.Divider,
+				},
 				{
 					field = "size",
 					name = L["Button Size"] or (L["Button Size"] or "Button Size"),
@@ -2176,7 +2591,8 @@ local function ensureBloodlustAnchor()
 			title = L["mythicPlusBloodlustTrackerAnchor"] or "Bloodlust Tracker Anchor",
 			layoutDefaults = {
 				point = addon.db["mythicPlusBloodlustTrackerPoint"] or "CENTER",
-				relativePoint = addon.db["mythicPlusBloodlustTrackerPoint"] or "CENTER",
+				relativePoint = addon.db["mythicPlusBloodlustTrackerRelativePoint"] or addon.db["mythicPlusBloodlustTrackerPoint"] or "CENTER",
+				anchorTarget = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent",
 				x = addon.db["mythicPlusBloodlustTrackerX"] or 0,
 				y = addon.db["mythicPlusBloodlustTrackerY"] or 0,
 				size = addon.db["mythicPlusBloodlustButtonSize"] or defaultButtonSize,
@@ -2204,6 +2620,10 @@ local function ensureBloodlustAnchor()
 				applyBloodlustLayoutData(data)
 			end,
 			settings = settings,
+			relativeTo = function() return resolveTrackerAnchorFrame(addon.db and addon.db["mythicPlusBloodlustTrackerRelativeFrame"]) end,
+			allowDrag = function() return trackerAnchorUsesUIParent(addon.db and addon.db["mythicPlusBloodlustTrackerRelativeFrame"]) end,
+			managePosition = false,
+			persistPosition = false,
 		})
 		bloodlustEditModeRegistered = true
 	end
