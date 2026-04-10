@@ -11,6 +11,7 @@
 ### 🐛 Fixed
 
 - Combat Resurrection Tracker / Bloodlust Tracker: Fixed anchored positions sometimes breaking after a fresh login and falling back to the top-left corner.
+- Health Macro: Added `Refreshing Serum` to the combat potion pool so the macro can use it on the shared combat potion cooldown.
 
 ---
 
