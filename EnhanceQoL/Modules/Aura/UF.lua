@@ -1163,6 +1163,7 @@ local defaults = {
 			mouseover = true,
 			target = false,
 			aggro = true,
+			combat = false,
 			texture = "DEFAULT",
 			size = 2,
 			color = { 1, 0, 0, 1 },
@@ -9927,6 +9928,7 @@ onEvent = function(self, event, unit, ...)
 	elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
 		local playerCfg = getCfg(UNIT.PLAYER)
 		updateCombatIndicator(playerCfg)
+		if UFHelper and UFHelper.updateAllHighlights then UFHelper.updateAllHighlights(states, UNIT, UF.GetBossFrameCount()) end
 		if event == "PLAYER_REGEN_ENABLED" then
 			if bossLayoutDirty then layoutBossFrames() end
 			if bossHidePending then hideBossFrames(true) end

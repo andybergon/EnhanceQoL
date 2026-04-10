@@ -1187,6 +1187,9 @@ function H.buildHighlightConfig(cfg, def)
 	local aggro = hcfg.aggro
 	if aggro == nil then aggro = hdef.aggro end
 	if aggro == nil then aggro = true end
+	local combat = hcfg.combat
+	if combat == nil then combat = hdef.combat end
+	if combat == nil then combat = false end
 	local texture = hcfg.texture or hdef.texture or "DEFAULT"
 	local size = hcfg.size
 	if size == nil then size = hdef.size end
@@ -1198,15 +1201,20 @@ function H.buildHighlightConfig(cfg, def)
 	local mouseoverColor = hcfg.mouseoverColor
 	if type(mouseoverColor) ~= "table" then mouseoverColor = hdef.mouseoverColor end
 	if type(mouseoverColor) ~= "table" then mouseoverColor = color end
+	local combatColor = hcfg.combatColor
+	if type(combatColor) ~= "table" then combatColor = hdef.combatColor end
+	if type(combatColor) ~= "table" then combatColor = color end
 	return {
 		enabled = true,
 		mouseover = mouseover == true,
 		target = target == true,
 		aggro = aggro == true,
+		combat = combat == true,
 		texture = texture,
 		size = size,
 		color = color,
 		mouseoverColor = mouseoverColor,
+		combatColor = combatColor,
 	}
 end
 
@@ -1287,6 +1295,9 @@ function H.updateHighlight(st, unit, playerUnit)
 		show = true
 	elseif cfg.aggro and (unit == (playerUnit or "player") or unit == "pet") and hasAggro(unit) then
 		show = true
+	elseif cfg.combat and unit == (playerUnit or "player") and UnitAffectingCombat and UnitExists and UnitExists(unit) and UnitAffectingCombat(unit) then
+		show = true
+		color = cfg.combatColor or color
 	end
 	if show then
 		highlight:SetBackdropBorderColor(color[1] or 1, color[2] or 0, color[3] or 0, color[4] or 1)

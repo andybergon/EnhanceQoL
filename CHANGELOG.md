@@ -5,6 +5,7 @@
 ### ✨ Added
 
 - Group Frames / Party & Raid: Added an `Anchor to` option in Edit Mode so party and raid frames can be attached to other supported UI elements instead of only the screen.
+- Unit Frames / Player Highlight: Added a separate `Highlight in combat` toggle with its own combat highlight color.
 - Action Bars: Added anchor and X/Y offset controls for `Charges/Stacks` and `Keybinds` when their text override settings are enabled.
 
 ### 🐛 Fixed
