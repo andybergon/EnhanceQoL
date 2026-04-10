@@ -298,28 +298,46 @@ LFGListApplicationDialog:HookScript("OnShow", function(self)
 	if self.SignUpButton:IsEnabled() and not IsShiftKeyDown() then self.SignUpButton:Click() end
 end)
 
-local didApplyPatch = false
-local originalFunc = LFGListApplicationDialog_Show
-local patchedFunc = function(self, resultID)
-	if resultID then
-		local searchResultInfo = C_LFGList.GetSearchResultInfo(resultID)
+-- Persist the sign-up note across LFG applications.
+--
+-- The previous implementation replaced the global LFGListApplicationDialog_Show
+-- with an addon function that skipped C_LFGList.ClearApplicationTextFields().
+-- That global function replacement tainted the entire Blizzard_GroupFinder
+-- execution context, causing widespread "secret value tainted by 'EnhanceQoL'"
+-- errors in LFGListApplicationViewer_UpdateInfo on every GROUP_ROSTER_UPDATE
+-- (lines 1571, 1614, 3187, 4002, etc.). See CLAUDE.md "Taint / Secret Number
+-- Gotchas" — never replace global Blizzard functions.
+--
+-- New approach (taint-safe): track the user's note via OnTextChanged, then
+-- restore it in a hooksecurefunc post-hook on LFGListApplicationDialog_Show.
+-- Blizzard's Show calls ClearApplicationTextFields when the activity changes;
+-- our post-hook runs after the clear and restores the saved value.
+local persistedSignUpNote
+local persistSignUpNoteHooked = false
 
-		self.resultID = resultID
-		self.activityID = searchResultInfo.activityID
-	end
-	LFGListApplicationDialog_UpdateRoles(self)
-	StaticPopupSpecial_Show(self)
+local function ensurePersistSignUpNoteHooks()
+	if persistSignUpNoteHooked then return end
+	local dialog = _G.LFGListApplicationDialog
+	local editBox = dialog and dialog.Description and dialog.Description.EditBox
+	if not editBox then return end
+	persistSignUpNoteHooked = true
+
+	editBox:HookScript("OnTextChanged", function(self, userInput)
+		if userInput then persistedSignUpNote = self:GetText() end
+	end)
+
+	hooksecurefunc("LFGListApplicationDialog_Show", function(dlg)
+		if not addon.db.persistSignUpNote then return end
+		if not persistedSignUpNote or persistedSignUpNote == "" then return end
+		local eb = dlg and dlg.Description and dlg.Description.EditBox
+		if eb then eb:SetText(persistedSignUpNote) end
+	end)
 end
 
 function EQOL.PersistSignUpNote()
-	if addon.db.persistSignUpNote then
-		-- overwrite function with patched func missing the call to ClearApplicationTextFields
-		LFGListApplicationDialog_Show = patchedFunc
-		didApplyPatch = true
-	elseif didApplyPatch then
-		-- restore previously overwritten function
-		LFGListApplicationDialog_Show = originalFunc
-	end
+	-- Hook is idempotent and gates on addon.db.persistSignUpNote at call time,
+	-- so toggling the setting at runtime works without re-installing anything.
+	ensurePersistSignUpNoteHooks()
 end
 
 local function GameTooltipActionButton(button)

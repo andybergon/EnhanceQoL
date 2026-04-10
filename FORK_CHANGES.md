@@ -19,11 +19,18 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | [Gossip skip behavior setting](#gossip-skip-behavior-setting) | Fork-only | — | [`a12bf33f`](https://github.com/andybergon/EnhanceQoL/commit/a12bf33f) (2026-03-20) | Dropdown for gossip "Skip" options: pause / auto-skip / accept normally |
 | `CURMAXPERCENT` resource bar text | Fork-only | — | [`b2967d14`](https://github.com/andybergon/EnhanceQoL/commit/b2967d14) (2026-03-07) | "Current/Max - Percentage" text option; upstream only has `CURPERCENT` |
 | [Health bar white after reload fix](#health-bar-white-after-reload-fix) | Fork-only | — | [`cc943b54`](https://github.com/andybergon/EnhanceQoL/commit/cc943b54) (2026-03-21) | Forces color update when `_lastColor` uninitialized (Midnight color curve) |
-| [LFG ApplicationViewer taint fix](#lfg-applicationviewer-taint-fix) | Fork-only | — | [`fe800f94`](https://github.com/andybergon/EnhanceQoL/commit/fe800f94) (2026-03-23) | Moves RIO sort from `table.sort` on applicants array to `DataProvider:SetSortComparator` to prevent taint |
+| [LFG ApplicationViewer sort + score display](#lfg-applicationviewer-sort--score-display) | Fork-only | — | [`fe800f94`](https://github.com/andybergon/EnhanceQoL/commit/fe800f94) (2026-03-23) | DataProvider sort with pre-cached scores; shows M+ score next to name with RaiderIO main/alt detection |
 | [Trinket buff tracking + CPE glow suppression](#trinket-buff-tracking--cpe-glow-suppression) | Fork-only | — | [`bcc905cb`](https://github.com/andybergon/EnhanceQoL/commit/bcc905cb), [`819657ea`](https://github.com/andybergon/EnhanceQoL/commit/819657ea), [`28e065aa`](https://github.com/andybergon/EnhanceQoL/commit/28e065aa) (2026-03-23 → 2026-03-26) | ClassBuffReminder tracks trinket buff durations; suppresses "missing buff" while active; CPE glow suppression; combat/M+ taint guards; instance-only setting |
 | [DungeonPortal RIO score frame taint fix](#dungeonportal-rio-score-frame-taint-fix) | Brought upstream | Independently fixed via `MeasureTextWidth`/`MeasureTextHeight` helpers (2026-03-25) | Skipped during rebase (2026-03-28) | Our `SafeGetStringWidth`/`SafeGetStringHeight` approach superseded by upstream's pre-measurement approach |
 | [Sort M+ search results by leader score](#sort-m-search-results-by-leader-score) | Fork-only | — | [`53fa4695`](https://github.com/andybergon/EnhanceQoL/commit/53fa4695) (2026-03-26) | Sorts Dungeon Finder search results by leader's overall M+ score; shows score in color-coded brackets on each listing; applied-first option; debounced async re-sort |
 | [Heal absorb bar for resource bars](#heal-absorb-bar-for-resource-bars) | Fork-only | — | [`ef6405f9`](https://github.com/andybergon/EnhanceQoL/commit/ef6405f9) (2026-03-26) | Adds heal absorb overlay to health bar with custom texture, color, fill mode (normal/reverse/opposite side), and sample preview |
+| Cooldown panel passive trinket glow fix | Fork-only | — | `main` | `GetItemUseSpellID` checked `C_Item.GetItemSpell` which returns spells for "Equip:" effects too; now verifies "Use:" via tooltip |
+| Class buff reminder "nearby only" filter | Fork-only | — | `main` | Only count group members in buff cast range (`IsSpellInRange`) for missing buff counts; falls back to visibility (~100yd) for AoE buffs like Battle Shout |
+| Absorb text on health bar | Fork-only | — | `main` | Shows absorb/heal-absorb amounts as text suffix on health bar; dropdown with None/Absorb/Heal Absorb/Both; taint-safe via `issecretvalue` guard |
+| [Tooltip widget taint fixes](#tooltip-widget-taint-fixes) | Fork-only | — | `main` | Replaced GameTooltip OnShow hooks + conditional SetDefaultAnchor to reduce AreaPOI widget taint from 1382→~100 |
+| [LFG persistSignUpNote taint fix](#lfg-persistsignupnote-taint-fix) | Fork-only | — | `main` | Replaced `LFGListApplicationDialog_Show` global function replacement with `hooksecurefunc` + `OnTextChanged` HookScript; eliminates `LFGList.lua:1614` (and 1571/3187/4002) cascade |
+| UIWidget TextWithState taint fix | Fork-only | — | `main` | pcall wrapper on `UIWidgetTemplateTextWithStateMixin:Setup` to suppress `GetStringHeight` secret number errors |
+| LFG search auto-refresh | Fork-only | — | `main` | Auto-refresh toggle + interval selector (5–60s) in filter dropdown; only runs while search panel is open |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
 This file and `CLAUDE.md` are also fork-only (project docs for Claude Code).
@@ -77,13 +84,13 @@ This file and `CLAUDE.md` are also fork-only (project docs for Claude Code).
 
 ---
 
-### LFG ApplicationViewer taint fix
+### LFG ApplicationViewer sort + score display
 
-**Problem:** Sorting LFG applicants by RIO score using `table.sort()` directly on the `self.applicants` array taints the secure frame. This causes `LFGListApplicationViewer_UpdateInfo` to fail when comparing secret values like `requiredItemLevel` and `comment` from `C_LFGList.GetActiveEntryInfo()`.
+**Problem:** Sorting LFG applicants by RIO score using `table.sort()` directly on the `self.applicants` array taints the secure frame. Calling `GetApplicantMemberInfo` inside the sort comparator returns tainted values, making the comparator non-transitive and corrupting sort order.
 
-**Fix:** Moves sorting from the data layer to the display layer. Instead of mutating the applicants array, hooks `LFGListApplicationViewer_UpdateResults` and installs a comparator on the ScrollBox's `DataProvider` via `SetSortComparator()`. The comparator extracts dungeon scores from `C_LFGList.GetApplicantMemberInfo()` and sorts descending. The underlying array stays untouched and untainted.
+**Fix:** Uses `DataProvider:SetSortComparator()` with pre-cached scores. All scores are fetched via `GetApplicantMemberInfo` BEFORE sorting, with `issecretvalue` guards. The comparator only does table lookups — no API calls.
 
-**Key gotcha:** The comparator checks `issecretvalue()` on scores before comparing — if either score is secret, it returns `false` (no reorder) rather than erroring.
+**Score display:** Hooks `LFGListApplicationViewer_UpdateApplicantMember` to prepend M+ score to each applicant's name. If RaiderIO addon is present and the character is an alt (main score > character score), shows `[mainScore]` instead. Falls back to character's own `[score]` when RaiderIO is absent or when the character IS the main. RaiderIO data accessed via `RaiderIO.GetProfile(name, realm).mythicKeystoneProfile.mplusMainCurrent.score`.
 
 **Files changed:** `EnhanceQoL.lua`.
 
@@ -133,18 +140,18 @@ Additionally, `getHeightOffset()` in `functions.lua` wraps the entire `GetPoint(
 **Problem:** When browsing the Dungeon Finder search results for M+ groups, there was no way to quickly identify groups led by experienced players. Results appeared in arbitrary order.
 
 **Fix:** Two hooks working together:
-1. `LFGListSearchPanel_UpdateResults` — sorts `self.results` by `leaderOverallDungeonScore` (descending) via `C_LFGList.GetSearchResultInfo()`. Uses a `isSortingSearch` flag to prevent infinite recursion: the hook sorts the array, sets the flag, re-calls the original function (which re-fires the hook but bails on the flag), then clears the flag.
+1. `LFGListSearchPanel_UpdateResults` — sorts both `self.results` (for Blizzard's rendering) and the DataProvider (for immediate visual update) using pre-cached scores. Does NOT recursively call `UpdateResults` — that tainted the search panel and broke the Sign Up button.
 2. `LFGListSearchEntry_Update` — prepends each entry's name with the leader's score in color-coded brackets using `C_ChallengeMode.GetDungeonScoreRarityColor()`.
 
-**Why not `SetSortComparator`?** The ApplicationViewer's DataProvider elements are `{id=X}` tables — each element carries its own ID, so reordering the DataProvider correctly re-binds frames. Search results (`self.results`) are a flat array of raw result IDs (just numbers). `SetSortComparator` reorders data internally but search frames bind `resultID` by position, not element identity — clicking a row would sign up for the wrong group. Instead, we sort the array directly and re-call the update function with a recursion guard.
+**11.1.5+ format change:** `panel.results` elements changed from plain numeric IDs to `{resultID=N}` tables. The `searchResultID(elem)` helper extracts the numeric ID from either format. DungeonFilter also updated with same helper.
 
-**Taint-safe cached comparator:** Scores and applied status are cached *before* `table.sort` to avoid calling `GetSearchResultInfo()` inside the comparator. Tainted API calls mid-sort can make the comparator non-transitive (`false` for both `a<b` and `b<a`), corrupting Lua's sort. The cache resolves taint once per result, then the comparator uses only clean cached values.
+**Taint-safe cached comparator:** Scores and applied status are cached *before* sorting to avoid calling `GetSearchResultInfo()` inside the comparator. Tainted API calls mid-sort can make the comparator non-transitive (`false` for both `a<b` and `b<a`), corrupting Lua's sort. The cache resolves taint once per result, then the comparator uses only clean cached values.
 
 **Applied-first option:** New `lfgSortSearchAppliedFirst` setting floats groups the player has applied to above unapplied groups. Uses `C_LFGList.GetApplicationInfo()` to detect applied/pending status. Works independently of score sorting.
 
-**Debounced async re-sort:** Scores load asynchronously — the first `UpdateResults` fires before `leaderOverallDungeonScore` is populated. A hidden frame listens for `LFG_LIST_SEARCH_RESULT_UPDATED` events and debounces (0.3s via `C_Timer.NewTimer`) a re-call to `LFGListSearchPanel_UpdateResults`, ensuring the list re-sorts once scores arrive.
+**Debounced async re-sort:** Scores load asynchronously — the first `UpdateResults` fires before `leaderOverallDungeonScore` is populated. A hidden frame listens for `LFG_LIST_SEARCH_RESULT_UPDATED` events and debounces (0.3s via `C_Timer.NewTimer`) a re-call to `LFGListSearchPanel_UpdateResultList`, ensuring the list re-sorts once scores arrive.
 
-**Files changed:** `EnhanceQoL.lua`, `Settings/CombatDungeon.lua`, `Locales/enUS.lua`.
+**Files changed:** `EnhanceQoL.lua`, `Modules/MythicPlus/DungeonFilter.lua`, `Settings/CombatDungeon.lua`, `Locales/enUS.lua`.
 
 ---
 
@@ -164,3 +171,30 @@ Settings include enable toggle, custom color with opacity, texture selection, fi
 **Key gotcha:** New functions use `ResourceBars.applyHealAbsorbLayout` (on the module table) instead of `local` forward declarations to stay within Lua's 200 local variable limit in `ResourceBars.lua`.
 
 **Files changed:** `Modules/Aura/ResourceBars.lua`, `Modules/Aura/Settings_Ressourcebars.lua`, `Locales/enUS.lua`.
+
+---
+
+### Tooltip widget taint fixes
+
+**Problem:** `GameTooltip:HookScript("OnShow")` runs addon code for ALL tooltip types — including AreaPOI, world map pins, and event tooltips. This taints the execution context, causing `DefaultWidgetLayout`, `GetUnscaledFrameRect`, and `GetStringHeight` to error on secret number values during widget set processing. Observed 1382 errors per session.
+
+**Fix:** Three changes:
+1. **DungeonPortal.lua:** Replaced `GameTooltip:HookScript("OnShow/OnHide")` with per-entry `OnEnter/OnLeave` hooks via `hooksecurefunc("LFGListSearchEntry_Update")`. The RIO score frame positioning now only fires when hovering LFG search entries, never for unrelated tooltips.
+2. **Ignore.lua:** Replaced `GameTooltip:HookScript("OnShow")` with `TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit)`. The ignore note only fires for unit tooltips.
+3. **EnhanceQoLTooltip.lua:** Made `hooksecurefunc("GameTooltip_SetDefaultAnchor")` conditional — only registered when custom tooltip anchoring is active (`TooltipAnchorType ~= 1`). Changing the setting requires `/reload`.
+
+**Result:** 1382 → ~100 errors per session. Remaining errors are from `TooltipDataProcessor` internal table taint (unavoidable without removing tooltip features).
+
+**Files changed:** `Modules/MythicPlus/DungeonPortal.lua`, `Submodules/Ignore/Ignore.lua`, `Modules/Tooltip/EnhanceQoLTooltip.lua`.
+
+---
+
+### LFG persistSignUpNote taint fix
+
+**Problem:** When `persistSignUpNote` was enabled, the LFG ApplicationViewer threw hundreds of "secret value tainted by 'EnhanceQoL'" errors per session — `LFGList.lua:1614` (`self.EntryName:GetWidth() > 290`), `1571` (`activeEntryInfo.comment`), `3187` (`activityIDs`), `4002` (`isNew`). All triggered on every `GROUP_ROSTER_UPDATE` while the application viewer was open.
+
+**Root cause:** The original implementation replaced the global `LFGListApplicationDialog_Show` with an addon function that skipped `C_LFGList.ClearApplicationTextFields()`. Replacing a global Blizzard function makes the function itself addon-defined code, which taints **every caller** in the `Blizzard_GroupFinder/LFGList.lua` namespace. Once tainted, `C_LFGList.GetActiveEntryInfo()` returned tainted tables and `self.EntryName:GetWidth()` returned secret numbers, breaking `LFGListApplicationViewer_UpdateInfo`. This is the exact anti-pattern called out in `CLAUDE.md` "Taint / Secret Number Gotchas".
+
+**Fix:** Track the user's note via `EditBox:HookScript("OnTextChanged", ...)` (only saves when `userInput` is true so Blizzard's clears don't overwrite the saved value), then restore it in a `hooksecurefunc("LFGListApplicationDialog_Show", ...)` post-hook. Both `HookScript` and `hooksecurefunc` are taint-safe additive hooks; neither replaces a global. The hook is idempotent and gates on `addon.db.persistSignUpNote` at call time, so toggling the setting at runtime works without re-installing anything.
+
+**Files changed:** `EnhanceQoL.lua`.
