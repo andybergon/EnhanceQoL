@@ -1,6 +1,16 @@
 # Changelog
 
-## [10.2.0] - 2026-04-09
+## [10.2.0-beta2] - 2026-04-10
+
+### 🐛 Fixed
+
+- Focus Interrupt Tracker: Fixed missing entries from `10.2.0-beta1` for Warlock interrupts so `Spell Lock` and `Axe Toss` are tracked correctly.
+- Group Frames: Reduced pixel-snapping jitter on party frame text, including player names and centered health or level text.
+- Group Frames: Fixed debuff sub-filters hiding too many harmful auras by applying the selected filters before limiting the displayed debuff icons.
+
+---
+
+## [10.2.0-beta1] - 2026-04-09
 
 ### ✨ Added
 

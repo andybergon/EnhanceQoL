@@ -589,6 +589,8 @@ function H.ApplyCenteredFontStringNudge(fs)
 		fs._eqolCenteredTextNudgeX = nil
 		return
 	end
+	-- Use our own snapped anchor + half-pixel correction; engine pixel snapping can cause 1px oscillation.
+	if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(fs) end
 	local nudgeX, bypassNudge = H.GetCenteredFontStringHalfPixelOffset(fs)
 	if bypassNudge then
 		if fs._eqolCenteredTextNudgeX == nil then return end

@@ -6616,6 +6616,7 @@ function GF:LayoutButton(self)
 		local levelOutline = sc.levelFontOutline or tc.fontOutline or hc.fontOutline
 		if UFHelper and UFHelper.applyFont then UFHelper.applyFont(st.levelText, levelFont, levelFontSize, levelOutline) end
 		local anchor = sc.levelAnchor or "RIGHT"
+		if Pixel and Pixel.DisableSnap then Pixel.DisableSnap(st.levelText) end
 		local levelOffset = sc.levelOffset or {}
 		if st.levelText.SetWidth then
 			if Pixel and Pixel.SetWidth then
@@ -6643,6 +6644,18 @@ function GF:LayoutButton(self)
 			justify = "RIGHT"
 		end
 		st.levelText:SetJustifyH(justify)
+		if GFH and GFH.SetCenteredFontStringAnchorState then
+			GFH.SetCenteredFontStringAnchorState(
+				st.levelText,
+				anchor,
+				st.health,
+				anchor,
+				levelX,
+				levelY,
+				justify == "CENTER" and GFH.IsCenteredHorizontalAnchor and GFH.IsCenteredHorizontalAnchor(anchor)
+			)
+		end
+		if GFH and GFH.ApplyCenteredFontStringNudge then GFH.ApplyCenteredFontStringNudge(st.levelText) end
 	end
 
 	if st.raidIcon then
@@ -8376,8 +8389,8 @@ function GF:UpdateAuras(self, updateInfo)
 	end
 	local scanHarmful = wantDebuff or wantsDispelTint
 	if scanHarmful then
-		-- Dispel tint is derived from the harmful scan; keep it unbounded for correctness.
-		auraQueryMax.harmful = wantsDispelTint and nil or debuffMax
+		local harmfulNeedsWideScan = wantsDispelTint or type(harmfulFilter) == "table"
+		auraQueryMax.harmful = harmfulNeedsWideScan and nil or debuffMax
 	else
 		auraQueryMax.harmful = nil
 	end

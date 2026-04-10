@@ -6956,7 +6956,7 @@ function CooldownPanels:InvalidateSpellQueryCaches(kind, spellId)
 	if runtime.spellPassStateCache then
 		if spellId ~= nil then
 			runtime.spellPassStateCache[spellId] = nil
-		elseif kind == nil then
+		elseif kind == nil or kind == "info" or kind == "duration" then
 			runtime.spellPassStateCache = {}
 		end
 	end
@@ -19462,14 +19462,25 @@ function cdp.ENTRY.ApplyVisibleSpellRuntime(panelId, runtime, icon, data, resolv
 			end
 		elseif cooldownActive then
 			icon.cooldown:SetCooldown(cooldownStart, cooldownDuration, cooldownRate)
-			CooldownPanels.SetIconDesaturatedRuntime(icon.texture, true, entryNoDesaturation)
-			if hideOnCooldown then
-				icon:SetAlpha(0)
-			elseif showOnCooldown then
-				icon:SetAlpha(1)
+			if data.cooldownGCD then
+				CooldownPanels.SetIconDesaturationRuntime(icon.texture, 0, entryNoDesaturation)
+				if hideOnCooldown then
+					icon:SetAlpha(1)
+				elseif showOnCooldown then
+					icon:SetAlpha(0)
+				end
+				setCooldownDrawState(icon.cooldown, entryGcdDrawEdge, entryGcdDrawBling, entryGcdDrawSwipe)
+				if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
+			else
+				CooldownPanels.SetIconDesaturatedRuntime(icon.texture, true, entryNoDesaturation)
+				if hideOnCooldown then
+					icon:SetAlpha(0)
+				elseif showOnCooldown then
+					icon:SetAlpha(1)
+				end
+				setCooldownDrawState(icon.cooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe)
+				if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", onCooldownDone) end
 			end
-			setCooldownDrawState(icon.cooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe)
-			if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", onCooldownDone) end
 		else
 			setCooldownDrawState(icon.cooldown, entryDrawEdge, entryDrawBling, entryDrawSwipe)
 			icon.cooldown:Clear()
@@ -21276,6 +21287,7 @@ local function ensureUpdateFrame()
 			CooldownPanels:InvalidateSpellQueryCaches("duration")
 			CooldownPanels:InvalidateSpellQueryCaches("info")
 			CooldownPanels:HandleReadySoundSpellEvent(nil, nil, true)
+			if not CooldownPanels.RequestEnabledPanelRefreshes() then CooldownPanels:RefreshAllPanels() end
 			return
 		end
 		if event == "SPELL_UPDATE_USES" then
