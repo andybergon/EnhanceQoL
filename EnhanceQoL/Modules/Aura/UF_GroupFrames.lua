@@ -10371,8 +10371,6 @@ function GF.UnitButton_OnLeave(self)
 	if GameTooltip and not GameTooltip:IsForbidden() then GameTooltip:Hide() end
 end
 
-local setPointFromCfg = GFH.SetPointFromCfg
-
 local function cancelQueuedGroupIndicatorRefresh()
 	local timer = GF._groupIndicatorRefreshTimer
 	if timer and timer.Cancel then timer:Cancel() end
@@ -12291,7 +12289,7 @@ function GF:ApplyHeaderAttributes(kind, options)
 
 	local anchor = GF.anchors and GF.anchors[kind]
 	if anchor then
-		setPointFromCfg(anchor, cfg)
+		GF.SetGroupAnchorPointFromCfg(anchor, kind, cfg)
 		GF:UpdateAnchorSize(kind)
 		header:ClearAllPoints()
 		local p = getGrowthStartPoint(growth)
@@ -12337,7 +12335,7 @@ function GF:ApplyHeaderAttributes(kind, options)
 			header:SetPoint(p, anchor, rp, anchorOffsetX, anchorOffsetY)
 		end
 	else
-		setPointFromCfg(header, cfg)
+		GF.SetGroupAnchorPointFromCfg(header, kind, cfg)
 	end
 
 	local forceHide = header._eqolForceHide
@@ -13980,10 +13978,180 @@ function GF._showGroupCopySettingsPopup(source, targetKind, editModeId)
 	})
 end
 
-local function anchorUsesUIParent(kind)
+GF._GROUP_ANCHOR_TARGET_ORDER = GF._GROUP_ANCHOR_TARGET_ORDER or { "party", "raid", "mt", "ma" }
+GF._GROUP_ANCHOR_TARGET_FRAMES = GF._GROUP_ANCHOR_TARGET_FRAMES
+	or {
+		party = "EQOLUFPartyAnchor",
+		raid = "EQOLUFRaidAnchor",
+		mt = "EQOLUFMTAnchor",
+		ma = "EQOLUFMAAnchor",
+	}
+
+function GF.GetGroupAnchorFrameName(kind) return GF._GROUP_ANCHOR_TARGET_FRAMES[kind] end
+
+function GF.GetGroupAnchorTargetKind(value)
+	for kind, frameName in pairs(GF._GROUP_ANCHOR_TARGET_FRAMES) do
+		if value == frameName then return kind end
+	end
+	return nil
+end
+
+function GF.GetGroupAnchorTargetLabel(value)
+	if value == nil or value == "" or value == "UIParent" then return L["Screen (UIParent)"] or "Screen (UIParent)" end
+
+	local kind = GF.GetGroupAnchorTargetKind(value)
+	if kind == "party" then return PARTY or "Party" end
+	if kind == "raid" then return RAID or "Raid" end
+	if kind == "mt" then return COMPACT_UNIT_FRAME_PROFILE_DISPLAYMAINTANK or "Main Tank" end
+	if kind == "ma" then return COMPACT_UNIT_FRAME_PROFILE_DISPLAYMAINASSIST or "Main Assist" end
+
+	local sharedAnchors = addon.SharedAnchors
+	if sharedAnchors and sharedAnchors.GetTargetLabel then return sharedAnchors:GetTargetLabel(value) end
+	return value
+end
+
+function GF.BuildGroupAnchorExtraEntries(ownerKind)
+	local entries = {}
+	for _, kind in ipairs(GF._GROUP_ANCHOR_TARGET_ORDER) do
+		if kind ~= ownerKind then
+			entries[#entries + 1] = {
+				key = GF.GetGroupAnchorFrameName(kind),
+				label = GF.GetGroupAnchorTargetLabel(GF.GetGroupAnchorFrameName(kind)),
+			}
+		end
+	end
+	return entries
+end
+
+function GF.GetGroupAnchorTargetEntries(kind)
 	local cfg = getCfg(kind)
-	local rel = cfg and cfg.relativeTo
-	return rel == nil or rel == "" or rel == "UIParent"
+	local current = (cfg and cfg.relativeTo) or "UIParent"
+	local entries = {}
+	local sharedAnchors = addon.SharedAnchors
+
+	if sharedAnchors and sharedAnchors.GetEntries then
+		local sharedEntries = sharedAnchors:GetEntries(current, {
+			includeCursor = false,
+			extraEntries = GF.BuildGroupAnchorExtraEntries(kind),
+		})
+		for i = 1, #sharedEntries do
+			local entry = sharedEntries[i]
+			local value = entry and entry.key
+			if value then
+				entries[#entries + 1] = {
+					value = value,
+					label = GF.GetGroupAnchorTargetLabel(value),
+				}
+			end
+		end
+		return entries
+	end
+
+	entries[#entries + 1] = { value = "UIParent", label = GF.GetGroupAnchorTargetLabel("UIParent") }
+	for _, entry in ipairs(GF.BuildGroupAnchorExtraEntries(kind)) do
+		entries[#entries + 1] = {
+			value = entry.key,
+			label = entry.label,
+		}
+	end
+	return entries
+end
+
+function GF.WouldGroupAnchorLoop(kind, target)
+	local ownerFrameName = GF.GetGroupAnchorFrameName(kind)
+	if not ownerFrameName or type(target) ~= "string" or target == "" or target == "UIParent" then return false end
+
+	local seen = {
+		[ownerFrameName] = true,
+	}
+	local current = target
+
+	while type(current) == "string" and current ~= "" and current ~= "UIParent" do
+		if seen[current] then return true end
+		seen[current] = true
+
+		local currentKind = GF.GetGroupAnchorTargetKind(current)
+		if not currentKind then return false end
+
+		local cfg = getCfg(currentKind)
+		current = cfg and cfg.relativeTo or "UIParent"
+	end
+
+	return false
+end
+
+function GF.ValidateGroupAnchorTarget(kind, value, currentTarget, suppressLoopMessage)
+	local current = type(currentTarget) == "string" and currentTarget or ((getCfg(kind) and getCfg(kind).relativeTo) or "UIParent")
+	local target
+	local sharedAnchors = addon.SharedAnchors
+
+	if sharedAnchors and sharedAnchors.ValidateTarget then
+		target = sharedAnchors:ValidateTarget(value, current, {
+			includeCursor = false,
+			extraEntries = GF.BuildGroupAnchorExtraEntries(kind),
+		})
+	else
+		target = type(value) == "string" and value ~= "" and value or "UIParent"
+		local known = false
+		for _, entry in ipairs(GF.GetGroupAnchorTargetEntries(kind)) do
+			if entry.value == target then
+				known = true
+				break
+			end
+		end
+		if not known then target = "UIParent" end
+	end
+
+	if target == GF.GetGroupAnchorFrameName(kind) then target = "UIParent" end
+
+	if GF.WouldGroupAnchorLoop(kind, target) then
+		if not suppressLoopMessage then
+			print("|cff00ff98Enhance QoL|r: " .. (L["AnchorLoop"] or 'Anchor loop detected for "%s". Resetting to UIParent.'):format(GF.GetGroupAnchorTargetLabel(target)))
+		end
+		return "UIParent"
+	end
+
+	return target
+end
+
+function GF.GetGroupAnchorTargetValue(kind)
+	local cfg = getCfg(kind)
+	local current = (cfg and cfg.relativeTo) or "UIParent"
+	return GF.ValidateGroupAnchorTarget(kind, current, current, true)
+end
+
+function GF.ResolveGroupAnchorTargetFrame(kind, value)
+	local target = GF.ValidateGroupAnchorTarget(kind, value, value, true)
+	local targetKind = GF.GetGroupAnchorTargetKind(target)
+	local sharedAnchors = addon.SharedAnchors
+	if targetKind then return (GF.anchors and GF.anchors[targetKind]) or _G[target] or UIParent end
+	if sharedAnchors and sharedAnchors.ResolveFrame then return sharedAnchors:ResolveFrame(target) end
+	if target == "UIParent" then return UIParent end
+	return _G[target] or UIParent
+end
+
+function GF.SetGroupAnchorPointFromCfg(frame, kind, cfg)
+	if not (frame and cfg) then return end
+
+	local target = GF.ValidateGroupAnchorTarget(kind, cfg.relativeTo, cfg.relativeTo, true)
+	if cfg.relativeTo ~= target then cfg.relativeTo = target end
+
+	local point = cfg.point or "CENTER"
+	local relativePoint = cfg.relativePoint or point
+	local x = tonumber(cfg.x) or 0
+	local y = tonumber(cfg.y) or 0
+	local relativeFrame = GF.ResolveGroupAnchorTargetFrame(kind, target)
+
+	frame:ClearAllPoints()
+	if Pixel and Pixel.SetPoint then
+		Pixel.SetPoint(frame, point, relativeFrame, relativePoint, x, y)
+	else
+		frame:SetPoint(point, relativeFrame, relativePoint, x, y)
+	end
+end
+
+local function anchorUsesUIParent(kind)
+	return GF.GetGroupAnchorTargetValue(kind) == "UIParent"
 end
 
 function GF.ReadStatusIconField(kind, key, field, fallback)
@@ -14580,6 +14748,42 @@ local function buildEditModeSettings(kind, editModeId)
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "height", v, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
+		},
+		{
+			name = L["Anchor to"] or "Anchor to",
+			kind = SettingType.Dropdown,
+			field = "anchorTarget",
+			parentId = "frame",
+			height = 220,
+			default = GF.GetGroupAnchorTargetValue(kind),
+			get = function() return GF.GetGroupAnchorTargetValue(kind) end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				local target = GF.ValidateGroupAnchorTarget(kind, value, cfg.relativeTo, false)
+				if cfg.relativeTo == target then return end
+				cfg.relativeTo = target
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "anchorTarget", target, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+				requestEditModeSettingsRefresh()
+				if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(editModeId) end
+			end,
+			generator = function(_, root)
+				for _, option in ipairs(GF.GetGroupAnchorTargetEntries(kind)) do
+					root:CreateRadio(option.label, function() return GF.GetGroupAnchorTargetValue(kind) == option.value end, function()
+						local cfg = getCfg(kind)
+						if not cfg then return end
+						local target = GF.ValidateGroupAnchorTarget(kind, option.value, cfg.relativeTo, false)
+						if cfg.relativeTo == target then return end
+						cfg.relativeTo = target
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "anchorTarget", target, nil, true) end
+						GF:ApplyHeaderAttributes(kind)
+						requestEditModeSettingsRefresh()
+						if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(editModeId) end
+					end)
+				end
+			end,
+			isShown = function() return kind == "party" or kind == "raid" end,
 		},
 		{
 			name = L["Anchor point"] or "Anchor point",
@@ -24829,9 +25033,11 @@ function GF._syncGroupEditModeLayoutData(kind, editModeId, layoutName)
 	local def = DEFAULTS[kind] or {}
 	local point = tostring((cfg and cfg.point) or def.point or data.point or "CENTER"):upper()
 	local relativePoint = tostring((cfg and (cfg.relativePoint or cfg.point)) or def.relativePoint or def.point or point):upper()
+	local anchorTarget = GF.GetGroupAnchorTargetValue(kind)
 	local x = clampNumber((cfg and cfg.x) or def.x or data.x or 0, -4000, 4000, 0)
 	local y = clampNumber((cfg and cfg.y) or def.y or data.y or 0, -4000, 4000, 0)
 
+	data.anchorTarget = anchorTarget
 	data.point = point
 	data.relativePoint = relativePoint
 	data.x = x
@@ -24847,10 +25053,21 @@ local function applyEditModeData(kind, data)
 	if not cfg then return end
 
 	local positionChanged = false
+	if data.anchorTarget ~= nil then
+		local target = GF.ValidateGroupAnchorTarget(kind, data.anchorTarget, cfg.relativeTo, true)
+		if cfg.relativeTo ~= target then
+			cfg.relativeTo = target
+			positionChanged = true
+		end
+		if data.anchorTarget ~= target then
+			data.anchorTarget = target
+			if EditMode and EditMode.SetValue then EditMode:SetValue(EDITMODE_IDS[kind], "anchorTarget", target, nil, true) end
+		end
+	end
 	if data.point or data.relativePoint or data.x ~= nil or data.y ~= nil then
 		cfg.point = tostring(data.point or cfg.point or "CENTER"):upper()
 		cfg.relativePoint = tostring(data.relativePoint or cfg.point):upper()
-		if not cfg.relativeTo or cfg.relativeTo == "" then cfg.relativeTo = "UIParent" end
+		cfg.relativeTo = GF.ValidateGroupAnchorTarget(kind, cfg.relativeTo, cfg.relativeTo, true)
 		cfg.x = clampNumber((data.x ~= nil and data.x or cfg.x) or 0, -4000, 4000, cfg.x or 0)
 		cfg.y = clampNumber((data.y ~= nil and data.y or cfg.y) or 0, -4000, 4000, cfg.y or 0)
 		if data.point ~= cfg.point then
@@ -26006,6 +26223,7 @@ function GF:EnsureEditMode()
 			local defaults = {
 				point = cfg.point or "CENTER",
 				relativePoint = cfg.relativePoint or cfg.point or "CENTER",
+				anchorTarget = GF.GetGroupAnchorTargetValue(kind),
 				x = cfg.x or 0,
 				y = cfg.y or 0,
 				width = cfg.width or (DEFAULTS[kind] and DEFAULTS[kind].width) or 100,
@@ -26533,6 +26751,7 @@ function GF:EnsureEditMode()
 					end
 					return true
 				end,
+				relativeTo = function() return GF.ResolveGroupAnchorTargetFrame(kind, getCfg(kind) and getCfg(kind).relativeTo) end,
 				allowDrag = function() return anchorUsesUIParent(kind) end,
 				showOutsideEditMode = false,
 				showReset = false,

@@ -568,6 +568,18 @@ local function createLabelControls(category, expandable)
 		THICKOUTLINE = L["Thick Outline"] or "Thick Outline",
 		MONOCHROMEOUTLINE = L["Monochrome Outline"] or "Monochrome Outline",
 	}
+	local textAnchorOrder = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+	local textAnchorOptions = {
+		TOPLEFT = L["Top Left"] or "Top Left",
+		TOP = L["Top"] or "Top",
+		TOPRIGHT = L["Top Right"] or "Top Right",
+		LEFT = L["Left"] or "Left",
+		CENTER = L["Center"] or "Center",
+		RIGHT = L["Right"] or "Right",
+		BOTTOMLEFT = L["Bottom Left"] or "Bottom Left",
+		BOTTOM = L["Bottom"] or "Bottom",
+		BOTTOMRIGHT = L["Bottom Right"] or "Bottom Right",
+	}
 
 	local macroOverride
 	local hideMacro = addon.functions.SettingsCreateCheckbox(category, {
@@ -777,6 +789,59 @@ local function createLabelControls(category, expandable)
 		parentSection = expandable,
 	})
 
+	addon.functions.SettingsCreateDropdown(category, {
+		var = "actionBarHotkeyAnchor",
+		text = L["actionBarHotkeyAnchor"] or "Keybind anchor",
+		list = textAnchorOptions,
+		order = textAnchorOrder,
+		default = "TOPRIGHT",
+		get = function() return addon.db.actionBarHotkeyAnchor or "TOPRIGHT" end,
+		set = function(key)
+			addon.db.actionBarHotkeyAnchor = key
+			if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
+		end,
+		parent = true,
+		element = hotkeyOverride.element,
+		parentCheck = hotkeyParentCheck,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateSlider(category, {
+		var = "actionBarHotkeyOffsetX",
+		text = L["actionBarHotkeyOffsetX"] or "Keybind offset X",
+		min = -50,
+		max = 50,
+		step = 1,
+		default = -2,
+		get = function() return tonumber(addon.db.actionBarHotkeyOffsetX) or -2 end,
+		set = function(val)
+			addon.db.actionBarHotkeyOffsetX = math.floor(val + 0.5)
+			if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
+		end,
+		parent = true,
+		element = hotkeyOverride.element,
+		parentCheck = hotkeyParentCheck,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateSlider(category, {
+		var = "actionBarHotkeyOffsetY",
+		text = L["actionBarHotkeyOffsetY"] or "Keybind offset Y",
+		min = -50,
+		max = 50,
+		step = 1,
+		default = -3,
+		get = function() return tonumber(addon.db.actionBarHotkeyOffsetY) or -3 end,
+		set = function(val)
+			addon.db.actionBarHotkeyOffsetY = math.floor(val + 0.5)
+			if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
+		end,
+		parent = true,
+		element = hotkeyOverride.element,
+		parentCheck = hotkeyParentCheck,
+		parentSection = expandable,
+	})
+
 	local countOverride = addon.functions.SettingsCreateCheckbox(category, {
 		var = "actionBarCountFontOverride",
 		text = L["actionBarCountFontOverride"] or "Change charge/stack font",
@@ -864,6 +929,59 @@ local function createLabelControls(category, expandable)
 		element = countOverride.element,
 		parentCheck = countParentCheck,
 		colorizeLabel = false,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateDropdown(category, {
+		var = "actionBarCountAnchor",
+		text = L["actionBarCountAnchor"] or "Charge/stack anchor",
+		list = textAnchorOptions,
+		order = textAnchorOrder,
+		default = "BOTTOMRIGHT",
+		get = function() return addon.db.actionBarCountAnchor or "BOTTOMRIGHT" end,
+		set = function(key)
+			addon.db.actionBarCountAnchor = key
+			if ActionBarLabels and ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
+		end,
+		parent = true,
+		element = countOverride.element,
+		parentCheck = countParentCheck,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateSlider(category, {
+		var = "actionBarCountOffsetX",
+		text = L["actionBarCountOffsetX"] or "Charge/stack offset X",
+		min = -50,
+		max = 50,
+		step = 1,
+		default = -2,
+		get = function() return tonumber(addon.db.actionBarCountOffsetX) or -2 end,
+		set = function(val)
+			addon.db.actionBarCountOffsetX = math.floor(val + 0.5)
+			if ActionBarLabels and ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
+		end,
+		parent = true,
+		element = countOverride.element,
+		parentCheck = countParentCheck,
+		parentSection = expandable,
+	})
+
+	addon.functions.SettingsCreateSlider(category, {
+		var = "actionBarCountOffsetY",
+		text = L["actionBarCountOffsetY"] or "Charge/stack offset Y",
+		min = -50,
+		max = 50,
+		step = 1,
+		default = 2,
+		get = function() return tonumber(addon.db.actionBarCountOffsetY) or 2 end,
+		set = function(val)
+			addon.db.actionBarCountOffsetY = math.floor(val + 0.5)
+			if ActionBarLabels and ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
+		end,
+		parent = true,
+		element = countOverride.element,
+		parentCheck = countParentCheck,
 		parentSection = expandable,
 	})
 

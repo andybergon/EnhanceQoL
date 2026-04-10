@@ -1,5 +1,18 @@
 # Changelog
 
+## [10.2.0-beta3] - 2026-04-10
+
+### ✨ Added
+
+- Group Frames / Party & Raid: Added an `Anchor to` option in Edit Mode so party and raid frames can be attached to other supported UI elements instead of only the screen.
+- Action Bars: Added anchor and X/Y offset controls for `Charges/Stacks` and `Keybinds` when their text override settings are enabled.
+
+### 🐛 Fixed
+
+- Combat Resurrection Tracker / Bloodlust Tracker: Fixed anchored positions sometimes breaking after a fresh login and falling back to the top-left corner.
+
+---
+
 ## [10.2.0-beta2] - 2026-04-10
 
 ### 🐛 Fixed

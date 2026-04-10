@@ -584,6 +584,88 @@ local function GetActionButtonCount(button)
 	return nil
 end
 
+local VALID_TEXT_ANCHORS = {
+	TOPLEFT = true,
+	TOP = true,
+	TOPRIGHT = true,
+	LEFT = true,
+	CENTER = true,
+	RIGHT = true,
+	BOTTOMLEFT = true,
+	BOTTOM = true,
+	BOTTOMRIGHT = true,
+}
+
+local function NormalizeTextAnchor(anchor, fallback)
+	local value = type(anchor) == "string" and string.upper(anchor) or nil
+	if VALID_TEXT_ANCHORS[value] then return value end
+	return fallback
+end
+
+local function NormalizeTextOffset(value, fallback)
+	local number = tonumber(value)
+	if number == nil then number = fallback or 0 end
+	if number < -50 then
+		number = -50
+	elseif number > 50 then
+		number = 50
+	end
+	return math.floor(number + 0.5)
+end
+
+local function StoreRegionAnchorPoints(region, key)
+	if not region then return end
+	local numPoints = region.GetNumPoints and region:GetNumPoints() or 0
+	local points = {}
+	for index = 1, numPoints do
+		local point, relativeTo, relativePoint, xOfs, yOfs = region:GetPoint(index)
+		points[#points + 1] = {
+			point = point,
+			relativeTo = relativeTo,
+			relativePoint = relativePoint,
+			xOfs = xOfs,
+			yOfs = yOfs,
+		}
+	end
+	region[key] = points
+end
+
+local function RestoreRegionAnchorPoints(region, key)
+	if not region then return end
+	local points = region[key]
+	region:ClearAllPoints()
+	if type(points) == "table" and #points > 0 then
+		for _, info in ipairs(points) do
+			region:SetPoint(info.point, info.relativeTo, info.relativePoint, info.xOfs, info.yOfs)
+		end
+	end
+	region[key] = nil
+end
+
+local function GetActionButtonAnchorTarget(button)
+	if not button then return nil end
+	return button.icon or button.Icon or button
+end
+
+local function ApplyRegionPositionOverride(region, button, enabled, anchor, offsetX, offsetY, stateKey, originalKey)
+	if not (region and button) then return end
+	if enabled then
+		if not region[stateKey] then StoreRegionAnchorPoints(region, originalKey) end
+		local target = GetActionButtonAnchorTarget(button)
+		local point = NormalizeTextAnchor(anchor, "CENTER")
+		region:ClearAllPoints()
+		region:SetPoint(point, target, point, NormalizeTextOffset(offsetX, 0), NormalizeTextOffset(offsetY, 0))
+		region[stateKey] = true
+	else
+		if region[stateKey] then
+			RestoreRegionAnchorPoints(region, originalKey)
+			region[stateKey] = nil
+		else
+			StoreRegionAnchorPoints(region, originalKey)
+		end
+	end
+end
+
 local function NormalizeFontSize(size, minValue, maxValue)
 	local value = tonumber(size) or minValue
 	if value < minValue then value = minValue end
@@ -652,6 +734,17 @@ local function ApplyCountStyling(button)
 	if not addon.db then return end
 	local count = GetActionButtonCount(button)
 	if not count then return end
+	local positionOverride = addon.db.actionBarCountFontOverride == true
+	ApplyRegionPositionOverride(
+		count,
+		button,
+		positionOverride,
+		addon.db.actionBarCountAnchor,
+		addon.db.actionBarCountOffsetX,
+		addon.db.actionBarCountOffsetY,
+		"EQOL_UsingCountPositionOverride",
+		"EQOL_OriginalCountPoints"
+	)
 	local face = resolveFontFace(addon.db.actionBarCountFontFace)
 	local size = NormalizeFontSize(addon.db.actionBarCountFontSize, 6, 32)
 	local outline = addon.db.actionBarCountFontOutline or "OUTLINE"
@@ -823,6 +916,17 @@ local function ApplyHotkeyStyling(button, barNameOverride)
 	if not addon.db then return end
 	local hotkey = GetActionButtonHotkey(button)
 	if not hotkey then return end
+	local positionOverride = addon.db.actionBarHotkeyFontOverride == true
+	ApplyRegionPositionOverride(
+		hotkey,
+		button,
+		positionOverride,
+		addon.db.actionBarHotkeyAnchor,
+		addon.db.actionBarHotkeyOffsetX,
+		addon.db.actionBarHotkeyOffsetY,
+		"EQOL_UsingHotkeyPositionOverride",
+		"EQOL_OriginalHotkeyPoints"
+	)
 	local originalText = hotkey:GetText()
 	if hotkey.EQOL_ShortApplied and originalText ~= hotkey.EQOL_ShortValue then
 		hotkey.EQOL_ShortApplied = nil
