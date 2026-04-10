@@ -653,6 +653,12 @@ local function registerEditModeBars()
 					["Interface\\DialogFrame\\UI-DialogBox-Background"] = "Dialog Background",
 					["Interface\\Buttons\\WHITE8x8"] = "Solid (tintable)",
 				}
+				local statusbarNames, statusbarHash = getCachedLSMMedia("statusbar")
+				for i = 1, #statusbarNames do
+					local name = statusbarNames[i]
+					local path = statusbarHash[name]
+					if type(path) == "string" and path ~= "" then map[path] = tostring(name) end
+				end
 				local names, hash = getCachedLSMMedia("background")
 				for i = 1, #names do
 					local name = names[i]
