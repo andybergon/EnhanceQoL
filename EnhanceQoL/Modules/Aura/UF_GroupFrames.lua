@@ -376,9 +376,7 @@ function GF.GetBuffHelpfulFilter(ac)
 	return (AURA_FILTERS and AURA_FILTERS.helpful) or "HELPFUL|INCLUDE_NAME_PLATE_ONLY|RAID_IN_COMBAT|PLAYER"
 end
 
-local function defaultGroupDebuffSelection()
-	return { [GROUP_DEBUFF_FILTER_ALL] = true }
-end
+local function defaultGroupDebuffSelection() return { [GROUP_DEBUFF_FILTER_ALL] = true } end
 
 local function getGroupDebuffFilterSelection(typeCfg)
 	if type(typeCfg) ~= "table" then return nil end
@@ -431,15 +429,9 @@ local function getGroupDebuffMatchFilter(typeCfg)
 
 	local filters = {}
 	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_RAID) and AURA_FILTERS.harmfulRaid then filters[#filters + 1] = AURA_FILTERS.harmfulRaid end
-	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_RAID_IN_COMBAT) and AURA_FILTERS.harmfulRaidInCombat then
-		filters[#filters + 1] = AURA_FILTERS.harmfulRaidInCombat
-	end
-	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_CROWD_CONTROL) and AURA_FILTERS.harmfulCrowdControl then
-		filters[#filters + 1] = AURA_FILTERS.harmfulCrowdControl
-	end
-	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_IMPORTANT) and AURA_FILTERS.harmfulImportant then
-		filters[#filters + 1] = AURA_FILTERS.harmfulImportant
-	end
+	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_RAID_IN_COMBAT) and AURA_FILTERS.harmfulRaidInCombat then filters[#filters + 1] = AURA_FILTERS.harmfulRaidInCombat end
+	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_CROWD_CONTROL) and AURA_FILTERS.harmfulCrowdControl then filters[#filters + 1] = AURA_FILTERS.harmfulCrowdControl end
+	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_IMPORTANT) and AURA_FILTERS.harmfulImportant then filters[#filters + 1] = AURA_FILTERS.harmfulImportant end
 	if #filters == 0 then return nil end
 	return filters
 end
@@ -7064,10 +7056,6 @@ local function setAuraTooltipState(btn, style)
 	btn._tooltipUseEditMode = style.tooltipUseEditMode == true
 	btn._tooltipAnchor = style.tooltipAnchor or "ANCHOR_BOTTOMRIGHT"
 	if btn._showTooltip ~= show then btn._showTooltip = show end
-	if btn.SetMouseClickEnabled and btn._eqolAuraMouseClickEnabled ~= show then
-		btn:SetMouseClickEnabled(show)
-		btn._eqolAuraMouseClickEnabled = show
-	end
 	if btn.SetMouseMotionEnabled and btn._eqolAuraMouseMotionEnabled ~= show then
 		btn:SetMouseMotionEnabled(show)
 		btn._eqolAuraMouseMotionEnabled = show
@@ -7076,6 +7064,7 @@ local function setAuraTooltipState(btn, style)
 		if btn._eqolAuraMouseEnabled ~= show then
 			btn:EnableMouse(show)
 			btn._eqolAuraMouseEnabled = show
+			if btn.SetMouseClickEnabled then btn:SetMouseClickEnabled(false) end
 		end
 	end
 	if not show and GameTooltip and GameTooltip.IsOwned and GameTooltip.Hide and GameTooltip:IsOwned(btn) then GameTooltip:Hide() end
@@ -13979,13 +13968,12 @@ function GF._showGroupCopySettingsPopup(source, targetKind, editModeId)
 end
 
 GF._GROUP_ANCHOR_TARGET_ORDER = GF._GROUP_ANCHOR_TARGET_ORDER or { "party", "raid", "mt", "ma" }
-GF._GROUP_ANCHOR_TARGET_FRAMES = GF._GROUP_ANCHOR_TARGET_FRAMES
-	or {
-		party = "EQOLUFPartyAnchor",
-		raid = "EQOLUFRaidAnchor",
-		mt = "EQOLUFMTAnchor",
-		ma = "EQOLUFMAAnchor",
-	}
+GF._GROUP_ANCHOR_TARGET_FRAMES = GF._GROUP_ANCHOR_TARGET_FRAMES or {
+	party = "EQOLUFPartyAnchor",
+	raid = "EQOLUFRaidAnchor",
+	mt = "EQOLUFMTAnchor",
+	ma = "EQOLUFMAAnchor",
+}
 
 function GF.GetGroupAnchorFrameName(kind) return GF._GROUP_ANCHOR_TARGET_FRAMES[kind] end
 
@@ -14013,12 +14001,10 @@ end
 function GF.BuildGroupAnchorExtraEntries(ownerKind)
 	local entries = {}
 	for _, kind in ipairs(GF._GROUP_ANCHOR_TARGET_ORDER) do
-		if kind ~= ownerKind then
-			entries[#entries + 1] = {
-				key = GF.GetGroupAnchorFrameName(kind),
-				label = GF.GetGroupAnchorTargetLabel(GF.GetGroupAnchorFrameName(kind)),
-			}
-		end
+		if kind ~= ownerKind then entries[#entries + 1] = {
+			key = GF.GetGroupAnchorFrameName(kind),
+			label = GF.GetGroupAnchorTargetLabel(GF.GetGroupAnchorFrameName(kind)),
+		} end
 	end
 	return entries
 end
@@ -14037,12 +14023,10 @@ function GF.GetGroupAnchorTargetEntries(kind)
 		for i = 1, #sharedEntries do
 			local entry = sharedEntries[i]
 			local value = entry and entry.key
-			if value then
-				entries[#entries + 1] = {
-					value = value,
-					label = GF.GetGroupAnchorTargetLabel(value),
-				}
-			end
+			if value then entries[#entries + 1] = {
+				value = value,
+				label = GF.GetGroupAnchorTargetLabel(value),
+			} end
 		end
 		return entries
 	end
@@ -14150,9 +14134,7 @@ function GF.SetGroupAnchorPointFromCfg(frame, kind, cfg)
 	end
 end
 
-local function anchorUsesUIParent(kind)
-	return GF.GetGroupAnchorTargetValue(kind) == "UIParent"
-end
+local function anchorUsesUIParent(kind) return GF.GetGroupAnchorTargetValue(kind) == "UIParent" end
 
 function GF.ReadStatusIconField(kind, key, field, fallback)
 	local cfg = getCfg(kind)

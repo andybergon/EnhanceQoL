@@ -244,7 +244,7 @@ end
 
 local function getLeftClickHint()
 	if getLeftClickAction() == "openBags" then return L["goldPanelClickHintOpenBags"] or "Left-click to open bags" end
-	return L["Left-click to toggle warband/character gold"] or L["Left-click to toggle warband/character gold"] or "Left-click to toggle warband/character gold"
+	return L["Left-click to toggle warband/character gold"] or "Left-click to toggle warband/character gold"
 end
 
 local function toggleDisplayMode()

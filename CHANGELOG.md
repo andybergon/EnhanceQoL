@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.2.0-beta4] - 2026-04-11
+
+### 🐛 Fixed
+
+- Group Frames / Auras: Fixed buff and debuff tooltips blocking clicks on the underlying party and raid frames while aura tooltips are enabled.
+
+---
+
 ## [10.2.0-beta3] - 2026-04-10
 
 ### ✨ Added

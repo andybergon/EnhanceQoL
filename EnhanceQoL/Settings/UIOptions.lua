@@ -1156,7 +1156,7 @@ local function createCooldownViewerDropdowns(category, expandable)
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.MOUSEOVER, text = L["cooldownManagerShowMouseover"] or "On mouseover" },
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET,
-			text = L["When I have a target"] or L["When I have a target"] or "When I have a target",
+				text = L["When I have a target"] or "When I have a target",
 		},
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN,
@@ -1253,7 +1253,7 @@ local function createSpellActivationOverlayDropdown(category, expandable)
 		{ value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_CASTING, text = L["Player is casting"] or "Player is casting" },
 		{
 			value = COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET,
-			text = L["When I have a target"] or L["When I have a target"] or "When I have a target",
+				text = L["When I have a target"] or "When I have a target",
 		},
 	}
 
