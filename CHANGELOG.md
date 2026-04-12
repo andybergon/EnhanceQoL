@@ -9,6 +9,7 @@
 ### 🐛 Fixed
 
 - Combat Resurrection Tracker / Bloodlust Tracker: Fixed anchors to cooldown panels and cooldown viewers not always restoring correctly after login or reload.
+- Unit Frames / Status Text: Fixed `Group number font` on player and target frames using the regular status text font instead of its own dedicated font setting.
 
 ---
 

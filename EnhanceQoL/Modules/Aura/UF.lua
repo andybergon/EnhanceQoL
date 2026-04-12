@@ -7333,11 +7333,11 @@ local function updateStatus(cfg, unit)
 		if st.unitStatusText.SetMaxLines then st.unitStatusText:SetMaxLines(1) end
 	end
 	if st.unitGroupText then
-		local unitStatusFont = usCfg.font or scfg.font
-		local unitStatusFontOutline = usCfg.fontOutline or scfg.fontOutline
+		local groupFont = usCfg.groupFont or usCfg.font or scfg.font
+		local groupFontOutline = usCfg.groupFontOutline or usCfg.fontOutline or scfg.fontOutline
 		local groupFontSize = usCfg.groupFontSize or usCfg.fontSize or statusFontSize
 		local groupOff = usCfg.groupOffset or usDef.groupOffset or {}
-		UFHelper.applyFont(st.unitGroupText, unitStatusFont, groupFontSize, unitStatusFontOutline)
+		UFHelper.applyFont(st.unitGroupText, groupFont, groupFontSize, groupFontOutline)
 		st.unitGroupText:ClearAllPoints()
 		st.unitGroupText:SetPoint("CENTER", st.status, "CENTER", groupOff.x or 0, groupOff.y or 0)
 		if st.unitGroupText.SetJustifyH then st.unitGroupText:SetJustifyH("CENTER") end
