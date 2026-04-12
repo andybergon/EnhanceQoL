@@ -506,7 +506,7 @@ function Pixel.SetStatusBarValue(bar, value, smooth, forceImmediate)
 	local snappedValue, filledPixels, axisPixels, bypassSnap = Pixel.GetSnappedStatusBarValue(bar, value, minValue, maxValue)
 	if bypassSnap then
 		Pixel.ClearStatusBarValueCache(bar)
-		if smooth and not forceImmediate and Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut then
+		if smooth and Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut then
 			bar:SetValue(value, Enum.StatusBarInterpolation.ExponentialEaseOut)
 		else
 			bar:SetValue(value)
@@ -529,7 +529,7 @@ function Pixel.SetStatusBarValue(bar, value, smooth, forceImmediate)
 	bar._eqolPixelStatusBarAxisPixels = axisPixels
 	bar._eqolPixelStatusBarMin = minValue
 	bar._eqolPixelStatusBarMax = maxValue
-	if smooth and not forceImmediate and Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut then
+	if smooth and Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut then
 		bar:SetValue(snappedValue, Enum.StatusBarInterpolation.ExponentialEaseOut)
 	else
 		bar:SetValue(snappedValue)

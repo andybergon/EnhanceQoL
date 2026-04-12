@@ -11,6 +11,7 @@
 - Pet Frame was visible, even without pets when setting a visibility condition‚
 - Group Frames / Auras: Restored the previous layering so party and raid buffs or debuffs stay above role icons and raid markers again.
 - Group Frames / Party: Fixed switching UF profiles in Delves and similar party-instance content with `Show Player` enabled sometimes throwing Lua errors and stretching the party frame to full screen height.
+- Group Frames / Health: Fixed `Smooth fill` not animating party and raid health bars, so the setting works again instead of behaving the same in both states.
 
 ---
 
