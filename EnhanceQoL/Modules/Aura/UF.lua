@@ -4430,6 +4430,20 @@ local function applyVisibilityDriver(unit, enabled)
 	local forceClientSceneHide = enabled and not inEdit and hideInClientScene and UF._clientSceneActive == true
 	if UFHelper and UFHelper.applyClientSceneAlphaOverride then UFHelper.applyClientSceneAlphaOverride(st, forceClientSceneHide) end
 	if InCombatLockdown() then return end
+	if unit == UNIT.PET and _G.RegisterUnitWatch and _G.UnregisterUnitWatch then
+		local frame = st.frame
+		local registered = (_G.UnitWatchRegistered and _G.UnitWatchRegistered(frame)) or frame.EQOL_PetUnitWatchRegistered == true
+		local shouldWatch = enabled and not inEdit
+		if shouldWatch then
+			if not registered then
+				local ok = pcall(_G.RegisterUnitWatch, frame)
+				if ok then frame.EQOL_PetUnitWatchRegistered = true end
+			end
+		elseif registered then
+			pcall(_G.UnregisterUnitWatch, frame)
+			frame.EQOL_PetUnitWatchRegistered = nil
+		end
+	end
 	if not RegisterStateDriver then return end
 	local hideInVehicle = enabled and shouldHideInVehicle(cfg, def)
 	local hideInPetBattle = enabled and unit ~= UNIT.PLAYER and shouldHideInPetBattle(cfg, def)
