@@ -316,6 +316,10 @@ if type(defaults.trackRunesContent) ~= "table" then defaults.trackRunesContent =
 if defaults.trackWeaponBuffs == nil then defaults.trackWeaponBuffs = false end
 if defaults.trackWeaponBuffsInstanceOnly == nil then defaults.trackWeaponBuffsInstanceOnly = false end
 if type(defaults.trackWeaponBuffsContent) ~= "table" then defaults.trackWeaponBuffsContent = Reminder.CreateDefaultTrackingContentSelection() end
+if defaults.trackTrinkets == nil then defaults.trackTrinkets = false end
+if defaults.trackTrinketsInstanceOnly == nil then defaults.trackTrinketsInstanceOnly = false end
+if defaults.instanceOnly == nil then defaults.instanceOnly = false end
+if defaults.nearbyOnly == nil then defaults.nearbyOnly = false end
 if defaults.borderEnabled == nil then defaults.borderEnabled = false end
 if defaults.borderTexture == nil or defaults.borderTexture == "" then defaults.borderTexture = "DEFAULT" end
 if defaults.borderSize == nil then defaults.borderSize = 1 end
@@ -470,6 +474,15 @@ local DRUID_SYMBIOTIC_RELATIONSHIP_SELF_IDS = {
 
 local DRUID_SYMBIOTIC_RELATIONSHIP_KNOWN_IDS = {
 	474750,
+}
+
+-- Trinket items whose long-duration buff should be tracked as a class-buff-style reminder.
+-- itemId: equipped trinket item ID (slot 13 or 14)
+-- buffSpellId: the caster's buff spell ID (not the target buff)
+-- displaySpellId: icon to show in the reminder frame
+-- label: display name in the reminder
+local TRINKET_BUFF_ITEMS = {
+	{ itemId = 193718, buffSpellId = 389581, displaySpellId = 398396, label = "Coaching (Whistle)" },
 }
 
 local HOLY_PALADIN_BEACON_OF_LIGHT_IDS = {
@@ -679,6 +692,15 @@ local function isAIFollowerUnit(unit)
 	if not UnitInPartyIsAI then return false end
 	local isAI = UnitInPartyIsAI(unit)
 	return isAI == true
+end
+
+Reminder.isUnitInBuffRange = function(spellId, unit)
+	local fn = C_Spell and C_Spell.IsSpellInRange
+	if fn and spellId and unit then
+		local inRange = fn(spellId, unit)
+		if inRange ~= nil then return inRange == true end
+	end
+	return not UnitIsVisible or UnitIsVisible(unit)
 end
 
 local function isUnitHealerRole(unit)
@@ -1335,6 +1357,69 @@ function Reminder:CanEvaluateWeaponBuffReminderNow()
 	return true
 end
 
+function Reminder:IsTrinketTrackingEnabled()
+	return getValue("classBuffReminderTrackTrinkets", defaults.trackTrinkets) == true
+end
+
+function Reminder:CanCheckTrinketReminder()
+	if not self:IsTrinketTrackingEnabled() then return false end
+	if getValue("classBuffReminderTrackTrinketsInstanceOnly", defaults.trackTrinketsInstanceOnly) == true then
+		if not self:IsDungeonOrRaidInstance() then return false end
+	end
+	return true
+end
+
+function Reminder:HasRealPlayerInGroup()
+	local units = self:GetRosterUnits()
+	for i = 1, #units do
+		local unit = units[i]
+		if not isPlayerUnit(unit) and not isAIFollowerUnit(unit) and UnitExists(unit) and UnitIsConnected(unit) then return true end
+	end
+	return false
+end
+
+function Reminder:IsLongBuffTrinketWithActiveBuff(itemId)
+	if not itemId then return false end
+	for _, entry in ipairs(TRINKET_BUFF_ITEMS) do
+		if entry.itemId == itemId then
+			if self.combatActive or (C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive()) then
+				return true
+			end
+			return self:UnitHasAnyAuraSpellId("player", { entry.buffSpellId })
+		end
+	end
+	return false
+end
+
+function Reminder:GetTrinketMissingEntries()
+	if not self:CanCheckTrinketReminder() then return nil end
+	if self.combatActive then return nil end
+	if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive() then return nil end
+	if not self:HasRealPlayerInGroup() then return nil end
+
+	local entries = {}
+	for slot = 13, 14 do
+		local itemId = GetInventoryItemID and GetInventoryItemID("player", slot)
+		if itemId then
+			for _, trinket in ipairs(TRINKET_BUFF_ITEMS) do
+				if trinket.itemId == itemId then
+					if not self:UnitHasAnyAuraSpellId("player", { trinket.buffSpellId }) then
+						local displaySpellId = normalizeSpellId(trinket.displaySpellId) or normalizeSpellId(trinket.buffSpellId)
+						entries[#entries + 1] = makeSelfMissingEntry(displaySpellId, trinket.label, nil, nil, "TRINKET")
+					end
+					break
+				end
+			end
+		end
+	end
+	if #entries <= 0 then return nil end
+	return entries
+end
+
+function Reminder:IsNearbyOnlyEnabled()
+	return getValue("classBuffReminderNearbyOnly", defaults.nearbyOnly) == true
+end
+
 function Reminder:CanEvaluateFlaskReminderNow()
 	if not self:CanCheckFlaskReminder() then return false end
 	return true
@@ -1350,6 +1435,7 @@ function Reminder:IsOnlyOutOfCombatEnabled() return getValue(DB_ONLY_OUT_OF_COMB
 
 function Reminder:IsRuntimeEvaluationBlockedByCombat()
 	if self:IsOnlyOutOfCombatEnabled() ~= true then return false end
+	if self.combatActive then return true end
 	if not InCombatLockdown then return false end
 	return InCombatLockdown() and true or false
 end
@@ -2006,6 +2092,12 @@ function Reminder:GetSupplementalMissingEntries(evalContext)
 	if self:CanEvaluateWeaponBuffReminderNow() then
 		local weaponBuffEntry = self:GetWeaponBuffMissingEntry(context)
 		if weaponBuffEntry then entries[#entries + 1] = weaponBuffEntry end
+	end
+	if self:CanCheckTrinketReminder() then
+		local trinketEntries = self:GetTrinketMissingEntries()
+		if trinketEntries then
+			for _, e in ipairs(trinketEntries) do entries[#entries + 1] = e end
+		end
 	end
 	if #entries <= 0 then return nil end
 	return entries
@@ -3842,6 +3934,10 @@ function Reminder:GetGroupBuffUnitMissingStatus(cache, unit)
 	if type(cache) ~= "table" then return GROUP_UNIT_STATUS_INELIGIBLE end
 	if isAIFollowerUnit(unit) and cache.includeAIFollowers ~= true then return GROUP_UNIT_STATUS_INELIGIBLE end
 	if not (UnitExists and UnitExists(unit) and UnitIsConnected and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit)) then return GROUP_UNIT_STATUS_INELIGIBLE end
+	if self:IsNearbyOnlyEnabled() then
+		local rangeSpellId = cache.spellIds and cache.spellIds[1]
+		if not Reminder.isUnitInBuffRange(rangeSpellId, unit) then return GROUP_UNIT_STATUS_INELIGIBLE end
+	end
 
 	local state = self:PrepareGroupBuffUnitState(cache, unit)
 	if not state then return GROUP_UNIT_STATUS_INELIGIBLE end
@@ -4622,32 +4718,42 @@ function Reminder:CollectOtherHealerUnits(target, includeAIFollowers)
 	return target
 end
 
-function Reminder:CollectEligibleUnits(target, includeAIFollowers)
+function Reminder:CollectEligibleUnits(target, rangeSpellId, includeAIFollowers)
+	if type(rangeSpellId) == "boolean" then includeAIFollowers = rangeSpellId; rangeSpellId = nil end
 	if not target then target = {} end
 	for i = #target, 1, -1 do
 		target[i] = nil
 	end
 
+	local nearbyOnly = self:IsNearbyOnlyEnabled()
 	local units = self:GetRosterUnits()
 	for i = 1, #units do
 		local unit = units[i]
-		if (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then target[#target + 1] = unit end
+		if (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
+			if not nearbyOnly or Reminder.isUnitInBuffRange(rangeSpellId, unit) then
+				target[#target + 1] = unit
+			end
+		end
 	end
 
 	return target
 end
 
-function Reminder:CollectOtherEligibleUnits(target, includeAIFollowers)
+function Reminder:CollectOtherEligibleUnits(target, rangeSpellId, includeAIFollowers)
+	if type(rangeSpellId) == "boolean" then includeAIFollowers = rangeSpellId; rangeSpellId = nil end
 	if not target then target = {} end
 	for i = #target, 1, -1 do
 		target[i] = nil
 	end
 
+	local nearbyOnly = self:IsNearbyOnlyEnabled()
 	local units = self:GetRosterUnits()
 	for i = 1, #units do
 		local unit = units[i]
 		if not isPlayerUnit(unit) and (includeAIFollowers == true or not isAIFollowerUnit(unit)) and UnitExists(unit) and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-			target[#target + 1] = unit
+			if not nearbyOnly or Reminder.isUnitInBuffRange(rangeSpellId, unit) then
+				target[#target + 1] = unit
+			end
 		end
 	end
 
@@ -4685,6 +4791,9 @@ function Reminder:ComputeMissing(provider)
 end
 
 function Reminder:IsGroupModeAllowed()
+	if getValue("classBuffReminderInstanceOnly", defaults.instanceOnly) == true then
+		if not self:IsDungeonOrRaidInstance() then return false end
+	end
 	local context = self:GetGroupContext()
 	if context == GROUP_CONTEXT_RAID then return getValue(DB_SHOW_RAID, defaults.showRaid) == true end
 	if context == GROUP_CONTEXT_PARTY then return getValue(DB_SHOW_PARTY, defaults.showParty) == true end
@@ -4695,7 +4804,7 @@ function Reminder:ShouldRegisterRuntimeEvents()
 	if getValue(DB_ENABLED, defaults.enabled) ~= true then return false end
 	if self.runtimeProviderValid ~= true then self:RefreshProviderCache(false) end
 	if self.hasProviderCached == true then return true end
-	return self:IsFlaskTrackingEnabled() or self:IsFoodTrackingEnabled() or self:IsWeaponBuffTrackingEnabled()
+	return self:IsFlaskTrackingEnabled() or self:IsFoodTrackingEnabled() or self:IsWeaponBuffTrackingEnabled() or self:IsTrinketTrackingEnabled()
 end
 
 function Reminder:Render(provider, missing, total, supplementalEntries, effectiveMissing)
@@ -4890,6 +4999,8 @@ function Reminder:UpdateDisplay()
 			provider = self:GetRuneOnlyProvider() or provider
 		elseif primarySupplementalEntry.sourceKind == "WEAPON_BUFF" then
 			provider = self:GetWeaponBuffOnlyProvider() or provider
+		elseif primarySupplementalEntry.sourceKind == "TRINKET" then
+			provider = self:GetWeaponBuffOnlyProvider() or provider
 		end
 		if provider then
 			provider.displaySpellId = normalizeSpellId(primarySupplementalEntry.spellId) or provider.displaySpellId
@@ -4941,7 +5052,8 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	if not self:ShouldRegisterRuntimeEvents() then return end
 
 	if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
-		self.consumableTrackingBlockedByCombat = InCombatLockdown and InCombatLockdown() == true or false
+		self.combatActive = InCombatLockdown and InCombatLockdown() == true or false
+		self.consumableTrackingBlockedByCombat = self.combatActive
 		self:ScheduleInitialSoundSync()
 		self:InvalidateProviderAvailabilityCache()
 		self:InvalidateRosterCache()
@@ -4985,6 +5097,7 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 	end
 
 	if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+		self.combatActive = (event == "PLAYER_REGEN_DISABLED")
 		self.consumableTrackingBlockedByCombat = (event == "PLAYER_REGEN_DISABLED")
 		if self:IsOnlyOutOfCombatEnabled() == true then self:MarkAuraStatesDirty() end
 		self:RequestUpdate(true)
@@ -5357,6 +5470,22 @@ function editModeSettingsBuilders.buildFilters()
 			set = function(_, value) editModeSetBool(DB_ONLY_OUT_OF_COMBAT, value) end,
 		},
 		{
+			name = L["Only in dungeons/raids"] or "Only in dungeons/raids",
+			kind = SettingType.Checkbox,
+			parentId = "filters",
+			default = defaults.instanceOnly == true,
+			get = function() return getValue("classBuffReminderInstanceOnly", defaults.instanceOnly) == true end,
+			set = function(_, value) editModeSetBool("classBuffReminderInstanceOnly", value) end,
+		},
+		{
+			name = L["ClassBuffReminderNearbyOnly"] or "Only count nearby group members",
+			kind = SettingType.Checkbox,
+			parentId = "filters",
+			default = defaults.nearbyOnly == true,
+			get = function() return getValue("classBuffReminderNearbyOnly", defaults.nearbyOnly) == true end,
+			set = function(_, value) editModeSetBool("classBuffReminderNearbyOnly", value) end,
+		},
+		{
 			name = L["ClassBuffReminderRoleFilterEnabled"] or "Enable role responsibility filter",
 			kind = SettingType.Checkbox,
 			parentId = "filters",
@@ -5560,6 +5689,29 @@ function editModeSettingsBuilders.buildConsumables()
 			customDefaultText = _G.NONE or "None",
 			hideSummary = true,
 			isShown = function() return getValue(DB_TRACK_WEAPON_BUFFS, defaults.trackWeaponBuffs) == true end,
+		},
+		{
+			name = L["ClassBuffReminderSectionTrinkets"] or "Trinket Buffs",
+			kind = SettingType.Collapsible,
+			id = "trinkets",
+			defaultCollapsed = true,
+		},
+		{
+			name = L["ClassBuffReminderTrackTrinkets"] or "Track trinket buffs",
+			kind = SettingType.Checkbox,
+			parentId = "trinkets",
+			default = defaults.trackTrinkets == true,
+			get = function() return getValue("classBuffReminderTrackTrinkets", defaults.trackTrinkets) == true end,
+			set = function(_, value) editModeSetBool("classBuffReminderTrackTrinkets", value) end,
+		},
+		{
+			name = L["ClassBuffReminderTrackTrinketsInstanceOnly"] or "Only in dungeons/raids",
+			kind = SettingType.Checkbox,
+			parentId = "trinkets",
+			default = defaults.trackTrinketsInstanceOnly == true,
+			get = function() return getValue("classBuffReminderTrackTrinketsInstanceOnly", defaults.trackTrinketsInstanceOnly) == true end,
+			set = function(_, value) editModeSetBool("classBuffReminderTrackTrinketsInstanceOnly", value) end,
+			isShown = function() return getValue("classBuffReminderTrackTrinkets", defaults.trackTrinkets) == true end,
 		},
 	}
 end

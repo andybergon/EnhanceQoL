@@ -15310,6 +15310,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				emptyItem = showWhenEmpty and not ownsItem
 				if (ownsItem or showWhenEmpty) and itemHasUseSpell(resolvedItemId) then
 					canTriggerReadyGlow = ownsItem == true
+					if canTriggerReadyGlow and addon.ClassBuffReminder and addon.ClassBuffReminder.IsLongBuffTrinketWithActiveBuff then
+						if addon.ClassBuffReminder:IsLongBuffTrinketWithActiveBuff(resolvedItemId) then canTriggerReadyGlow = false end
+					end
 					if trackCooldown and ownsItem then
 						cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(resolvedItemId)
 						if CooldownPanels:IsItemCooldownOnGCD(resolvedItemId, cooldownStart, cooldownDuration) then
@@ -15326,6 +15329,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				if itemId then
 					if itemHasUseSpell(itemId) then
 						canTriggerReadyGlow = true
+						if canTriggerReadyGlow and addon.ClassBuffReminder and addon.ClassBuffReminder.IsLongBuffTrinketWithActiveBuff then
+							if addon.ClassBuffReminder:IsLongBuffTrinketWithActiveBuff(itemId) then canTriggerReadyGlow = false end
+						end
 						if trackCooldown then
 							cooldownStart, cooldownDuration, cooldownEnabled = getItemCooldownInfo(itemId, resolvedSlotId)
 							if CooldownPanels:IsItemCooldownOnGCD(itemId, cooldownStart, cooldownDuration) then

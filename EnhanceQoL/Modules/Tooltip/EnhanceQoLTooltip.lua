@@ -1306,6 +1306,18 @@ local function registerTooltipHooks()
 		end
 	end
 
+	-- Same pattern for UIWidgetTemplateHorizontalCurrenciesMixin:Setup.
+	-- currencyFrame:GetHeight() returns a secret number in tainted AreaPOI tooltip contexts,
+	-- causing the currencyHeight comparison at line 42 to error.
+	if UIWidgetTemplateHorizontalCurrenciesMixin and UIWidgetTemplateHorizontalCurrenciesMixin.Setup then
+		local origCurrencySetup = UIWidgetTemplateHorizontalCurrenciesMixin.Setup
+		UIWidgetTemplateHorizontalCurrenciesMixin.Setup = function(self, ...)
+			local ok, err = pcall(origCurrencySetup, self, ...)
+			if not ok and type(err) == "string" and err:find("secret") then return end
+			if not ok then error(err, 0) end
+		end
+	end
+
 	-- Apply initial tooltip scale once the UI is ready
 	C_Timer.After(0, function()
 		if addon.Tooltip and addon.Tooltip.ApplyScale then addon.Tooltip.ApplyScale() end
