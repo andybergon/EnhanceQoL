@@ -7067,11 +7067,12 @@ end
 
 function AuraUtil.syncAuraButtonLayer(btn, container, ac)
 	if not (btn and container) then return end
-	local parent = container._eqolAuraLayerParent or (container.GetParent and container:GetParent()) or container
+	local explicitParent = container._eqolAuraLayerParent
+	local parent = explicitParent or container
 	local targetStrata = normalizeStrataToken(ac and ac.strata)
 	if not targetStrata and parent.GetFrameStrata then targetStrata = parent:GetFrameStrata() end
 	local levelOffset = tonumber(ac and ac.frameLevelOffset)
-	if levelOffset == nil then levelOffset = 5 end
+	if levelOffset == nil then levelOffset = explicitParent and 5 or 1 end
 	local targetLevel = levelOffset
 	if parent.GetFrameLevel then targetLevel = (parent:GetFrameLevel() or 0) + levelOffset end
 	if targetLevel < 0 then targetLevel = 0 end

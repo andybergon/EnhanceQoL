@@ -5,6 +5,7 @@
 ### 🐛 Fixed
 
 - Pet Frame was visible, even without pets when setting a visibility condition‚
+- Group Frames / Auras: Restored the previous layering so party and raid buffs or debuffs stay above role icons and raid markers again.
 
 ---
 
