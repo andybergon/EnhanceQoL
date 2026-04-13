@@ -115,10 +115,11 @@ function CooldownPanels:RegisterItemRankGroup(rankList)
 	return true
 end
 
-function CooldownPanels:RegisterSpellVariantGroup(variantList)
+function CooldownPanels:RegisterSpellVariantGroup(variantList, options)
 	if type(variantList) ~= "table" then return false end
 	local ids = {}
 	local seen = {}
+	local mapBaseSpellIDs = type(options) == "table" and options.mapBaseSpellIDs == true
 	for i = 1, #variantList do
 		local spellID = tonumber(variantList[i])
 		if spellID and spellID > 0 and not seen[spellID] then
@@ -135,7 +136,7 @@ function CooldownPanels:RegisterSpellVariantGroup(variantList)
 	for i = 1, #ids do
 		local spellID = ids[i]
 		groupMap[spellID] = ids
-		if Api.GetBaseSpell then
+		if mapBaseSpellIDs and Api.GetBaseSpell then
 			local baseSpellID = Api.GetBaseSpell(spellID)
 			if type(baseSpellID) == "number" and baseSpellID > 0 then groupMap[baseSpellID] = ids end
 		end
@@ -529,7 +530,7 @@ function CooldownPanels:EnsureStaticSpellVariantGroupsLoaded()
 	if self.runtime.staticSpellVariantGroupsLoaded == true then return end
 	local groups = self.staticSpellVariantGroups
 	for i = 1, #(groups or {}) do
-		self:RegisterSpellVariantGroup(groups[i])
+		self:RegisterSpellVariantGroup(groups[i], { mapBaseSpellIDs = true })
 	end
 	self.runtime.staticSpellVariantGroupsLoaded = true
 end
@@ -566,10 +567,9 @@ function cdp.RUNTIME.EnsureTalentChoiceSpellVariantGroupsLoaded(owner)
 						if definitionID then
 							local definitionInfo = Api.GetTraitDefinitionInfo and Api.GetTraitDefinitionInfo(definitionID) or nil
 							local spellID = definitionInfo and tonumber(definitionInfo.spellID) or nil
-							local baseSpellID = spellID and (getBaseSpellId(spellID) or spellID) or nil
-							if baseSpellID and baseSpellID > 0 and not seenSpellIDs[baseSpellID] then
-								seenSpellIDs[baseSpellID] = true
-								spellIDs[#spellIDs + 1] = baseSpellID
+							if spellID and spellID > 0 and not seenSpellIDs[spellID] then
+								seenSpellIDs[spellID] = true
+								spellIDs[#spellIDs + 1] = spellID
 							end
 						end
 					end
@@ -584,7 +584,7 @@ function cdp.RUNTIME.ResolveTrackedSpellID(owner, spellId)
 	local numericID = tonumber(spellId)
 	if not numericID then return nil, nil, nil end
 	local storedBaseSpellID = getBaseSpellId(numericID) or numericID
-	local resolvedSpellID = owner:ResolveKnownSpellVariantID(storedBaseSpellID) or storedBaseSpellID
+	local resolvedSpellID = owner:ResolveKnownSpellVariantID(numericID) or storedBaseSpellID
 	local effectiveSpellID = getEffectiveSpellId(resolvedSpellID) or resolvedSpellID
 	return effectiveSpellID, resolvedSpellID, storedBaseSpellID
 end
@@ -3506,8 +3506,7 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 	if typeKey == "SPELL" or typeKey == "ITEM" or typeKey == "SLOT" then
 		if not numericValue then return nil end
 		if typeKey == "SPELL" then
-			numericValue = getBaseSpellId(numericValue) or numericValue
-			numericValue = self:ResolveKnownSpellVariantID(numericValue) or numericValue
+			numericValue = self:ResolveKnownSpellVariantID(numericValue) or getBaseSpellId(numericValue) or numericValue
 		elseif typeKey == "ITEM" then
 			local canonicalItemID, wasHigherRank = self:GetCanonicalItemRankID(numericValue)
 			numericValue = canonicalItemID
@@ -4148,7 +4147,9 @@ function CooldownPanels:NormalizeAll()
 		for entryId, entry in pairs(panel.entries) do
 			if entry and entry.id == nil then entry.id = entryId end
 			Helper.NormalizeEntry(entry, root.defaults)
-			if entry and entry.type == "SPELL" and entry.spellID then entry.spellID = self:ResolveKnownSpellVariantID(entry.spellID) or entry.spellID end
+			if entry and entry.type == "SPELL" and entry.spellID then
+				entry.spellID = self:ResolveKnownSpellVariantID(entry.spellID) or getBaseSpellId(entry.spellID) or entry.spellID
+			end
 			if entry and entry.type == "ITEM" then
 				local canonicalItemID, wasHigherRank = self:GetCanonicalItemRankID(entry.itemID)
 				if canonicalItemID then entry.itemID = canonicalItemID end
@@ -4213,7 +4214,7 @@ function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
 			showErrorMessage(L["CooldownPanelSpellInvalid"] or "Spell does not exist.")
 			return nil
 		end
-		baseValue = self:ResolveKnownSpellVariantID(baseValue) or baseValue
+		baseValue = self:ResolveKnownSpellVariantID(numericValue) or baseValue
 	end
 	if typeKey == "STANCE" then
 		local stanceDef = CooldownPanels.GetStanceDefinition and CooldownPanels:GetStanceDefinition(idValue) or nil
@@ -8394,7 +8395,7 @@ local function importCooldownManagerSpells(panelId, sourceKind)
 			stats.invalid = stats.invalid + 1
 			return
 		end
-		local resolvedSpellId = CooldownPanels:ResolveKnownSpellVariantID(baseSpellId) or baseSpellId
+		local resolvedSpellId = CooldownPanels:ResolveKnownSpellVariantID(spellId) or baseSpellId
 		local canonicalSpellID = CooldownPanels:GetCanonicalSpellVariantID(resolvedSpellId) or resolvedSpellId
 		if existingBySpellId[canonicalSpellID] then
 			stats.duplicates = stats.duplicates + 1
@@ -12399,7 +12400,7 @@ local function ensureEditor()
 				CooldownPanels:RefreshEditor()
 				return
 			end
-			newValue = CooldownPanels:ResolveKnownSpellVariantID(baseValue) or baseValue
+			newValue = CooldownPanels:ResolveKnownSpellVariantID(value) or baseValue
 		elseif entry.type == "ITEM" then
 			local canonicalItemID, wasHigherRank = CooldownPanels:GetCanonicalItemRankID(newValue)
 			if canonicalItemID then newValue = canonicalItemID end
@@ -16708,7 +16709,7 @@ function CooldownPanels:HideAllRuntimePanels()
 					runtime.visiblePowerSpells[i] = nil
 				end
 			end
-			if runtime.frame then runtime.frame:Hide() end
+			if runtime.frame then self:UpdateVisibility(panelId) end
 		end
 	end
 end
