@@ -573,6 +573,13 @@ addon.Sounds.soundFiles = {
 			4575221, -- Fury of the Aspects
 		},
 	},
+	["trinkets"] = {
+		["soundMuteGazeOfTheAlnseer"] = {
+			2144789, -- Gaze of the Alnseer (Item 249343)
+			2144790, -- Gaze of the Alnseer (Item 249343)
+			2144791, -- Gaze of the Alnseer (Item 249343)
+		},
+	},
 	["emotes"] = {
 		["train"] = {
 			--Orc --

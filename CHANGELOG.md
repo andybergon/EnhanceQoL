@@ -1,77 +1,36 @@
 # Changelog
 
-## [10.2.0-beta5] - 2026-04-13
-
-### ✨ Added
-
-- Data Panels / Coordinates: Added a precision setting for the coordinates stream, so displayed coordinates can use `0`, `1`, or `2` decimal places.
-- Map Navigation / Instance Difficulty: Added an `Anchor` setting for the Minimap difficulty text, so it can align to Minimap points like `TOPLEFT`, `TOP`, or `TOPRIGHT` and be adjusted with `x/y` offsets while staying inside the frame more easily.
-- UI / Interface: Added a `Custom` UI-scale option with a numeric input, so any value between `0.1` and `2` can be entered instead of only using fixed presets.
-
-### 🐛 Fixed
-
-- Pet Frame was visible, even without pets when setting a visibility condition‚
-- Group Frames / Auras: Restored the previous layering so party and raid buffs or debuffs stay above role icons and raid markers again.
-- Group Frames / Party: Fixed switching UF profiles in Delves and similar party-instance content with `Show Player` enabled sometimes throwing Lua errors and stretching the party frame to full screen height.
-- Group Frames / Health: Fixed `Smooth fill` not animating party and raid health bars, so the setting works again instead of behaving the same in both states.
-- Unit Frames / Cast Bar: Restored the previous cast-icon border rendering so non-`SOLID` SharedMedia borders no longer appear fragmented.
-
----
-
-## [10.2.0-beta4] - 2026-04-12
-
-### ✨ Added
-
-- UI / Bars & Resources: Added `Frame strata` and `Frame level offset` settings for resource bars, with the same layering applied consistently to borders, absorb overlays, and segmented resource elements.
-- Unit Frames / Cooldown Viewer Anchoring: Player, party, and raid frames can now be anchored directly to the original Blizzard Cooldown Manager viewers, including `EssentialCooldownViewer`, `UtilityCooldownViewer`, and `BuffIconCooldownViewer`.
-
-### 🐛 Fixed
-
-- Group Frames / Auras: Fixed buff and debuff tooltips blocking clicks on the underlying party and raid frames while aura tooltips are enabled.
-- Group Frames / Healer Buffs: Added the missing `Ebon Might` aura ID `395296` so the buff is tracked correctly.
-- Unit Frames / Visibility: Fixed `Show when Skyriding` and `Show when Flying` sometimes keeping unit frames visible while dead or flying as a ghost.
-- Combat Resurrection Tracker / Bloodlust Tracker: Fixed anchors to cooldown panels and cooldown viewers not always restoring correctly after login or reload.
-- Unit Frames / Status Text: Fixed `Group number font` on player and target frames using the regular status text font instead of its own dedicated font setting.
-
----
-
-## [10.2.0-beta3] - 2026-04-10
-
-### ✨ Added
-
-- Group Frames / Party & Raid: Added an `Anchor to` option in Edit Mode so party and raid frames can be attached to other supported UI elements instead of only the screen.
-- Unit Frames / Player Highlight: Added a separate `Highlight in combat` toggle with its own combat highlight color.
-- Action Bars: Added anchor and X/Y offset controls for `Charges/Stacks` and `Keybinds` when their text override settings are enabled.
-
-### 🐛 Fixed
-
-- Combat Resurrection Tracker / Bloodlust Tracker: Fixed anchored positions sometimes breaking after a fresh login and falling back to the top-left corner.
-- Health Macro: Added `Refreshing Serum` to the combat potion pool so the macro can use it on the shared combat potion cooldown.
-
----
-
-## [10.2.0-beta2] - 2026-04-10
-
-### 🐛 Fixed
-
-- Focus Interrupt Tracker: Fixed missing entries from `10.2.0-beta1` for Warlock interrupts so `Spell Lock` and `Axe Toss` are tracked correctly.
-- Group Frames: Reduced pixel-snapping jitter on party frame text, including player names and centered health or level text.
-- Group Frames: Fixed debuff sub-filters hiding too many harmful auras by applying the selected filters before limiting the displayed debuff icons.
-
----
-
-## [10.2.0-beta1] - 2026-04-09
+## [10.2.0] - 2026-04-13
 
 ### ✨ Added
 
 - Edit Mode / Anchoring: Combat Resurrection Tracker, Bloodlust Tracker, Standalone Private Auras, Combat Text, and Total Absorb Tracker can now be anchored to the same supported UI elements as Cooldown Panels.
+- Group Frames / Party & Raid: Added an `Anchor to` option in Edit Mode so party and raid frames can be attached to other supported UI elements instead of only the screen.
+- Unit Frames / Cooldown Viewer Anchoring: Player, party, and raid frames can now be anchored directly to the original Blizzard Cooldown Manager viewers, including `EssentialCooldownViewer`, `UtilityCooldownViewer`, and `BuffIconCooldownViewer`.
+- UI / Bars & Resources: Added `Frame strata` and `Frame level offset` settings for resource bars, with the same layering applied consistently to borders, absorb overlays, and segmented resource elements.
+- Unit Frames / Player Highlight: Added a separate `Highlight in combat` toggle with its own combat highlight color.
+- Action Bars: Added anchor and X/Y offset controls for `Charges/Stacks` and `Keybinds` when their text override settings are enabled.
+- Data Panels / Coordinates: Added a precision setting for the coordinates stream, so displayed coordinates can use `0`, `1`, or `2` decimal places.
+- Map Navigation / Instance Difficulty: Added an `Anchor` setting for the Minimap difficulty text, so it can align to Minimap points like `TOPLEFT`, `TOP`, or `TOPRIGHT` and be adjusted with `x/y` offsets.
+- UI / Interface: Added a `Custom` UI-scale option with a numeric input, so any value between `0.1` and `2` can be entered instead of only using fixed presets.
+- Health Macro: Added `Refreshing Serum` to the combat potion pool so the macro can use it on the shared combat potion cooldown.
+- Sound: Added a mute toggle for the `Gaze of the Alnseer` trinket under `Trinkets`.
 
 ### 🐛 Fixed
 
-- Edit Mode / Anchoring: Improved anchor handling for those trackers so anchored layouts stay attached more reliably and avoid problematic anchor loops.
-- Group Frames / Party: Increased the party frame spacing limit from `40` to `100`.
-- Group Frames / Auras: Fixed buff and debuff stack counts sometimes rendering behind custom aura borders.
-- Unit Frames / Cast Bar: Fixed cast icon borders sometimes triggering a `Backdrop.lua` secret-number taint error.
+- Group Frames / Party & Raid: Fixed `Frame texture` selections using `Use health/power textures` resetting to `SOLID` after reload.
+- Pet Frame: Fixed the pet frame sometimes staying visible even without an active pet when a visibility condition was configured.
+- Group Frames / Auras: Fixed aura stack counts rendering behind custom aura borders, aura tooltips blocking clicks on party and raid frames, and debuff sub-filters hiding too many harmful auras.
+- Group Frames / Auras: Restored the previous layering so party and raid buffs and debuffs stay above role icons and raid markers again.
+- Group Frames: Reduced pixel-snapping jitter on party frame text, including player names and centered health or level text.
+- Group Frames / Party: Fixed switching UF profiles in Delves and similar party-instance content with `Show Player` enabled sometimes throwing Lua errors and stretching the party frame to full screen height.
+- Group Frames / Health: Fixed `Smooth fill` not animating party and raid health bars, so the setting works again instead of behaving the same in both states.
+- Group Frames / Healer Buffs: Added the missing `Ebon Might` aura ID `395296` so the buff is tracked correctly.
+- Unit Frames / Cast Bar: Fixed cast icon borders sometimes triggering a `Backdrop.lua` secret-number taint error and restored proper rendering for non-`SOLID` SharedMedia borders.
+- Unit Frames / Visibility: Fixed `Show when Skyriding` and `Show when Flying` sometimes keeping unit frames visible while dead or flying as a ghost.
+- Unit Frames / Status Text: Fixed `Group number font` on player and target frames using the regular status text font instead of its own dedicated font setting.
+- Combat Resurrection Tracker / Bloodlust Tracker: Fixed anchored positions and anchor restoration after login or reload so the frames no longer fall back to the top-left corner.
+- Focus Interrupt Tracker: Fixed missing Warlock interrupt entries so `Spell Lock` and `Axe Toss` are tracked correctly.
 - Cooldown Panels: Fixed some spells occasionally showing a global cooldown swipe or timer when they should not.
 
 ---

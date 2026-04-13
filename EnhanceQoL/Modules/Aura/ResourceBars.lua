@@ -2880,6 +2880,18 @@ mapFormID("CAT", DRUID_CAT_FORM)
 mapFormID("TRAVEL", DRUID_TRAVEL_FORM, DRUID_ACQUATIC_FORM, DRUID_FLIGHT_FORM, DRUID_SWIFT_FLIGHT_FORM)
 mapFormID("MOONKIN", DRUID_MOONKIN_FORM_1, DRUID_MOONKIN_FORM_2)
 mapFormID("HUMANOID", DRUID_TREE_FORM)
+local formSpellIDToKey = {
+	[768] = "CAT", -- Cat Form
+	[5487] = "BEAR", -- Bear Form
+	[783] = "TRAVEL", -- Travel Form
+	[1066] = "TRAVEL", -- Aquatic Form
+	[33943] = "TRAVEL", -- Flight Form
+	[40120] = "TRAVEL", -- Swift Flight Form
+	[24858] = "MOONKIN", -- Moonkin Form
+	[33891] = "HUMANOID", -- Tree of Life
+	[114282] = "HUMANOID", -- Treant Form
+	[210053] = "STAG", -- Mount Form
+}
 local formKeyToIndex = {}
 for idx, key in pairs(formIndexToKey) do
 	formKeyToIndex[key] = idx
@@ -2913,6 +2925,7 @@ end
 local function resolveFormKeyFromShapeshiftIndex(idx)
 	if not idx or idx <= 0 or not GetShapeshiftFormInfo then return nil end
 	local texture, _, _, spellID = GetShapeshiftFormInfo(idx)
+	if spellID and formSpellIDToKey[spellID] then return formSpellIDToKey[spellID] end
 	if spellID and C_Spell and C_Spell.GetSpellName then
 		local key = mapFormNameToKey(C_Spell.GetSpellName(spellID))
 		if key then return key end
