@@ -63,6 +63,17 @@ local squareMinimapStatsAnchorOptions = {
 	BOTTOM = L["Bottom"] or "Bottom",
 	BOTTOMRIGHT = L["Bottom Right"] or "Bottom Right",
 }
+local instanceDifficultyAnchorOptions = {
+	TOPLEFT = squareMinimapStatsAnchorOptions.TOPLEFT,
+	TOP = squareMinimapStatsAnchorOptions.TOP,
+	TOPRIGHT = squareMinimapStatsAnchorOptions.TOPRIGHT,
+	LEFT = squareMinimapStatsAnchorOptions.LEFT,
+	CENTER = _G.DEFAULT or "Default",
+	RIGHT = squareMinimapStatsAnchorOptions.RIGHT,
+	BOTTOMLEFT = squareMinimapStatsAnchorOptions.BOTTOMLEFT,
+	BOTTOM = squareMinimapStatsAnchorOptions.BOTTOM,
+	BOTTOMRIGHT = squareMinimapStatsAnchorOptions.BOTTOMRIGHT,
+}
 local squareMinimapStatsTimeLeftClickActionOrder = { "calendar", "clock" }
 local squareMinimapStatsTimeLeftClickActionOptions = {
 	calendar = L["Time left-click opens calendar"] or "Open calendar",
@@ -1798,6 +1809,26 @@ data = {
 				parent = true,
 				default = 14,
 				sType = "slider",
+				parentSection = mapExpandable,
+			},
+			{
+				var = "instanceDifficultyAnchor",
+				text = L["Anchor"] or "Anchor",
+				list = instanceDifficultyAnchorOptions,
+				order = squareMinimapStatsAnchorOrder,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["showInstanceDifficulty"]
+						and addon.SettingsLayout.elements["showInstanceDifficulty"].setting
+						and addon.SettingsLayout.elements["showInstanceDifficulty"].setting:GetValue() == true
+				end,
+				get = function() return normalizeSquareMinimapAnchorSelection(addon.db and addon.db.instanceDifficultyAnchor, nil, "CENTER") end,
+				set = function(value, maybeValue)
+					addon.db["instanceDifficultyAnchor"] = normalizeSquareMinimapAnchorSelection(value, maybeValue, "CENTER")
+					if addon.InstanceDifficulty then addon.InstanceDifficulty:Update() end
+				end,
+				default = "CENTER",
+				sType = "dropdown",
+				parent = true,
 				parentSection = mapExpandable,
 			},
 			{

@@ -1,4 +1,4 @@
--- luacheck: globals MinimapCluster C_DelvesUI
+-- luacheck: globals MinimapCluster C_DelvesUI Minimap
 local parentAddonName = "EnhanceQoL"
 local addonName, addon = ...
 if _G[parentAddonName] then
@@ -14,6 +14,30 @@ InstanceDifficulty.enabled = InstanceDifficulty.enabled or false
 InstanceDifficulty.frame = InstanceDifficulty.frame or CreateFrame("Frame")
 
 local function getIndicator() return MinimapCluster and MinimapCluster.InstanceDifficulty end
+local validAnchors = {
+	TOPLEFT = true,
+	TOP = true,
+	TOPRIGHT = true,
+	LEFT = true,
+	CENTER = true,
+	RIGHT = true,
+	BOTTOMLEFT = true,
+	BOTTOM = true,
+	BOTTOMRIGHT = true,
+}
+
+local function normalizeAnchor(anchor)
+	if type(anchor) == "string" then
+		anchor = string.upper(anchor)
+		if validAnchors[anchor] then return anchor end
+	end
+	return "CENTER"
+end
+
+local function resolveAnchorTarget(indicator, anchor)
+	if anchor ~= "CENTER" and Minimap then return Minimap, anchor end
+	return indicator, "CENTER"
+end
 
 local function defaultFontFace()
 	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
@@ -123,12 +147,12 @@ function InstanceDifficulty:Update()
 	else
 		text = short
 	end
-	-- Apply anchor (fixed center) and offsets
-	local anchor = "CENTER"
+	local anchor = normalizeAnchor(addon.db and addon.db["instanceDifficultyAnchor"])
 	local offX = (addon.db and addon.db["instanceDifficultyOffsetX"]) or 0
 	local offY = (addon.db and addon.db["instanceDifficultyOffsetY"]) or 0
+	local anchorTarget, relativePoint = resolveAnchorTarget(indicator, anchor)
 	self.text:ClearAllPoints()
-	self.text:SetPoint(anchor, indicator, anchor, offX, offY)
+	self.text:SetPoint(anchor, anchorTarget, relativePoint, offX, offY)
 
 	self.text:SetText(text)
 	self:ApplyTextStyle()

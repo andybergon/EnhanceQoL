@@ -4406,7 +4406,7 @@ local function initUI()
 	addon.functions.InitDBValue("alwaysUserCurExpCraftingOrders", false)
 	addon.functions.InitDBValue("enableExtendedMerchant", false)
 	addon.functions.InitDBValue("showInstanceDifficulty", false)
-	-- anchor no longer used; position controlled by offsets from CENTER
+	addon.functions.InitDBValue("instanceDifficultyAnchor", "CENTER")
 	addon.functions.InitDBValue("instanceDifficultyOffsetX", 0)
 	addon.functions.InitDBValue("instanceDifficultyOffsetY", 0)
 	addon.functions.InitDBValue("instanceDifficultyFontSize", 14)
