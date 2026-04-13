@@ -2816,7 +2816,10 @@ L["ufUseCustomClassColorsDesc"] = "Überschreibt die von Enhance QoL genutzten K
 L["UFWidth"] = "Rahmenbreite"
 L["UI"] = "Benutzeroberfläche"
 L["UIInput"] = "UI & Eingabe"
+L["uiScaleCustomValue"] = "Benutzerdefinierte Skalierung"
+L["uiScaleCustomValueDesc"] = "Gib eine beliebige Zahl zwischen 0,1 und 2 ein."
 L["uiScalePreset"] = "UI-Skalierung beim Login"
+L["uiScalePresetCustom"] = "Benutzerdefiniert"
 L["uiScalePresetDesc"] = "Wendet beim Einloggen automatisch eine vordefinierte UI-Skalierung an.\
 |cffff0000Warnung:|r Eine Änderung lädt dein UI neu."
 L["uiScalePresetNone"] = "Keine Skalierung"

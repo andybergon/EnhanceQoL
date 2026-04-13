@@ -168,18 +168,73 @@ local UI_SCALE_PRESETS = {
 	Scale1080p125 = 0.888888888888,
 }
 
+local UI_SCALE_CUSTOM_MIN = 0.1
+local UI_SCALE_CUSTOM_MAX = 2
+local UI_SCALE_CUSTOM_DEFAULT = 1
+
+local function normalizeUIScaleValue(value, fallback)
+	local numeric = tonumber(value)
+	if not numeric then return fallback end
+	if numeric < UI_SCALE_CUSTOM_MIN then return UI_SCALE_CUSTOM_MIN end
+	if numeric > UI_SCALE_CUSTOM_MAX then return UI_SCALE_CUSTOM_MAX end
+	return numeric
+end
+
+local function formatUIScaleValue(value)
+	local numeric = normalizeUIScaleValue(value, UI_SCALE_CUSTOM_DEFAULT)
+	local text = string.format("%.12f", numeric)
+	text = text:gsub("(%..-)0+$", "%1")
+	text = text:gsub("%.$", "")
+	return text
+end
+
+local function getCurrentUIScaleCVar()
+	if not (C_CVar and C_CVar.GetCVar) then return nil end
+	return normalizeUIScaleValue(C_CVar.GetCVar("uiscale"), nil)
+end
+
+local function getSuggestedCustomUIScaleValue(seedValue)
+	if addon.db then
+		local storedValue = normalizeUIScaleValue(addon.db.uiScaleCustom, nil)
+		if storedValue then return storedValue end
+	end
+	return normalizeUIScaleValue(seedValue, getCurrentUIScaleCVar() or UI_SCALE_CUSTOM_DEFAULT)
+end
+
+local function getSelectedUIScaleValue()
+	local db = addon.db
+	if not db then return nil end
+	if db.uiScalePreset == "Custom" then return getSuggestedCustomUIScaleValue() end
+	return UI_SCALE_PRESETS[db.uiScalePreset]
+end
+
+local function markUIScaleReloadRequired()
+	addon.variables = addon.variables or {}
+	addon.variables.requireReload = true
+	if addon.functions and addon.functions.checkReloadFrame then addon.functions.checkReloadFrame() end
+end
+
 local function applyUIScalePreset()
 	local db = addon.db
 	if not db then return end
 
-	local scale = UI_SCALE_PRESETS[db.uiScalePreset]
+	if db.uiScalePreset == "NoScaling" then
+		if addon.functions and addon.functions.setCVarValue then
+			addon.functions.setCVarValue("useUiScale", "0")
+		elseif C_CVar and C_CVar.SetCVar then
+			C_CVar.SetCVar("useUiScale", "0")
+		end
+		return
+	end
+
+	local scale = getSelectedUIScaleValue()
 	if not scale then return end
 	if addon.functions and addon.functions.setCVarValue then
 		addon.functions.setCVarValue("useUiScale", "1")
-		addon.functions.setCVarValue("uiscale", tostring(scale))
+		addon.functions.setCVarValue("uiscale", formatUIScaleValue(scale))
 	elseif C_CVar and C_CVar.SetCVar then
 		C_CVar.SetCVar("useUiScale", "1")
-		C_CVar.SetCVar("uiscale", tostring(scale))
+		C_CVar.SetCVar("uiscale", formatUIScaleValue(scale))
 	end
 
 	if UIParent and UIParent.SetScale then UIParent:SetScale(scale) end
@@ -445,6 +500,7 @@ local interfaceExpandable = addon.functions.SettingsCreateExpandableSection(cUII
 
 local uiScaleOptions = {
 	NoScaling = L["uiScalePresetNone"] or "No scaling",
+	Custom = L["uiScalePresetCustom"] or _G.CUSTOM or "Custom",
 	Scale4K = "0.3556 (4K)",
 	Scale1080p = "0.7111 (1080p)",
 	Scale1440p = "0.5333 (1440p)",
@@ -452,19 +508,46 @@ local uiScaleOptions = {
 	Scale1080p125 = "0.8888 (1080p 125%)",
 }
 
-local uiScaleOrder = { "NoScaling", "Scale4K", "Scale1440p", "Scale1440p125", "Scale1080p", "Scale1080p125" }
+local uiScaleOrder = { "NoScaling", "Custom", "Scale4K", "Scale1440p", "Scale1440p125", "Scale1080p", "Scale1080p125" }
 
-addon.functions.SettingsCreateDropdown(cUIInput, {
+local uiScaleDropdown = addon.functions.SettingsCreateDropdown(cUIInput, {
 	var = "uiScalePreset",
 	text = L["uiScalePreset"] or "Login UI scaling",
 	list = uiScaleOptions,
 	order = uiScaleOrder,
 	get = function() return addon.db and addon.db.uiScalePreset or "NoScaling" end,
 	set = function(v)
+		local previousPreset = addon.db and addon.db.uiScalePreset or "NoScaling"
+		if previousPreset == v then return end
+
+		local seedValue = getSelectedUIScaleValue() or getCurrentUIScaleCVar() or UI_SCALE_CUSTOM_DEFAULT
+		if v == "Custom" then addon.db.uiScaleCustom = getSuggestedCustomUIScaleValue(seedValue) end
 		addon.db.uiScalePreset = v
-		ReloadUI()
+		if v ~= "Custom" then markUIScaleReloadRequired() end
 	end,
 	desc = L["uiScalePresetDesc"] or "Automatically applies a preset UI scale when you log in.\n|cffff0000Warning:|r Changing this will reload your UI.",
+	parentSection = interfaceExpandable,
+})
+
+addon.functions.SettingsCreateInput(cUIInput, {
+	var = "uiScaleCustom",
+	text = L["uiScaleCustomValue"] or "Custom scale",
+	desc = L["uiScaleCustomValueDesc"] or "Enter any number between 0.1 and 2.",
+	default = UI_SCALE_CUSTOM_DEFAULT,
+	get = function() return getSuggestedCustomUIScaleValue() end,
+	set = function(value)
+		addon.db.uiScaleCustom = normalizeUIScaleValue(value, UI_SCALE_CUSTOM_DEFAULT)
+		markUIScaleReloadRequired()
+	end,
+	numeric = true,
+	min = UI_SCALE_CUSTOM_MIN,
+	max = UI_SCALE_CUSTOM_MAX,
+	clampToRange = true,
+	formatter = formatUIScaleValue,
+	inputWidth = 120,
+	selectAllOnFocus = true,
+	parent = uiScaleDropdown.element,
+	parentCheck = function() return addon.db and addon.db.uiScalePreset == "Custom" end,
 	parentSection = interfaceExpandable,
 })
 

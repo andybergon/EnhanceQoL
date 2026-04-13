@@ -2823,7 +2823,10 @@ L["ufUseCustomClassColorsDesc"] = "Overrides class colors used by Enhance QoL un
 L["UFWidth"] = "Frame width"
 L["UI"] = "UI"
 L["UIInput"] = "UI & Input"
+L["uiScaleCustomValue"] = "Custom scale"
+L["uiScaleCustomValueDesc"] = "Enter any number between 0.1 and 2."
 L["uiScalePreset"] = "Login UI scaling"
+L["uiScalePresetCustom"] = "Custom"
 L["uiScalePresetDesc"] = "Automatically applies a preset UI scale when you log in.\
 |cffff0000Warning:|r Changing this will reload your UI."
 L["uiScalePresetNone"] = "No scaling"

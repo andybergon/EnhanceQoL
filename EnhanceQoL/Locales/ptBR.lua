@@ -2816,7 +2816,10 @@ L["ufUseCustomClassColorsDesc"] = "Substitui as cores de classe usadas pelos qua
 L["UFWidth"] = "Largura do quadro"
 L["UI"] = "Interface"
 L["UIInput"] = "IU e entrada"
+L["uiScaleCustomValue"] = "Escala personalizada"
+L["uiScaleCustomValueDesc"] = "Digite qualquer número entre 0,1 e 2."
 L["uiScalePreset"] = "Escala da IU ao entrar"
+L["uiScalePresetCustom"] = "Personalizado"
 L["uiScalePresetDesc"] = "Aplica automaticamente uma escala de IU predefinida ao entrar.\
 |cffff0000Aviso:|r Alterar isso recarregará sua IU."
 L["uiScalePresetNone"] = "Sem escala"
