@@ -54,6 +54,218 @@ local function refreshGlobalFonts()
 	if actionBarLabels and actionBarLabels.RefreshAllCountStyles then actionBarLabels.RefreshAllCountStyles() end
 end
 
+local SUPPORTED_GLOBAL_FONT_ROOT_KEYS = {
+	cooldownPanels = true,
+	dataPanels = true,
+	focusInterruptTracker = true,
+	globalResourceBarSettings = true,
+	personalResourceBarSettings = true,
+	ufFrames = true,
+	ufGroupFrames = true,
+}
+
+local SUPPORTED_FLAT_FONT_KEYS = {
+	actionBarCountFontFace = true,
+	actionBarHotkeyFontFace = true,
+	actionBarMacroFontFace = true,
+	combatTextFont = true,
+	ilvlFontFace = true,
+	mythicPlusBloodlustTrackerCooldownFontFace = true,
+	mythicPlusBRTrackerChargesFontFace = true,
+	mythicPlusBRTrackerCooldownFontFace = true,
+	squareMinimapStatsFont = true,
+	totalAbsorbTrackerTextFont = true,
+	xpBarTextFont = true,
+}
+
+local SUPPORTED_FLAT_FONT_STYLE_KEYS = {
+	actionBarCountFontOutline = true,
+	actionBarHotkeyFontOutline = true,
+	actionBarMacroFontOutline = true,
+	combatTextFontOutline = true,
+	ilvlFontOutline = true,
+	mythicPlusBloodlustTrackerCooldownTextOutline = true,
+	mythicPlusBRTrackerChargesTextOutline = true,
+	mythicPlusBRTrackerCooldownTextOutline = true,
+	squareMinimapStatsOutline = true,
+	totalAbsorbTrackerTextOutline = true,
+	xpBarTextOutline = true,
+}
+
+local function isRecursiveFontFaceKey(key)
+	if type(key) ~= "string" then return false end
+	local lowered = string.lower(key)
+	if lowered:find("outline", 1, true) or lowered:find("fontstyle", 1, true) or lowered:find("fontsize", 1, true) then return false end
+	return lowered:find("font", 1, true) ~= nil
+end
+
+local function isRecursiveFontStyleKey(key)
+	if type(key) ~= "string" then return false end
+	local lowered = string.lower(key)
+	if lowered:find("outline", 1, true) or lowered:find("fontstyle", 1, true) then return true end
+	return lowered == "cooldowntextstyle" or lowered == "statictextstyle"
+end
+
+local function overwriteNestedFontSettings(node, mode, replacement, visited)
+	if type(node) ~= "table" then return 0 end
+	visited = visited or {}
+	if visited[node] then return 0 end
+	visited[node] = true
+
+	local changed = 0
+	if mode == "style" and node.fontStyle == nil and (type(node.fontOutline) == "boolean" or type(node.fontShadow) == "boolean") then
+		node.fontStyle = replacement
+		changed = changed + 1
+	end
+
+	for key, value in pairs(node) do
+		if type(value) == "table" then
+			changed = changed + overwriteNestedFontSettings(value, mode, replacement, visited)
+		elseif type(value) == "string" then
+			if mode == "font" then
+				if isRecursiveFontFaceKey(key) and value ~= replacement then
+					node[key] = replacement
+					changed = changed + 1
+				end
+			elseif isRecursiveFontStyleKey(key) and value ~= replacement then
+				node[key] = replacement
+				changed = changed + 1
+			end
+		end
+	end
+
+	return changed
+end
+
+local function overwriteProfileFontSettings(mode)
+	if type(addon.db) ~= "table" then return end
+
+	local replacement
+	if mode == "font" then
+		replacement = addon.functions and addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"
+	else
+		replacement = addon.functions and addon.functions.GetGlobalFontStyleConfigKey and addon.functions.GetGlobalFontStyleConfigKey() or "__EQOL_GLOBAL_FONT_STYLE__"
+	end
+
+	local changed = 0
+	for key, value in pairs(addon.db) do
+		if mode == "font" then
+			if SUPPORTED_FLAT_FONT_KEYS[key] and addon.db[key] ~= replacement then
+				addon.db[key] = replacement
+				changed = changed + 1
+			end
+		elseif SUPPORTED_FLAT_FONT_STYLE_KEYS[key] and addon.db[key] ~= replacement then
+			addon.db[key] = replacement
+			changed = changed + 1
+		end
+
+		if SUPPORTED_GLOBAL_FONT_ROOT_KEYS[key] and type(value) == "table" then
+			changed = changed + overwriteNestedFontSettings(value, mode, replacement)
+		end
+	end
+
+	if changed > 0 then refreshGlobalFonts() end
+end
+
+local function markReloadRequired()
+	addon.variables.requireReload = true
+	if addon.functions and addon.functions.checkReloadFrame then addon.functions.checkReloadFrame() end
+end
+
+local function showOverwriteProfileFontSettingsPopup(mode)
+	local popupKey = "EQOL_OVERWRITE_GLOBAL_FONT_SETTINGS"
+	local text
+	if mode == "style" then
+		text = L["OverwriteAllFontStylingToGlobalConfirm"]
+			or "Use global font styling for all supported settings in the active profile? Reload required."
+	else
+		text = L["OverwriteAllFontsToGlobalConfirm"]
+			or "Use global font for all supported settings in the active profile? Reload required."
+	end
+
+	StaticPopupDialogs[popupKey] = StaticPopupDialogs[popupKey]
+		or {
+			text = "",
+			button1 = YES,
+			button2 = CANCEL,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+			OnAccept = function(self)
+				local selectedMode = self.data
+				if selectedMode ~= "font" and selectedMode ~= "style" then return end
+				overwriteProfileFontSettings(selectedMode)
+				markReloadRequired()
+			end,
+		}
+	StaticPopupDialogs[popupKey].text = text
+	StaticPopup_Show(popupKey, nil, nil, mode)
+end
+
+local function createGlobalFontSettings(section)
+	addon.functions.SettingsCreateScrollDropdown(cProfiles, {
+		var = "globalFontFace",
+		text = L["globalFontConfigLabel"] or "Global font",
+		listFunc = buildGlobalFontDropdown,
+		order = globalFontOrder,
+		default = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT,
+		get = function()
+			local current = addon.db and addon.db.globalFontFace or ((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT)
+			local list = buildGlobalFontDropdown()
+			if not list[current] then current = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT end
+			return current
+		end,
+		set = function(value)
+			addon.db.globalFontFace = value
+			refreshGlobalFonts()
+		end,
+		parentSection = section,
+	})
+
+	do
+		local globalStyleOptions, globalStyleOrder = addon.functions.GetFontStyleOptions and addon.functions.GetFontStyleOptions(false) or {
+			NONE = _G.NONE or "None",
+			OUTLINE = L["Outline"] or "Outline",
+		}, { "NONE", "OUTLINE" }
+		addon.functions.SettingsCreateScrollDropdown(cProfiles, {
+			var = "globalFontStyle",
+			text = L["globalFontStyleConfigLabel"] or "Global font style",
+			list = globalStyleOptions,
+			order = globalStyleOrder,
+			height = 220,
+			default = "OUTLINE",
+			get = function()
+				if addon.functions and addon.functions.GetGlobalDefaultFontStyle then return addon.functions.GetGlobalDefaultFontStyle() end
+				return addon.db and addon.db.globalFontStyle or "OUTLINE"
+			end,
+			set = function(value)
+				if addon.functions and addon.functions.NormalizeFontStyleChoice then
+					addon.db.globalFontStyle = addon.functions.NormalizeFontStyleChoice(value, "OUTLINE", false)
+				else
+					addon.db.globalFontStyle = value
+				end
+				refreshGlobalFonts()
+			end,
+			parentSection = section,
+		})
+	end
+
+	addon.functions.SettingsCreateButton(cProfiles, {
+		var = "overwriteAllFontsToGlobal",
+		text = L["OverwriteAllFontsToGlobal"] or "Fonts global",
+		func = function() showOverwriteProfileFontSettingsPopup("font") end,
+		parentSection = section,
+	})
+
+	addon.functions.SettingsCreateButton(cProfiles, {
+		var = "overwriteAllFontStylingToGlobal",
+		text = L["OverwriteAllFontStylingToGlobal"] or "Styles global",
+		func = function() showOverwriteProfileFontSettingsPopup("style") end,
+		parentSection = section,
+	})
+end
+
 -- Build a sorted dropdown list, optionally keeping an empty entry pinned to the top
 local function buildSortedProfileList(orderTarget, excludeFunc, includeEmpty)
 	local list = {}
@@ -300,53 +512,6 @@ data = {
 addon.functions.SettingsCreateDropdown(cProfiles, data)
 addon.functions.SettingsCreateText(cProfiles, L["ProfileUseGlobalDesc"], { parentSection = expandable })
 
-addon.functions.SettingsCreateScrollDropdown(cProfiles, {
-	var = "globalFontFace",
-	text = L["globalFontConfigLabel"] or "Global font",
-	listFunc = buildGlobalFontDropdown,
-	order = globalFontOrder,
-	default = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT,
-	get = function()
-		local current = addon.db and addon.db.globalFontFace or ((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT)
-		local list = buildGlobalFontDropdown()
-		if not list[current] then current = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT end
-		return current
-	end,
-	set = function(value)
-		addon.db.globalFontFace = value
-		refreshGlobalFonts()
-	end,
-	parentSection = expandable,
-})
-
-do
-	local globalStyleOptions, globalStyleOrder = addon.functions.GetFontStyleOptions and addon.functions.GetFontStyleOptions(false) or {
-		NONE = _G.NONE or "None",
-		OUTLINE = L["Outline"] or "Outline",
-	}, { "NONE", "OUTLINE" }
-	addon.functions.SettingsCreateScrollDropdown(cProfiles, {
-		var = "globalFontStyle",
-		text = L["globalFontStyleConfigLabel"] or "Global font style",
-		list = globalStyleOptions,
-		order = globalStyleOrder,
-		height = 220,
-		default = "OUTLINE",
-		get = function()
-			if addon.functions and addon.functions.GetGlobalDefaultFontStyle then return addon.functions.GetGlobalDefaultFontStyle() end
-			return addon.db and addon.db.globalFontStyle or "OUTLINE"
-		end,
-		set = function(value)
-			if addon.functions and addon.functions.NormalizeFontStyleChoice then
-				addon.db.globalFontStyle = addon.functions.NormalizeFontStyleChoice(value, "OUTLINE", false)
-			else
-				addon.db.globalFontStyle = value
-			end
-			refreshGlobalFonts()
-		end,
-		parentSection = expandable,
-	})
-end
-
 data = {
 	listFunc = function()
 		local currentProfile = EnhanceQoLDB.profileKeys[UnitGUID("player")]
@@ -509,6 +674,9 @@ addon.functions.SettingsCreateButton(cProfiles, {
 	end,
 	parentSection = expandable,
 })
+
+addon.functions.SettingsCreateHeadline(cProfiles, L["Font"] or "Font", { parentSection = expandable })
+createGlobalFontSettings(expandable)
 
 ----- REGION END
 function addon.functions.initProfile()

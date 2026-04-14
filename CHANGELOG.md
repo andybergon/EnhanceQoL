@@ -1,9 +1,15 @@
 # Changelog
 
-## [10.3.0] - 2026-04-13
+## [10.3.0] - 2026-04-14
 
 ### ✨ Added
 
+- Profiles / Font: Added a dedicated `Font` section in the profile settings, placed below `Export / Import`, with separate `Global font` and `Global font style` dropdowns.
+- Fonts / Styling: Added full combined font styling across EQOL, including `Shadow`, `Shadow Outline`, `Shadow Thick`, `Monochrome`, `Monochrome Outline`, and `Monochrome Thick` options alongside the existing outline styles.
+- Profiles / Font Migration: Added `Fonts global` and `Styles global` actions so an entire active profile can be switched to the global font or the global font styling without opening every individual submenu.
+- Profiles / Font Migration: Added a confirmation dialog and reload reminder for those mass-overwrite actions so large font changes are applied in a controlled way.
+- Data Panels: Added a proper `Font style` dropdown with global-style support. Existing panels automatically migrate from the old outline and shadow checkboxes.
+- Combat Text: Added full font-style support, including outline, shadow, and combined shadow-outline styles.
 - UI / Visibility & Fading (Frames): Added a `Hide Event Toasts` option to suppress Blizzard event toasts such as scenario and activity banners.
 - Unit Frames / Health Text: Added `Absorb`, `Current (Absorb)`, `Current | Absorb`, and `Current + Absorb` health-text modes using total damage absorbs.
 

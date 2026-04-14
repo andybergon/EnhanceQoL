@@ -10261,7 +10261,12 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 				return not (currentEntry and currentEntry.showCooldownText ~= false and currentEntry.cooldownTextUseGlobal == false)
 			end,
 			get = function() return getResolvedCooldownTextStyleChoice() end,
-			set = function(_, value) setEntryField("cooldownTextStyle", Helper.NormalizeFontStyleChoice(value, "NONE")) end,
+			set = function(_, value)
+				setEntryField(
+					"cooldownTextStyle",
+					Helper.NormalizeFontStyleChoice(value, Helper.ENTRY_DEFAULTS.cooldownTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or "NONE")
+				)
+			end,
 			generator = function(_, root)
 				for _, option in ipairs(Helper.FontStyleOptions) do
 					root:CreateRadio(option.label, function() return getResolvedCooldownTextStyleChoice() == option.value end, function() setEntryField("cooldownTextStyle", option.value) end)
@@ -18144,14 +18149,14 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 				field = "cooldownTextStyle",
 				parentId = "cooldownPanelCooldownText",
 				height = 120,
-				default = Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, "NONE"),
-				get = function() return Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, "NONE") end,
+				default = Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or "NONE"),
+				get = function() return Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or "NONE") end,
 				set = function(_, value) applyEditLayout(panelId, "cooldownTextStyle", value) end,
 				generator = function(_, root)
 					for _, option in ipairs(Helper.FontStyleOptions) do
 						root:CreateRadio(
 							option.label,
-							function() return Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, "NONE") == option.value end,
+							function() return Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or "NONE") == option.value end,
 							function() applyEditLayout(panelId, "cooldownTextStyle", option.value) end
 						)
 					end
@@ -19078,7 +19083,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			visibility = PanelVisibility.CopySelectionMap(PanelVisibility.NormalizeConfig(layout.visibility)),
 			cooldownTextFont = layout.cooldownTextFont,
 			cooldownTextSize = layout.cooldownTextSize or 12,
-			cooldownTextStyle = Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, "NONE"),
+			cooldownTextStyle = Helper.NormalizeFontStyleChoice(layout.cooldownTextStyle, Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or "NONE"),
 			cooldownTextColor = Helper.NormalizeColor(layout.cooldownTextColor, Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor),
 			cooldownTextX = layout.cooldownTextX or 0,
 			cooldownTextY = layout.cooldownTextY or 0,

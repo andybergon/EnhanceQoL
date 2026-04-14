@@ -139,6 +139,19 @@ local function normalizeCDMAuraAlwaysShowMode(value, fallback)
 	return fallback or "HIDE"
 end
 
+local function globalFontStyleKey()
+	if addon.functions and addon.functions.GetGlobalFontStyleConfigKey then return addon.functions.GetGlobalFontStyleConfigKey() end
+	return "__EQOL_GLOBAL_FONT_STYLE__"
+end
+
+local function migrateLegacyPanelFontStyleDefault(value, legacyDefault)
+	local globalStyle = globalFontStyleKey()
+	if value == nil or value == "" then return globalStyle end
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then value = addon.functions.NormalizeFontStyleChoice(value, globalStyle, true) end
+	if value == legacyDefault then return globalStyle end
+	return value
+end
+
 Helper.PANEL_LAYOUT_DEFAULTS = {
 	iconSize = 36,
 	spacing = 2,
@@ -187,13 +200,13 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	stackX = -1,
 	stackY = 1,
 	stackFontSize = 12,
-	stackFontStyle = "OUTLINE",
+	stackFontStyle = globalFontStyleKey(),
 	stackColor = { 1, 1, 1, 1 },
 	chargesAnchor = "TOP",
 	chargesX = 0,
 	chargesY = -1,
 	chargesFontSize = 12,
-	chargesFontStyle = "OUTLINE",
+	chargesFontStyle = globalFontStyleKey(),
 	chargesColor = { 1, 1, 1, 1 },
 	chargesHideWhenZero = false,
 	keybindsEnabled = false,
@@ -202,7 +215,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	keybindX = 2,
 	keybindY = -2,
 	keybindFontSize = 10,
-	keybindFontStyle = "OUTLINE",
+	keybindFontStyle = globalFontStyleKey(),
 	cooldownDrawEdge = true,
 	cooldownDrawBling = true,
 	cooldownDrawSwipe = true,
@@ -210,9 +223,10 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	cooldownGcdDrawBling = false,
 	cooldownGcdDrawSwipe = false,
 	cooldownTextColor = { 1, 1, 1, 1 },
+	cooldownTextStyle = globalFontStyleKey(),
 	staticTextFont = "",
 	staticTextSize = 12,
-	staticTextStyle = "OUTLINE",
+	staticTextStyle = globalFontStyleKey(),
 	staticTextColor = { 1, 1, 1, 1 },
 	staticTextAnchor = "CENTER",
 	staticTextX = 0,
@@ -243,7 +257,7 @@ Helper.ENTRY_DEFAULTS = {
 	stackY = 1,
 	stackFont = "",
 	stackFontSize = 12,
-	stackFontStyle = "OUTLINE",
+	stackFontStyle = globalFontStyleKey(),
 	stackColor = { 1, 1, 1, 1 },
 	chargesStyleUseGlobal = true,
 	chargesAnchor = "TOP",
@@ -251,7 +265,7 @@ Helper.ENTRY_DEFAULTS = {
 	chargesY = -1,
 	chargesFont = "",
 	chargesFontSize = 12,
-	chargesFontStyle = "OUTLINE",
+	chargesFontStyle = globalFontStyleKey(),
 	chargesColor = { 1, 1, 1, 1 },
 	showItemUses = false,
 	showWhenEmpty = false,
@@ -268,6 +282,7 @@ Helper.ENTRY_DEFAULTS = {
 	cooldownGcdDrawBling = false,
 	cooldownGcdDrawSwipe = false,
 	cooldownTextUseGlobal = true,
+	cooldownTextStyle = globalFontStyleKey(),
 	noDesaturationUseGlobal = true,
 	noDesaturation = false,
 	checkPowerUseGlobal = true,
@@ -289,7 +304,7 @@ Helper.ENTRY_DEFAULTS = {
 	staticTextUseGlobal = true,
 	staticTextFont = "",
 	staticTextSize = 12,
-	staticTextStyle = "OUTLINE",
+	staticTextStyle = globalFontStyleKey(),
 	staticTextColor = { 1, 1, 1, 1 },
 	staticTextAnchor = "CENTER",
 	staticTextX = 0,
@@ -1864,6 +1879,15 @@ function Helper.NormalizeRoot(root)
 			if root.defaults.entry[key] == nil then root.defaults.entry[key] = value end
 		end
 	end
+	root.defaults.layout.stackFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.stackFontStyle, "OUTLINE")
+	root.defaults.layout.chargesFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.chargesFontStyle, "OUTLINE")
+	root.defaults.layout.keybindFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.keybindFontStyle, "OUTLINE")
+	root.defaults.layout.cooldownTextStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.cooldownTextStyle, "NONE")
+	root.defaults.layout.staticTextStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.staticTextStyle, "OUTLINE")
+	root.defaults.entry.stackFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.entry.stackFontStyle, "OUTLINE")
+	root.defaults.entry.chargesFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.entry.chargesFontStyle, "OUTLINE")
+	root.defaults.entry.cooldownTextStyle = migrateLegacyPanelFontStyleDefault(root.defaults.entry.cooldownTextStyle, "NONE")
+	root.defaults.entry.staticTextStyle = migrateLegacyPanelFontStyleDefault(root.defaults.entry.staticTextStyle, "OUTLINE")
 	root.defaults.entry.alwaysShow = Helper.ENTRY_DEFAULTS.alwaysShow
 	root.defaults.entry.showCooldown = Helper.ENTRY_DEFAULTS.showCooldown
 	root.defaults.entry.showCooldownText = Helper.ENTRY_DEFAULTS.showCooldownText
@@ -1936,7 +1960,10 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.cooldownTextColor = Helper.NormalizeColor(panel.layout.cooldownTextColor, layoutDefaults.cooldownTextColor or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor)
 	if panel.layout.cooldownTextFont ~= nil and type(panel.layout.cooldownTextFont) ~= "string" then panel.layout.cooldownTextFont = nil end
 	if panel.layout.cooldownTextSize ~= nil then panel.layout.cooldownTextSize = Helper.ClampInt(panel.layout.cooldownTextSize, 6, 64, 12) end
-	if panel.layout.cooldownTextStyle ~= nil then panel.layout.cooldownTextStyle = Helper.NormalizeFontStyleChoice(panel.layout.cooldownTextStyle, "NONE") end
+	if panel.layout.cooldownTextStyle ~= nil then
+		panel.layout.cooldownTextStyle =
+			Helper.NormalizeFontStyleChoice(panel.layout.cooldownTextStyle, layoutDefaults.cooldownTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or globalFontStyleKey())
+	end
 	if panel.layout.cooldownTextX ~= nil then panel.layout.cooldownTextX = Helper.ClampInt(panel.layout.cooldownTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if panel.layout.cooldownTextY ~= nil then panel.layout.cooldownTextY = Helper.ClampInt(panel.layout.cooldownTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if type(panel.layout.staticTextFont) ~= "string" then panel.layout.staticTextFont = layoutDefaults.staticTextFont or Helper.PANEL_LAYOUT_DEFAULTS.staticTextFont or "" end
@@ -2101,7 +2128,10 @@ function Helper.NormalizeEntry(entry, defaults)
 	end
 	if type(entry.staticTextFont) ~= "string" then entry.staticTextFont = Helper.ENTRY_DEFAULTS.staticTextFont end
 	entry.staticTextSize = Helper.ClampInt(entry.staticTextSize, 6, 64, Helper.ENTRY_DEFAULTS.staticTextSize or 12)
-	entry.staticTextStyle = Helper.NormalizeFontStyleChoice(entry.staticTextStyle, Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE")
+	entry.staticTextStyle = Helper.NormalizeFontStyleChoice(
+		entry.staticTextStyle,
+		Helper.ENTRY_DEFAULTS.staticTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.staticTextStyle or globalFontStyleKey()
+	)
 	entry.staticTextColor = Helper.NormalizeColor(entry.staticTextColor, Helper.ENTRY_DEFAULTS.staticTextColor or { 1, 1, 1, 1 })
 	entry.staticTextAnchor = Helper.NormalizeAnchor(entry.staticTextAnchor, Helper.ENTRY_DEFAULTS.staticTextAnchor or "CENTER")
 	entry.staticTextX = Helper.ClampInt(entry.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextX or 0)
@@ -2140,7 +2170,12 @@ function Helper.NormalizeEntry(entry, defaults)
 	end
 	if entry.cooldownTextFont ~= nil and type(entry.cooldownTextFont) ~= "string" then entry.cooldownTextFont = nil end
 	if entry.cooldownTextSize ~= nil then entry.cooldownTextSize = Helper.ClampInt(entry.cooldownTextSize, 6, 64, 12) end
-	if entry.cooldownTextStyle ~= nil then entry.cooldownTextStyle = Helper.NormalizeFontStyleChoice(entry.cooldownTextStyle, "NONE") end
+	if entry.cooldownTextStyle ~= nil then
+		entry.cooldownTextStyle = Helper.NormalizeFontStyleChoice(
+			entry.cooldownTextStyle,
+			Helper.ENTRY_DEFAULTS.cooldownTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or globalFontStyleKey()
+		)
+	end
 	if entry.cooldownTextColor ~= nil then entry.cooldownTextColor = Helper.NormalizeColor(entry.cooldownTextColor, Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor) end
 	if entry.cooldownTextX ~= nil then entry.cooldownTextX = Helper.ClampInt(entry.cooldownTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if entry.cooldownTextY ~= nil then entry.cooldownTextY = Helper.ClampInt(entry.cooldownTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
@@ -2178,11 +2213,17 @@ function Helper.CreatePanel(name, defaults)
 	local layoutDefaults = defaults.layout or Helper.PANEL_LAYOUT_DEFAULTS
 	local layout = Helper.CopyTableShallow(layoutDefaults)
 	local globalFontKey = addon.functions and addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"
+	local globalStyle = globalFontStyleKey()
 	if layout.stackFont == nil or layout.stackFont == "" then layout.stackFont = globalFontKey end
 	if layout.chargesFont == nil or layout.chargesFont == "" then layout.chargesFont = globalFontKey end
 	if layout.keybindFont == nil or layout.keybindFont == "" then layout.keybindFont = globalFontKey end
 	if layout.cooldownTextFont == nil or layout.cooldownTextFont == "" then layout.cooldownTextFont = globalFontKey end
 	if layout.staticTextFont == nil or layout.staticTextFont == "" then layout.staticTextFont = globalFontKey end
+	if layout.stackFontStyle == nil or layout.stackFontStyle == "" then layout.stackFontStyle = globalStyle end
+	if layout.chargesFontStyle == nil or layout.chargesFontStyle == "" then layout.chargesFontStyle = globalStyle end
+	if layout.keybindFontStyle == nil or layout.keybindFontStyle == "" then layout.keybindFontStyle = globalStyle end
+	if layout.cooldownTextStyle == nil or layout.cooldownTextStyle == "" then layout.cooldownTextStyle = globalStyle end
+	if layout.staticTextStyle == nil or layout.staticTextStyle == "" then layout.staticTextStyle = globalStyle end
 	layout.fixedGroups = {}
 	return {
 		name = (type(name) == "string" and name ~= "" and name) or "Cooldown Panel",

@@ -14,8 +14,7 @@ local DEFAULT_BACKDROP_ALPHA = 0.5
 local DEFAULT_BORDER_ALPHA = 1
 local DEFAULT_BORDER_SIZE = 16
 local DEFAULT_BORDER_OFFSET = 0
-local DEFAULT_FONT_OUTLINE = true
-local DEFAULT_FONT_SHADOW = false
+local DEFAULT_FONT_STYLE = addon.functions and addon.functions.GetGlobalFontStyleConfigKey and addon.functions.GetGlobalFontStyleConfigKey() or "__EQOL_GLOBAL_FONT_STYLE__"
 local DEFAULT_STREAM_GAP = 5
 local DEFAULT_STREAM_FONT_SCALE = 100
 local PANEL_WIDTH_MIN = 50
@@ -160,6 +159,11 @@ local function globalFontConfigLabel()
 	return "Use global font config"
 end
 
+local function globalFontStyleConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontStyleConfigKey then return addon.functions.GetGlobalFontStyleConfigKey() end
+	return "__EQOL_GLOBAL_FONT_STYLE__"
+end
+
 local function normalizeFontFace(value)
 	if type(value) ~= "string" or value == "" then return nil end
 	return value
@@ -171,6 +175,48 @@ local function normalizeFontSetting(value, fallback)
 	local fallbackValue = normalizeFontFace(fallback)
 	if fallbackValue then return fallbackValue end
 	return globalFontConfigKey()
+end
+
+local function normalizeFontStyleChoice(value, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, fallback or globalFontStyleConfigKey(), true)
+	end
+	if type(value) == "string" and value ~= "" then return value end
+	return fallback or globalFontStyleConfigKey()
+end
+
+local function legacyFontStyleChoice(outlineEnabled, shadowEnabled, fallback)
+	local useOutline = outlineEnabled ~= false
+	local useShadow = shadowEnabled == true
+	if useOutline and useShadow then return normalizeFontStyleChoice("SHADOWOUTLINE", fallback) end
+	if useShadow then return normalizeFontStyleChoice("SHADOW", fallback) end
+	if useOutline then return normalizeFontStyleChoice("OUTLINE", fallback) end
+	return normalizeFontStyleChoice("NONE", fallback)
+end
+
+local function normalizePanelFontStyle(style, fallback, legacyOutline, legacyShadow)
+	local fallbackChoice = normalizeFontStyleChoice(fallback, globalFontStyleConfigKey())
+	if style ~= nil then return normalizeFontStyleChoice(style, fallbackChoice) end
+	if legacyOutline ~= nil or legacyShadow ~= nil then return legacyFontStyleChoice(legacyOutline, legacyShadow, fallbackChoice) end
+	return fallbackChoice
+end
+
+local function resolvePanelFontStyle(style, fallback, legacyOutline, legacyShadow)
+	local choice = normalizePanelFontStyle(style, fallback, legacyOutline, legacyShadow)
+	if addon.functions and addon.functions.ResolveFontStyle then
+		local resolvedChoice, flags, shadowAlpha = addon.functions.ResolveFontStyle(choice, fallback or globalFontStyleConfigKey())
+		return resolvedChoice, flags or "", (shadowAlpha or 0) > 0
+	end
+	return choice, choice == "NONE" and "" or "OUTLINE", choice == "SHADOW" or choice == "SHADOWOUTLINE" or choice == "SHADOWTHICKOUTLINE"
+end
+
+local function fontStyleOptions()
+	if addon.functions and addon.functions.GetFontStyleOptionList then return addon.functions.GetFontStyleOptionList(true) end
+	return {
+		{ value = globalFontStyleConfigKey(), label = addon.functions and addon.functions.GetGlobalFontStyleConfigLabel and addon.functions.GetGlobalFontStyleConfigLabel() or "Use global font styling" },
+		{ value = "NONE", label = _G.NONE or "None" },
+		{ value = "OUTLINE", label = L["Outline"] or "Outline" },
+	}
 end
 
 local function resolveFontFace(value, fallback)
@@ -766,8 +812,7 @@ local function seedEditModeRecordFromPanelInfo(panel, defaults, record)
 	record.contentAnchor = normalizeContentAnchor(info.contentAnchor, defaults.contentAnchor)
 	record.streams = copyList(info.streams or defaults.streams)
 	record.streamGap = normalizeStreamGap(info.streamGap, defaults.streamGap)
-	record.fontOutline = info.fontOutline ~= false
-	record.fontShadow = info.fontShadow == true
+	record.fontStyle = normalizePanelFontStyle(info.fontStyle, defaults.fontStyle or DEFAULT_FONT_STYLE, info.fontOutline, info.fontShadow)
 	record.streamFontScale = normalizeStreamFontScale(info.streamFontScale, defaults.streamFontScale)
 	record.useClassTextColor = info.useClassTextColor == true
 	record.fontFace = normalizeFontSetting(info.fontFace, defaults.fontFace)
@@ -804,8 +849,7 @@ local function registerEditModePanel(panel)
 		contentAnchor = normalizeContentAnchor(panel.info.contentAnchor, "LEFT"),
 		streams = copyList(panel.info.streams),
 		streamGap = normalizeStreamGap(panel.info.streamGap, DEFAULT_STREAM_GAP),
-		fontOutline = panel.info.fontOutline ~= false,
-		fontShadow = panel.info.fontShadow == true,
+		fontStyle = normalizePanelFontStyle(panel.info.fontStyle, DEFAULT_FONT_STYLE, panel.info.fontOutline, panel.info.fontShadow),
 		streamFontScale = normalizeStreamFontScale(panel.info.streamFontScale, DEFAULT_STREAM_FONT_SCALE),
 		useClassTextColor = panel.info.useClassTextColor == true,
 		fontFace = normalizeFontSetting(panel.info.fontFace, globalFontConfigKey()),
@@ -822,6 +866,7 @@ local function registerEditModePanel(panel)
 	panel.info.strata = defaults.strata
 	panel.info.contentAnchor = defaults.contentAnchor
 	panel.info.fontFace = defaults.fontFace
+	panel.info.fontStyle = defaults.fontStyle
 	panel.info.backgroundTexture = defaults.backgroundTexture
 	panel.info.backgroundColor = defaults.backgroundColor
 	panel.info.borderTexture = defaults.borderTexture
@@ -846,6 +891,16 @@ local function registerEditModePanel(panel)
 				if value ~= nil then return value == true end
 			end
 			return panel.info and panel.info.clickThrough == true
+		end
+
+		local function getEditModeFontStyle(layoutName)
+			if EditMode and EditMode.GetValue then
+				local style = EditMode:GetValue(id, "fontStyle", layoutName)
+				local legacyOutline = EditMode:GetValue(id, "fontOutline", layoutName)
+				local legacyShadow = EditMode:GetValue(id, "fontShadow", layoutName)
+				return normalizePanelFontStyle(style, defaults.fontStyle, legacyOutline, legacyShadow)
+			end
+			return normalizePanelFontStyle(panel.info and panel.info.fontStyle, defaults.fontStyle, panel.info and panel.info.fontOutline, panel.info and panel.info.fontShadow)
 		end
 
 		settings = {
@@ -1116,16 +1171,28 @@ local function registerEditModePanel(panel)
 				end,
 			},
 			{
-				name = L["Text outline"] or "Text outline",
-				kind = SettingType.Checkbox,
-				field = "fontOutline",
-				default = defaults.fontOutline,
-			},
-			{
-				name = L["DataPanelTextShadow"] or "Text shadow",
-				kind = SettingType.Checkbox,
-				field = "fontShadow",
-				default = defaults.fontShadow,
+				name = L["DataPanelFontStyle"] or "Font style",
+				kind = SettingType.Dropdown,
+				field = "fontStyle",
+				default = defaults.fontStyle,
+				height = 220,
+				get = function(layoutName) return getEditModeFontStyle(layoutName) end,
+				set = function(layoutName, value)
+					local normalized = normalizePanelFontStyle(value, defaults.fontStyle)
+					if EditMode and EditMode.SetValue then
+						EditMode:SetValue(id, "fontStyle", normalized, layoutName)
+					elseif panel.info then
+						panel.info.fontStyle = normalized
+						panel:ApplyTextStyle()
+					end
+				end,
+				generator = function(_, rootDescription, data)
+					for _, option in ipairs(fontStyleOptions()) do
+						rootDescription:CreateRadio(option.label, function() return data.get and data.get(nil) == option.value end, function()
+							if data.set then data.set(nil, option.value) end
+						end)
+					end
+				end,
 			},
 			{
 				name = L["Text scale"] or "Text scale",
@@ -1275,8 +1342,7 @@ local function ensureSettings(id, name)
 			strata = "MEDIUM",
 			contentAnchor = "LEFT",
 			streamGap = DEFAULT_STREAM_GAP,
-			fontOutline = DEFAULT_FONT_OUTLINE,
-			fontShadow = DEFAULT_FONT_SHADOW,
+			fontStyle = DEFAULT_FONT_STYLE,
 			streamFontScale = DEFAULT_STREAM_FONT_SCALE,
 			useClassTextColor = false,
 			fontFace = globalFontConfigKey(),
@@ -1310,8 +1376,9 @@ local function ensureSettings(id, name)
 		info.strata = normalizeStrata(info.strata, "MEDIUM")
 		info.contentAnchor = normalizeContentAnchor(info.contentAnchor, "LEFT")
 		info.streamGap = normalizeStreamGap(info.streamGap, DEFAULT_STREAM_GAP)
-		if info.fontOutline == nil then info.fontOutline = DEFAULT_FONT_OUTLINE end
-		if info.fontShadow == nil then info.fontShadow = DEFAULT_FONT_SHADOW end
+		info.fontStyle = normalizePanelFontStyle(info.fontStyle, DEFAULT_FONT_STYLE, info.fontOutline, info.fontShadow)
+		info.fontOutline = nil
+		info.fontShadow = nil
 		info.streamFontScale = normalizeStreamFontScale(info.streamFontScale, DEFAULT_STREAM_FONT_SCALE)
 		if info.useClassTextColor == nil then info.useClassTextColor = false end
 		info.fontFace = normalizeFontSetting(info.fontFace, globalFontConfigKey())
@@ -1486,34 +1553,55 @@ function DataPanel.Create(id, name, existingOnly)
 		self:SyncEditModeValue("strata", normalized)
 	end
 
+	function panel:GetFontStyleChoice()
+		return normalizePanelFontStyle(self.info and self.info.fontStyle, DEFAULT_FONT_STYLE, self.info and self.info.fontOutline, self.info and self.info.fontShadow)
+	end
+
+	function panel:GetResolvedFontStyleData()
+		return resolvePanelFontStyle(self.info and self.info.fontStyle, DEFAULT_FONT_STYLE, self.info and self.info.fontOutline, self.info and self.info.fontShadow)
+	end
+
 	function panel:GetFontFlags()
-		if self.info and self.info.fontOutline == false then return "" end
-		return "OUTLINE"
+		local _, flags = self:GetResolvedFontStyleData()
+		return flags or ""
+	end
+
+	function panel:HasFontShadow()
+		local _, _, hasShadow = self:GetResolvedFontStyleData()
+		return hasShadow == true
 	end
 
 	function panel:GetFontFace() return resolveFontFace(self.info and self.info.fontFace, defaultFontFace()) end
 
 	function panel:ApplyFontStyle(fontString, font, size)
 		if not fontString or not fontString.SetFont or not size then return end
-		local targetFont = resolveFontFace(font, self:GetFontFace())
-		if not targetFont then return end
-		local fontFlags = self:GetFontFlags()
-		local ok = fontString:SetFont(targetFont, size, fontFlags)
-		if ok == false then
-			local fallback = resolveFontFace(defaultFontFace(), STANDARD_TEXT_FONT)
-			local fallbackOk
-			if fallback then fallbackOk = fontString:SetFont(fallback, size, fontFlags) end
-			if fallbackOk == false and STANDARD_TEXT_FONT and STANDARD_TEXT_FONT ~= fallback then fontString:SetFont(STANDARD_TEXT_FONT, size, fontFlags) end
-		end
-		if fontString.SetShadowColor then
-			if self.info and self.info.fontShadow then
-				fontString:SetShadowColor(0, 0, 0, SHADOW_ALPHA)
-				fontString:SetShadowOffset(SHADOW_OFFSET_X, SHADOW_OFFSET_Y)
-			else
-				fontString:SetShadowColor(0, 0, 0, 0)
-				fontString:SetShadowOffset(0, 0)
+		local styleChoice = self:GetFontStyleChoice()
+		local applied = false
+		if addon.functions and addon.functions.ApplyFontString then
+			applied = addon.functions.ApplyFontString(fontString, font or self:GetFontFace(), size, styleChoice, defaultFontFace(), DEFAULT_FONT_STYLE) ~= false
+		else
+			local targetFont = resolveFontFace(font, self:GetFontFace())
+			if not targetFont then return end
+			local fontFlags = self:GetFontFlags()
+			local ok = fontString:SetFont(targetFont, size, fontFlags)
+			if ok == false then
+				local fallback = resolveFontFace(defaultFontFace(), STANDARD_TEXT_FONT)
+				local fallbackOk
+				if fallback then fallbackOk = fontString:SetFont(fallback, size, fontFlags) end
+				if fallbackOk == false and STANDARD_TEXT_FONT and STANDARD_TEXT_FONT ~= fallback then fontString:SetFont(STANDARD_TEXT_FONT, size, fontFlags) end
 			end
+			if fontString.SetShadowColor then
+				if self:HasFontShadow() then
+					fontString:SetShadowColor(0, 0, 0, SHADOW_ALPHA)
+					fontString:SetShadowOffset(SHADOW_OFFSET_X, SHADOW_OFFSET_Y)
+				else
+					fontString:SetShadowColor(0, 0, 0, 0)
+					fontString:SetShadowOffset(0, 0)
+				end
+			end
+			applied = true
 		end
+		if not applied then return end
 		-- Force an immediate redraw for style-only changes (font face/size/flags/shadow).
 		if fontString.GetText and fontString.SetText then
 			local currentText = fontString:GetText()
@@ -1579,8 +1667,7 @@ function DataPanel.Create(id, name, existingOnly)
 
 	function panel:ApplyTextStyle()
 		local font = self:GetFontFace()
-		local fontFlags = self:GetFontFlags()
-		local fontShadow = self.info and self.info.fontShadow == true
+		local _, fontFlags, fontShadow = self:GetResolvedFontStyleData()
 		local changed = false
 
 		for _, data in pairs(self.streams) do
@@ -1662,8 +1749,7 @@ function DataPanel.Create(id, name, existingOnly)
 			or field == "contentAnchor"
 			or field == "streamGap"
 			or field == "fontFace"
-			or field == "fontOutline"
-			or field == "fontShadow"
+			or field == "fontStyle"
 			or field == "streamFontScale"
 			or field == "useClassTextColor"
 			or field == "showTooltips"
@@ -1825,19 +1911,14 @@ function DataPanel.Create(id, name, existingOnly)
 				fontFaceChanged = true
 			end
 		end
-		if data.fontOutline ~= nil then
-			local desired = data.fontOutline and true or false
-			if info.fontOutline ~= desired then
-				info.fontOutline = desired
+		if data.fontStyle ~= nil or data.fontOutline ~= nil or data.fontShadow ~= nil then
+			local desired = normalizePanelFontStyle(data.fontStyle, info.fontStyle or DEFAULT_FONT_STYLE, data.fontOutline, data.fontShadow)
+			if info.fontStyle ~= desired then
+				info.fontStyle = desired
 				fontStyleChanged = true
 			end
-		end
-		if data.fontShadow ~= nil then
-			local desired = data.fontShadow and true or false
-			if info.fontShadow ~= desired then
-				info.fontShadow = desired
-				fontStyleChanged = true
-			end
+			info.fontOutline = nil
+			info.fontShadow = nil
 		end
 		if data.streamFontScale ~= nil then
 			local desired = normalizeStreamFontScale(data.streamFontScale, info.streamFontScale)
@@ -2017,7 +2098,7 @@ function DataPanel.Create(id, name, existingOnly)
 			local baseSize = payload.fontSize or data.fontSize or 14
 			local size = panel:ApplyStreamFontScale(baseSize)
 			local fontFlags = panel:GetFontFlags()
-			local fontShadow = panel.info and panel.info.fontShadow == true
+			local fontShadow = panel:HasFontShadow()
 			local clickEnabled = not (panel.info and panel.info.clickThrough)
 
 			if payload.hidden then
@@ -2517,8 +2598,8 @@ function DataPanel.List()
 	addon.db = addon.db or {}
 	addon.db.dataPanels = addon.db.dataPanels or {}
 	local result = {}
-	for id, info in pairs(addon.db.dataPanels) do
-		id = tostring(id)
+	for rawId, info in pairs(addon.db.dataPanels) do
+		local id = tostring(rawId)
 		local entry = { list = {}, set = {} }
 		result[id] = entry
 		if info.streams then
@@ -2530,8 +2611,8 @@ function DataPanel.List()
 			end
 		end
 	end
-	for id, panel in pairs(panels) do
-		id = tostring(id)
+	for rawId, panel in pairs(panels) do
+		local id = tostring(rawId)
 		local entry = result[id]
 		if not entry then
 			entry = { list = {}, set = {} }
