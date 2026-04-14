@@ -2275,7 +2275,8 @@ local function applyBackdrop(frame, cfg)
 
 	if bgFrame.SetBackdrop then
 		local bgTexture = bd.backgroundTexture or "Interface\\DialogFrame\\UI-DialogBox-Background"
-		if state.bgTexture ~= bgTexture then
+		local bgChanged = false
+		if state.bgTexture ~= bgTexture or (bgFrame.GetBackdrop and not bgFrame:GetBackdrop()) then
 			bgFrame:SetBackdrop({
 				bgFile = bgTexture,
 				edgeFile = nil,
@@ -2284,10 +2285,11 @@ local function applyBackdrop(frame, cfg)
 				insets = { left = 0, right = 0, top = 0, bottom = 0 },
 			})
 			state.bgTexture = bgTexture
+			bgChanged = true
 		end
 		local bc = bd.backgroundColor or { 0, 0, 0, 0.8 }
 		local br, bgc, bb, ba = bc[1] or 0, bc[2] or 0, bc[3] or 0, bc[4] or 1
-		if state.bgR ~= br or state.bgG ~= bgc or state.bgB ~= bb or state.bgA ~= ba then
+		if bgChanged or state.bgR ~= br or state.bgG ~= bgc or state.bgB ~= bb or state.bgA ~= ba then
 			if bgFrame.SetBackdropColor then bgFrame:SetBackdropColor(br, bgc, bb, ba) end
 			state.bgR, state.bgG, state.bgB, state.bgA = br, bgc, bb, ba
 		end
@@ -2819,16 +2821,22 @@ registerEditModeCallbacks = function()
 	local editMode = addon and addon.EditMode
 	local lib = editMode and editMode.lib
 	if not lib or not lib.RegisterCallback then return end
+	local function refreshForEditModeTransition()
+		local rb = addon and addon.Aura and addon.Aura.ResourceBars
+		if rb and rb.Refresh then
+			rb:Refresh()
+		else
+			if addon.Aura.functions.setPowerBars then addon.Aura.functions.setPowerBars() end
+			if rb and rb.ReanchorAll then rb.ReanchorAll() end
+		end
+		if rb and rb.UpdateRuneEventRegistration then rb.UpdateRuneEventRegistration() end
+	end
 	lib:RegisterCallback("enter", function()
-		if addon.Aura.functions.setPowerBars then addon.Aura.functions.setPowerBars() end
-		if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ReanchorAll then addon.Aura.ResourceBars.ReanchorAll() end
-		if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.UpdateRuneEventRegistration then addon.Aura.ResourceBars.UpdateRuneEventRegistration() end
+		refreshForEditModeTransition()
 	end)
 	lib:RegisterCallback("exit", function()
 		-- Re-evaluate active bars (e.g., druid forms) when leaving Edit Mode
-		if addon.Aura.functions.setPowerBars then addon.Aura.functions.setPowerBars() end
-		if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.ReanchorAll then addon.Aura.ResourceBars.ReanchorAll() end
-		if addon and addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.UpdateRuneEventRegistration then addon.Aura.ResourceBars.UpdateRuneEventRegistration() end
+		refreshForEditModeTransition()
 	end)
 	editModeCallbacksRegistered = true
 end

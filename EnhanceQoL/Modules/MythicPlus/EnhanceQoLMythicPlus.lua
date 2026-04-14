@@ -373,6 +373,18 @@ local function applyBRBorderFrame(frame, target, enabled, textureKey, borderSize
 	frame:Show()
 end
 
+local function syncTrackerTextOverlay(owner, overlay, border)
+	if not (owner and overlay) then return end
+	overlay:SetAllPoints(owner)
+	overlay:SetFrameStrata(owner:GetFrameStrata())
+	local level = owner:GetFrameLevel() or 0
+	if border and border.GetFrameLevel then
+		local borderLevel = border:GetFrameLevel()
+		if type(borderLevel) == "number" and borderLevel > level then level = borderLevel end
+	end
+	overlay:SetFrameLevel(level + 1)
+end
+
 local function applyBRBorderVisualSettings()
 	local db = addon.db or {}
 	local enabled = db["mythicPlusBRTrackerBorderEnabled"] ~= false
@@ -385,6 +397,8 @@ local function applyBRBorderVisualSettings()
 		applyBRBorderFrame(brAnchor.previewBorder, brAnchor.previewIcon, enabled, textureKey, borderSize, borderOffset, borderColor)
 	end
 	if brButton and brButton.border then applyBRBorderFrame(brButton.border, brButton, enabled, textureKey, borderSize, borderOffset, borderColor) end
+	if brAnchor and brAnchor.textOverlay then syncTrackerTextOverlay(brAnchor, brAnchor.textOverlay, brAnchor.previewBorder) end
+	if brButton and brButton.textOverlay then syncTrackerTextOverlay(brButton, brButton.textOverlay, brButton.border) end
 end
 
 local function applyBRCooldownTextStyle(fontString, anchorFrame, db)
@@ -756,15 +770,19 @@ local function ensureBRAnchor()
 		brAnchor.previewBorder:SetFrameLevel((brAnchor:GetFrameLevel() or 0) + 4)
 		brAnchor.previewBorder:SetFrameStrata(brAnchor:GetFrameStrata())
 
-		brAnchor.previewCooldownText = brAnchor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		brAnchor.textOverlay = CreateFrame("Frame", nil, brAnchor)
+		brAnchor.textOverlay:SetAllPoints(brAnchor)
+		brAnchor.textOverlay:EnableMouse(false)
+
+		brAnchor.previewCooldownText = brAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		brAnchor.previewCooldownText:SetPoint("CENTER", brAnchor, "CENTER", 0, 0)
 		brAnchor.previewCooldownText:SetText(BR_PREVIEW_COOLDOWN_TEXT)
 
-		brAnchor.previewCharges = brAnchor:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+		brAnchor.previewCharges = brAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 		brAnchor.previewCharges:SetPoint("BOTTOMRIGHT", brAnchor, "BOTTOMRIGHT", -3, 3)
 		brAnchor.previewCharges:SetText(BR_PREVIEW_CHARGES_TEXT)
 
-		brAnchor.label = brAnchor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		brAnchor.label = brAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 		brAnchor.label:SetPoint("CENTER")
 		brAnchor.label:SetText(L["mythicPlusBRTrackerAnchor"])
 		brAnchor.label:SetAlpha(0)
@@ -1552,6 +1570,10 @@ local function createBRFrame()
 		brButton.border:SetFrameLevel((brButton:GetFrameLevel() or 0) + 5)
 		brButton.border:SetFrameStrata(brButton:GetFrameStrata())
 
+		brButton.textOverlay = CreateFrame("Frame", nil, brButton)
+		brButton.textOverlay:SetAllPoints(brButton)
+		brButton.textOverlay:EnableMouse(false)
+
 		brButton.cooldownFrame = CreateFrame("Cooldown", nil, brButton, "CooldownFrameTemplate")
 		brButton.cooldownFrame:SetAllPoints(brButton)
 		brButton.cooldownFrame.cooldownSet = false
@@ -1559,7 +1581,7 @@ local function createBRFrame()
 		brButton.cooldownFrame:SetCountdownAbbrevThreshold(600)
 		brButton.cooldownFrame:SetScale(1)
 
-		brButton.charges = brButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+		brButton.charges = brButton.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 		brButton.charges:SetPoint("BOTTOMRIGHT", brButton, "BOTTOMRIGHT", -3, 3)
 		brButton.charges:SetText("")
 		brButton.cooldownFrame:Clear()
@@ -1769,6 +1791,8 @@ local function applyBloodlustBorderVisualSettings()
 		applyBloodlustBorderFrame(bloodlustAnchor.previewBorder, bloodlustAnchor.previewIcon, enabled, textureKey, borderSize, borderOffset, borderColor)
 	end
 	if bloodlustButton and bloodlustButton.border then applyBloodlustBorderFrame(bloodlustButton.border, bloodlustButton, enabled, textureKey, borderSize, borderOffset, borderColor) end
+	if bloodlustAnchor and bloodlustAnchor.textOverlay then syncTrackerTextOverlay(bloodlustAnchor, bloodlustAnchor.textOverlay, bloodlustAnchor.previewBorder) end
+	if bloodlustButton and bloodlustButton.textOverlay then syncTrackerTextOverlay(bloodlustButton, bloodlustButton.textOverlay, bloodlustButton.border) end
 end
 
 local function applyBloodlustCooldownTextStyle(fontString, anchorFrame, db)
@@ -1990,12 +2014,16 @@ local function ensureBloodlustAnchor()
 		bloodlustAnchor.previewBorder:SetFrameLevel((bloodlustAnchor:GetFrameLevel() or 0) + 4)
 		bloodlustAnchor.previewBorder:SetFrameStrata(bloodlustAnchor:GetFrameStrata())
 
-		bloodlustAnchor.previewCooldownText = bloodlustAnchor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		bloodlustAnchor.textOverlay = CreateFrame("Frame", nil, bloodlustAnchor)
+		bloodlustAnchor.textOverlay:SetAllPoints(bloodlustAnchor)
+		bloodlustAnchor.textOverlay:EnableMouse(false)
+
+		bloodlustAnchor.previewCooldownText = bloodlustAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		bloodlustAnchor.previewCooldownText:SetPoint("CENTER", bloodlustAnchor, "CENTER", 0, 0)
 		bloodlustAnchor.previewCooldownText:SetText(BLOODLUST_PREVIEW_COOLDOWN_TEXT)
 		bloodlustAnchor.previewCooldownText:Show()
 
-		bloodlustAnchor.label = bloodlustAnchor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		bloodlustAnchor.label = bloodlustAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 		bloodlustAnchor.label:SetPoint("CENTER")
 		bloodlustAnchor.label:SetText(L["mythicPlusBloodlustTrackerAnchor"] or "Bloodlust Tracker Anchor")
 		bloodlustAnchor.label:SetAlpha(0)
@@ -2726,6 +2754,10 @@ local function createBloodlustFrame()
 		bloodlustButton.border:SetFrameLevel((bloodlustButton:GetFrameLevel() or 0) + 5)
 		bloodlustButton.border:SetFrameStrata(bloodlustButton:GetFrameStrata())
 
+		bloodlustButton.textOverlay = CreateFrame("Frame", nil, bloodlustButton)
+		bloodlustButton.textOverlay:SetAllPoints(bloodlustButton)
+		bloodlustButton.textOverlay:EnableMouse(false)
+
 		local scaleFactor = size / defaultButtonSize
 		local timerFontSize = math.floor(defaultFontSize * 0.75 * scaleFactor + 0.5)
 		if timerFontSize < 10 then timerFontSize = 10 end
@@ -2740,7 +2772,7 @@ local function createBloodlustFrame()
 		if bloodlustButton.cooldownFrame.SetDrawBling then bloodlustButton.cooldownFrame:SetDrawBling(addon.db["mythicPlusBloodlustTrackerCooldownDrawBling"] == true) end
 		if bloodlustButton.cooldownFrame.SetHideCountdownNumbers then bloodlustButton.cooldownFrame:SetHideCountdownNumbers(false) end
 
-		bloodlustButton.status = bloodlustButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		bloodlustButton.status = bloodlustButton.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		bloodlustButton.status:SetPoint("BOTTOM", bloodlustButton, "BOTTOM", 0, 4)
 		bloodlustButton.status:SetFont(addon.variables.defaultFont, timerFontSize, "OUTLINE")
 		bloodlustButton.status:SetText(L["mythicPlusBloodlustTrackerReadyLabel"] or "READY")
