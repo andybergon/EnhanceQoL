@@ -10129,8 +10129,6 @@ function GF.UnitButton_OnAttributeChanged(self, name, value)
 	GF:UnitButton_SetUnit(self, value)
 end
 
-local refreshConnectionDependentVisuals
-
 local function dispatchUnitHealth(btn, unit)
 	local st = getState(btn)
 	GF:UpdateHealthStyle(btn, unit, st)
@@ -10164,7 +10162,7 @@ local function dispatchUnitLevel(btn, unit)
 end
 local function dispatchUnitConnection(btn, unit)
 	local st = getState(btn)
-	refreshConnectionDependentVisuals(btn, unit, st)
+	GF:RefreshConnectionDependentVisuals(btn, unit, st)
 end
 local function dispatchUnitFlags(btn, unit)
 	local st = getState(btn)
@@ -11347,7 +11345,7 @@ function GF:RefreshStatusText()
 	end
 end
 
-refreshConnectionDependentVisuals = function(frame, unit, st)
+function GF:RefreshConnectionDependentVisuals(frame, unit, st)
 	if not (frame and unit) then return end
 	st = st or getState(frame)
 	GF:CacheUnitStatic(frame)
@@ -11373,7 +11371,7 @@ function GF:RefreshConnectionState(unit)
 		if unitToken and childUnit ~= unitToken then return end
 
 		local st = getState(child)
-		refreshConnectionDependentVisuals(child, childUnit, st)
+		GF:RefreshConnectionDependentVisuals(child, childUnit, st)
 		refreshed = refreshed + 1
 	end
 
