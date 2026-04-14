@@ -10129,6 +10129,8 @@ function GF.UnitButton_OnAttributeChanged(self, name, value)
 	GF:UnitButton_SetUnit(self, value)
 end
 
+local refreshConnectionDependentVisuals
+
 local function dispatchUnitHealth(btn, unit)
 	local st = getState(btn)
 	GF:UpdateHealthStyle(btn, unit, st)
@@ -10162,15 +10164,7 @@ local function dispatchUnitLevel(btn, unit)
 end
 local function dispatchUnitConnection(btn, unit)
 	local st = getState(btn)
-	GF:CacheUnitStatic(btn)
-	GF:UpdateHealthStyle(btn, unit, st)
-	GF:UpdateHealthValue(btn, unit, st)
-	GF:UpdatePowerValue(btn, unit, st)
-	GF:UpdatePortrait(btn, unit, st)
-	GF:UpdateName(btn, unit, st)
-	GF:UpdateStatusText(btn, unit, st)
-	GF:UpdateLevel(btn, unit, st)
-	GF:UpdateRange(btn, nil, unit, st)
+	refreshConnectionDependentVisuals(btn, unit, st)
 end
 local function dispatchUnitFlags(btn, unit)
 	local st = getState(btn)
@@ -11353,6 +11347,21 @@ function GF:RefreshStatusText()
 	end
 end
 
+refreshConnectionDependentVisuals = function(frame, unit, st)
+	if not (frame and unit) then return end
+	st = st or getState(frame)
+	GF:CacheUnitStatic(frame)
+	GF:UpdateHealthStyle(frame, unit, st)
+	GF:UpdateHealthValue(frame, unit, st)
+	GF:UpdatePowerValue(frame, unit, st)
+	GF:UpdatePortrait(frame, unit, st)
+	GF:UpdateName(frame, unit, st)
+	GF:UpdateStatusText(frame, unit, st)
+	GF:UpdateLevel(frame, unit, st)
+	GF:UpdateStatusIcons(frame)
+	GF:UpdateRange(frame, nil, unit, st)
+end
+
 function GF:RefreshConnectionState(unit)
 	if not isFeatureEnabled() then return 0 end
 	local refreshed = 0
@@ -11364,15 +11373,7 @@ function GF:RefreshConnectionState(unit)
 		if unitToken and childUnit ~= unitToken then return end
 
 		local st = getState(child)
-		GF:CacheUnitStatic(child)
-		GF:UpdateHealthStyle(child)
-		GF:UpdateHealthValue(child, childUnit, st)
-		GF:UpdatePowerValue(child, childUnit, st)
-		GF:UpdatePortrait(child, childUnit, st)
-		GF:UpdateName(child, childUnit, st)
-		GF:UpdateStatusText(child, childUnit, st)
-		GF:UpdateLevel(child, childUnit, st)
-		GF:UpdateRange(child)
+		refreshConnectionDependentVisuals(child, childUnit, st)
 		refreshed = refreshed + 1
 	end
 
@@ -11387,6 +11388,37 @@ function GF:RefreshConnectionState(unit)
 	end
 
 	return refreshed
+end
+
+function GF:CancelConnectionRefreshTicker()
+	local ticker = self._connectionRefreshTicker
+	if ticker and ticker.Cancel then ticker:Cancel() end
+	self._connectionRefreshTicker = nil
+	self._connectionRefreshPasses = nil
+end
+
+function GF:RunConnectionRefreshPass()
+	if not isFeatureEnabled() then return end
+	self:RefreshConnectionState()
+end
+
+function GF:ScheduleConnectionRefresh()
+	self:CancelConnectionRefreshTicker()
+	if not (C_Timer and C_Timer.NewTicker) then
+		self:RunConnectionRefreshPass()
+		return
+	end
+	-- Connection and roster state can settle over multiple frames after relog/reload.
+	self._connectionRefreshPasses = 0
+	self._connectionRefreshTicker = C_Timer.NewTicker(0.25, function()
+		GF._connectionRefreshPasses = (GF._connectionRefreshPasses or 0) + 1
+		if not isFeatureEnabled() then
+			GF:CancelConnectionRefreshTicker()
+			return
+		end
+		GF:RunConnectionRefreshPass()
+		if (GF._connectionRefreshPasses or 0) >= 8 then GF:CancelConnectionRefreshTicker() end
+	end)
 end
 
 function GF:RefreshRangeFade()
@@ -12469,6 +12501,7 @@ function GF:DisableFeature()
 	cancelQueuedGroupIndicatorRefresh()
 	GF._pendingDisable = nil
 	GF:CancelPostEnterWorldRefreshTicker()
+	GF:CancelConnectionRefreshTicker()
 	unregisterFeatureEvents(GF._eventFrame)
 
 	if EditMode and EditMode.UnregisterFrame and type(EDITMODE_IDS) == "table" then
@@ -26964,9 +26997,7 @@ do
 		elseif event == "UNIT_CONNECTION" or event == "PARTY_MEMBER_ENABLE" or event == "PARTY_MEMBER_DISABLE" then
 			local unit = ...
 			GF:RefreshConnectionState(unit)
-			if unit and C_Timer and C_Timer.After then C_Timer.After(0.25, function()
-				if isFeatureEnabled() then GF:RefreshConnectionState(unit) end
-			end) end
+			GF:ScheduleConnectionRefresh()
 		elseif event == "PLAYER_FLAGS_CHANGED" then
 			local refreshed = GF:RefreshConnectionState(...)
 			if refreshed == 0 then GF:RefreshStatusText() end
@@ -26994,16 +27025,20 @@ do
 				end
 			end
 			updatedCount = updatedCount + (GF:RefreshChangedUnitButtons() or 0)
+			GF:RefreshConnectionState()
 			GF:RefreshGroupIcons()
 			if headerStateChanged or updatedCount > 0 then
 				GF:RefreshStatusIcons()
 				GF:RefreshGroupIndicators()
 				queueGroupIndicatorRefresh(0, 4)
 			end
+			GF:ScheduleConnectionRefresh()
 			if custom and custom.separateMeleeRanged == true and sortMethod == "NAMELIST" and GFH and GFH.QueueInspectGroup then GFH.QueueInspectGroup() end
 		elseif event == "RAID_ROSTER_UPDATE" then
+			GF:RefreshConnectionState()
 			GF:RefreshGroupIcons()
 			GF:RefreshStatusIcons()
+			GF:ScheduleConnectionRefresh()
 		elseif event == "PLAYER_ROLES_ASSIGNED" then
 			GF:RefreshRoleIcons()
 			GF:RefreshTargetHighlights()

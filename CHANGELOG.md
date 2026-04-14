@@ -17,6 +17,7 @@
 
 - Unit Frames / Cast Bar: Fixed cast icon borders sometimes triggering a `Backdrop.lua` secret-number taint error..
 - Unit Frames / Cast Bar: Fixed cast icon borders rendering behind the cast icon because of incorrect frame layering.
+- Group Frames / Disconnected Status: Fixed party and raid frames sometimes keeping stale offline indicators or colors after members reconnected, reloaded, or relogged.
 
 ---
 
