@@ -119,12 +119,11 @@ Helper.FixedGroupStartPointOptions = {
 	{ value = "BOTTOM", label = DIRECTION_BOTTOM_LABEL },
 	{ value = "BOTTOMRIGHT", label = L["Bottom Right"] or "Bottom Right" },
 }
-Helper.FontStyleOptions = {
-	{ value = "NONE", label = _G.NONE },
-	{ value = "OUTLINE", label = L["Outline"] or "Outline" },
-	{ value = "THICKOUTLINE", label = L["Thick Outline"] or "Thick Outline" },
-	{ value = "MONOCHROMEOUTLINE", label = L["Monochrome Outline"] or "Monochrome Outline" },
-}
+Helper.FontStyleOptions = addon.functions and addon.functions.GetFontStyleOptionList and addon.functions.GetFontStyleOptionList(true)
+	or {
+		{ value = "NONE", label = _G.NONE },
+		{ value = "OUTLINE", label = L["Outline"] or "Outline" },
+	}
 
 -- need for static text hide on CD
 local curveFake = C_CurveUtil:CreateCurve()
@@ -437,12 +436,11 @@ Helper.VALID_ANCHORS = {
 	BOTTOM = true,
 	BOTTOMRIGHT = true,
 }
-Helper.VALID_FONT_STYLE = {
-	NONE = true,
-	OUTLINE = true,
-	THICKOUTLINE = true,
-	MONOCHROMEOUTLINE = true,
-}
+Helper.VALID_FONT_STYLE = {}
+for i = 1, #Helper.FontStyleOptions do
+	local option = Helper.FontStyleOptions[i]
+	if option and option.value then Helper.VALID_FONT_STYLE[option.value] = true end
+end
 Helper.GENERIC_ANCHORS = {
 	EQOL_ANCHOR_PLAYER = {
 		label = L["UFPlayerFrame"] or _G.HUD_EDIT_MODE_PLAYER_FRAME_LABEL or "Player Frame",
@@ -1561,6 +1559,7 @@ function Helper.NormalizeRelativeFrameName(value)
 end
 
 function Helper.NormalizeFontStyle(style, fallback)
+	if addon.functions and addon.functions.GetFontFlagsForStyle then return addon.functions.GetFontFlagsForStyle(style, fallback) or "" end
 	if style == nil then style = fallback end
 	if style == nil then return nil end
 	if style == "" or style == "NONE" then return "" end
@@ -1569,6 +1568,9 @@ function Helper.NormalizeFontStyle(style, fallback)
 end
 
 function Helper.NormalizeFontStyleChoice(style, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(style, fallback, true)
+	end
 	if style == nil then style = fallback end
 	if style == nil or style == "" then return "NONE" end
 	if style == "OUTLINE,MONOCHROME" or style == "MONOCHROME,OUTLINE" then return "MONOCHROMEOUTLINE" end

@@ -53,15 +53,14 @@ local BLOODLUST_COOLDOWN_TEXT_SIZE_MIN = 8
 local BLOODLUST_COOLDOWN_TEXT_SIZE_MAX = 64
 local BLOODLUST_COOLDOWN_TEXT_OFFSET_MIN = -40
 local BLOODLUST_COOLDOWN_TEXT_OFFSET_MAX = 40
-local BLOODLUST_COOLDOWN_OUTLINE_OPTIONS = {
-	"NONE",
-	"OUTLINE",
-	"THICKOUTLINE",
-	"MONOCHROMEOUTLINE",
+local BLOODLUST_COOLDOWN_OUTLINE_OPTIONS = addon.functions and addon.functions.GetFontStyleOptionList and addon.functions.GetFontStyleOptionList(true) or {
+	{ value = "NONE", label = NONE },
+	{ value = "OUTLINE", label = L["Outline"] or "Outline" },
 }
 local BLOODLUST_COOLDOWN_OUTLINE_SET = {}
 for i = 1, #BLOODLUST_COOLDOWN_OUTLINE_OPTIONS do
-	BLOODLUST_COOLDOWN_OUTLINE_SET[BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]] = true
+	local option = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+	if option and option.value then BLOODLUST_COOLDOWN_OUTLINE_SET[option.value] = true end
 end
 local BLOODLUST_LOCKOUT_IDS = {
 	57723, -- Exhaustion
@@ -243,6 +242,9 @@ local function normalizeBRTextOffset(value)
 end
 
 local function normalizeBRTextOutline(value)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, "OUTLINE", true)
+	end
 	if type(value) == "string" and BLOODLUST_COOLDOWN_OUTLINE_SET[value] then return value end
 	return "OUTLINE"
 end
@@ -390,12 +392,14 @@ local function applyBRCooldownTextStyle(fontString, anchorFrame, db)
 	local fontFace = resolveBRFontFace("mythicPlusBRTrackerCooldownFontFace")
 	local fontSize = normalizeBRTextSize(db["mythicPlusBRTrackerCooldownTextSize"], defaultFontSize)
 	local outlineValue = normalizeBRTextOutline(db["mythicPlusBRTrackerCooldownTextOutline"])
-	local outlineFlags = outlineValue == "NONE" and "" or outlineValue
+	local outlineFlags = addon.functions and addon.functions.GetFontFlagsForStyle and addon.functions.GetFontFlagsForStyle(outlineValue, "OUTLINE")
+		or (outlineValue == "NONE" and "" or outlineValue)
 	local ok = fontString:SetFont(fontFace, fontSize, outlineFlags)
 	if ok == false then
 		local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
 		fontString:SetFont(fallback, fontSize, outlineFlags)
 	end
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, outlineValue, "OUTLINE") end
 	local color = normalizeBRColor(db["mythicPlusBRTrackerCooldownTextColor"], BR_DEFAULT_COOLDOWN_COLOR)
 	fontString:SetTextColor(color[1], color[2], color[3], color[4])
 	local point = normalizeBRTextPoint(db["mythicPlusBRTrackerCooldownTextPoint"], "CENTER")
@@ -509,12 +513,14 @@ local function applyBRChargesTextStyle(fontString, anchorFrame, db)
 	local fontFace = resolveBRFontFace("mythicPlusBRTrackerChargesFontFace")
 	local fontSize = normalizeBRTextSize(db["mythicPlusBRTrackerChargesTextSize"], defaultFontSize)
 	local outlineValue = normalizeBRTextOutline(db["mythicPlusBRTrackerChargesTextOutline"])
-	local outlineFlags = outlineValue == "NONE" and "" or outlineValue
+	local outlineFlags = addon.functions and addon.functions.GetFontFlagsForStyle and addon.functions.GetFontFlagsForStyle(outlineValue, "OUTLINE")
+		or (outlineValue == "NONE" and "" or outlineValue)
 	local ok = fontString:SetFont(fontFace, fontSize, outlineFlags)
 	if ok == false then
 		local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
 		fontString:SetFont(fallback, fontSize, outlineFlags)
 	end
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, outlineValue, "OUTLINE") end
 	local color = normalizeBRColor(db["mythicPlusBRTrackerChargesTextColor"], BR_DEFAULT_CHARGES_COLOR)
 	fontString:SetTextColor(color[1], color[2], color[3], color[4])
 	local point = normalizeBRTextPoint(db["mythicPlusBRTrackerChargesTextPoint"], "BOTTOMRIGHT")
@@ -795,10 +801,7 @@ local function ensureBRAnchor()
 			end
 
 			local function outlineOptionLabel(value)
-				if value == "NONE" then return NONE end
-				if value == "OUTLINE" then return L["Outline"] or "Outline" end
-				if value == "THICKOUTLINE" then return L["Thick Outline"] or "Thick Outline" end
-				if value == "MONOCHROMEOUTLINE" then return L["Monochrome Outline"] or "Monochrome Outline" end
+				if addon.functions and addon.functions.GetFontStyleLabel then return addon.functions.GetFontStyleLabel(value) end
 				return value
 			end
 
@@ -1204,7 +1207,8 @@ local function ensureBRAnchor()
 					end,
 					generator = function(_, root)
 						for i = 1, #BLOODLUST_COOLDOWN_OUTLINE_OPTIONS do
-							local value = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local option = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local value = option.value
 							root:CreateRadio(
 								outlineOptionLabel(value),
 								function() return normalizeBRTextOutline(addon.db and addon.db["mythicPlusBRTrackerCooldownTextOutline"]) == value end,
@@ -1366,7 +1370,8 @@ local function ensureBRAnchor()
 					end,
 					generator = function(_, root)
 						for i = 1, #BLOODLUST_COOLDOWN_OUTLINE_OPTIONS do
-							local value = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local option = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local value = option.value
 							root:CreateRadio(
 								outlineOptionLabel(value),
 								function() return normalizeBRTextOutline(addon.db and addon.db["mythicPlusBRTrackerChargesTextOutline"]) == value end,
@@ -1685,6 +1690,9 @@ local function normalizeBloodlustCooldownTextOffset(value)
 end
 
 local function normalizeBloodlustCooldownOutline(value)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, "OUTLINE", true)
+	end
 	if type(value) == "string" and BLOODLUST_COOLDOWN_OUTLINE_SET[value] then return value end
 	return "OUTLINE"
 end
@@ -1768,12 +1776,14 @@ local function applyBloodlustCooldownTextStyle(fontString, anchorFrame, db)
 	local fontFace = resolveBloodlustCooldownFontFace()
 	local fontSize = normalizeBloodlustCooldownTextSize(db["mythicPlusBloodlustTrackerCooldownTextSize"])
 	local outlineValue = normalizeBloodlustCooldownOutline(db["mythicPlusBloodlustTrackerCooldownTextOutline"])
-	local outlineFlags = outlineValue == "NONE" and "" or outlineValue
+	local outlineFlags = addon.functions and addon.functions.GetFontFlagsForStyle and addon.functions.GetFontFlagsForStyle(outlineValue, "OUTLINE")
+		or (outlineValue == "NONE" and "" or outlineValue)
 	local ok = fontString:SetFont(fontFace, fontSize, outlineFlags)
 	if ok == false then
 		local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
 		fontString:SetFont(fallback, fontSize, outlineFlags)
 	end
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, outlineValue, "OUTLINE") end
 	local color = normalizeBloodlustCooldownColor(db["mythicPlusBloodlustTrackerCooldownTextColor"])
 	fontString:SetTextColor(color[1], color[2], color[3], color[4])
 	fontString:ClearAllPoints()
@@ -2052,10 +2062,7 @@ local function ensureBloodlustAnchor()
 			end
 
 			local function outlineOptionLabel(value)
-				if value == "NONE" then return NONE end
-				if value == "OUTLINE" then return L["Outline"] or "Outline" end
-				if value == "THICKOUTLINE" then return L["Thick Outline"] or "Thick Outline" end
-				if value == "MONOCHROMEOUTLINE" then return L["Monochrome Outline"] or "Monochrome Outline" end
+				if addon.functions and addon.functions.GetFontStyleLabel then return addon.functions.GetFontStyleLabel(value) end
 				return value
 			end
 
@@ -2445,7 +2452,8 @@ local function ensureBloodlustAnchor()
 					end,
 					generator = function(_, root)
 						for i = 1, #BLOODLUST_COOLDOWN_OUTLINE_OPTIONS do
-							local value = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local option = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local value = option.value
 							root:CreateRadio(
 								outlineOptionLabel(value),
 								function() return normalizeBloodlustCooldownOutline(addon.db and addon.db["mythicPlusBloodlustTrackerCooldownTextOutline"]) == value end,

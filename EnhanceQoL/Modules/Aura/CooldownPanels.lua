@@ -4692,6 +4692,7 @@ end
 
 function CooldownPanels:ResolveEntryCooldownTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
 	local panelCache = CooldownPanels._styleCacheRoots.cooldownTextPanel[layout]
+	local globalFontStateVersion = addon.functions and addon.functions.GetGlobalFontStateVersion and addon.functions.GetGlobalFontStateVersion() or 0
 	local srcFont = layout and layout.cooldownTextFont or nil
 	local srcSize = layout and layout.cooldownTextSize or nil
 	local srcStyle = layout and layout.cooldownTextStyle or nil
@@ -4700,6 +4701,7 @@ function CooldownPanels:ResolveEntryCooldownTextStyle(layout, entry, fallbackFon
 	local srcY = layout and layout.cooldownTextY or nil
 	if
 		not panelCache
+		or panelCache.globalFontStateVersion ~= globalFontStateVersion
 		or panelCache.fallbackFontPath ~= fallbackFontPath
 		or panelCache.fallbackFontSize ~= fallbackFontSize
 		or panelCache.fallbackFontStyle ~= fallbackFontStyle
@@ -4711,6 +4713,7 @@ function CooldownPanels:ResolveEntryCooldownTextStyle(layout, entry, fallbackFon
 		or panelCache.srcY ~= srcY
 	then
 		panelCache = panelCache or {}
+		panelCache.globalFontStateVersion = globalFontStateVersion
 		panelCache.fallbackFontPath = fallbackFontPath
 		panelCache.fallbackFontSize = fallbackFontSize
 		panelCache.fallbackFontStyle = fallbackFontStyle
@@ -4731,7 +4734,9 @@ function CooldownPanels:ResolveEntryCooldownTextStyle(layout, entry, fallbackFon
 		panelCache.version = (panelCache.version or 0) + 1
 		CooldownPanels._styleCacheRoots.cooldownTextPanel[layout] = panelCache
 	end
-	if not entry or entry.cooldownTextUseGlobal ~= false then return panelCache.fontPath, panelCache.fontSize, panelCache.fontStyle, panelCache.fontColor, panelCache.fontX, panelCache.fontY end
+	if not entry or entry.cooldownTextUseGlobal ~= false then
+		return panelCache.fontPath, panelCache.fontSize, panelCache.fontStyleChoice, panelCache.fontStyle, panelCache.fontColor, panelCache.fontX, panelCache.fontY
+	end
 	local cache = CooldownPanels._styleCacheRoots.cooldownTextEntry[entry]
 	if
 		not cache
@@ -4753,15 +4758,15 @@ function CooldownPanels:ResolveEntryCooldownTextStyle(layout, entry, fallbackFon
 		cache.srcY = entry.cooldownTextY
 		cache.fontPath = Helper.ResolveFontPath(entry.cooldownTextFont, panelCache.fontPath)
 		cache.fontSize = Helper.ClampInt(entry.cooldownTextSize, 6, 64, panelCache.fontSize)
-		local fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.cooldownTextStyle, panelCache.fontStyleChoice)
-		cache.fontStyle = Helper.NormalizeFontStyle(fontStyleChoice, panelCache.fontStyle) or ""
+		cache.fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.cooldownTextStyle, panelCache.fontStyleChoice)
+		cache.fontStyle = Helper.NormalizeFontStyle(cache.fontStyleChoice, panelCache.fontStyle) or ""
 		local r, g, b, a = Helper.ResolveColor(entry.cooldownTextColor, panelCache.fontColor)
 		cache.fontColor = CooldownPanels.FillCachedColor(cache.fontColor, r, g, b, a)
 		cache.fontX = Helper.ClampInt(entry.cooldownTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelCache.fontX)
 		cache.fontY = Helper.ClampInt(entry.cooldownTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelCache.fontY)
 		CooldownPanels._styleCacheRoots.cooldownTextEntry[entry] = cache
 	end
-	return cache.fontPath, cache.fontSize, cache.fontStyle, cache.fontColor, cache.fontX, cache.fontY
+	return cache.fontPath, cache.fontSize, cache.fontStyleChoice, cache.fontStyle, cache.fontColor, cache.fontX, cache.fontY
 end
 
 function CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
@@ -4777,13 +4782,22 @@ function CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
 		}
 	end
 	local defaults = icon.cooldown._eqolCooldownTextDefaults
-	local fontPath, fontSize, fontStyle, fontColor, fontX, fontY =
+	local fontPath, fontSize, fontStyleChoice, fontStyle, fontColor, fontX, fontY =
 		self:ResolveEntryCooldownTextStyle(layout, entry, defaults and defaults.font, defaults and defaults.size, defaults and defaults.style)
-	if fontString._eqolCooldownFont ~= fontPath or fontString._eqolCooldownFontSize ~= fontSize or fontString._eqolCooldownFontStyle ~= fontStyle then
+	if
+		fontString._eqolCooldownFont ~= fontPath
+		or fontString._eqolCooldownFontSize ~= fontSize
+		or fontString._eqolCooldownFontStyle ~= fontStyle
+		or fontString._eqolCooldownFontStyleChoice ~= fontStyleChoice
+	then
 		fontString:SetFont(fontPath, fontSize, fontStyle)
+		if addon.functions and addon.functions.ApplyFontStyleShadow then
+			addon.functions.ApplyFontStyleShadow(fontString, fontStyleChoice, defaults and defaults.style)
+		end
 		fontString._eqolCooldownFont = fontPath
 		fontString._eqolCooldownFontSize = fontSize
 		fontString._eqolCooldownFontStyle = fontStyle
+		fontString._eqolCooldownFontStyleChoice = fontStyleChoice
 	end
 	if fontString._eqolCooldownAnchor ~= "CENTER" or fontString._eqolCooldownX ~= fontX or fontString._eqolCooldownY ~= fontY then
 		fontString:ClearAllPoints()
@@ -4807,6 +4821,7 @@ end
 
 function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
 	local panelCache = CooldownPanels._styleCacheRoots.stackTextPanel[layout]
+	local globalFontStateVersion = addon.functions and addon.functions.GetGlobalFontStateVersion and addon.functions.GetGlobalFontStateVersion() or 0
 	local srcFont = layout and layout.stackFont or nil
 	local srcSize = layout and layout.stackFontSize or nil
 	local srcStyle = layout and layout.stackFontStyle or nil
@@ -4816,6 +4831,7 @@ function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPa
 	local srcY = layout and layout.stackY or nil
 	if
 		not panelCache
+		or panelCache.globalFontStateVersion ~= globalFontStateVersion
 		or panelCache.fallbackFontPath ~= fallbackFontPath
 		or panelCache.fallbackFontSize ~= fallbackFontSize
 		or panelCache.fallbackFontStyle ~= fallbackFontStyle
@@ -4828,6 +4844,7 @@ function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPa
 		or panelCache.srcY ~= srcY
 	then
 		panelCache = panelCache or {}
+		panelCache.globalFontStateVersion = globalFontStateVersion
 		panelCache.fallbackFontPath = fallbackFontPath
 		panelCache.fallbackFontSize = fallbackFontSize
 		panelCache.fallbackFontStyle = fallbackFontStyle
@@ -4851,7 +4868,7 @@ function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPa
 		CooldownPanels._styleCacheRoots.stackTextPanel[layout] = panelCache
 	end
 	if not entry or entry.stackStyleUseGlobal ~= false then
-		return panelCache.fontPath, panelCache.fontSize, panelCache.fontStyle, panelCache.fontColor, panelCache.anchor, panelCache.x, panelCache.y
+		return panelCache.fontPath, panelCache.fontSize, panelCache.fontStyleChoice, panelCache.fontStyle, panelCache.fontColor, panelCache.anchor, panelCache.x, panelCache.y
 	end
 	local cache = CooldownPanels._styleCacheRoots.stackTextEntry[entry]
 	if
@@ -4876,8 +4893,8 @@ function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPa
 		cache.srcY = entry.stackY
 		cache.fontPath = Helper.ResolveFontPath(entry.stackFont, panelCache.fontPath)
 		cache.fontSize = Helper.ClampInt(entry.stackFontSize, 6, 64, panelCache.fontSize)
-		local fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.stackFontStyle, panelCache.fontStyleChoice)
-		cache.fontStyle = Helper.NormalizeFontStyle(fontStyleChoice, panelCache.fontStyle) or ""
+		cache.fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.stackFontStyle, panelCache.fontStyleChoice)
+		cache.fontStyle = Helper.NormalizeFontStyle(cache.fontStyleChoice, panelCache.fontStyle) or ""
 		local r, g, b, a = Helper.ResolveColor(entry.stackColor, panelCache.fontColor)
 		cache.fontColor = CooldownPanels.FillCachedColor(cache.fontColor, r, g, b, a)
 		cache.anchor = Helper.NormalizeAnchor(entry.stackAnchor, panelCache.anchor)
@@ -4885,12 +4902,13 @@ function CooldownPanels:ResolveEntryStackTextStyle(layout, entry, fallbackFontPa
 		cache.y = Helper.ClampInt(entry.stackY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelCache.y)
 		CooldownPanels._styleCacheRoots.stackTextEntry[entry] = cache
 	end
-	return cache.fontPath, cache.fontSize, cache.fontStyle, cache.fontColor, cache.anchor, cache.x, cache.y
+	return cache.fontPath, cache.fontSize, cache.fontStyleChoice, cache.fontStyle, cache.fontColor, cache.anchor, cache.x, cache.y
 end
 
 function CooldownPanels:ApplyEntryStackTextStyle(icon, layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
 	if not (icon and icon.count) then return end
-	local fontPath, fontSize, fontStyle, fontColor, anchor, x, y = self:ResolveEntryStackTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	local fontPath, fontSize, fontStyleChoice, fontStyle, fontColor, anchor, x, y =
+		self:ResolveEntryStackTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
 	if icon.count._eqolStackAnchor ~= anchor or icon.count._eqolStackX ~= x or icon.count._eqolStackY ~= y then
 		icon.count:ClearAllPoints()
 		icon.count:SetPoint(anchor, icon, anchor, x, y)
@@ -4898,11 +4916,18 @@ function CooldownPanels:ApplyEntryStackTextStyle(icon, layout, entry, fallbackFo
 		icon.count._eqolStackX = x
 		icon.count._eqolStackY = y
 	end
-	if icon.count._eqolStackFont ~= fontPath or icon.count._eqolStackFontSize ~= fontSize or icon.count._eqolStackFontStyle ~= fontStyle then
+	if
+		icon.count._eqolStackFont ~= fontPath
+		or icon.count._eqolStackFontSize ~= fontSize
+		or icon.count._eqolStackFontStyle ~= fontStyle
+		or icon.count._eqolStackFontStyleChoice ~= fontStyleChoice
+	then
 		icon.count:SetFont(fontPath, fontSize, fontStyle)
+		if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(icon.count, fontStyleChoice, fallbackFontStyle) end
 		icon.count._eqolStackFont = fontPath
 		icon.count._eqolStackFontSize = fontSize
 		icon.count._eqolStackFontStyle = fontStyle
+		icon.count._eqolStackFontStyleChoice = fontStyleChoice
 	end
 	local r = fontColor[1] or 1
 	local g = fontColor[2] or 1
@@ -4919,6 +4944,7 @@ end
 
 function CooldownPanels:ResolveEntryChargesTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
 	local panelCache = CooldownPanels._styleCacheRoots.chargesTextPanel[layout]
+	local globalFontStateVersion = addon.functions and addon.functions.GetGlobalFontStateVersion and addon.functions.GetGlobalFontStateVersion() or 0
 	local srcFont = layout and layout.chargesFont or nil
 	local srcSize = layout and layout.chargesFontSize or nil
 	local srcStyle = layout and layout.chargesFontStyle or nil
@@ -4928,6 +4954,7 @@ function CooldownPanels:ResolveEntryChargesTextStyle(layout, entry, fallbackFont
 	local srcY = layout and layout.chargesY or nil
 	if
 		not panelCache
+		or panelCache.globalFontStateVersion ~= globalFontStateVersion
 		or panelCache.fallbackFontPath ~= fallbackFontPath
 		or panelCache.fallbackFontSize ~= fallbackFontSize
 		or panelCache.fallbackFontStyle ~= fallbackFontStyle
@@ -4940,6 +4967,7 @@ function CooldownPanels:ResolveEntryChargesTextStyle(layout, entry, fallbackFont
 		or panelCache.srcY ~= srcY
 	then
 		panelCache = panelCache or {}
+		panelCache.globalFontStateVersion = globalFontStateVersion
 		panelCache.fallbackFontPath = fallbackFontPath
 		panelCache.fallbackFontSize = fallbackFontSize
 		panelCache.fallbackFontStyle = fallbackFontStyle
@@ -4963,7 +4991,7 @@ function CooldownPanels:ResolveEntryChargesTextStyle(layout, entry, fallbackFont
 		CooldownPanels._styleCacheRoots.chargesTextPanel[layout] = panelCache
 	end
 	if not entry or entry.chargesStyleUseGlobal ~= false then
-		return panelCache.fontPath, panelCache.fontSize, panelCache.fontStyle, panelCache.fontColor, panelCache.anchor, panelCache.x, panelCache.y
+		return panelCache.fontPath, panelCache.fontSize, panelCache.fontStyleChoice, panelCache.fontStyle, panelCache.fontColor, panelCache.anchor, panelCache.x, panelCache.y
 	end
 	local cache = CooldownPanels._styleCacheRoots.chargesTextEntry[entry]
 	if
@@ -4988,8 +5016,8 @@ function CooldownPanels:ResolveEntryChargesTextStyle(layout, entry, fallbackFont
 		cache.srcY = entry.chargesY
 		cache.fontPath = Helper.ResolveFontPath(entry.chargesFont, panelCache.fontPath)
 		cache.fontSize = Helper.ClampInt(entry.chargesFontSize, 6, 64, panelCache.fontSize)
-		local fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.chargesFontStyle, panelCache.fontStyleChoice)
-		cache.fontStyle = Helper.NormalizeFontStyle(fontStyleChoice, panelCache.fontStyle) or ""
+		cache.fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.chargesFontStyle, panelCache.fontStyleChoice)
+		cache.fontStyle = Helper.NormalizeFontStyle(cache.fontStyleChoice, panelCache.fontStyle) or ""
 		local r, g, b, a = Helper.ResolveColor(entry.chargesColor, panelCache.fontColor)
 		cache.fontColor = CooldownPanels.FillCachedColor(cache.fontColor, r, g, b, a)
 		cache.anchor = Helper.NormalizeAnchor(entry.chargesAnchor, panelCache.anchor)
@@ -4997,12 +5025,13 @@ function CooldownPanels:ResolveEntryChargesTextStyle(layout, entry, fallbackFont
 		cache.y = Helper.ClampInt(entry.chargesY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelCache.y)
 		CooldownPanels._styleCacheRoots.chargesTextEntry[entry] = cache
 	end
-	return cache.fontPath, cache.fontSize, cache.fontStyle, cache.fontColor, cache.anchor, cache.x, cache.y
+	return cache.fontPath, cache.fontSize, cache.fontStyleChoice, cache.fontStyle, cache.fontColor, cache.anchor, cache.x, cache.y
 end
 
 function CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
 	if not (icon and icon.charges) then return end
-	local fontPath, fontSize, fontStyle, fontColor, anchor, x, y = self:ResolveEntryChargesTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
+	local fontPath, fontSize, fontStyleChoice, fontStyle, fontColor, anchor, x, y =
+		self:ResolveEntryChargesTextStyle(layout, entry, fallbackFontPath, fallbackFontSize, fallbackFontStyle)
 	if icon.charges._eqolChargesAnchor ~= anchor or icon.charges._eqolChargesX ~= x or icon.charges._eqolChargesY ~= y then
 		icon.charges:ClearAllPoints()
 		icon.charges:SetPoint(anchor, icon, anchor, x, y)
@@ -5010,11 +5039,18 @@ function CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, entry, fallback
 		icon.charges._eqolChargesX = x
 		icon.charges._eqolChargesY = y
 	end
-	if icon.charges._eqolChargesFont ~= fontPath or icon.charges._eqolChargesFontSize ~= fontSize or icon.charges._eqolChargesFontStyle ~= fontStyle then
+	if
+		icon.charges._eqolChargesFont ~= fontPath
+		or icon.charges._eqolChargesFontSize ~= fontSize
+		or icon.charges._eqolChargesFontStyle ~= fontStyle
+		or icon.charges._eqolChargesFontStyleChoice ~= fontStyleChoice
+	then
 		icon.charges:SetFont(fontPath, fontSize, fontStyle)
+		if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(icon.charges, fontStyleChoice, fallbackFontStyle) end
 		icon.charges._eqolChargesFont = fontPath
 		icon.charges._eqolChargesFontSize = fontSize
 		icon.charges._eqolChargesFontStyle = fontStyle
+		icon.charges._eqolChargesFontStyleChoice = fontStyleChoice
 	end
 	local r = fontColor[1] or 1
 	local g = fontColor[2] or 1
@@ -5039,7 +5075,9 @@ function CooldownPanels:ResolveEntryStaticTextStyle(layout, entry, fallbackFontP
 	local panelAnchor = Helper.NormalizeAnchor(layout and layout.staticTextAnchor, Helper.PANEL_LAYOUT_DEFAULTS.staticTextAnchor or "CENTER")
 	local panelX = Helper.ClampInt(layout and layout.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.PANEL_LAYOUT_DEFAULTS.staticTextX or 0)
 	local panelY = Helper.ClampInt(layout and layout.staticTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.PANEL_LAYOUT_DEFAULTS.staticTextY or 0)
-	if not entry or entry.staticTextUseGlobal ~= false then return panelFontPath, panelFontSize, panelFontStyle, panelFontColor, panelAnchor, panelX, panelY end
+	if not entry or entry.staticTextUseGlobal ~= false then
+		return panelFontPath, panelFontSize, panelFontStyleChoice, panelFontStyle, panelFontColor, panelAnchor, panelX, panelY
+	end
 	local fontPath = Helper.ResolveFontPath(entry.staticTextFont, panelFontPath)
 	local fontSize = Helper.ClampInt(entry.staticTextSize, 6, 64, panelFontSize)
 	local fontStyleChoice = Helper.NormalizeFontStyleChoice(entry.staticTextStyle, panelFontStyleChoice)
@@ -5048,7 +5086,7 @@ function CooldownPanels:ResolveEntryStaticTextStyle(layout, entry, fallbackFontP
 	local anchor = Helper.NormalizeAnchor(entry.staticTextAnchor, panelAnchor)
 	local x = Helper.ClampInt(entry.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelX)
 	local y = Helper.ClampInt(entry.staticTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, panelY)
-	return fontPath, fontSize, fontStyle, fontColor, anchor, x, y
+	return fontPath, fontSize, fontStyleChoice, fontStyle, fontColor, anchor, x, y
 end
 
 function CooldownPanels:ResolveEntryGlowStyle(layout, entry)
@@ -5779,8 +5817,12 @@ local function applyStaticText(icon, layout, entry, defaultFontPath, defaultFont
 	local text = entry.staticText
 	if text:find("\\n", 1, true) then text = text:gsub("\\n", "\n") end
 	if text:find("|n", 1, true) then text = text:gsub("|n", "\n") end
-	local fontPath, fontSize, fontStyle, fontColor, anchor, x, y = CooldownPanels:ResolveEntryStaticTextStyle(layout, entry, defaultFontPath, defaultFontSize, defaultFontStyle)
+	local fontPath, fontSize, fontStyleChoice, fontStyle, fontColor, anchor, x, y =
+		CooldownPanels:ResolveEntryStaticTextStyle(layout, entry, defaultFontPath, defaultFontSize, defaultFontStyle)
 	icon.staticText:SetFont(fontPath, fontSize, fontStyle)
+	if addon.functions and addon.functions.ApplyFontStyleShadow then
+		addon.functions.ApplyFontStyleShadow(icon.staticText, fontStyleChoice, defaultFontStyle)
+	end
 	icon.staticText:SetTextColor(fontColor[1] or 1, fontColor[2] or 1, fontColor[3] or 1, fontColor[4] or 1)
 	icon.staticText:ClearAllPoints()
 	icon.staticText:SetPoint(anchor, icon.overlay, anchor, x, y)
@@ -7864,6 +7906,9 @@ local function applyIconLayout(frame, count, layout)
 			icon.count:ClearAllPoints()
 			icon.count:SetPoint(stackAnchor, icon, stackAnchor, stackX, stackY)
 			icon.count:SetFont(countFontPath, countFontSize, countFontStyle)
+			if addon.functions and addon.functions.ApplyFontStyleShadow then
+				addon.functions.ApplyFontStyleShadow(icon.count, Helper.NormalizeFontStyleChoice(layout and layout.stackFontStyle, fontStyle), fontStyle)
+			end
 			icon.count:SetTextColor(r, g, b, a)
 			icon.count._eqolStackAnchor = stackAnchor
 			icon.count._eqolStackX = stackX
@@ -7884,6 +7929,9 @@ local function applyIconLayout(frame, count, layout)
 			icon.charges:ClearAllPoints()
 			icon.charges:SetPoint(chargesAnchor, icon, chargesAnchor, chargesX, chargesY)
 			icon.charges:SetFont(chargesPath, chargesSize, chargesStyle)
+			if addon.functions and addon.functions.ApplyFontStyleShadow then
+				addon.functions.ApplyFontStyleShadow(icon.charges, Helper.NormalizeFontStyleChoice(layout and layout.chargesFontStyle, chargesFontStyle), chargesFontStyle)
+			end
 			icon.charges:SetTextColor(r, g, b, a)
 			icon.charges._eqolChargesAnchor = chargesAnchor
 			icon.charges._eqolChargesX = chargesX
@@ -7900,6 +7948,9 @@ local function applyIconLayout(frame, count, layout)
 			icon.keybind:ClearAllPoints()
 			icon.keybind:SetPoint(keybindAnchor, icon, keybindAnchor, keybindX, keybindY)
 			icon.keybind:SetFont(keybindFontPath, keybindFontSize, keybindFontStyle)
+			if addon.functions and addon.functions.ApplyFontStyleShadow then
+				addon.functions.ApplyFontStyleShadow(icon.keybind, Helper.NormalizeFontStyleChoice(layout and layout.keybindFontStyle, countFontStyle), countFontStyle)
+			end
 		end
 		setCooldownDrawState(icon.cooldown, drawEdge, drawBling, drawSwipe)
 		if icon.cooldown and icon.cooldown.GetCountdownFontString then
@@ -7922,6 +7973,9 @@ local function applyIconLayout(frame, count, layout)
 				local b = cooldownTextColor[3] or 1
 				local a = cooldownTextColor[4] or 1
 				fontString:SetFont(fontPath, fontSize, fontStyle)
+				if addon.functions and addon.functions.ApplyFontStyleShadow then
+					addon.functions.ApplyFontStyleShadow(fontString, Helper.NormalizeFontStyleChoice(cooldownTextStyle, defaults and defaults.style), defaults and defaults.style)
+				end
 				fontString:ClearAllPoints()
 				fontString:SetPoint("CENTER", icon.cooldown, "CENTER", cooldownTextX, cooldownTextY)
 				fontString:SetTextColor(r, g, b, a)

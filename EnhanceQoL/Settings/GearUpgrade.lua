@@ -97,13 +97,18 @@ local function applyCharDisplaySelection(selection)
 end
 
 local ilvlFontOrder = {}
-local ilvlOutlineOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "MONOCHROMEOUTLINE" }
-local ilvlOutlineOptions = {
+local ilvlGlobalFontStyleKey = addon.functions.GetGlobalFontStyleConfigKey and addon.functions.GetGlobalFontStyleConfigKey() or "__EQOL_GLOBAL_FONT_STYLE__"
+local ilvlOutlineOptions, ilvlOutlineOrder = addon.functions.GetFontStyleOptions and addon.functions.GetFontStyleOptions(true) or {
 	NONE = NONE,
 	OUTLINE = L["Outline"] or "Outline",
-	THICKOUTLINE = L["Thick Outline"] or "Thick Outline",
-	MONOCHROMEOUTLINE = L["Monochrome Outline"] or "Monochrome Outline",
-}
+}, { "NONE", "OUTLINE" }
+local function normalizeIlvlFontStyle(value, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, fallback, true)
+	end
+	if value ~= nil then return value end
+	return fallback or "OUTLINE"
+end
 local ENCHANT_DISPLAY_MODE_FULL = "FULL"
 local ENCHANT_DISPLAY_MODE_FULL_ICON = "FULL_ICON"
 local ENCHANT_DISPLAY_MODE_BADGE = "BADGE"
@@ -373,10 +378,10 @@ addon.functions.SettingsCreateDropdown(cGearUpgrade, {
 	text = L["ilvlFontOutline"] or "Item level font outline",
 	list = ilvlOutlineOptions,
 	order = ilvlOutlineOrder,
-	default = "OUTLINE",
-	get = function() return addon.db.ilvlFontOutline or "OUTLINE" end,
+	default = ilvlGlobalFontStyleKey,
+	get = function() return normalizeIlvlFontStyle(addon.db.ilvlFontOutline, ilvlGlobalFontStyleKey) end,
 	set = function(key)
-		addon.db.ilvlFontOutline = key
+		addon.db.ilvlFontOutline = normalizeIlvlFontStyle(key, ilvlGlobalFontStyleKey)
 		refreshItemLevelDisplays()
 	end,
 	parentSection = expandable,
@@ -501,7 +506,7 @@ function addon.functions.initGearUpgrade()
 	addon.functions.InitDBValue("ilvlTextColor", { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("ilvlFontFace", addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__")
 	addon.functions.InitDBValue("ilvlFontSize", 14)
-	addon.functions.InitDBValue("ilvlFontOutline", "OUTLINE")
+	addon.functions.InitDBValue("ilvlFontOutline", ilvlGlobalFontStyleKey)
 end
 
 local eventHandlers = {}

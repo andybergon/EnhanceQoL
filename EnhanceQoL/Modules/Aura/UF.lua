@@ -3504,7 +3504,11 @@ function AuraUtil.styleAuraCount(btn, ac, countFontSizeOverride)
 		if size == nil then size = curSize or 14 end
 		if flags == nil then flags = curFlags end
 	end
-	btn.count:SetFont(UFHelper.getFont(ac.countFont), size, flags)
+	if UFHelper and UFHelper.applyFont then
+		UFHelper.applyFont(btn.count, ac.countFont, size, flags)
+	else
+		btn.count:SetFont(UFHelper.getFont(ac.countFont), size, flags)
+	end
 end
 
 function AuraUtil.styleAuraCooldownText(btn, ac, cooldownFontSizeOverride)
@@ -3575,7 +3579,11 @@ function AuraUtil.styleAuraDRText(btn, ac, drFontSizeOverride)
 		if size == nil then size = curSize or 12 end
 		if flags == nil then flags = curFlags end
 	end
-	btn.drText:SetFont(UFHelper.getFont(ac.drFont), size, flags)
+	if UFHelper and UFHelper.applyFont then
+		UFHelper.applyFont(btn.drText, ac.drFont, size, flags)
+	else
+		btn.drText:SetFont(UFHelper.getFont(ac.drFont), size, flags)
+	end
 end
 
 function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken, harmfulFilter)
@@ -5345,10 +5353,10 @@ function UF._getCastIconBorderOutset(ccfg, defc)
 end
 
 function UF._ensureCastIconBorderFrame(st)
-	if not st or not st.castBar or not st.castIcon or not st.castIconLayer then return nil end
+	if not st or not st.castBar or not st.castIconHolder or not st.castIcon then return nil end
 	local border = st.castIconBorder
 	if not border then
-		border = CreateFrame("Frame", nil, st.castIconLayer, "BackdropTemplate")
+		border = CreateFrame("Frame", nil, st.castIconHolder, "BackdropTemplate")
 		border:EnableMouse(false)
 		st.castIconBorder = border
 	end
@@ -5359,7 +5367,9 @@ function UF._ensureCastIconBorderFrame(st)
 end
 
 function UF._applyCastIconBorder(st, ccfg, defc)
-	if not st or not st.castIcon then return end
+	if not st then return end
+	local iconAnchor = st.castIconHolder or st.castIcon
+	if not iconAnchor then return end
 	local borderCfg = ccfg and ccfg.iconBorder
 	local borderDef = defc and defc.iconBorder
 	local enabled = type(borderCfg) == "table" and borderCfg.enabled
@@ -5381,8 +5391,8 @@ function UF._applyCastIconBorder(st, ccfg, defc)
 			or cache.colorA ~= colorA
 
 		border:ClearAllPoints()
-		border:SetPoint("TOPLEFT", st.castIcon, "TOPLEFT", -offset, offset)
-		border:SetPoint("BOTTOMRIGHT", st.castIcon, "BOTTOMRIGHT", offset, -offset)
+		border:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", -offset, offset)
+		border:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", offset, -offset)
 		if styleChanged then
 			local style = {
 				bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -5403,7 +5413,7 @@ function UF._applyCastIconBorder(st, ccfg, defc)
 		cache.colorB = colorB
 		cache.colorA = colorA
 		border._ufCastIconBorderCache = cache
-		border:SetShown(st.castIcon:IsShown())
+		border:SetShown(iconAnchor:IsShown())
 	else
 		local border = st.castIconBorder
 		if border then
@@ -5608,6 +5618,7 @@ local function stopCast(unit)
 	st.castBar:Hide()
 	if st.castName then st.castName:SetText("") end
 	if st.castDuration then st.castDuration:SetText("") end
+	if st.castIconHolder then st.castIconHolder:Hide() end
 	if st.castIcon then st.castIcon:Hide() end
 	st.castIconTexture = nil
 	st.castTarget = nil
@@ -5674,13 +5685,24 @@ local function applyCastLayout(cfg, unit)
 	if showIcon == nil then showIcon = defc.showIcon end
 	if showIcon == nil then showIcon = true end
 	showIcon = showIcon ~= false
-	if st.castIcon then
+	if st.castIconHolder then
 		local size = ccfg.iconSize or defc.iconSize or height
 		local iconOff = ccfg.iconOffset or defc.iconOffset or { x = -4, y = 0 }
 		if type(iconOff) ~= "table" then iconOff = { x = iconOff, y = 0 } end
-		st.castIcon:SetSize(size, size)
-		st.castIcon:ClearAllPoints()
-		st.castIcon:SetPoint("RIGHT", st.castBar, "LEFT", iconOff.x or -4, iconOff.y or 0)
+		st.castIconHolder:SetSize(size, size)
+		st.castIconHolder:ClearAllPoints()
+		st.castIconHolder:SetPoint("RIGHT", st.castBar, "LEFT", iconOff.x or -4, iconOff.y or 0)
+		st.castIconHolder:SetShown(showIcon)
+	end
+	if st.castIcon then
+		if not st.castIconHolder then
+			local size = ccfg.iconSize or defc.iconSize or height
+			local iconOff = ccfg.iconOffset or defc.iconOffset or { x = -4, y = 0 }
+			if type(iconOff) ~= "table" then iconOff = { x = iconOff, y = 0 } end
+			st.castIcon:SetSize(size, size)
+			st.castIcon:ClearAllPoints()
+			st.castIcon:SetPoint("RIGHT", st.castBar, "LEFT", iconOff.x or -4, iconOff.y or 0)
+		end
 		st.castIcon:SetShown(showIcon)
 	end
 	local texKey = ccfg.texture or defc.texture or "DEFAULT"
@@ -5845,6 +5867,7 @@ local function configureCastStatic(unit, ccfg, defc)
 		if showIcon == nil then showIcon = defc.showIcon end
 		if showIcon == nil then showIcon = true end
 		showIcon = showIcon ~= false
+		if st.castIconHolder then st.castIconHolder:SetShown(showIcon) end
 		st.castIcon:SetShown(showIcon)
 		if showIcon then
 			st.castIcon:SetTexture(iconTexture)
@@ -6159,6 +6182,7 @@ function UF.ShowCastInterrupt(unit, event)
 		if showIcon == nil then showIcon = defc.showIcon end
 		if showIcon == nil then showIcon = true end
 		showIcon = showIcon ~= false
+		if st.castIconHolder then st.castIconHolder:SetShown(showIcon) end
 		st.castIcon:SetShown(showIcon)
 		if showIcon then
 			st.castIcon:SetTexture(iconTexture)
@@ -6339,6 +6363,7 @@ local function setCastInfoFromUnit(unit)
 			if st.castIcon then
 				local iconTexture = UFHelper.resolveCastIconTexture(texture)
 				local showIcon = ccfg.showIcon ~= false
+				if st.castIconHolder then st.castIconHolder:SetShown(showIcon) end
 				st.castIcon:SetShown(showIcon)
 				if showIcon then
 					st.castIcon:SetTexture(iconTexture)
@@ -7148,6 +7173,7 @@ local function syncTextFrameLevels(st)
 	if st.restLoop and st.statusTextLayer then setFrameLevelAbove(st.restLoop, st.statusTextLayer, 3) end
 	if st.castTextLayer then setFrameLevelAbove(st.castTextLayer, st.castBar, 5) end
 	if st.castIconLayer then setFrameLevelAbove(st.castIconLayer, st.castBar, 4) end
+	if st.castIconHolder and st.castIconLayer then setFrameLevelAbove(st.castIconHolder, st.castIconLayer, 0) end
 	if UFHelper and UFHelper.syncCombatFeedbackLayer then UFHelper.syncCombatFeedbackLayer(st) end
 end
 
@@ -8154,9 +8180,13 @@ local function ensureFrames(unit)
 		st.castIconLayer = CreateFrame("Frame", nil, st.castBar)
 		st.castIconLayer:SetAllPoints(st.castBar)
 		st.castIconLayer:EnableMouse(false)
+		st.castIconHolder = CreateFrame("Frame", nil, st.castIconLayer)
+		st.castIconHolder:EnableMouse(false)
+		st.castIconHolder:Hide()
 		st.castName = st.castTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 		st.castDuration = st.castTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		st.castIcon = st.castIconLayer:CreateTexture(nil, "ARTWORK")
+		st.castIcon = st.castIconHolder:CreateTexture(nil, "ARTWORK")
+		st.castIcon:SetAllPoints(st.castIconHolder)
 		st.castIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 		st.castBar:SetMinMaxValues(0, 1)
 		st.castBar:SetValue(0)

@@ -3098,7 +3098,9 @@ addon.functions.initializePersistentCVars = initializePersistentCVars
 
 local function initActionBars()
 	local globalFontKey = addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or addon.variables.defaultFont
+	local globalFontStyleKey = addon.functions.GetGlobalFontStyleConfigKey and addon.functions.GetGlobalFontStyleConfigKey() or "__EQOL_GLOBAL_FONT_STYLE__"
 	addon.functions.InitDBValue("globalFontFace", addon.variables.defaultFont)
+	addon.functions.InitDBValue("globalFontStyle", "OUTLINE")
 	addon.functions.InitDBValue("actionBarAnchorEnabled", false)
 	addon.functions.InitDBValue("actionBarFadeStrength", 1)
 	addon.functions.InitDBValue("actionBarFullRangeColoring", false)
@@ -3118,11 +3120,11 @@ local function initActionBars()
 	addon.functions.InitDBValue("actionBarHotkeyFontOverride", false)
 	addon.functions.InitDBValue("actionBarMacroFontFace", globalFontKey)
 	addon.functions.InitDBValue("actionBarMacroFontSize", 12)
-	addon.functions.InitDBValue("actionBarMacroFontOutline", "OUTLINE")
+	addon.functions.InitDBValue("actionBarMacroFontOutline", globalFontStyleKey)
 	addon.functions.InitDBValue("actionBarMacroFontColor", { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("actionBarHotkeyFontFace", globalFontKey)
 	addon.functions.InitDBValue("actionBarHotkeyFontSize", 12)
-	addon.functions.InitDBValue("actionBarHotkeyFontOutline", "OUTLINE")
+	addon.functions.InitDBValue("actionBarHotkeyFontOutline", globalFontStyleKey)
 	addon.functions.InitDBValue("actionBarHotkeyFontColor", { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("actionBarHotkeyAnchor", "TOPRIGHT")
 	addon.functions.InitDBValue("actionBarHotkeyOffsetX", -2)
@@ -3130,7 +3132,7 @@ local function initActionBars()
 	addon.functions.InitDBValue("actionBarCountFontOverride", false)
 	addon.functions.InitDBValue("actionBarCountFontFace", globalFontKey)
 	addon.functions.InitDBValue("actionBarCountFontSize", 12)
-	addon.functions.InitDBValue("actionBarCountFontOutline", "OUTLINE")
+	addon.functions.InitDBValue("actionBarCountFontOutline", globalFontStyleKey)
 	addon.functions.InitDBValue("actionBarCountFontColor", { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("actionBarCountAnchor", "BOTTOMRIGHT")
 	addon.functions.InitDBValue("actionBarCountOffsetX", -2)
@@ -4329,7 +4331,7 @@ local function initUI()
 	addon.functions.InitDBValue("squareMinimapBorderColor", { r = 0, g = 0, b = 0 })
 	addon.functions.InitDBValue("enableSquareMinimapStats", false)
 	addon.functions.InitDBValue("squareMinimapStatsFont", addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__")
-	addon.functions.InitDBValue("squareMinimapStatsOutline", "OUTLINE")
+	addon.functions.InitDBValue("squareMinimapStatsOutline", addon.functions.GetGlobalFontStyleConfigKey and addon.functions.GetGlobalFontStyleConfigKey() or "__EQOL_GLOBAL_FONT_STYLE__")
 	addon.functions.InitDBValue("squareMinimapStatsTime", true)
 	addon.functions.InitDBValue("squareMinimapStatsTimeAnchor", "BOTTOMLEFT")
 	addon.functions.InitDBValue("squareMinimapStatsTimeOffsetX", 3)
@@ -6475,6 +6477,7 @@ local function setAllHooks()
 	end
 
 	local function refreshGlobalFontConsumers()
+		if addon.functions and addon.functions.BumpGlobalFontStateVersion then addon.functions.BumpGlobalFontStateVersion() end
 		if ActionBarLabels then
 			if ActionBarLabels.RefreshAllMacroNameVisibility then ActionBarLabels.RefreshAllMacroNameVisibility() end
 			if ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
@@ -6499,6 +6502,8 @@ local function setAllHooks()
 				xpBar:ApplyAppearance()
 				if xpBar.UpdateSoon then xpBar:UpdateSoon() end
 			end
+			local focusTracker = addon.Aura.FocusInterruptTracker
+			if focusTracker and focusTracker.Refresh then focusTracker:Refresh() end
 			local tracker = addon.Aura.TotalAbsorbTracker
 			if tracker and tracker.IsEnabled and tracker:IsEnabled() and tracker.RefreshAppearance then
 				tracker:RefreshAppearance()
@@ -6510,6 +6515,10 @@ local function setAllHooks()
 			if addon.Aura.UF and addon.Aura.UF.GroupFrames and addon.Aura.UF.GroupFrames.RefreshTextStyles then addon.Aura.UF.GroupFrames:RefreshTextStyles() end
 		end
 		if addon.functions and addon.functions.applySquareMinimapStats then addon.functions.applySquareMinimapStats(true) end
+		if addon.MythicPlus and addon.MythicPlus.functions then
+			if addon.MythicPlus.functions.refreshBRMedia then addon.MythicPlus.functions.refreshBRMedia("font") end
+			if addon.MythicPlus.functions.refreshBloodlustMedia then addon.MythicPlus.functions.refreshBloodlustMedia("font") end
+		end
 	end
 
 	addon.functions.RefreshGlobalFontConsumers = refreshGlobalFontConsumers

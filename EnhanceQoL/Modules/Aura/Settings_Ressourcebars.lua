@@ -272,6 +272,29 @@ local function globalFontConfigLabel()
 	return "Use global font config"
 end
 
+local function normalizeFontStyleChoice(value, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, fallback, true)
+	end
+	if value ~= nil then return value end
+	return fallback or "OUTLINE"
+end
+
+local function getFontStyleEntries()
+	local list = addon.functions and addon.functions.GetFontStyleOptionList and addon.functions.GetFontStyleOptionList(true) or {
+		{ value = "NONE", label = NONE },
+		{ value = "OUTLINE", label = L["Outline"] or "Outline" },
+	}
+	local entries = {}
+	for i = 1, #list do
+		entries[#entries + 1] = {
+			key = list[i].value,
+			label = list[i].label,
+		}
+	end
+	return entries
+end
+
 local function resolveStatusbarPreviewPath(key)
 	if not key then return nil end
 	if key == "DEFAULT" then return (ResourceBars and ResourceBars.DEFAULT_RB_TEX) or "Interface\\Buttons\\WHITE8x8" end
@@ -1993,12 +2016,7 @@ local function registerEditModeBars()
 					default = globalFontConfigKey(),
 				}
 
-				local outlineOptions = {
-					{ key = "NONE", label = NONE },
-					{ key = "OUTLINE", label = "Outline" },
-					{ key = "THICKOUTLINE", label = "Thick Outline" },
-					{ key = "MONOCHROMEOUTLINE", label = "Mono Outline" },
-				}
+				local outlineOptions = getFontStyleEntries()
 				settingsList[#settingsList + 1] = {
 					name = L["Outline"],
 					kind = settingType.Dropdown,
@@ -2009,26 +2027,26 @@ local function registerEditModeBars()
 						for _, entry in ipairs(outlineOptions) do
 							root:CreateCheckbox(entry.label, function()
 								local c = curSpecCfg()
-								local cur = (c and c.fontOutline) or cfg.fontOutline or "OUTLINE"
+								local cur = normalizeFontStyleChoice((c and c.fontOutline) or cfg.fontOutline, "OUTLINE")
 								return cur == entry.key
 							end, function()
 								local c = curSpecCfg()
 								if not c then return end
-								local cur = (c and c.fontOutline) or cfg.fontOutline or "OUTLINE"
+								local cur = normalizeFontStyleChoice((c and c.fontOutline) or cfg.fontOutline, "OUTLINE")
 								if cur == entry.key then return end
-								c.fontOutline = entry.key
+								c.fontOutline = normalizeFontStyleChoice(entry.key, "OUTLINE")
 								queueRefresh()
 							end)
 						end
 					end,
 					get = function()
 						local c = curSpecCfg()
-						return (c and c.fontOutline) or cfg.fontOutline or "OUTLINE"
+						return normalizeFontStyleChoice((c and c.fontOutline) or cfg.fontOutline, "OUTLINE")
 					end,
 					set = function(_, value)
 						local c = curSpecCfg()
 						if not c then return end
-						c.fontOutline = value
+						c.fontOutline = normalizeFontStyleChoice(value, "OUTLINE")
 						queueRefresh()
 					end,
 					default = "OUTLINE",
@@ -2303,12 +2321,7 @@ local function registerEditModeBars()
 					default = globalFontConfigKey(),
 				}
 
-				local outlineOptions = {
-					{ key = "NONE", label = NONE },
-					{ key = "OUTLINE", label = "Outline" },
-					{ key = "THICKOUTLINE", label = "Thick Outline" },
-					{ key = "MONOCHROMEOUTLINE", label = "Mono Outline" },
-				}
+				local outlineOptions = getFontStyleEntries()
 				settingsList[#settingsList + 1] = {
 					name = L["Outline"],
 					kind = settingType.Dropdown,
@@ -2319,26 +2332,26 @@ local function registerEditModeBars()
 						for _, entry in ipairs(outlineOptions) do
 							root:CreateCheckbox(entry.label, function()
 								local c = curSpecCfg()
-								local cur = (c and c.fontOutline) or cfg.fontOutline or "OUTLINE"
+								local cur = normalizeFontStyleChoice((c and c.fontOutline) or cfg.fontOutline, "OUTLINE")
 								return cur == entry.key
 							end, function()
 								local c = curSpecCfg()
 								if not c then return end
-								local cur = (c and c.fontOutline) or cfg.fontOutline or "OUTLINE"
+								local cur = normalizeFontStyleChoice((c and c.fontOutline) or cfg.fontOutline, "OUTLINE")
 								if cur == entry.key then return end
-								c.fontOutline = entry.key
+								c.fontOutline = normalizeFontStyleChoice(entry.key, "OUTLINE")
 								queueRefresh()
 							end)
 						end
 					end,
 					get = function()
 						local c = curSpecCfg()
-						return (c and c.fontOutline) or cfg.fontOutline or "OUTLINE"
+						return normalizeFontStyleChoice((c and c.fontOutline) or cfg.fontOutline, "OUTLINE")
 					end,
 					set = function(_, value)
 						local c = curSpecCfg()
 						if not c then return end
-						c.fontOutline = value
+						c.fontOutline = normalizeFontStyleChoice(value, "OUTLINE")
 						queueRefresh()
 					end,
 					default = "OUTLINE",

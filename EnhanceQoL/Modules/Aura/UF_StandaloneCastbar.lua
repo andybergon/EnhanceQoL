@@ -585,10 +585,10 @@ local function applyCastBorder(castCfg, castDefaults)
 end
 
 local function ensureCastIconBorderFrame()
-	if not state.castBar or not state.castIcon or not state.castIconLayer then return nil end
+	if not state.castBar or not state.castIconHolder or not state.castIcon then return nil end
 	local border = state.castIconBorder
 	if not border then
-		border = CreateFrame("Frame", nil, state.castIconLayer, "BackdropTemplate")
+		border = CreateFrame("Frame", nil, state.castIconHolder, "BackdropTemplate")
 		border:EnableMouse(false)
 		state.castIconBorder = border
 	end
@@ -599,16 +599,17 @@ local function ensureCastIconBorderFrame()
 end
 
 local function applyCastIconBorder(castCfg, castDefaults)
-	if not state.castIcon then return end
+	local iconAnchor = state.castIconHolder or state.castIcon
+	if not iconAnchor then return end
 	local enabled, borderCfg, borderDef = getCastIconBorderConfig(castCfg, castDefaults)
 
-	if enabled and state.castIcon:IsShown() then
+	if enabled and iconAnchor:IsShown() then
 		local border = ensureCastIconBorderFrame()
 		if not border then return end
 		local size, offset = getCastIconBorderMetrics(borderCfg, borderDef)
 		border:ClearAllPoints()
-		border:SetPoint("TOPLEFT", state.castIcon, "TOPLEFT", -offset, offset)
-		border:SetPoint("BOTTOMRIGHT", state.castIcon, "BOTTOMRIGHT", offset, -offset)
+		border:SetPoint("TOPLEFT", iconAnchor, "TOPLEFT", -offset, offset)
+		border:SetPoint("BOTTOMRIGHT", iconAnchor, "BOTTOMRIGHT", offset, -offset)
 		border:SetBackdrop({
 			bgFile = "Interface\\Buttons\\WHITE8x8",
 			edgeFile = UFHelper.resolveBorderTexture((type(borderCfg) == "table" and borderCfg.texture) or (type(borderDef) == "table" and borderDef.texture)),
@@ -650,10 +651,14 @@ local function ensureFrame()
 	state.castIconLayer = CreateFrame("Frame", nil, state.castBar)
 	state.castIconLayer:SetAllPoints(state.castBar)
 	state.castIconLayer:EnableMouse(false)
+	state.castIconHolder = CreateFrame("Frame", nil, state.castIconLayer)
+	state.castIconHolder:EnableMouse(false)
+	state.castIconHolder:Hide()
 
 	state.castName = state.castTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	state.castDuration = state.castTextLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	state.castIcon = state.castIconLayer:CreateTexture(nil, "ARTWORK")
+	state.castIcon = state.castIconHolder:CreateTexture(nil, "ARTWORK")
+	state.castIcon:SetAllPoints(state.castIconHolder)
 	state.castIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 end
 
@@ -932,6 +937,7 @@ local function stopCast()
 	state.castBar:Hide()
 	if state.castName then state.castName:SetText("") end
 	if state.castDuration then state.castDuration:SetText("") end
+	if state.castIconHolder then state.castIconHolder:Hide() end
 	if state.castIcon then state.castIcon:Hide() end
 	state.castIconTexture = nil
 	state.castTarget = nil
@@ -974,6 +980,13 @@ local function applyCastLayout(castCfg, castDefaults)
 			if state.castIconLayer:GetFrameLevel() ~= castIconLevel then state.castIconLayer:SetFrameLevel(castIconLevel) end
 		end
 	end
+	if state.castIconHolder then
+		if state.castIconHolder.GetFrameStrata and state.castIconHolder.SetFrameStrata and state.castIconHolder:GetFrameStrata() ~= castStrata then state.castIconHolder:SetFrameStrata(castStrata) end
+		if state.castIconHolder.GetFrameLevel and state.castIconHolder.SetFrameLevel then
+			local castIconLevel = ((state.castIconLayer and state.castIconLayer.GetFrameLevel and state.castIconLayer:GetFrameLevel()) or castFrameLevel + 4)
+			if state.castIconHolder:GetFrameLevel() ~= castIconLevel then state.castIconHolder:SetFrameLevel(castIconLevel) end
+		end
+	end
 
 	local anchor = ensureAnchorConfig(castCfg, castDefaults)
 	if (anchor.relativeFrame or "UIParent") ~= "UIParent" then ensureRelativeFrameHooks(anchor.relativeFrame) end
@@ -1007,13 +1020,24 @@ local function applyCastLayout(castCfg, castDefaults)
 		if state.castDuration.SetJustifyH then state.castDuration:SetJustifyH("RIGHT") end
 	end
 	local showIcon = shouldShowCastIcon(castCfg, castDefaults)
-	if state.castIcon then
+	if state.castIconHolder then
 		local size = castCfg.iconSize or castDefaults.iconSize or height
 		local iconOff = castCfg.iconOffset or castDefaults.iconOffset or { x = -4, y = 0 }
 		if type(iconOff) ~= "table" then iconOff = { x = iconOff, y = 0 } end
-		state.castIcon:SetSize(size, size)
-		state.castIcon:ClearAllPoints()
-		state.castIcon:SetPoint("RIGHT", state.castBar, "LEFT", iconOff.x or -4, iconOff.y or 0)
+		state.castIconHolder:SetSize(size, size)
+		state.castIconHolder:ClearAllPoints()
+		state.castIconHolder:SetPoint("RIGHT", state.castBar, "LEFT", iconOff.x or -4, iconOff.y or 0)
+		state.castIconHolder:SetShown(showIcon)
+	end
+	if state.castIcon then
+		if not state.castIconHolder then
+			local size = castCfg.iconSize or castDefaults.iconSize or height
+			local iconOff = castCfg.iconOffset or castDefaults.iconOffset or { x = -4, y = 0 }
+			if type(iconOff) ~= "table" then iconOff = { x = iconOff, y = 0 } end
+			state.castIcon:SetSize(size, size)
+			state.castIcon:ClearAllPoints()
+			state.castIcon:SetPoint("RIGHT", state.castBar, "LEFT", iconOff.x or -4, iconOff.y or 0)
+		end
 		state.castIcon:SetShown(showIcon)
 	end
 
@@ -1172,6 +1196,7 @@ local function configureCastStatic(castCfg, castDefaults)
 	if state.castIcon then
 		local iconTexture = UFHelper.resolveCastIconTexture(state.castInfo.texture)
 		local showIcon = shouldShowCastIcon(castCfg, castDefaults)
+		if state.castIconHolder then state.castIconHolder:SetShown(showIcon) end
 		state.castIcon:SetShown(showIcon)
 		if showIcon then
 			state.castIcon:SetTexture(iconTexture)
@@ -1405,6 +1430,7 @@ local function showCastInterrupt(event)
 	if state.castIcon then
 		local iconTexture = UFHelper.resolveCastIconTexture((state.castInfo and state.castInfo.texture) or state.castIconTexture)
 		local showIcon = shouldShowCastIcon(castCfg, castDefaults)
+		if state.castIconHolder then state.castIconHolder:SetShown(showIcon) end
 		state.castIcon:SetShown(showIcon)
 		if showIcon then
 			state.castIcon:SetTexture(iconTexture)

@@ -29,6 +29,14 @@ local function resolveFontFace(configured)
 	return fallback
 end
 
+local function normalizeFontStyleChoice(value, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, fallback, true)
+	end
+	if value ~= nil then return value end
+	return fallback or "OUTLINE"
+end
+
 local function GetActionBarButtonPrefix(barName)
 	if not barName then return nil, 0 end
 	if barName == "MainMenuBar" or barName == "MainActionBar" then return "ActionButton", DEFAULT_ACTION_BUTTON_COUNT end
@@ -529,6 +537,7 @@ end
 
 local ApplyTextColorOverride
 local RestoreTextColorOverride
+local ApplyFontWithFallback
 
 function Labels.RefreshAllMacroNameVisibility()
 	local hide = addon.db and addon.db.hideMacroNames
@@ -549,8 +558,7 @@ function Labels.RefreshAllMacroNameVisibility()
 						local face, size, outline = nameFrame:GetFont()
 						nameFrame.EQOL_OriginalMacroFont = { face = face, size = size, outline = outline }
 					end
-					local ok = nameFrame:SetFont(fontFace or getDefaultFontFace(), fontSize, fontOutline or "OUTLINE")
-					if not ok then nameFrame:SetFont(getDefaultFontFace(), fontSize, fontOutline or "OUTLINE") end
+					ApplyFontWithFallback(nameFrame, fontFace or getDefaultFontFace(), fontSize, normalizeFontStyleChoice(fontOutline, "OUTLINE"))
 					nameFrame.EQOL_UsingMacroOverride = true
 					ApplyTextColorOverride(nameFrame, fontColor, "EQOL_OriginalMacroColor", "EQOL_UsingMacroColorOverride")
 				else
@@ -559,7 +567,7 @@ function Labels.RefreshAllMacroNameVisibility()
 						local face = orig.face or getDefaultFontFace()
 						local size = orig.size or 12
 						local outline = orig.outline or "OUTLINE"
-						nameFrame:SetFont(face, size, outline)
+						ApplyFontWithFallback(nameFrame, face, size, outline)
 						nameFrame.EQOL_UsingMacroOverride = nil
 						nameFrame.EQOL_OriginalMacroFont = nil
 					end
@@ -675,11 +683,16 @@ end
 
 Labels.NormalizeFontSize = NormalizeFontSize
 
-local function ApplyFontWithFallback(region, face, size, outline)
+ApplyFontWithFallback = function(region, face, size, outline)
 	if not region or not region.SetFont then return end
+	local styleChoice = normalizeFontStyleChoice(outline, "OUTLINE")
+	if addon.functions and addon.functions.ApplyFontString then
+		addon.functions.ApplyFontString(region, face, size, styleChoice, getDefaultFontFace(), "OUTLINE")
+		return
+	end
 	local resolvedFace = resolveFontFace(face)
-	local ok = region:SetFont(resolvedFace or getDefaultFontFace(), size, outline or "OUTLINE")
-	if not ok then region:SetFont(getDefaultFontFace(), size, outline or "OUTLINE") end
+	local ok = region:SetFont(resolvedFace or getDefaultFontFace(), size, styleChoice or "OUTLINE")
+	if not ok then region:SetFont(getDefaultFontFace(), size, styleChoice or "OUTLINE") end
 end
 
 local function NormalizeColorComponent(value, fallback)

@@ -594,14 +594,18 @@ end
 local function createLabelControls(category, expandable)
 	addon.functions.SettingsCreateHeadline(category, L["actionBarLabelGroupTitle"] or "Button text", { parentSection = expandable })
 	local globalFontKey = getGlobalFontConfigKey()
-
-	local outlineOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "MONOCHROMEOUTLINE" }
-	local outlineOptions = {
+	local globalFontStyleKey = addon.functions.GetGlobalFontStyleConfigKey and addon.functions.GetGlobalFontStyleConfigKey() or "__EQOL_GLOBAL_FONT_STYLE__"
+	local globalFontStyleOptions, globalFontStyleOrder = addon.functions.GetFontStyleOptions and addon.functions.GetFontStyleOptions(true) or {
 		NONE = NONE,
 		OUTLINE = L["Outline"] or "Outline",
-		THICKOUTLINE = L["Thick Outline"] or "Thick Outline",
-		MONOCHROMEOUTLINE = L["Monochrome Outline"] or "Monochrome Outline",
-	}
+	}, { "NONE", "OUTLINE" }
+	local function normalizeFontStyleChoice(value, fallback)
+		if addon.functions and addon.functions.NormalizeFontStyleChoice then
+			return addon.functions.NormalizeFontStyleChoice(value, fallback, true)
+		end
+		if value ~= nil then return value end
+		return fallback or "OUTLINE"
+	end
 	local textAnchorOrder = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
 	local textAnchorOptions = {
 		TOPLEFT = L["Top Left"] or "Top Left",
@@ -674,12 +678,12 @@ local function createLabelControls(category, expandable)
 	addon.functions.SettingsCreateDropdown(category, {
 		var = "actionBarMacroFontOutline",
 		text = L["Font outline"] or "Font outline",
-		list = outlineOptions,
-		order = outlineOrder,
-		default = "OUTLINE",
-		get = function() return addon.db.actionBarMacroFontOutline or "OUTLINE" end,
+		list = globalFontStyleOptions,
+		order = globalFontStyleOrder,
+		default = globalFontStyleKey,
+		get = function() return normalizeFontStyleChoice(addon.db.actionBarMacroFontOutline, globalFontStyleKey) end,
 		set = function(key)
-			addon.db.actionBarMacroFontOutline = key
+			addon.db.actionBarMacroFontOutline = normalizeFontStyleChoice(key, globalFontStyleKey)
 			if ActionBarLabels and ActionBarLabels.RefreshAllMacroNameVisibility then ActionBarLabels.RefreshAllMacroNameVisibility() end
 			if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
 		end,
@@ -768,12 +772,12 @@ local function createLabelControls(category, expandable)
 	addon.functions.SettingsCreateDropdown(category, {
 		var = "actionBarHotkeyFontOutline",
 		text = L["Font outline"] or "Font outline",
-		list = outlineOptions,
-		order = outlineOrder,
-		default = "OUTLINE",
-		get = function() return addon.db.actionBarHotkeyFontOutline or "OUTLINE" end,
+		list = globalFontStyleOptions,
+		order = globalFontStyleOrder,
+		default = globalFontStyleKey,
+		get = function() return normalizeFontStyleChoice(addon.db.actionBarHotkeyFontOutline, globalFontStyleKey) end,
 		set = function(key)
-			addon.db.actionBarHotkeyFontOutline = key
+			addon.db.actionBarHotkeyFontOutline = normalizeFontStyleChoice(key, globalFontStyleKey)
 			if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyVisibility then ActionBarLabels.RefreshAllHotkeyVisibility() end
 			if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
 		end,
@@ -913,12 +917,12 @@ local function createLabelControls(category, expandable)
 	addon.functions.SettingsCreateDropdown(category, {
 		var = "actionBarCountFontOutline",
 		text = L["Font outline"] or "Font outline",
-		list = outlineOptions,
-		order = outlineOrder,
-		default = "OUTLINE",
-		get = function() return addon.db.actionBarCountFontOutline or "OUTLINE" end,
+		list = globalFontStyleOptions,
+		order = globalFontStyleOrder,
+		default = globalFontStyleKey,
+		get = function() return normalizeFontStyleChoice(addon.db.actionBarCountFontOutline, globalFontStyleKey) end,
 		set = function(key)
-			addon.db.actionBarCountFontOutline = key
+			addon.db.actionBarCountFontOutline = normalizeFontStyleChoice(key, globalFontStyleKey)
 			if ActionBarLabels and ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
 		end,
 		parent = true,
@@ -1523,7 +1527,7 @@ function addon.functions.initUIOptions()
 	addon.functions.InitDBValue("xpBarTextRightMode", xpDefaults.textRightMode or "PERCENT_RESTED")
 	addon.functions.InitDBValue("xpBarTextSize", xpDefaults.textSize or 11)
 	addon.functions.InitDBValue("xpBarTextFont", xpDefaults.textFont or (addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"))
-	addon.functions.InitDBValue("xpBarTextOutline", xpDefaults.textOutline or "OUTLINE")
+	addon.functions.InitDBValue("xpBarTextOutline", addon.functions.GetGlobalFontStyleConfigKey and addon.functions.GetGlobalFontStyleConfigKey() or "__EQOL_GLOBAL_FONT_STYLE__")
 	addon.functions.InitDBValue("xpBarTextColor", xpDefaults.textColor or { r = 1, g = 1, b = 1, a = 1 })
 	addon.functions.InitDBValue("xpBarTextAbbreviateNumbers", xpDefaults.abbreviateNumbers == true)
 	addon.functions.InitDBValue("xpBarHideInPetBattle", xpDefaults.hideInPetBattle == true)

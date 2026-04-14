@@ -67,6 +67,13 @@ GF.splitRoleViewerRoleOptions = {
 
 local function textureOptions() return GFH.TextureOptions(LSM) end
 local function fontOptions() return GFH.FontOptions(LSM) end
+local function normalizeFontStyleChoice(value, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, fallback, true)
+	end
+	if value ~= nil then return value end
+	return fallback or "OUTLINE"
+end
 function GF.FontOptionsWithDefault() return fontOptions() end
 function GF.GlobalFontConfigKey()
 	if addon.functions and addon.functions.GetGlobalFontConfigKey then return addon.functions.GetGlobalFontConfigKey() end
@@ -16627,14 +16634,14 @@ local function buildEditModeSettings(kind, editModeId)
 			get = function()
 				local cfg = getCfg(kind)
 				local tc = cfg and cfg.text or {}
-				return tc.fontOutline or (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.fontOutline) or "OUTLINE"
+				return normalizeFontStyleChoice(tc.fontOutline, (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.fontOutline) or "OUTLINE")
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
 				cfg.text = cfg.text or {}
-				cfg.text.fontOutline = value
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "nameFontOutline", value, nil, true) end
+				cfg.text.fontOutline = normalizeFontStyleChoice(value, (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.fontOutline) or "OUTLINE")
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "nameFontOutline", cfg.text.fontOutline, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
@@ -16642,13 +16649,13 @@ local function buildEditModeSettings(kind, editModeId)
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local tc = cfg and cfg.text or {}
-						return (tc.fontOutline or (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.fontOutline) or "OUTLINE") == option.value
+						return normalizeFontStyleChoice(tc.fontOutline, (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.fontOutline) or "OUTLINE") == option.value
 					end, function()
 						local cfg = getCfg(kind)
 						if not cfg then return end
 						cfg.text = cfg.text or {}
-						cfg.text.fontOutline = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "nameFontOutline", option.value, nil, true) end
+						cfg.text.fontOutline = normalizeFontStyleChoice(option.value, (DEFAULTS[kind] and DEFAULTS[kind].text and DEFAULTS[kind].text.fontOutline) or "OUTLINE")
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "nameFontOutline", cfg.text.fontOutline, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
 					end)
 				end
@@ -17042,14 +17049,14 @@ local function buildEditModeSettings(kind, editModeId)
 			get = function()
 				local cfg = getCfg(kind)
 				local hc = cfg and cfg.health or {}
-				return hc.fontOutline or (DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.fontOutline) or "OUTLINE"
+				return normalizeFontStyleChoice(hc.fontOutline, (DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.fontOutline) or "OUTLINE")
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
 				cfg.health = cfg.health or {}
-				cfg.health.fontOutline = value
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healthFontOutline", value, nil, true) end
+				cfg.health.fontOutline = normalizeFontStyleChoice(value, (DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.fontOutline) or "OUTLINE")
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healthFontOutline", cfg.health.fontOutline, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
@@ -17057,13 +17064,13 @@ local function buildEditModeSettings(kind, editModeId)
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local hc = cfg and cfg.health or {}
-						return (hc.fontOutline or (DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.fontOutline) or "OUTLINE") == option.value
+						return normalizeFontStyleChoice(hc.fontOutline, (DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.fontOutline) or "OUTLINE") == option.value
 					end, function()
 						local cfg = getCfg(kind)
 						if not cfg then return end
 						cfg.health = cfg.health or {}
-						cfg.health.fontOutline = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healthFontOutline", option.value, nil, true) end
+						cfg.health.fontOutline = normalizeFontStyleChoice(option.value, (DEFAULTS[kind] and DEFAULTS[kind].health and DEFAULTS[kind].health.fontOutline) or "OUTLINE")
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healthFontOutline", cfg.health.fontOutline, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
 					end)
 				end
@@ -18254,14 +18261,16 @@ local function buildEditModeSettings(kind, editModeId)
 				local sc = cfg and cfg.status or {}
 				local tc = cfg and cfg.text or {}
 				local hc = cfg and cfg.health or {}
-				return sc.levelFontOutline or tc.fontOutline or hc.fontOutline or "OUTLINE"
+				return normalizeFontStyleChoice(sc.levelFontOutline, tc.fontOutline or hc.fontOutline or "OUTLINE")
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
+				local tc = cfg and cfg.text or {}
+				local hc = cfg and cfg.health or {}
 				cfg.status = cfg.status or {}
-				cfg.status.levelFontOutline = value
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "levelFontOutline", value, nil, true) end
+				cfg.status.levelFontOutline = normalizeFontStyleChoice(value, tc.fontOutline or hc.fontOutline or "OUTLINE")
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "levelFontOutline", cfg.status.levelFontOutline, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
@@ -18271,13 +18280,13 @@ local function buildEditModeSettings(kind, editModeId)
 						local sc = cfg and cfg.status or {}
 						local tc = cfg and cfg.text or {}
 						local hc = cfg and cfg.health or {}
-						return (sc.levelFontOutline or tc.fontOutline or hc.fontOutline or "OUTLINE") == option.value
+						return normalizeFontStyleChoice(sc.levelFontOutline, tc.fontOutline or hc.fontOutline or "OUTLINE") == option.value
 					end, function()
 						local cfg = getCfg(kind)
 						if not cfg then return end
 						cfg.status = cfg.status or {}
-						cfg.status.levelFontOutline = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "levelFontOutline", option.value, nil, true) end
+						cfg.status.levelFontOutline = normalizeFontStyleChoice(option.value, tc.fontOutline or hc.fontOutline or "OUTLINE")
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "levelFontOutline", cfg.status.levelFontOutline, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
 					end)
 				end
@@ -18699,15 +18708,17 @@ local function buildEditModeSettings(kind, editModeId)
 				local us = sc.unitStatus or {}
 				local hc = cfg and cfg.health or {}
 				local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
-				return us.fontOutline or hc.fontOutline or defH.fontOutline or "OUTLINE"
+				return normalizeFontStyleChoice(us.fontOutline, hc.fontOutline or defH.fontOutline or "OUTLINE")
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
+				local hc = cfg and cfg.health or {}
+				local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
 				cfg.status = cfg.status or {}
 				cfg.status.unitStatus = cfg.status.unitStatus or {}
-				cfg.status.unitStatus.fontOutline = value
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "statusTextFontOutline", value, nil, true) end
+				cfg.status.unitStatus.fontOutline = normalizeFontStyleChoice(value, hc.fontOutline or defH.fontOutline or "OUTLINE")
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "statusTextFontOutline", cfg.status.unitStatus.fontOutline, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
@@ -18718,14 +18729,14 @@ local function buildEditModeSettings(kind, editModeId)
 						local us = sc.unitStatus or {}
 						local hc = cfg and cfg.health or {}
 						local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
-						return (us.fontOutline or hc.fontOutline or defH.fontOutline or "OUTLINE") == option.value
+						return normalizeFontStyleChoice(us.fontOutline, hc.fontOutline or defH.fontOutline or "OUTLINE") == option.value
 					end, function()
 						local cfg = getCfg(kind)
 						if not cfg then return end
 						cfg.status = cfg.status or {}
 						cfg.status.unitStatus = cfg.status.unitStatus or {}
-						cfg.status.unitStatus.fontOutline = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "statusTextFontOutline", option.value, nil, true) end
+						cfg.status.unitStatus.fontOutline = normalizeFontStyleChoice(option.value, hc.fontOutline or defH.fontOutline or "OUTLINE")
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "statusTextFontOutline", cfg.status.unitStatus.fontOutline, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
 					end)
 				end
@@ -19002,15 +19013,15 @@ local function buildEditModeSettings(kind, editModeId)
 				local cfg = getCfg(kind)
 				local def = DEFAULTS[kind] or {}
 				local style = resolveGroupNumberStyle(cfg, def, (cfg and cfg.health) or {})
-				return style.fontOutline or "OUTLINE"
+				return normalizeFontStyleChoice(style.fontOutline, "OUTLINE")
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
 				cfg.status = cfg.status or {}
 				cfg.status.groupNumber = cfg.status.groupNumber or {}
-				cfg.status.groupNumber.fontOutline = value
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "groupNumberFontOutline", value, nil, true) end
+				cfg.status.groupNumber.fontOutline = normalizeFontStyleChoice(value, "OUTLINE")
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "groupNumberFontOutline", cfg.status.groupNumber.fontOutline, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
@@ -19019,14 +19030,14 @@ local function buildEditModeSettings(kind, editModeId)
 						local cfg = getCfg(kind)
 						local def = DEFAULTS[kind] or {}
 						local style = resolveGroupNumberStyle(cfg, def, (cfg and cfg.health) or {})
-						return (style.fontOutline or "OUTLINE") == option.value
+						return normalizeFontStyleChoice(style.fontOutline, "OUTLINE") == option.value
 					end, function()
 						local cfg = getCfg(kind)
 						if not cfg then return end
 						cfg.status = cfg.status or {}
 						cfg.status.groupNumber = cfg.status.groupNumber or {}
-						cfg.status.groupNumber.fontOutline = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "groupNumberFontOutline", option.value, nil, true) end
+						cfg.status.groupNumber.fontOutline = normalizeFontStyleChoice(option.value, "OUTLINE")
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "groupNumberFontOutline", cfg.status.groupNumber.fontOutline, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
 					end)
 				end
@@ -21004,14 +21015,14 @@ local function buildEditModeSettings(kind, editModeId)
 			get = function()
 				local cfg = getCfg(kind)
 				local pcfg = cfg and cfg.power or {}
-				return pcfg.fontOutline or (DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.fontOutline) or "OUTLINE"
+				return normalizeFontStyleChoice(pcfg.fontOutline, (DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.fontOutline) or "OUTLINE")
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
 				cfg.power = cfg.power or {}
-				cfg.power.fontOutline = value
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerFontOutline", value, nil, true) end
+				cfg.power.fontOutline = normalizeFontStyleChoice(value, (DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.fontOutline) or "OUTLINE")
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerFontOutline", cfg.power.fontOutline, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
@@ -21019,13 +21030,13 @@ local function buildEditModeSettings(kind, editModeId)
 					root:CreateRadio(option.label, function()
 						local cfg = getCfg(kind)
 						local pcfg = cfg and cfg.power or {}
-						return (pcfg.fontOutline or (DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.fontOutline) or "OUTLINE") == option.value
+						return normalizeFontStyleChoice(pcfg.fontOutline, (DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.fontOutline) or "OUTLINE") == option.value
 					end, function()
 						local cfg = getCfg(kind)
 						if not cfg then return end
 						cfg.power = cfg.power or {}
-						cfg.power.fontOutline = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerFontOutline", option.value, nil, true) end
+						cfg.power.fontOutline = normalizeFontStyleChoice(option.value, (DEFAULTS[kind] and DEFAULTS[kind].power and DEFAULTS[kind].power.fontOutline) or "OUTLINE")
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "powerFontOutline", cfg.power.fontOutline, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
 					end)
 				end
@@ -24795,14 +24806,14 @@ local function buildEditModeSettings(kind, editModeId)
 				local cfg = getCfg(kind)
 				local def = DEFAULTS[kind] or {}
 				local style = resolveGroupIndicatorStyle(cfg, def, (cfg and cfg.health) or {})
-				return style.fontOutline or "OUTLINE"
+				return normalizeFontStyleChoice(style.fontOutline, "OUTLINE")
 			end,
 			set = function(_, value)
 				local cfg = getCfg(kind)
 				if not cfg then return end
 				cfg.groupIndicator = cfg.groupIndicator or {}
-				cfg.groupIndicator.fontOutline = value
-				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "groupIndicatorFontOutline", value, nil, true) end
+				cfg.groupIndicator.fontOutline = normalizeFontStyleChoice(value, "OUTLINE")
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "groupIndicatorFontOutline", cfg.groupIndicator.fontOutline, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			generator = function(_, root)
@@ -24811,13 +24822,13 @@ local function buildEditModeSettings(kind, editModeId)
 						local cfg = getCfg(kind)
 						local def = DEFAULTS[kind] or {}
 						local style = resolveGroupIndicatorStyle(cfg, def, (cfg and cfg.health) or {})
-						return (style.fontOutline or "OUTLINE") == option.value
+						return normalizeFontStyleChoice(style.fontOutline, "OUTLINE") == option.value
 					end, function()
 						local cfg = getCfg(kind)
 						if not cfg then return end
 						cfg.groupIndicator = cfg.groupIndicator or {}
-						cfg.groupIndicator.fontOutline = option.value
-						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "groupIndicatorFontOutline", option.value, nil, true) end
+						cfg.groupIndicator.fontOutline = normalizeFontStyleChoice(option.value, "OUTLINE")
+						if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "groupIndicatorFontOutline", cfg.groupIndicator.fontOutline, nil, true) end
 						GF:ApplyHeaderAttributes(kind)
 					end)
 				end

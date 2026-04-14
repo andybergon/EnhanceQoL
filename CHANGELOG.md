@@ -5,6 +5,7 @@
 ### ✨ Added
 
 - UI / Visibility & Fading (Frames): Added a `Hide Event Toasts` option to suppress Blizzard event toasts such as scenario and activity banners.
+- Unit Frames / Health Text: Added `Absorb`, `Current (Absorb)`, `Current | Absorb`, and `Current + Absorb` health-text modes using total damage absorbs.
 
 ---
 

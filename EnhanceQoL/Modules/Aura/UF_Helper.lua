@@ -181,8 +181,6 @@ function H.getNPCHealthColor(unit)
 end
 
 local nameWidthCache = {}
-local DROP_SHADOW_FLAG = "DROPSHADOW"
-local STRONG_DROP_SHADOW_FLAG = "STRONGDROPSHADOW"
 
 local function utf8Iter(str) return (str or ""):gmatch("[%z\1-\127\194-\244][\128-\191]*") end
 
@@ -220,15 +218,10 @@ local function utf8Sub(str, i, j)
 end
 
 local function normalizeFontOutline(outline)
+	if addon.functions and addon.functions.GetFontFlagsForStyle then return addon.functions.GetFontFlagsForStyle(outline, "OUTLINE") end
 	if outline == nil then return "OUTLINE" end
-	if outline == "" or outline == "NONE" or outline == DROP_SHADOW_FLAG or outline == STRONG_DROP_SHADOW_FLAG then return nil end
+	if outline == "" or outline == "NONE" then return nil end
 	return outline
-end
-
-local function getDropShadowStrength(outline)
-	if outline == STRONG_DROP_SHADOW_FLAG then return "strong" end
-	if outline == DROP_SHADOW_FLAG then return "normal" end
-	return nil
 end
 
 function H._looksLikeFontFile(path)
@@ -490,17 +483,7 @@ function H.applyFont(fs, fontPath, size, outline)
 	if size == nil or size <= 0 then size = 1 end
 	local ok = H.setFontWithFallback(fs, fontFile, size or 14, flags)
 	if not ok and fontPath and fontPath ~= "" then H.setFontWithFallback(fs, H.getFont(nil), size or 14, flags) end
-	local shadowStrength = getDropShadowStrength(outline)
-	if shadowStrength == "strong" then
-		fs:SetShadowColor(0, 0, 0, 0.85)
-		fs:SetShadowOffset(1, -1)
-	elseif shadowStrength == "normal" then
-		fs:SetShadowColor(0, 0, 0, 0.5)
-		fs:SetShadowOffset(0.5, -0.5)
-	else
-		fs:SetShadowColor(0, 0, 0, 0)
-		fs:SetShadowOffset(0, 0)
-	end
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fs, outline, "OUTLINE") end
 end
 
 local function ensureCooldownFontDefault(cooldown, fontString)

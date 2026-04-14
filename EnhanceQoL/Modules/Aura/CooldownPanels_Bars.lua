@@ -1580,7 +1580,7 @@ local function applyFontStringStyle(fontString, fontValue, sizeValue, styleValue
 	end
 	local color = Helper.NormalizeColor(colorValue, { 1, 1, 1, 1 })
 	if fontString.SetTextColor then fontString:SetTextColor(color[1], color[2], color[3], color[4]) end
-	if fontString.SetShadowOffset then fontString:SetShadowOffset(1, -1) end
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, fontStyleChoice, fallbackStyle) end
 end
 
 local function ensureModeButton(icon)

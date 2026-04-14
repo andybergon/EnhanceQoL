@@ -18,9 +18,61 @@ local UnitHealthPercent = UnitHealthPercent
 local UnitPowerPercent = UnitPowerPercent
 local GLOBAL_FONT_CONFIG_KEY = "__EQOL_GLOBAL_FONT__"
 local GLOBAL_FONT_CONFIG_LABEL = "Use global font config"
+local GLOBAL_FONT_STYLE_CONFIG_KEY = "__EQOL_GLOBAL_FONT_STYLE__"
+local GLOBAL_FONT_STYLE_CONFIG_LABEL = "Use global font styling"
+local FONT_STYLE_NONE = "NONE"
+local FONT_STYLE_OUTLINE = "OUTLINE"
+local FONT_STYLE_THICKOUTLINE = "THICKOUTLINE"
+local FONT_STYLE_MONOCHROME = "MONOCHROME"
+local FONT_STYLE_MONOCHROMEOUTLINE = "MONOCHROMEOUTLINE"
+local FONT_STYLE_MONOCHROMETHICKOUTLINE = "MONOCHROMETHICKOUTLINE"
+local FONT_STYLE_SHADOW = "SHADOW"
+local FONT_STYLE_SHADOWOUTLINE = "SHADOWOUTLINE"
+local FONT_STYLE_SHADOWTHICKOUTLINE = "SHADOWTHICKOUTLINE"
 local EMPTY_TABLE = {}
+local GLOBAL_FONT_STATE_VERSION = 0
 local LSM_CACHE = {}
 local LSM_DROPDOWN_CACHE = {}
+local FONT_STYLE_ORDER = {
+	FONT_STYLE_NONE,
+	FONT_STYLE_OUTLINE,
+	FONT_STYLE_THICKOUTLINE,
+	FONT_STYLE_MONOCHROME,
+	FONT_STYLE_MONOCHROMEOUTLINE,
+	FONT_STYLE_MONOCHROMETHICKOUTLINE,
+	FONT_STYLE_SHADOW,
+	FONT_STYLE_SHADOWOUTLINE,
+	FONT_STYLE_SHADOWTHICKOUTLINE,
+}
+local FONT_STYLE_ALIASES = {
+	[""] = FONT_STYLE_NONE,
+	NONE = FONT_STYLE_NONE,
+	OUTLINE = FONT_STYLE_OUTLINE,
+	THICKOUTLINE = FONT_STYLE_THICKOUTLINE,
+	MONOCHROME = FONT_STYLE_MONOCHROME,
+	MONOCHROMEOUTLINE = FONT_STYLE_MONOCHROMEOUTLINE,
+	MONOCHROMETHICKOUTLINE = FONT_STYLE_MONOCHROMETHICKOUTLINE,
+	["OUTLINE,MONOCHROME"] = FONT_STYLE_MONOCHROMEOUTLINE,
+	["MONOCHROME,OUTLINE"] = FONT_STYLE_MONOCHROMEOUTLINE,
+	["THICKOUTLINE,MONOCHROME"] = FONT_STYLE_MONOCHROMETHICKOUTLINE,
+	["MONOCHROME,THICKOUTLINE"] = FONT_STYLE_MONOCHROMETHICKOUTLINE,
+	DROPSHADOW = FONT_STYLE_SHADOW,
+	STRONGDROPSHADOW = FONT_STYLE_SHADOW,
+	SHADOW = FONT_STYLE_SHADOW,
+	SHADOWOUTLINE = FONT_STYLE_SHADOWOUTLINE,
+	SHADOWTHICKOUTLINE = FONT_STYLE_SHADOWTHICKOUTLINE,
+}
+local FONT_STYLE_DESCRIPTORS = {
+	[FONT_STYLE_NONE] = { flags = nil, shadowAlpha = 0, shadowX = 0, shadowY = 0 },
+	[FONT_STYLE_OUTLINE] = { flags = "OUTLINE", shadowAlpha = 0, shadowX = 0, shadowY = 0 },
+	[FONT_STYLE_THICKOUTLINE] = { flags = "THICKOUTLINE", shadowAlpha = 0, shadowX = 0, shadowY = 0 },
+	[FONT_STYLE_MONOCHROME] = { flags = "MONOCHROME", shadowAlpha = 0, shadowX = 0, shadowY = 0 },
+	[FONT_STYLE_MONOCHROMEOUTLINE] = { flags = "OUTLINE,MONOCHROME", shadowAlpha = 0, shadowX = 0, shadowY = 0 },
+	[FONT_STYLE_MONOCHROMETHICKOUTLINE] = { flags = "THICKOUTLINE,MONOCHROME", shadowAlpha = 0, shadowX = 0, shadowY = 0 },
+	[FONT_STYLE_SHADOW] = { flags = nil, shadowAlpha = 1, shadowX = 1, shadowY = -1 },
+	[FONT_STYLE_SHADOWOUTLINE] = { flags = "OUTLINE", shadowAlpha = 0.6, shadowX = 1, shadowY = -1 },
+	[FONT_STYLE_SHADOWTHICKOUTLINE] = { flags = "THICKOUTLINE", shadowAlpha = 0.6, shadowX = 1, shadowY = -1 },
+}
 local upgradeTrackMeta = {
 	explorer = { label = "Explorer", quality = Enum.ItemQuality.Poor, aliases = { "explorer" } },
 	adventurer = { label = "Adventurer", quality = Enum.ItemQuality.Common, aliases = { "adventurer" } },
@@ -244,6 +296,13 @@ local function normalizeMediaValue(value)
 end
 
 local function isGlobalFontConfigValue(value) return normalizeMediaValue(value) == GLOBAL_FONT_CONFIG_KEY end
+local function isGlobalFontStyleConfigValue(value) return normalizeMediaValue(value) == GLOBAL_FONT_STYLE_CONFIG_KEY end
+local function normalizeFontStyleValue(value)
+	if type(value) ~= "string" then return nil end
+	value = value:gsub("^%s+", ""):gsub("%s+$", "")
+	if value == "" then return FONT_STYLE_NONE end
+	return FONT_STYLE_ALIASES[string.upper(value)]
+end
 
 function addon.functions.GetGlobalFontConfigKey() return GLOBAL_FONT_CONFIG_KEY end
 
@@ -263,6 +322,19 @@ function addon.functions.GetGlobalDefaultFontFace()
 end
 
 local function defaultFontFace() return addon.functions.GetGlobalDefaultFontFace() end
+
+local function getFontStyleLabel(style)
+	if style == FONT_STYLE_NONE then return _G.NONE or "None" end
+	if style == FONT_STYLE_OUTLINE then return L["Outline"] or "Outline" end
+	if style == FONT_STYLE_THICKOUTLINE then return L["Thick Outline"] or "Thick Outline" end
+	if style == FONT_STYLE_MONOCHROME then return L["Monochrome"] or "Monochrome" end
+	if style == FONT_STYLE_MONOCHROMEOUTLINE then return L["Monochrome Outline"] or "Monochrome Outline" end
+	if style == FONT_STYLE_MONOCHROMETHICKOUTLINE then return L["Monochrome Thick"] or "Monochrome Thick" end
+	if style == FONT_STYLE_SHADOW then return L["Drop shadow"] or "Drop shadow" end
+	if style == FONT_STYLE_SHADOWOUTLINE then return L["Shadow Outline"] or "Shadow Outline" end
+	if style == FONT_STYLE_SHADOWTHICKOUTLINE then return L["Shadow Thick"] or "Shadow Thick" end
+	return tostring(style or "")
+end
 
 function addon.functions.ResolveLSMMedia(mediaType, configured, fallback, allowPath)
 	local mediaKind = normalizeMediaValue(mediaType)
@@ -299,6 +371,122 @@ function addon.functions.ResolveFontFace(configured, fallback)
 	local fallbackFace = normalizeMediaValue(fallback) or defaultFontFace()
 	if isGlobalFontConfigValue(configured) then return fallbackFace end
 	return addon.functions.ResolveLSMMedia("font", configured, fallbackFace, true) or fallbackFace
+end
+
+function addon.functions.GetGlobalFontStyleConfigKey() return GLOBAL_FONT_STYLE_CONFIG_KEY end
+
+function addon.functions.GetGlobalFontStyleConfigLabel()
+	if L and L["useGlobalFontStyleConfig"] then return L["useGlobalFontStyleConfig"] end
+	return GLOBAL_FONT_STYLE_CONFIG_LABEL
+end
+
+function addon.functions.GetGlobalFontStateVersion() return GLOBAL_FONT_STATE_VERSION end
+
+function addon.functions.BumpGlobalFontStateVersion()
+	GLOBAL_FONT_STATE_VERSION = GLOBAL_FONT_STATE_VERSION + 1
+	return GLOBAL_FONT_STATE_VERSION
+end
+
+function addon.functions.IsGlobalFontStyleConfigValue(value) return isGlobalFontStyleConfigValue(value) end
+
+function addon.functions.GetFontStyleLabel(style)
+	local normalized = normalizeFontStyleValue(style)
+	if normalized then return getFontStyleLabel(normalized) end
+	if isGlobalFontStyleConfigValue(style) then return addon.functions.GetGlobalFontStyleConfigLabel() end
+	return getFontStyleLabel(FONT_STYLE_NONE)
+end
+
+function addon.functions.GetFontStyleOptions(includeGlobalOption)
+	local list = {}
+	local order = {}
+	if includeGlobalOption == true then
+		local key = addon.functions.GetGlobalFontStyleConfigKey()
+		list[key] = addon.functions.GetGlobalFontStyleConfigLabel()
+		order[#order + 1] = key
+	end
+	for i = 1, #FONT_STYLE_ORDER do
+		local key = FONT_STYLE_ORDER[i]
+		list[key] = getFontStyleLabel(key)
+		order[#order + 1] = key
+	end
+	return list, order
+end
+
+function addon.functions.GetFontStyleOptionList(includeGlobalOption)
+	local list = {}
+	if includeGlobalOption == true then
+		list[#list + 1] = {
+			value = addon.functions.GetGlobalFontStyleConfigKey(),
+			label = addon.functions.GetGlobalFontStyleConfigLabel(),
+		}
+	end
+	for i = 1, #FONT_STYLE_ORDER do
+		local key = FONT_STYLE_ORDER[i]
+		list[#list + 1] = {
+			value = key,
+			label = getFontStyleLabel(key),
+		}
+	end
+	return list
+end
+
+function addon.functions.NormalizeFontStyleChoice(style, fallback, keepGlobalOption)
+	local configured = normalizeMediaValue(style)
+	if keepGlobalOption ~= false and isGlobalFontStyleConfigValue(configured) then return configured end
+	local normalized = normalizeFontStyleValue(configured)
+	if normalized then return normalized end
+
+	local fallbackValue = normalizeMediaValue(fallback)
+	if keepGlobalOption ~= false and isGlobalFontStyleConfigValue(fallbackValue) then return fallbackValue end
+	normalized = normalizeFontStyleValue(fallbackValue)
+	if normalized then return normalized end
+	return FONT_STYLE_NONE
+end
+
+function addon.functions.GetGlobalDefaultFontStyle()
+	local configured = addon.db and addon.db.globalFontStyle
+	return addon.functions.NormalizeFontStyleChoice(configured, FONT_STYLE_OUTLINE, false)
+end
+
+function addon.functions.ResolveFontStyleChoice(style, fallback)
+	local choice = addon.functions.NormalizeFontStyleChoice(style, fallback, true)
+	if isGlobalFontStyleConfigValue(choice) then return addon.functions.GetGlobalDefaultFontStyle() end
+	return addon.functions.NormalizeFontStyleChoice(choice, addon.functions.GetGlobalDefaultFontStyle(), false)
+end
+
+function addon.functions.ResolveFontStyle(style, fallback)
+	local choice = addon.functions.ResolveFontStyleChoice(style, fallback)
+	local descriptor = FONT_STYLE_DESCRIPTORS[choice] or FONT_STYLE_DESCRIPTORS[FONT_STYLE_NONE]
+	return choice, descriptor.flags, descriptor.shadowAlpha or 0, descriptor.shadowX or 0, descriptor.shadowY or 0
+end
+
+function addon.functions.GetFontFlagsForStyle(style, fallback)
+	local _, flags = addon.functions.ResolveFontStyle(style, fallback)
+	return flags
+end
+
+function addon.functions.ApplyFontStyleShadow(fontString, style, fallback)
+	if not (fontString and fontString.SetShadowColor and fontString.SetShadowOffset) then return end
+	local _, _, shadowAlpha, shadowX, shadowY = addon.functions.ResolveFontStyle(style, fallback)
+	if shadowAlpha and shadowAlpha > 0 then
+		fontString:SetShadowColor(0, 0, 0, shadowAlpha)
+		fontString:SetShadowOffset(shadowX or 1, shadowY or -1)
+	else
+		fontString:SetShadowColor(0, 0, 0, 0)
+		fontString:SetShadowOffset(0, 0)
+	end
+end
+
+function addon.functions.ApplyFontString(fontString, fontFace, size, style, fallbackFace, fallbackStyle)
+	if not (fontString and fontString.SetFont) then return false end
+	local resolvedFallback = addon.functions.ResolveFontFace(fallbackFace, defaultFontFace())
+	local resolvedFace = addon.functions.ResolveFontFace(fontFace, resolvedFallback)
+	local fontSize = tonumber(size) or 12
+	local _, flags = addon.functions.ResolveFontStyle(style, fallbackStyle)
+	local ok = fontString:SetFont(resolvedFace, fontSize, flags)
+	if ok == false then fontString:SetFont(resolvedFallback, fontSize, flags) end
+	addon.functions.ApplyFontStyleShadow(fontString, style, fallbackStyle)
+	return ok ~= false
 end
 
 local PRIVATE_PROFILE_KEYS = {
@@ -855,9 +1043,7 @@ local function getTooltipInfo(bag, slot, classID, tBindType)
 end
 
 local function normalizeItemLevelOutline(outline)
-	if outline == nil then return "OUTLINE" end
-	if outline == "" or outline == "NONE" then return nil end
-	return outline
+	return addon.functions.GetFontFlagsForStyle(outline, FONT_STYLE_OUTLINE)
 end
 
 local function getItemLevelFontFace()
@@ -887,12 +1073,12 @@ end
 local function applyBagUpgradeTrackStyle(fontString)
 	if not fontString then return end
 	local face = getItemLevelFontFace()
-	local outline = normalizeItemLevelOutline(addon.db and addon.db["ilvlFontOutline"])
+	local style = addon.db and addon.db["ilvlFontOutline"]
+	local outline = normalizeItemLevelOutline(style)
 	local size = math.max(8, getItemLevelFontSize() - 4)
 	local ok = fontString:SetFont(face, size, outline)
 	if ok == false then fontString:SetFont(addon.variables.defaultFont, size, outline) end
-	fontString:SetShadowOffset(1, -1)
-	fontString:SetShadowColor(0, 0, 0, 1)
+	addon.functions.ApplyFontStyleShadow(fontString, style, FONT_STYLE_OUTLINE)
 end
 
 function addon.functions.GetItemLevelTextColor(itemQuality)
@@ -915,9 +1101,11 @@ function addon.functions.ApplyItemLevelTextStyle(fontString)
 	if not fontString then return end
 	local face = getItemLevelFontFace()
 	local size = getItemLevelFontSize()
-	local outline = normalizeItemLevelOutline(addon.db and addon.db["ilvlFontOutline"])
+	local style = addon.db and addon.db["ilvlFontOutline"]
+	local outline = normalizeItemLevelOutline(style)
 	local ok = fontString:SetFont(face, size, outline)
 	if ok == false then fontString:SetFont(addon.variables.defaultFont, size, outline) end
+	addon.functions.ApplyFontStyleShadow(fontString, style, FONT_STYLE_OUTLINE)
 end
 
 function addon.functions.ApplyItemLevelTextColor(fontString, itemQuality)

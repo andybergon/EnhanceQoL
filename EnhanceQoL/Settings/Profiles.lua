@@ -319,6 +319,34 @@ addon.functions.SettingsCreateScrollDropdown(cProfiles, {
 	parentSection = expandable,
 })
 
+do
+	local globalStyleOptions, globalStyleOrder = addon.functions.GetFontStyleOptions and addon.functions.GetFontStyleOptions(false) or {
+		NONE = _G.NONE or "None",
+		OUTLINE = L["Outline"] or "Outline",
+	}, { "NONE", "OUTLINE" }
+	addon.functions.SettingsCreateScrollDropdown(cProfiles, {
+		var = "globalFontStyle",
+		text = L["globalFontStyleConfigLabel"] or "Global font style",
+		list = globalStyleOptions,
+		order = globalStyleOrder,
+		height = 220,
+		default = "OUTLINE",
+		get = function()
+			if addon.functions and addon.functions.GetGlobalDefaultFontStyle then return addon.functions.GetGlobalDefaultFontStyle() end
+			return addon.db and addon.db.globalFontStyle or "OUTLINE"
+		end,
+		set = function(value)
+			if addon.functions and addon.functions.NormalizeFontStyleChoice then
+				addon.db.globalFontStyle = addon.functions.NormalizeFontStyleChoice(value, "OUTLINE", false)
+			else
+				addon.db.globalFontStyle = value
+			end
+			refreshGlobalFonts()
+		end,
+		parentSection = expandable,
+	})
+end
+
 data = {
 	listFunc = function()
 		local currentProfile = EnhanceQoLDB.profileKeys[UnitGUID("player")]

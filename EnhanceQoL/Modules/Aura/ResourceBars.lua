@@ -1825,11 +1825,21 @@ local function resolveFontFace(cfg)
 	return defaultFontPath()
 end
 
-local function resolveFontOutline(cfg)
+local function resolveFontStyleChoice(cfg)
 	local outline = cfg and cfg.fontOutline
-	if outline == nil then return "OUTLINE" end
-	if outline == "" or outline == "NONE" then return nil end
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(outline, "OUTLINE", true)
+	end
+	if outline == nil or outline == "" then return "OUTLINE" end
 	return outline
+end
+
+local function resolveFontOutline(cfg)
+	local style = resolveFontStyleChoice(cfg)
+	if addon.functions and addon.functions.GetFontFlagsForStyle then return addon.functions.GetFontFlagsForStyle(style, "OUTLINE") end
+	if style == nil then return "OUTLINE" end
+	if style == "" or style == "NONE" then return nil end
+	return style
 end
 
 local function resolveFontColor(cfg)
@@ -1868,7 +1878,9 @@ end
 local function applyFontToString(fs, cfg)
 	if not fs then return end
 	local size = (cfg and cfg.fontSize) or 16
+	local styleChoice = resolveFontStyleChoice(cfg)
 	setFontWithFallback(fs, resolveFontFace(cfg), size, resolveFontOutline(cfg))
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fs, styleChoice, "OUTLINE") end
 	local r, g, b, a = resolveFontColor(cfg)
 	fs:SetTextColor(r, g, b, a)
 end
@@ -4968,6 +4980,7 @@ function layoutRunes(bar)
 	local show = cfg.showCooldownText ~= false -- default on
 	local size = cfg.cooldownTextFontSize or cfg.fontSize or 16
 	local fontPath = resolveFontFace(cfg)
+	local fontStyleChoice = resolveFontStyleChoice(cfg)
 	local fontOutline = resolveFontOutline(cfg)
 	local fr, fg, fb, fa = resolveFontColor(cfg)
 	local vertical = cfg.verticalFill == true
@@ -5071,11 +5084,13 @@ function layoutRunes(bar)
 		sb.fs:SetDrawLayer("OVERLAY")
 		sb.fs:ClearAllPoints()
 		sb.fs:SetPoint("CENTER", sb, "CENTER", 0, 0)
-		if sb._fsSize ~= size or sb._fsFont ~= fontPath or sb._fsOutline ~= fontOutline then
+		if sb._fsSize ~= size or sb._fsFont ~= fontPath or sb._fsOutline ~= fontOutline or sb._fsStyleChoice ~= fontStyleChoice then
 			setFontWithFallback(sb.fs, fontPath, size, fontOutline)
+			if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(sb.fs, fontStyleChoice, "OUTLINE") end
 			sb._fsSize = size
 			sb._fsFont = fontPath
 			sb._fsOutline = fontOutline
+			sb._fsStyleChoice = fontStyleChoice
 		end
 		sb.fs:SetTextColor(fr, fg, fb, fa)
 		if show then
