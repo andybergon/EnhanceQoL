@@ -996,6 +996,19 @@ local function panelUsesFakeCursor(panel)
 	return rel == cdp.FAKE_CURSOR.FRAME_NAME
 end
 
+CooldownPanels.IsPanelRuntimeEnabled = function(panelId, panel, runtime)
+	if not panel or panel.enabled == false then return false end
+	local sharedRuntime = runtime or CooldownPanels.runtime
+	local enabledPanels = sharedRuntime and sharedRuntime.enabledPanels
+	if enabledPanels then return enabledPanels[panelId] == true end
+	return panelAllowsSpec(panel)
+end
+
+CooldownPanels.UsesBlizzardEditModePanel = function(panelId, panel, runtime)
+	if not panelUsesFakeCursor(panel) then return false end
+	return CooldownPanels.IsPanelRuntimeEnabled(panelId, panel, runtime)
+end
+
 local function hasSpecFilteredCursorPanels()
 	local root = ensureRoot()
 	if not root or not root.panels then return false end
@@ -3482,7 +3495,7 @@ function CooldownPanels:DeletePanel(panelId)
 	if root.selectedPanel == panelId then root.selectedPanel = root.order[1] end
 	local runtime = CooldownPanels.runtime and CooldownPanels.runtime[panelId]
 	if runtime then
-		if runtime.editModeId and EditMode and EditMode.UnregisterFrame then pcall(EditMode.UnregisterFrame, EditMode, runtime.editModeId) end
+		self:UnregisterEditModePanel(panelId)
 		if runtime.frame then
 			runtime.frame:Hide()
 			runtime.frame:SetParent(nil)
@@ -3900,6 +3913,7 @@ function CooldownPanels:RebuildSpellIndex()
 	runtime.itemUsesPanels = itemUsesPanels
 	runtime.itemTrackedIds = itemTrackedIds
 	runtime.itemUsesTrackedIds = itemUsesTrackedIds
+	self:EnsureEditMode()
 	if updateRangeCheckSpells then updateRangeCheckSpells(rangeCheckSpells) end
 	self:RebuildPowerIndex()
 	self:RebuildChargesIndex()
@@ -11100,9 +11114,8 @@ end
 
 function CooldownPanels:IsLayoutPanelStandaloneMenuAvailable(panelId)
 	panelId = normalizeId(panelId)
-	if not panelId or not self:IsPanelLayoutEditActive(panelId) then return false end
-	local runtime = getRuntime(panelId)
-	return runtime and runtime.editModeSettings ~= nil or false
+	local lib = addon.EditModeLib
+	return panelId and self:IsPanelLayoutEditActive(panelId) and lib and lib.ShowStandaloneSettingsDialog and SettingType ~= nil or false
 end
 
 function CooldownPanels:HideLayoutPanelStandaloneMenu(panelId)
@@ -11140,7 +11153,7 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 	self:HideLayoutEntryStandaloneMenu(panelId)
 	self:HideLayoutFixedGroupStandaloneMenu(panelId)
 
-	self:RegisterEditModePanel(panelId)
+	self:RegisterEditModePanel(panelId, { forceSettings = true })
 	local registeredRuntime = getRuntime(panelId)
 	local registeredPanel = self:GetPanel(panelId)
 	local registeredHostFrame = registeredRuntime and registeredRuntime.frame or nil
@@ -16752,7 +16765,8 @@ function CooldownPanels:RefreshPanel(panelId)
 	local panel = self:GetPanel(panelId)
 	if not panel then return end
 	local layoutEditActive = self:IsPanelLayoutEditActive(panelId)
-	if panel.enabled == false and not self:IsInEditMode() and not layoutEditActive then
+	local inBlizzardEditMode = self:IsInEditMode() == true and CooldownPanels.UsesBlizzardEditModePanel(panelId, panel, self.runtime)
+	if panel.enabled == false and not inBlizzardEditMode and not layoutEditActive then
 		local runtime = self.runtime and self.runtime[panelId]
 		local frame = runtime and runtime.frame
 		if runtime then runtime.visibleCount = 0 end
@@ -16779,7 +16793,7 @@ function CooldownPanels:RefreshPanel(panelId)
 		clearRuntimeLayoutShapeCache(runtime)
 		self:ApplyLayout(panelId)
 		self:UpdateRuntimeIcons(panelId)
-	elseif self:IsInEditMode() then
+	elseif inBlizzardEditMode then
 		clearRuntimeLayoutShapeCache(runtime)
 		self:ApplyLayout(panelId)
 		self:UpdateRuntimeIcons(panelId)
@@ -16788,7 +16802,7 @@ function CooldownPanels:RefreshPanel(panelId)
 		self:UpdateRuntimeIcons(panelId)
 	end
 	self:UpdateVisibility(panelId)
-	self:ShowEditModeHint(panelId, self:IsInEditMode() == true or layoutEditActive)
+	self:ShowEditModeHint(panelId, inBlizzardEditMode or layoutEditActive)
 	if startedRuntimeQueryBatch then self:EndRuntimeQueryBatch() end
 end
 
@@ -16818,17 +16832,79 @@ function CooldownPanels:HideAllRuntimePanels()
 	end
 end
 
+CooldownPanels.GetLoadedPanelIdsForRefresh = function(root, runtime)
+	if runtime then
+		local enabledPanels = runtime.enabledPanels
+		if enabledPanels then
+			if not next(enabledPanels) then return {} end
+			local enabledPanelIds = runtime.enabledPanelIds
+			if enabledPanelIds and #enabledPanelIds > 0 then return enabledPanelIds end
+			local panelIds = {}
+			for _, panelId in ipairs(CooldownPanels.GetCachedPanelIds(root)) do
+				if enabledPanels[panelId] then panelIds[#panelIds + 1] = panelId end
+			end
+			return panelIds
+		end
+	end
+	return CooldownPanels.GetCachedPanelIds(root)
+end
+
+CooldownPanels.GetBlizzardEditModePanelIds = function(root, runtime)
+	local panelIds = CooldownPanels.GetLoadedPanelIdsForRefresh(root, runtime)
+	local filtered = {}
+	for i = 1, #panelIds do
+		local panelId = panelIds[i]
+		local panel = root and root.panels and root.panels[panelId] or nil
+		if CooldownPanels.UsesBlizzardEditModePanel(panelId, panel, runtime) then filtered[#filtered + 1] = panelId end
+	end
+	return filtered
+end
+
+CooldownPanels.HideDisabledPanelRuntime = function(panelId)
+	local panel = CooldownPanels:GetPanel(panelId)
+	if not panel then return end
+	local runtime = getRuntime(panelId)
+	if not runtime then return end
+	runtime.visibleCount = 0
+	runtime.visiblePowerSpellCount = 0
+	if not runtime.frame then
+		runtime._eqolHiddenByEligibility = true
+		return
+	end
+	runtime._eqolHiddenByEligibility = nil
+	CooldownPanels:UpdateRuntimeIcons(panelId)
+	CooldownPanels:UpdateVisibility(panelId)
+	CooldownPanels:ShowEditModeHint(panelId, false)
+end
+
 function CooldownPanels:RefreshAllPanels(forceAll)
 	local root = ensureRoot()
 	if not root then return end
 	local runtime = self.runtime
+	local inEditMode = self:IsInEditMode() == true
+	local layoutEditActive = self:IsAnyPanelLayoutEditActive()
 	local panelIds = nil
-	if forceAll == true and runtime and runtime.disabledPanelIds then
+	if runtime and runtime.disabledPanelIds then
+		for i = 1, #runtime.disabledPanelIds do
+			local panelId = runtime.disabledPanelIds[i]
+			if panelId and root.panels and root.panels[panelId] then
+				if inEditMode or layoutEditActive then
+					CooldownPanels.HideDisabledPanelRuntime(panelId)
+				else
+					self:RefreshPanel(panelId)
+				end
+			end
+		end
 		for i = 1, #runtime.disabledPanelIds do
 			runtime.disabledPanelIds[i] = nil
 		end
 	end
-	if forceAll ~= true and self:IsInEditMode() ~= true and not self:IsAnyPanelLayoutEditActive() then
+	if runtime and runtime.enabledPanels and not next(runtime.enabledPanels) then
+		self:HideAllRuntimePanels()
+		self:UpdateCursorAnchorState()
+		return
+	end
+	if forceAll ~= true and not inEditMode and not layoutEditActive then
 		local enabledPanels = runtime and runtime.enabledPanels
 		if not enabledPanels or not next(enabledPanels) then
 			self:HideAllRuntimePanels()
@@ -16836,18 +16912,13 @@ function CooldownPanels:RefreshAllPanels(forceAll)
 			return
 		end
 		panelIds = runtime and runtime.enabledPanelIds or nil
-		if runtime and runtime.disabledPanelIds then
-			for i = 1, #runtime.disabledPanelIds do
-				local panelId = runtime.disabledPanelIds[i]
-				if panelId and root.panels and root.panels[panelId] then self:RefreshPanel(panelId) end
-			end
-			for i = 1, #runtime.disabledPanelIds do
-				runtime.disabledPanelIds[i] = nil
-			end
-		end
 	end
 	syncRootOrderIfDirty(root)
-	panelIds = panelIds or CooldownPanels.GetCachedPanelIds(root)
+	if inEditMode and not layoutEditActive then
+		panelIds = CooldownPanels.GetBlizzardEditModePanelIds(root, runtime)
+	else
+		panelIds = panelIds or CooldownPanels.GetLoadedPanelIdsForRefresh(root, runtime)
+	end
 	self:BeginRuntimeQueryBatch()
 	for _, panelId in ipairs(panelIds) do
 		self:EnsurePanelFrame(panelId)
@@ -17266,21 +17337,34 @@ local function getCopySettingsEntries(panelKey)
 	return entries
 end
 
-function CooldownPanels:RegisterEditModePanel(panelId)
+function CooldownPanels:UnregisterEditModePanel(panelId)
+	panelId = normalizeId(panelId)
+	local runtime = panelId and getRuntime(panelId) or nil
+	if not runtime then return false end
+	local editModeId = runtime.editModeId
+	if editModeId and EditMode and EditMode.UnregisterFrame then pcall(EditMode.UnregisterFrame, EditMode, editModeId) end
+	runtime.editModeRegistered = nil
+	runtime.editModeId = nil
+	return editModeId ~= nil
+end
+
+function CooldownPanels:RegisterEditModePanel(panelId, options)
 	local panel = self:GetPanel(panelId)
 	if not panel then return end
 	local runtime = getRuntime(panelId)
+	local forceSettings = type(options) == "table" and options.forceSettings == true
+	local shouldRegister = CooldownPanels.UsesBlizzardEditModePanel(panelId, panel, self.runtime)
+	if runtime.editModeRegistered and not shouldRegister then self:UnregisterEditModePanel(panelId) end
 	if runtime.editModeRegistered then
 		refreshEditModePanelFrame(panelId, runtime.editModeId)
 		return
 	end
-	if not EditMode or not EditMode.RegisterFrame then return end
+	if not shouldRegister and not forceSettings then return end
 
 	local frame = self:EnsurePanelFrame(panelId)
 	if not frame then return end
 
 	local editModeId = "cooldownPanel:" .. tostring(panelId)
-	runtime.editModeId = editModeId
 
 	panel.layout = panel.layout or Helper.CopyTableShallow(Helper.PANEL_LAYOUT_DEFAULTS)
 	local layout = panel.layout
@@ -17377,13 +17461,13 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 		panel.x = a.x or panel.x or 0
 		panel.y = a.y or panel.y or 0
 	end
-	local function syncEditModeLayoutFromAnchor() CooldownPanels:SyncEditModeDataFromPanel(panelId, editModeId) end
+	local function syncEditModeLayoutFromAnchor() CooldownPanels:SyncEditModeDataFromPanel(panelId) end
 	local function applyAnchorPosition(skipFrameRefresh, skipSettingValuesRefresh)
 		syncPanelPositionFromAnchor()
 		syncEditModeLayoutFromAnchor()
 		CooldownPanels:ApplyPanelPosition(panelId)
 		CooldownPanels:UpdateVisibility(panelId)
-		if skipFrameRefresh ~= true then refreshEditModePanelFrame(panelId, editModeId) end
+		if skipFrameRefresh ~= true then refreshEditModePanelFrame(panelId) end
 		if skipSettingValuesRefresh ~= true then refreshEditModeSettingValues() end
 	end
 	local function applyAnchorDefaults(a, target)
@@ -17472,6 +17556,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 					a.relativeFrame = target
 					applyAnchorDefaults(a, target)
 					applyAnchorPosition()
+					CooldownPanels:RegisterEditModePanel(panelId)
 					CooldownPanels:UpdateCursorAnchorState()
 					local anchorHelper = CooldownPanels.AnchorHelper
 					if anchorHelper and anchorHelper.MaybeScheduleRefresh then anchorHelper:MaybeScheduleRefresh(target) end
@@ -17494,6 +17579,7 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 							a.relativeFrame = target
 							applyAnchorDefaults(a, target)
 							applyAnchorPosition()
+							CooldownPanels:RegisterEditModePanel(panelId)
 							CooldownPanels:UpdateCursorAnchorState()
 							local anchorHelper = CooldownPanels.AnchorHelper
 							if anchorHelper and anchorHelper.MaybeScheduleRefresh then anchorHelper:MaybeScheduleRefresh(target) end
@@ -19044,7 +19130,12 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 	end
 	runtime.editModeSettings = settings
 	runtime.editModeSettingsMaxHeight = 620
+	if not shouldRegister or not (EditMode and EditMode.RegisterFrame) then
+		self:UpdateVisibility(panelId)
+		return
+	end
 
+	runtime.editModeId = editModeId
 	EditMode:RegisterFrame(editModeId, {
 		frame = frame,
 		title = panel.name or "Cooldown Panel",
@@ -19156,7 +19247,6 @@ function CooldownPanels:RegisterEditModePanel(panelId)
 			self:RequestPanelRefresh(panelId)
 		end,
 		isEnabled = function()
-			if self:IsInEditMode() == true then return panel.enabled ~= false end
 			return panel.enabled ~= false and panelAllowsSpec(panel)
 		end,
 		relativeTo = function() return resolveAnchorFrame(ensureAnchorTable()) end,
@@ -19175,11 +19265,29 @@ function CooldownPanels:EnsureEditMode()
 	if not root then return end
 	Helper.SyncOrder(root.order, root.panels)
 	root._orderDirty = nil
-	for _, panelId in ipairs(root.order) do
+	local runtime = self.runtime
+	local seen = {}
+	local function syncPanel(panelId)
+		local panel = root.panels and root.panels[panelId] or nil
+		if not CooldownPanels.UsesBlizzardEditModePanel(panelId, panel, runtime) then return end
+		seen[panelId] = true
 		self:RegisterEditModePanel(panelId)
 	end
+	local activePanelIds = runtime and runtime.enabledPanelIds or nil
+	if activePanelIds and #activePanelIds > 0 then
+		for i = 1, #activePanelIds do
+			syncPanel(activePanelIds[i])
+		end
+	else
+		for _, panelId in ipairs(root.order) do
+			syncPanel(panelId)
+		end
+	end
 	for panelId in pairs(root.panels) do
-		if not containsId(root.order, panelId) then self:RegisterEditModePanel(panelId) end
+		if not seen[panelId] then syncPanel(panelId) end
+	end
+	for panelId in pairs(root.panels) do
+		if not seen[panelId] then self:UnregisterEditModePanel(panelId) end
 	end
 end
 
@@ -19201,6 +19309,7 @@ function CooldownPanels:AttachFakeCursor(panelId)
 	panel.point = anchor.point or panel.point or "CENTER"
 	panel.x = anchor.x or panel.x or 0
 	panel.y = anchor.y or panel.y or 0
+	self:RegisterEditModePanel(panelId)
 	self:ApplyPanelPosition(panelId)
 	refreshEditModePanelFrame(panelId, runtime.editModeId)
 	refreshEditModeSettingValues()
@@ -21003,13 +21112,21 @@ CooldownPanels.RequestEnabledPanelRefreshes = function()
 	local enabledPanels = runtime and runtime.enabledPanels
 	local enabledPanelIds = runtime and runtime.enabledPanelIds
 	if not (root and root.panels and enabledPanels and next(enabledPanels)) then return false end
+	local inEditMode = CooldownPanels:IsInEditMode() == true
+	local panelIds = nil
+	if inEditMode and not CooldownPanels:IsAnyPanelLayoutEditActive() then
+		panelIds = CooldownPanels.GetBlizzardEditModePanelIds(root, runtime)
+		if #panelIds == 0 then return false end
+	else
+		panelIds = enabledPanelIds
+	end
 	local queued = false
 	local queueRefresh = type(CooldownPanels.RequestPanelRefresh) == "function"
-	if enabledPanelIds and #enabledPanelIds > 0 then
+	if panelIds and #panelIds > 0 then
 		if queueRefresh then
-			for i = 1, #enabledPanelIds do
-				local panelId = enabledPanelIds[i]
-				if enabledPanels[panelId] then
+			for i = 1, #panelIds do
+				local panelId = panelIds[i]
+				if inEditMode or enabledPanels[panelId] then
 					CooldownPanels:RequestPanelRefresh(panelId)
 					queued = true
 				end
@@ -21017,8 +21134,8 @@ CooldownPanels.RequestEnabledPanelRefreshes = function()
 			return queued
 		end
 		CooldownPanels:BeginRuntimeQueryBatch()
-		for i = 1, #enabledPanelIds do
-			CooldownPanels:RefreshPanel(enabledPanelIds[i])
+		for i = 1, #panelIds do
+			CooldownPanels:RefreshPanel(panelIds[i])
 			queued = true
 		end
 		CooldownPanels:EndRuntimeQueryBatch()

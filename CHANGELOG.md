@@ -5,6 +5,7 @@
 ### 🐛 Fixed
 
 - Unit Frames / Status Text: Fixed `Ghost` showing twice on unit frames when both health text and status text were enabled.
+- Cooldown Panels / Edit Mode: Reduced lag when opening Edit Mode and `/ecd`. Cooldown Panels now stay almost completely outside of Blizzard Edit Mode and only use it where cursor-based placement still needs it.
 
 ---
 

@@ -6524,6 +6524,14 @@ local function setAllHooks()
 		addon.functions.applySquareMinimapBorder()
 	end
 
+	local function refreshCooldownPanelsForMedia(mediaType)
+		if mediaType ~= "statusbar" and mediaType ~= "border" then return end
+		local panels = addon.Aura and addon.Aura.CooldownPanels
+		if not (panels and panels.RefreshAllPanels) then return end
+		panels:RefreshAllPanels()
+		if panels.IsEditorOpen and panels:IsEditorOpen() and panels.RefreshEditor then panels:RefreshEditor() end
+	end
+
 	local function refreshGlobalFontConsumers()
 		if addon.functions and addon.functions.BumpGlobalFontStateVersion then addon.functions.BumpGlobalFontStateVersion() end
 		if ActionBarLabels then
@@ -6605,6 +6613,7 @@ local function setAllHooks()
 			if addon.Aura and addon.Aura.ResourceBars and addon.Aura.ResourceBars.RefreshTextureDropdown then addon.Aura.ResourceBars.RefreshTextureDropdown() end
 			refreshExperienceBarForMedia(mediaType, mediaKey)
 			refreshGCDBarForMedia(mediaType, mediaKey)
+			refreshCooldownPanelsForMedia(mediaType)
 		elseif mediaType == "border" then
 			if ActionBarLabels and ActionBarLabels.ResetBorderCache then ActionBarLabels.ResetBorderCache() end
 			refreshExperienceBarForMedia(mediaType, mediaKey)
@@ -6614,6 +6623,7 @@ local function setAllHooks()
 			refreshBRTrackerForMedia(mediaType)
 			refreshClassBuffReminderForMedia(mediaType, mediaKey)
 			refreshSquareMinimapBorderForMedia(mediaType, mediaKey)
+			refreshCooldownPanelsForMedia(mediaType)
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.refreshBloodlustMedia then addon.MythicPlus.functions.refreshBloodlustMedia(mediaType, mediaKey) end
 		elseif mediaType == "font" then
 			refreshExperienceBarForMedia(mediaType, mediaKey)

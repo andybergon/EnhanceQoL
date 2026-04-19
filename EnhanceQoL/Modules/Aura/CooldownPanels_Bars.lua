@@ -1138,6 +1138,29 @@ local function applyBackdropFrame(frame, edgeFile, edgeSize)
 	frame._eqolBackdropSignature = signature
 end
 
+Bars.GetBarIconBorderOutset = function(borderSize, borderOffset)
+	local size = max(tonumber(borderSize) or 0, 0)
+	if size <= 0 then return 0 end
+	local offset = max(tonumber(borderOffset) or 0, 0)
+	return size + offset
+end
+
+Bars.ApplyBarIconBorder = function(barFrame, showIcon, borderTexturePath, borderSize, borderOffset, borderColor)
+	if not (barFrame and barFrame.iconBorder and barFrame.iconHolder) then return end
+	if showIcon and borderSize > 0 and barFrame.iconHolder:IsShown() then
+		local border = barFrame.iconBorder
+		border:ClearAllPoints()
+		border:SetPoint("TOPLEFT", barFrame.iconHolder, "TOPLEFT", -borderOffset, borderOffset)
+		border:SetPoint("BOTTOMRIGHT", barFrame.iconHolder, "BOTTOMRIGHT", borderOffset, -borderOffset)
+		applyBackdropFrame(border, borderTexturePath, borderSize)
+		border:SetBackdropColor(0, 0, 0, 0)
+		border:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+		border:Show()
+	else
+		barFrame.iconBorder:Hide()
+	end
+end
+
 local function ensureBarSegment(frame, index)
 	frame.segments = frame.segments or {}
 	local segment = frame.segments[index]
@@ -1346,9 +1369,21 @@ local function ensureBarFrame(icon)
 	frame.iconOverlay:SetAllPoints(frame)
 	frame.iconOverlay:EnableMouse(false)
 
-	frame.icon = frame.iconOverlay:CreateTexture(nil, "OVERLAY")
+	frame.iconHolder = CreateFrame("Frame", nil, frame.iconOverlay)
+	frame.iconHolder:SetClampedToScreen(false)
+	frame.iconHolder:SetMovable(false)
+	frame.iconHolder:EnableMouse(false)
+	frame.iconHolder:Hide()
+
+	frame.icon = frame.iconHolder:CreateTexture(nil, "OVERLAY")
 	frame.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 	frame.icon:Hide()
+
+	frame.iconBorder = CreateFrame("Frame", nil, frame.iconHolder, "BackdropTemplate")
+	frame.iconBorder:SetClampedToScreen(false)
+	frame.iconBorder:SetMovable(false)
+	frame.iconBorder:EnableMouse(false)
+	frame.iconBorder:Hide()
 
 	frame.textOverlay = CreateFrame("Frame", nil, frame)
 	frame.textOverlay:SetAllPoints(frame)
@@ -2898,7 +2933,8 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 	local iconSize = state.showIcon and pixelSnap(Bars.DEFAULTS.barIconSize, effectiveScale) or 0
 	local configuredIconSize = normalizeBarIconSize(state and state.iconSize, Bars.DEFAULTS.barIconSize)
 	if configuredIconSize > 0 then iconSize = pixelSnap(configuredIconSize, effectiveScale) end
-	local iconArea = state.showIcon and (iconSize + iconSpacing) or 0
+	local iconBorderOutset = state.showIcon and borderEnabled and Bars.GetBarIconBorderOutset(borderSize, normalizeBarBorderOffset(state and state.borderOffset, Bars.DEFAULTS.barBorderOffset)) or 0
+	local iconArea = state.showIcon and (iconSize + iconSpacing + (iconBorderOutset * 2)) or 0
 	local iconPosition = normalizeBarIconPosition(state and state.iconPosition, Bars.DEFAULTS.barIconPosition)
 	local bodyLeft = outerPadding + ((state.showIcon and iconPosition == BAR_ICON_POSITION_LEFT) and iconArea or 0)
 	local bodyRight = outerPadding + ((state.showIcon and iconPosition == BAR_ICON_POSITION_RIGHT) and iconArea or 0)
@@ -2969,6 +3005,14 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 		barFrame.iconOverlay:SetFrameStrata(barFrame:GetFrameStrata())
 		barFrame.iconOverlay:SetFrameLevel(barFrame:GetFrameLevel() + 5)
 	end
+	if barFrame.iconHolder then
+		barFrame.iconHolder:SetFrameStrata(barFrame:GetFrameStrata())
+		barFrame.iconHolder:SetFrameLevel((barFrame.iconOverlay and barFrame.iconOverlay:GetFrameLevel()) or (barFrame:GetFrameLevel() + 5))
+	end
+	if barFrame.iconBorder then
+		barFrame.iconBorder:SetFrameStrata(barFrame:GetFrameStrata())
+		barFrame.iconBorder:SetFrameLevel(((barFrame.iconHolder and barFrame.iconHolder:GetFrameLevel()) or (barFrame:GetFrameLevel() + 5)) + 1)
+	end
 	if barFrame.textOverlay then
 		barFrame.textOverlay:ClearAllPoints()
 		barFrame.textOverlay:SetPoint("TOPLEFT", barFrame.body, "TOPLEFT", 0, 0)
@@ -3012,20 +3056,27 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 	if state.showIcon and state.texture then
 		local iconOffsetX = pixelSnap(state.iconOffsetX or 0, effectiveScale)
 		local iconOffsetY = pixelSnap(state.iconOffsetY or 0, effectiveScale)
-		barFrame.icon:ClearAllPoints()
+		barFrame.iconHolder:ClearAllPoints()
 		if iconPosition == BAR_ICON_POSITION_RIGHT then
-			barFrame.icon:SetPoint("RIGHT", barFrame, "RIGHT", pixelSnap(-outerPadding + iconOffsetX, effectiveScale), iconOffsetY)
+			barFrame.iconHolder:SetPoint("RIGHT", barFrame, "RIGHT", pixelSnap(-(outerPadding + iconBorderOutset) + iconOffsetX, effectiveScale), iconOffsetY)
 		elseif iconPosition == BAR_ICON_POSITION_TOP then
-			barFrame.icon:SetPoint("TOP", barFrame, "TOP", iconOffsetX, pixelSnap(-outerPadding + iconOffsetY, effectiveScale))
+			barFrame.iconHolder:SetPoint("TOP", barFrame, "TOP", iconOffsetX, pixelSnap(-(outerPadding + iconBorderOutset) + iconOffsetY, effectiveScale))
 		elseif iconPosition == BAR_ICON_POSITION_BOTTOM then
-			barFrame.icon:SetPoint("BOTTOM", barFrame, "BOTTOM", iconOffsetX, pixelSnap(outerPadding + iconOffsetY, effectiveScale))
+			barFrame.iconHolder:SetPoint("BOTTOM", barFrame, "BOTTOM", iconOffsetX, pixelSnap(outerPadding + iconBorderOutset + iconOffsetY, effectiveScale))
 		else
-			barFrame.icon:SetPoint("LEFT", barFrame, "LEFT", pixelSnap(outerPadding + iconOffsetX, effectiveScale), iconOffsetY)
+			barFrame.iconHolder:SetPoint("LEFT", barFrame, "LEFT", pixelSnap(outerPadding + iconBorderOutset + iconOffsetX, effectiveScale), iconOffsetY)
 		end
-		barFrame.icon:SetSize(iconSize, iconSize)
+		barFrame.iconHolder:SetSize(iconSize, iconSize)
+		barFrame.icon:ClearAllPoints()
+		barFrame.icon:SetPoint("TOPLEFT", barFrame.iconHolder, "TOPLEFT", 0, 0)
+		barFrame.icon:SetPoint("BOTTOMRIGHT", barFrame.iconHolder, "BOTTOMRIGHT", 0, 0)
 		barFrame.icon:SetTexture(state.texture)
+		barFrame.iconHolder:Show()
 		barFrame.icon:Show()
+		Bars.ApplyBarIconBorder(barFrame, borderEnabled == true, borderTexturePath, borderSize, borderOffset, borderColor)
 	else
+		if barFrame.iconBorder then barFrame.iconBorder:Hide() end
+		if barFrame.iconHolder then barFrame.iconHolder:Hide() end
 		barFrame.icon:Hide()
 	end
 
