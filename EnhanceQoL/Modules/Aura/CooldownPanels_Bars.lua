@@ -21,6 +21,12 @@ local Bars = CooldownPanels.Bars
 if Bars._eqolSupplementLoaded == true then return end
 Bars._eqolSupplementLoaded = true
 
+Bars.GetGlobalFontStyleKey = Bars.GetGlobalFontStyleKey
+	or function()
+		if addon.functions and addon.functions.GetGlobalFontStyleConfigKey then return addon.functions.GetGlobalFontStyleConfigKey() end
+		return "__EQOL_GLOBAL_FONT_STYLE__"
+	end
+
 local CreateFrame = CreateFrame
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
@@ -115,21 +121,21 @@ Bars.DEFAULTS = Bars.DEFAULTS
 		barStackOffsetX = 0,
 		barStackOffsetY = 0,
 		barStackSize = 11,
-		barStackStyle = "OUTLINE",
+		barStackStyle = Bars.GetGlobalFontStyleKey(),
 		barStackColor = { 1.00, 1.00, 1.00, 0.95 },
 		barLabelAnchor = "AUTO",
 		barLabelFont = "",
 		barLabelOffsetX = 0,
 		barLabelOffsetY = 0,
 		barLabelSize = 11,
-		barLabelStyle = "OUTLINE",
+		barLabelStyle = Bars.GetGlobalFontStyleKey(),
 		barLabelColor = { 1.00, 1.00, 1.00, 0.95 },
 		barValueAnchor = "AUTO",
 		barValueFont = "",
 		barValueOffsetX = 0,
 		barValueOffsetY = 0,
 		barValueSize = 11,
-		barValueStyle = "OUTLINE",
+		barValueStyle = Bars.GetGlobalFontStyleKey(),
 		barValueColor = { 1.00, 0.95, 0.75, 0.95 },
 	}
 
@@ -500,7 +506,34 @@ local function normalizeBarStackDividerThickness(value, fallback)
 	return Helper.ClampInt(value, BAR_STACK_DIVIDER_THICKNESS_MIN, BAR_STACK_DIVIDER_THICKNESS_MAX, fallback or Bars.DEFAULTS.barStackDividerThickness or 1)
 end
 
-local function normalizeBarFontStyle(value, fallback) return Helper.NormalizeFontStyleChoice(value, fallback or "OUTLINE") end
+local function normalizeBarFontStyle(value, fallback) return Helper.NormalizeFontStyleChoice(value, fallback or Bars.GetGlobalFontStyleKey()) end
+
+Bars.MigrateLegacyBarFontStyleDefault = Bars.MigrateLegacyBarFontStyleDefault
+	or function(value)
+		local globalStyle = Bars.GetGlobalFontStyleKey()
+		if value == nil or value == "" then return globalStyle end
+		value = normalizeBarFontStyle(value, globalStyle)
+		if value == "OUTLINE" then return globalStyle end
+		return value
+	end
+
+Bars.NormalizeRootBarDefaults = Bars.NormalizeRootBarDefaults
+	or function(root)
+		local entryDefaults = root and root.defaults and root.defaults.entry
+		if type(entryDefaults) ~= "table" then return end
+		entryDefaults.barStackStyle = Bars.MigrateLegacyBarFontStyleDefault(entryDefaults.barStackStyle)
+		entryDefaults.barLabelStyle = Bars.MigrateLegacyBarFontStyleDefault(entryDefaults.barLabelStyle)
+		entryDefaults.barValueStyle = Bars.MigrateLegacyBarFontStyleDefault(entryDefaults.barValueStyle)
+	end
+
+Bars._eqolOriginalNormalizeRoot = Bars._eqolOriginalNormalizeRoot or Helper.NormalizeRoot
+if Bars._eqolOriginalNormalizeRoot then
+	Helper.NormalizeRoot = function(root, ...)
+		local result = Bars._eqolOriginalNormalizeRoot(root, ...)
+		Bars.NormalizeRootBarDefaults(root)
+		return result
+	end
+end
 
 local function resolveBarTexture(value)
 	local texture = normalizeBarTexture(value, BAR_TEXTURE_DEFAULT)
