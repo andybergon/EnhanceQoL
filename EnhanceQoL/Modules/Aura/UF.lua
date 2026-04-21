@@ -9356,8 +9356,24 @@ applyBossEditSample = function(idx, cfg)
 	end
 
 	local powerEnabled = pcfg.enabled ~= false
+	local powerDetached = pcfg.detached == true
+	local borderCfg = cfg.border or {}
+	local borderDef = def.border or {}
+	local detachedPowerBorder = powerDetached
+		and ((borderCfg.detachedPower ~= nil and borderCfg.detachedPower == true) or (borderCfg.detachedPower == nil and borderDef.detachedPower == true))
 	if st.power then
 		if powerEnabled then
+			if st.power.SetAlpha then st.power:SetAlpha(1) end
+			if st.powerGroup and st.powerGroup.SetAlpha then st.powerGroup:SetAlpha(1) end
+			if st.barGroup then st.barGroup:Show() end
+			if st.powerGroup then
+				local powerParent = st.power.GetParent and st.power:GetParent() or nil
+				if detachedPowerBorder or powerParent == st.powerGroup then
+					st.powerGroup:Show()
+				else
+					st.powerGroup:Hide()
+				end
+			end
 			st.power:SetMinMaxValues(0, samplePowerMax)
 			st.power:SetValue(samplePowerCur, interpolation)
 			local pr, pg, pb, pa = UFHelper.getPowerColor(0, "MANA")
@@ -9440,6 +9456,7 @@ applyBossEditSample = function(idx, cfg)
 			end
 			st.power:Show()
 		else
+			if st.powerGroup then st.powerGroup:Hide() end
 			st.power:SetValue(0, interpolation)
 			if st.powerTextLeft then st.powerTextLeft:SetText("") end
 			if st.powerTextCenter then st.powerTextCenter:SetText("") end
@@ -9453,7 +9470,7 @@ applyBossEditSample = function(idx, cfg)
 		st.levelText:Show()
 	end
 	if st.castBar then
-		if cdef.enabled ~= false and UF.ShouldShowSampleCast(unit) then
+		if cdef.enabled ~= false then
 			UF.SetSampleCast(unit)
 		else
 			stopCast(unit)

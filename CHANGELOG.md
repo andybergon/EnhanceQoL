@@ -1,6 +1,14 @@
 # Changelog
 
-## [10.3.3] - 2026-04-20
+## [10.3.3-beta2] - 2026-04-21
+
+### 🐛 Fixed
+
+- Unit Frames / Boss Frames: Fixed the Edit Mode preview so boss resource bars and cast bars show reliably again, including after a reload.
+
+---
+
+## [10.3.3-beta1] - 2026-04-20
 
 ### 🐛 Fixed
 
