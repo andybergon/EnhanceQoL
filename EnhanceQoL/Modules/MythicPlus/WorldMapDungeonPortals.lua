@@ -413,9 +413,16 @@ end
 
 local function IsPanelSuppressed() return isRestrictedContent() end
 
+local function GetQuestMapDisplayMode()
+	if not QuestMapFrame then return nil end
+	if QuestMapFrame.GetDisplayMode then return QuestMapFrame:GetDisplayMode() end
+	return QuestMapFrame.displayMode
+end
+
+local function IsTeleportDisplayModeActive() return GetQuestMapDisplayMode() == DISPLAY_MODE end
+
 local function LeaveDisplayModeIfNeeded()
-	if not QuestMapFrame or not QuestMapFrame.GetDisplayMode then return end
-	if QuestMapFrame:GetDisplayMode() ~= DISPLAY_MODE then return end
+	if not QuestMapFrame or not IsTeleportDisplayModeActive() then return end
 	if InCombatLockdown and InCombatLockdown() then return end
 
 	local questLogDisplayMode = _G.QuestLogDisplayMode
@@ -456,7 +463,7 @@ local function ApplyUnsuppressedPanelState()
 		tabButton._eqolPendingVisible = nil
 	end
 
-	local modeActive = QuestMapFrame and QuestMapFrame.GetDisplayMode and QuestMapFrame:GetDisplayMode() == DISPLAY_MODE
+	local modeActive = IsTeleportDisplayModeActive()
 	if tabButton then SafeSetVisible(tabButton, true) end
 	if tabButton and tabButton.SetChecked then tabButton:SetChecked(modeActive and true or false) end
 	if panel then SafeSetVisible(panel, modeActive and true or false) end
@@ -1032,7 +1039,7 @@ local function EnsureTab(parent, anchorTo)
 	end
 
 	-- Initialize checked state and icon based on QuestMapFrame displayMode
-	local isActive = QuestMapFrame and QuestMapFrame.displayMode == DISPLAY_MODE
+	local isActive = IsTeleportDisplayModeActive()
 	if tabButton.SetChecked then tabButton:SetChecked(isActive) end
 	-- Keep panel alpha in sync with current mode without Show/Hide
 	if panel then SafeSetVisible(panel, isActive and true or false) end
@@ -1407,7 +1414,7 @@ function addon.MythicPlus.functions.RefreshWorldMapTeleportPanel()
 		if QuestMapFrame and QuestMapFrame.ValidateTabs then QuestMapFrame:ValidateTabs() end
 
 		if not addon.db["teleportsWorldMapEnabled"] then
-			if QuestMapFrame and QuestMapFrame.GetDisplayMode and QuestMapFrame:GetDisplayMode() == DISPLAY_MODE then
+			if IsTeleportDisplayModeActive() then
 				if QuestMapFrame.MapLegendTab and QuestMapFrame.MapLegendTab.Click then
 					QuestMapFrame.MapLegendTab:Click()
 				elseif QuestMapFrame.QuestsTab and QuestMapFrame.QuestsTab.Click then
