@@ -2958,6 +2958,112 @@ local function getSpecFilterLabel(panel)
 	return table.concat(labels, ", ")
 end
 
+function CooldownPanels:SetPanelEditorName(panelId, value)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	local text = type(value) == "string" and value or tostring(value or "")
+	if not (panel and text ~= "" and text ~= panel.name) then return end
+	panel.name = text
+	CooldownPanels.MarkRelativeFrameEntriesDirty()
+	local runtimePanel = CooldownPanels.runtime and CooldownPanels.runtime[panelId]
+	if runtimePanel and runtimePanel.frame then runtimePanel.frame.editModeName = text end
+	if runtimePanel and runtimePanel.editModeId and EditMode and EditMode.frames and EditMode.frames[runtimePanel.editModeId] then EditMode.frames[runtimePanel.editModeId].title = text end
+	refreshEditModePanelFrame(panelId, runtimePanel and runtimePanel.editModeId)
+	refreshEditModeSettings()
+	CooldownPanels:RefreshPanel(panelId)
+	CooldownPanels:RefreshEditor()
+end
+
+function CooldownPanels:SetPanelEditorEnabled(panelId, enabled)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	if not panel then return end
+	local nextEnabled = enabled == true
+	if (panel.enabled ~= false) == nextEnabled then return end
+	panel.enabled = nextEnabled
+	CooldownPanels:RebuildSpellIndex()
+	Keybinds.MarkPanelsDirty()
+	CooldownPanels:RefreshPanel(panelId)
+	CooldownPanels:UpdateCursorAnchorState()
+	CooldownPanels:RefreshEditor()
+end
+
+function CooldownPanels:GetPanelSpecFilterOptions()
+	local classMenuData = getClassSpecMenuData()
+	local options = {
+		{ value = "__all", text = L["CooldownPanelSpecAny"] or "All specs" },
+	}
+	for _, quickFilter in ipairs(self:GetSpecQuickFilterDefinitions(classMenuData) or {}) do
+		if type(quickFilter.specIds) == "table" and #quickFilter.specIds > 0 then
+			options[#options + 1] = {
+				value = "__quick:" .. tostring(quickFilter.id),
+				text = quickFilter.label,
+			}
+		end
+	end
+	for _, classData in ipairs(classMenuData) do
+		for _, specData in ipairs(classData.specs or {}) do
+			if specData.id then
+				options[#options + 1] = {
+					value = specData.id,
+					text = string.format("%s - %s", classData.name or "", specData.name or tostring(specData.id)),
+				}
+			end
+		end
+	end
+	return options
+end
+
+function CooldownPanels:GetPanelSpecQuickFilterSpecIds(value)
+	local quickId = type(value) == "string" and value:match("^__quick:(.+)$") or nil
+	if not quickId then return nil end
+	for _, quickFilter in ipairs(self:GetSpecQuickFilterDefinitions() or {}) do
+		if quickFilter.id == quickId then return quickFilter.specIds end
+	end
+	return nil
+end
+
+function CooldownPanels:IsPanelSpecFilterOptionSelected(panelId, value)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	if not panel then return false end
+	if value == "__all" then return not panelHasSpecFilter(panel) end
+	local quickSpecIds = self:GetPanelSpecQuickFilterSpecIds(value)
+	if quickSpecIds then return self:HasAllPanelSpecFilterEntries(panel, quickSpecIds) end
+	local specId = tonumber(value)
+	return specId and panel.specFilter and panel.specFilter[specId] == true or false
+end
+
+function CooldownPanels:SetPanelSpecFilterOptionSelected(panelId, value, selected)
+	panelId = normalizeId(panelId)
+	local panel = panelId and self:GetPanel(panelId) or nil
+	if not panel then return end
+	if value == "__all" then
+		if selected == true and panelHasSpecFilter(panel) then
+			panel.specFilter = {}
+			CooldownPanels:CommitPanelSpecFilter(panelId)
+		end
+		return
+	end
+	local quickSpecIds = self:GetPanelSpecQuickFilterSpecIds(value)
+	if quickSpecIds then
+		if CooldownPanels:SetPanelSpecFilterEntries(panel, quickSpecIds, selected == true) then CooldownPanels:CommitPanelSpecFilter(panelId) end
+		return
+	end
+	local specId = tonumber(value)
+	if not (specId and specId > 0) then return end
+	panel.specFilter = panel.specFilter or {}
+	if selected == true then
+		if panel.specFilter[specId] == true then return end
+		panel.specFilter[specId] = true
+	elseif panel.specFilter[specId] ~= nil then
+		panel.specFilter[specId] = nil
+	else
+		return
+	end
+	CooldownPanels:CommitPanelSpecFilter(panelId)
+end
+
 local function isSpellKnownSafe(spellId)
 	if not spellId then return false end
 	if Api and Api.IsSpellKnown then
@@ -4432,6 +4538,7 @@ function CooldownPanels:SelectPanel(panelId)
 		editor.selectedPanelId = panelId
 		editor.selectedEntryId = nil
 	end
+	local openLayoutPanelDialog = editor and editor.layoutEditActive == true and previousPanelId ~= panelId
 	local needsLiveRefresh = self:IsInEditMode() == true or self:IsAnyPanelLayoutEditActive()
 	if needsLiveRefresh then
 		if previousPanelId and previousPanelId ~= panelId and self:GetPanel(previousPanelId) then self:RefreshPanel(previousPanelId) end
@@ -4439,6 +4546,7 @@ function CooldownPanels:SelectPanel(panelId)
 	end
 	self:UpdateCursorAnchorState()
 	self:RefreshEditor()
+	if openLayoutPanelDialog then self:OpenLayoutPanelStandaloneMenu(panelId) end
 end
 
 function CooldownPanels:SelectEntry(entryId)
@@ -4501,6 +4609,7 @@ function CooldownPanels:SetEditorLayoutEditEnabled(enabled)
 	if nextPanelId and self:GetPanel(nextPanelId) then self:RefreshPanel(nextPanelId) end
 	self:UpdateCursorAnchorState()
 	self:RefreshEditor()
+	if enabled and nextPanelId then self:OpenLayoutPanelStandaloneMenu(nextPanelId) end
 end
 
 function CooldownPanels:PreparePanelForFixedLayoutEdit(panelId)
@@ -8789,7 +8898,37 @@ function CooldownPanels:RefreshLayoutEntryStandaloneMenu()
 	if not panel or not entry or not self:IsPanelLayoutEditActive(panelId) or selectedPanelId ~= panelId or selectedEntryId ~= entryId then self:HideLayoutEntryStandaloneMenu(panelId) end
 end
 
+function CooldownPanels:GetEditorStandaloneDialogAnchor()
+	local editor = getEditor()
+	local frame = editor and editor.frame or nil
+	if frame and frame.IsShown and frame:IsShown() then return frame end
+	return nil
+end
+
+function CooldownPanels:GetEditorStandaloneDialogSpawnPosition()
+	local frame = self:GetEditorStandaloneDialogAnchor()
+	if not frame then return nil end
+	return {
+		point = "TOPLEFT",
+		relativePoint = "TOPRIGHT",
+		relativeTo = frame,
+		x = 8,
+		y = 0,
+	}
+end
+
+function CooldownPanels:DockStandaloneDialogToEditor(dialog)
+	local frame = self:GetEditorStandaloneDialogAnchor()
+	if not (dialog and frame) then return end
+	if dialog.SetClampedToScreen then dialog:SetClampedToScreen(false) end
+	dialog:ClearAllPoints()
+	dialog:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, 0)
+end
+
 function CooldownPanels:GetStandaloneDialogSpawnPosition(anchorFrame, fallbackFrame, offsetX, offsetY)
+	local editorSpawnPosition = self:GetEditorStandaloneDialogSpawnPosition()
+	if editorSpawnPosition then return editorSpawnPosition end
+
 	local source = anchorFrame or fallbackFrame or UIParent
 	local xOffset = tonumber(offsetX) or 0
 	local yOffset = tonumber(offsetY) or 0
@@ -11125,6 +11264,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		onHide = function() CooldownPanels:ClearLayoutEntryStandaloneMenuState() end,
 	})
 	if dialog then
+		self:DockStandaloneDialogToEditor(dialog)
 		local state = self:GetLayoutEntryStandaloneMenuState()
 		state.panelId = panelId
 		state.entryId = entryId
@@ -11181,7 +11321,16 @@ function CooldownPanels:RefreshLayoutPanelStandaloneMenu()
 	local panel = panelId and self:GetPanel(panelId) or nil
 	local editor = getEditor()
 	local selectedPanelId = normalizeId(editor and editor.selectedPanelId)
-	if not panel or not self:IsLayoutPanelStandaloneMenuAvailable(panelId) or selectedPanelId ~= panelId then self:HideLayoutPanelStandaloneMenu(panelId) end
+	if not panel or not self:IsLayoutPanelStandaloneMenuAvailable(panelId) or selectedPanelId ~= panelId then
+		self:HideLayoutPanelStandaloneMenu(panelId)
+		return
+	end
+	local dialog = state.dialog
+	if dialog then
+		local title = panel.name or "Cooldown Panel"
+		if dialog.context then dialog.context.title = title end
+		if dialog.Title and title then dialog.Title:SetText(title) end
+	end
 end
 
 function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
@@ -11214,6 +11363,7 @@ function CooldownPanels:OpenLayoutPanelStandaloneMenu(panelId, anchorFrame)
 		onHide = function() CooldownPanels:ClearLayoutPanelStandaloneMenuState() end,
 	})
 	if dialog then
+		self:DockStandaloneDialogToEditor(dialog)
 		local state = self:GetLayoutPanelStandaloneMenuState()
 		state.panelId = panelId
 		state.hostFrame = registeredHostFrame
@@ -11779,6 +11929,7 @@ function CooldownPanels:OpenLayoutFixedGroupStandaloneMenu(panelId, groupId, anc
 		onHide = function() CooldownPanels:ClearLayoutFixedGroupStandaloneMenuState() end,
 	})
 	if dialog then
+		self:DockStandaloneDialogToEditor(dialog)
 		local state = self:GetLayoutFixedGroupStandaloneMenuState()
 		state.panelId = panelId
 		state.groupId = groupId
@@ -12028,7 +12179,7 @@ local function ensureEditor()
 	if runtime.editor then return runtime.editor end
 
 	local frame = CreateFrame("Frame", "EQOL_CooldownPanelsEditor", UIParent, "BackdropTemplate")
-	frame:SetSize(980, 560)
+	frame:SetSize(720, 560)
 	frame:SetPoint("CENTER")
 	applyEditorPosition(frame)
 	frame:SetClampedToScreen(false)
@@ -12122,6 +12273,8 @@ local function ensureEditor()
 	right.bg:SetAlpha(0.85)
 	applyInsetBorder(right, -4)
 	frame.right = right
+	right:Hide()
+	right:EnableMouse(false)
 
 	local rightScroll = CreateFrame("ScrollFrame", nil, right, "UIPanelScrollFrameTemplate")
 	rightScroll:SetPoint("TOPLEFT", right, "TOPLEFT", 10, -10)
@@ -12240,7 +12393,7 @@ local function ensureEditor()
 
 	local middle = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 	middle:SetPoint("TOPLEFT", left, "TOPRIGHT", 16, 0)
-	middle:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT", -16, 0)
+	middle:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 16)
 	middle.bg = middle:CreateTexture(nil, "BACKGROUND")
 	middle.bg:SetAllPoints(middle)
 	middle.bg:SetTexture("Interface\\AddOns\\EnhanceQoL\\Assets\\background_gray.tga")
@@ -12248,13 +12401,13 @@ local function ensureEditor()
 	applyInsetBorder(middle, -4)
 	frame.middle = middle
 
-	local previewTitle = Helper.CreateLabel(middle, L["CooldownPanelPreview"] or "Preview", 12, "OUTLINE")
+	local previewTitle = Helper.CreateLabel(middle, L["CooldownPanelDropZone"] or "Add entries", 12, "OUTLINE")
 	previewTitle:SetPoint("TOPLEFT", middle, "TOPLEFT", 12, -12)
 
 	local previewFrame = CreateFrame("Frame", nil, middle, "BackdropTemplate")
 	previewFrame:SetPoint("TOPLEFT", middle, "TOPLEFT", 12, -36)
 	previewFrame:SetPoint("TOPRIGHT", middle, "TOPRIGHT", -12, -36)
-	previewFrame:SetHeight(190)
+	previewFrame:SetHeight(56)
 	previewFrame:SetClipsChildren(true)
 	previewFrame.bg = previewFrame:CreateTexture(nil, "BACKGROUND")
 	previewFrame.bg:SetAllPoints(previewFrame)
@@ -12267,10 +12420,10 @@ local function ensureEditor()
 	previewCanvas:SetFrameLevel((previewFrame:GetFrameLevel() or 0) + 2)
 	previewFrame.canvas = previewCanvas
 
-	local previewHint = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	local previewHint = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	previewHint:SetPoint("CENTER", previewFrame, "CENTER")
 	previewHint:SetText(L["CooldownPanelDropHint"] or "Drop spells, items, or macros here")
-	previewHint:SetTextColor(0.7, 0.7, 0.7, 1)
+	previewHint:SetTextColor(1, 0.86, 0.24, 1)
 	previewFrame.dropHint = previewHint
 
 	local dropZone = CreateFrame("Button", nil, previewFrame)
@@ -12293,6 +12446,7 @@ local function ensureEditor()
 	previewHintLabel:SetPoint("BOTTOMRIGHT", previewFrame, "TOPRIGHT", -2, 6)
 	previewHintLabel:SetJustifyH("RIGHT")
 	previewHintLabel:SetText(L["CooldownPanelPreviewHint"] or "Drag spells/items/macros here to add")
+	previewHintLabel:Hide()
 
 	local entryTitle = Helper.CreateLabel(middle, L["CooldownPanelEntries"] or "Entries", 12, "OUTLINE")
 	entryTitle:SetPoint("TOPLEFT", previewFrame, "BOTTOMLEFT", 0, -12)
@@ -12316,7 +12470,7 @@ local function ensureEditor()
 	addSpellLabel:SetTextColor(0.9, 0.9, 0.9, 1)
 
 	local addSpellBox = Helper.CreateEditBox(middle, 80, 20)
-	addSpellBox:SetPoint("LEFT", addSpellLabel, "RIGHT", 6, 0)
+	addSpellBox:SetPoint("LEFT", addSpellLabel, "RIGHT", 8, 0)
 	addSpellBox:SetNumeric(true)
 
 	local addItemLabel = Helper.CreateLabel(middle, L["CooldownPanelAddItemID"] or "Add Item ID", 11, "OUTLINE")
@@ -12324,7 +12478,7 @@ local function ensureEditor()
 	addItemLabel:SetTextColor(0.9, 0.9, 0.9, 1)
 
 	local addItemBox = Helper.CreateEditBox(middle, 80, 20)
-	addItemBox:SetPoint("LEFT", addItemLabel, "RIGHT", 6, 0)
+	addItemBox:SetPoint("LEFT", addItemLabel, "RIGHT", 8, 0)
 	addItemBox:SetNumeric(true)
 
 	local bottomActionButtonWidth = 120
@@ -13778,7 +13932,11 @@ local function refreshEntryList(editor, panel)
 				row:Show()
 
 				updateRowVisual(row, entryId == editor.selectedEntryId)
-				row:SetScript("OnClick", function() CooldownPanels:SelectEntry(entryId) end)
+				row:SetScript("OnClick", function(self)
+					CooldownPanels:SelectEntry(entryId)
+					local panelId = editor.selectedPanelId
+					if panelId and CooldownPanels:IsPanelLayoutEditActive(panelId) then CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, self) end
+				end)
 			end
 		end
 	end
@@ -13905,6 +14063,25 @@ local function refreshPreview(editor, panel)
 	if not editor.previewFrame then return end
 	local preview = editor.previewFrame
 	local canvas = preview.canvas or preview
+	if editor.previewHintLabel then editor.previewHintLabel:Hide() end
+	ensureIconCount(canvas, 0)
+	canvas:SetSize(1, 1)
+	canvas:ClearAllPoints()
+	canvas:SetPoint("CENTER", preview, "CENTER")
+	if preview.dropHint then
+		local root = CooldownPanels:GetRoot()
+		local hasPanels = root and ((root.order and #root.order > 0) or (root.panels and next(root.panels)))
+		if panel then
+			preview.dropHint:SetText(L["CooldownPanelDropHint"] or "Drop spells, items, or macros here")
+		else
+			preview.dropHint:SetText(hasPanels and (L["CooldownPanelSelectPanel"] or "Select a panel to edit.") or (L["CooldownPanelCreatePanel"] or "Create a Panel"))
+		end
+		preview.dropHint:Show()
+	end
+	if editor.entryHint then editor.entryHint:SetText(L["CooldownPanelEntriesHint"] or "Drag entries to reorder") end
+	do
+		return
+	end
 	if not panel then
 		if editor.previewHintLabel then editor.previewHintLabel:Hide() end
 		ensureIconCount(canvas, 0)
@@ -14466,7 +14643,12 @@ function CooldownPanels:RefreshEditor()
 	local filterBySpec = addon.db and addon.db.cooldownPanelsFilterSpec == true
 	local hideEmptyGroups = addon.db and addon.db.cooldownPanelsHideEmptyGroups == true
 	local classSpecs = filterByClass and getPlayerClassSpecMap() or nil
-	if (filterByClass or filterBySpec) and panelId then
+	local keepSelectedPanelForDialog = false
+	do
+		local panelMenuState = self:GetLayoutPanelStandaloneMenuState(false)
+		keepSelectedPanelForDialog = panelMenuState and normalizeId(panelMenuState.panelId) == normalizeId(panelId) and editor.layoutEditActive == true or false
+	end
+	if (filterByClass or filterBySpec) and panelId and not keepSelectedPanelForDialog then
 		local selectedPanel = root.panels and root.panels[panelId]
 		if selectedPanel then
 			local matchesClass = not filterByClass or panelMatchesPlayerClass(selectedPanel, classSpecs)
@@ -17542,6 +17724,48 @@ function CooldownPanels:RegisterEditModePanel(panelId, options)
 	local settings
 	if SettingType then
 		settings = {
+			{
+				name = _G.GENERAL or "General",
+				kind = SettingType.Collapsible,
+				id = "cooldownPanelGeneral",
+				defaultCollapsed = false,
+			},
+			{
+				name = L["CooldownPanelPanelName"] or "Panel name",
+				kind = SettingType.Input,
+				parentId = "cooldownPanelGeneral",
+				labelWidth = 100,
+				inputWidth = 220,
+				get = function()
+					local currentPanel = CooldownPanels:GetPanel(panelId)
+					return currentPanel and currentPanel.name or ""
+				end,
+				set = function(_, value) CooldownPanels:SetPanelEditorName(panelId, value) end,
+				default = "",
+				maxChars = 64,
+			},
+			{
+				name = L["Enabled"] or "Enabled",
+				kind = SettingType.Checkbox,
+				parentId = "cooldownPanelGeneral",
+				get = function()
+					local currentPanel = CooldownPanels:GetPanel(panelId)
+					return currentPanel and currentPanel.enabled ~= false or false
+				end,
+				set = function(_, value) CooldownPanels:SetPanelEditorEnabled(panelId, value) end,
+			},
+			{
+				name = L["CooldownPanelSpecFilter"] or "Show only for spec",
+				kind = SettingType.MultiDropdown,
+				parentId = "cooldownPanelGeneral",
+				customText = L["CooldownPanelSpecAny"] or "All specs",
+				height = 260,
+				get = function() return nil end,
+				set = function() end,
+				optionfunc = function() return CooldownPanels:GetPanelSpecFilterOptions() end,
+				isSelected = function(_, value) return CooldownPanels:IsPanelSpecFilterOptionSelected(panelId, value) end,
+				setSelected = function(_, value, selected) CooldownPanels:SetPanelSpecFilterOptionSelected(panelId, value, selected) end,
+			},
 			{
 				name = L["Copy Settings"] or "Copy Settings",
 				kind = SettingType.Collapsible,

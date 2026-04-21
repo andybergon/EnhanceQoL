@@ -5367,7 +5367,6 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 			local settings = Bars.BuildBarStandaloneSettings(panelId, entryId)
 			if settings then
 				resolvedOptions.settings = settings
-				resolvedOptions.settingsMaxHeight = max(resolvedOptions.settingsMaxHeight or 0, 640)
 			end
 		end
 		return originalShowStandaloneSettingsDialog(editModeLib, frame, resolvedOptions)
