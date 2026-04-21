@@ -2,9 +2,14 @@
 
 ## [10.3.3-beta2] - 2026-04-21
 
+### ✨ Added
+
+- Mythic Plus / BR & Bloodlust Tracker: Added tracker icon choices and grouped the Bloodlust Edit Mode options into collapsible sections.
+
 ### 🐛 Fixed
 
 - Unit Frames / Boss Frames: Fixed the Edit Mode preview so boss resource bars and cast bars show reliably again, including after a reload.
+- Unit Frames: Fixed frame highlights sometimes no longer being visible after dungeon or raid transitions.
 
 ---
 

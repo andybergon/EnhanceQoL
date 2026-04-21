@@ -1231,10 +1231,18 @@ local function ensureHighlightFrame(frame)
 		highlight = CreateFrame("Frame", nil, frame, "BackdropTemplate")
 		highlight:EnableMouse(false)
 		frame._ufHighlight = highlight
+	elseif highlight.GetParent and highlight:GetParent() ~= frame and highlight.SetParent then
+		highlight:SetParent(frame)
 	end
 	highlight:SetFrameStrata(frame:GetFrameStrata())
 	local baseLevel = frame:GetFrameLevel() or 0
-	highlight:SetFrameLevel(baseLevel + 4)
+	local targetLevel = baseLevel + 4
+	local border = frame._ufBorder
+	if border and border.GetFrameLevel then
+		local borderLevel = border:GetFrameLevel()
+		if borderLevel and targetLevel <= borderLevel then targetLevel = borderLevel + 1 end
+	end
+	highlight:SetFrameLevel(targetLevel)
 	highlight:ClearAllPoints()
 	highlight:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
 	highlight:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
@@ -1314,6 +1322,7 @@ function H.applyHighlightStyle(st, highlightCfg)
 		return
 	end
 	if st._highlightFrame and st._highlightFrame.GetParent and st._highlightFrame:GetParent() ~= host then st._highlightFrame:Hide() end
+	if highlight and host._ufHighlight ~= highlight then host._ufHighlight = highlight end
 	highlight = ensureHighlightFrame(host)
 	if not highlight then return end
 	st._highlightFrame = highlight
@@ -1360,6 +1369,10 @@ function H.updateHighlight(st, unit, playerUnit)
 		H.applyHighlightStyle(st, cfg)
 		highlight = host._ufHighlight or st._highlightFrame
 		if not highlight then return end
+	else
+		if host._ufHighlight ~= highlight then host._ufHighlight = highlight end
+		highlight = ensureHighlightFrame(host) or highlight
+		st._highlightFrame = highlight
 	end
 	local show = false
 	local color = cfg.color or { 1, 0, 0, 1 }
