@@ -1,10 +1,17 @@
 # Changelog
 
-## [10.3.3-beta2] - 2026-04-21
+## [10.4.0-beta2] - 2026-04-21
 
 ### ✨ Added
 
 - Mythic Plus / BR & Bloodlust Tracker: Added tracker icon choices and grouped the Bloodlust Edit Mode options into collapsible sections.
+- Cooldown Panels: Added direct panel settings inside the panel dialog, including panel name, enabled state, spec filters, and quick choices for common role groups.
+
+### 🔄 Changed
+
+- Cooldown Panels: Reworked the editor so Layout Edit opens the panel controls directly next to the editor and selected entries show their settings there immediately.
+- Cooldown Panels: Simplified the editor layout with a compact drop area, a smaller manual add row, and a cleaner entries list that no longer repeats fixed subgroup labels.
+- Cooldown Panels: Removed the need to use the normal Edit Mode button for panel layout editing.
 
 ### 🐛 Fixed
 
@@ -12,10 +19,11 @@
 - Unit Frames: Fixed frame highlights sometimes no longer being visible after dungeon or raid transitions.
 - Cooldown Panels / Bars: Fixed separated stack bars so separated offset creates real bordered segments, matching Resource Bars segment rendering.
 - Cooldown Panels: Fixed new panels and bar entries defaulting to an explicit `Outline` font style instead of the global font-outline setting.
+- Cooldown Panels: Fixed cursor-anchored panels being difficult to configure from Layout Edit.
 
 ---
 
-## [10.3.3-beta1] - 2026-04-20
+## [10.4.0-beta1] - 2026-04-20
 
 ### 🐛 Fixed
 

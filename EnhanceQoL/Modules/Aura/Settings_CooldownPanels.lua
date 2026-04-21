@@ -19,10 +19,6 @@ local expandable = addon.functions.SettingsCreateExpandableSection(cat, {
 	colorizeTitle = false,
 })
 
-addon.functions.SettingsCreateText(cat, "|cffffd700" .. (L["CooldownPanelEditModeHint"] or "Use Edit Mode to move and resize panels.") .. "|r", {
-	parentSection = expandable,
-})
-
 local function withCooldownPanels(action)
 	local panels = addon.Aura and addon.Aura.CooldownPanels
 	if not panels then return end

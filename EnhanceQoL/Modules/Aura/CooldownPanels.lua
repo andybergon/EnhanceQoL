@@ -11942,7 +11942,7 @@ local function ensureEditor()
 	if runtime.editor then return runtime.editor end
 
 	local frame = CreateFrame("Frame", "EQOL_CooldownPanelsEditor", UIParent, "BackdropTemplate")
-	frame:SetSize(720, 560)
+	frame:SetSize(660, 560)
 	frame:SetPoint("CENTER")
 	applyEditorPosition(frame)
 	frame:SetClampedToScreen(false)
@@ -12161,10 +12161,25 @@ local function ensureEditor()
 	local previewTitle = Helper.CreateLabel(middle, L["CooldownPanelDropZone"] or "Add entries", 12, "OUTLINE")
 	previewTitle:SetPoint("TOPLEFT", middle, "TOPLEFT", 12, -12)
 
+	local manualAddRow = CreateFrame("Frame", nil, middle)
+	manualAddRow:SetPoint("TOPLEFT", previewTitle, "BOTTOMLEFT", 0, -6)
+	manualAddRow:SetPoint("RIGHT", middle, "RIGHT", -12, 0)
+	manualAddRow:SetHeight(22)
+
+	local addSpellButton = Helper.CreateButton(manualAddRow, _G.SPELL or "Spell", 66, 20)
+	addSpellButton:SetPoint("LEFT", manualAddRow, "LEFT", 0, 0)
+
+	local addItemButton = Helper.CreateButton(manualAddRow, _G.ITEM or "Item", 76, 20)
+	addItemButton:SetPoint("LEFT", addSpellButton, "RIGHT", 6, 0)
+
+	local addIdBox = Helper.CreateEditBox(manualAddRow, 84, 20)
+	addIdBox:SetPoint("LEFT", addItemButton, "RIGHT", 10, 0)
+	addIdBox:SetNumeric(true)
+
 	local previewFrame = CreateFrame("Frame", nil, middle, "BackdropTemplate")
-	previewFrame:SetPoint("TOPLEFT", middle, "TOPLEFT", 12, -36)
-	previewFrame:SetPoint("TOPRIGHT", middle, "TOPRIGHT", -12, -36)
-	previewFrame:SetHeight(56)
+	previewFrame:SetPoint("TOPLEFT", middle, "TOPLEFT", 12, -64)
+	previewFrame:SetPoint("TOPRIGHT", middle, "TOPRIGHT", -12, -64)
+	previewFrame:SetHeight(48)
 	previewFrame:SetClipsChildren(true)
 	previewFrame.bg = previewFrame:CreateTexture(nil, "BACKGROUND")
 	previewFrame.bg:SetAllPoints(previewFrame)
@@ -12210,7 +12225,7 @@ local function ensureEditor()
 
 	local entryScroll = CreateFrame("ScrollFrame", nil, middle, "UIPanelScrollFrameTemplate")
 	entryScroll:SetPoint("TOPLEFT", entryTitle, "BOTTOMLEFT", 0, -8)
-	entryScroll:SetPoint("BOTTOMRIGHT", middle, "BOTTOMRIGHT", -26, 80)
+	entryScroll:SetPoint("BOTTOMRIGHT", middle, "BOTTOMRIGHT", -26, 48)
 	local entryContent = CreateFrame("Frame", nil, entryScroll)
 	entryContent:SetSize(1, 1)
 	entryScroll:SetScrollChild(entryContent)
@@ -12222,33 +12237,17 @@ local function ensureEditor()
 	entryHint:SetJustifyH("RIGHT")
 	entryHint:SetText(L["CooldownPanelEntriesHint"] or "Drag entries to reorder")
 
-	local addSpellLabel = Helper.CreateLabel(middle, L["CooldownPanelAddSpellID"] or "Add Spell ID", 11, "OUTLINE")
-	addSpellLabel:SetPoint("BOTTOMLEFT", middle, "BOTTOMLEFT", 12, 46)
-	addSpellLabel:SetTextColor(0.9, 0.9, 0.9, 1)
-
-	local addSpellBox = Helper.CreateEditBox(middle, 80, 20)
-	addSpellBox:SetPoint("LEFT", addSpellLabel, "RIGHT", 8, 0)
-	addSpellBox:SetNumeric(true)
-
-	local addItemLabel = Helper.CreateLabel(middle, L["CooldownPanelAddItemID"] or "Add Item ID", 11, "OUTLINE")
-	addItemLabel:SetPoint("BOTTOMLEFT", middle, "BOTTOMLEFT", 12, 20)
-	addItemLabel:SetTextColor(0.9, 0.9, 0.9, 1)
-
-	local addItemBox = Helper.CreateEditBox(middle, 80, 20)
-	addItemBox:SetPoint("LEFT", addItemLabel, "RIGHT", 8, 0)
-	addItemBox:SetNumeric(true)
-
-	local bottomActionButtonWidth = 120
+	local bottomActionButtonWidth = 112
 	local bottomActionButtonHeight = 20
 
 	local layoutEditButton = Helper.CreateButton(middle, L["CooldownPanelLayoutEdit"] or "Layout edit", bottomActionButtonWidth, bottomActionButtonHeight)
-	layoutEditButton:SetPoint("BOTTOMRIGHT", middle, "BOTTOMRIGHT", -12, 44)
-
-	local slotButton = Helper.CreateButton(middle, L["CooldownPanelAddSlot"] or "Add more", bottomActionButtonWidth, bottomActionButtonHeight)
-	slotButton:SetPoint("BOTTOMRIGHT", middle, "BOTTOMRIGHT", -12, 18)
+	layoutEditButton:SetPoint("BOTTOMLEFT", middle, "BOTTOMLEFT", 12, 18)
 
 	local importCDMButton = Helper.CreateButton(middle, L["CooldownPanelImportCDM"] or "Import CDM", bottomActionButtonWidth, bottomActionButtonHeight)
-	importCDMButton:SetPoint("RIGHT", slotButton, "LEFT", -8, 0)
+	importCDMButton:SetPoint("LEFT", layoutEditButton, "RIGHT", 8, 0)
+
+	local slotButton = Helper.CreateButton(middle, L["CooldownPanelAddSlot"] or "Add more", bottomActionButtonWidth, bottomActionButtonHeight)
+	slotButton:SetPoint("LEFT", importCDMButton, "RIGHT", 8, 0)
 
 	frame:SetScript("OnShow", function()
 		CooldownPanels:EnsureEditorFramePosition(frame)
@@ -12287,8 +12286,10 @@ local function ensureEditor()
 		addGroup = addGroup,
 		addPanel = addPanel,
 		deletePanel = deletePanel,
-		addSpellBox = addSpellBox,
-		addItemBox = addItemBox,
+		addEntryType = "SPELL",
+		addSpellButton = addSpellButton,
+		addItemButton = addItemButton,
+		addIdBox = addIdBox,
 		layoutEditButton = layoutEditButton,
 		slotButton = slotButton,
 		importCDMButton = importCDMButton,
@@ -12329,6 +12330,24 @@ local function ensureEditor()
 
 	local editor = runtime.editor
 
+	local function refreshAddEntryTypeButtons()
+		local entryType = editor.addEntryType == "ITEM" and "ITEM" or "SPELL"
+		if editor.addSpellButton then
+			if entryType == "SPELL" then
+				editor.addSpellButton:LockHighlight()
+			else
+				editor.addSpellButton:UnlockHighlight()
+			end
+		end
+		if editor.addItemButton then
+			if entryType == "ITEM" then
+				editor.addItemButton:LockHighlight()
+			else
+				editor.addItemButton:UnlockHighlight()
+			end
+		end
+	end
+
 	addGroup:SetScript("OnClick", function()
 		if CooldownPanels.ShowEditorGroupCreatePopup then CooldownPanels:ShowEditorGroupCreatePopup() end
 	end)
@@ -12347,23 +12366,29 @@ local function ensureEditor()
 		StaticPopup_Show("EQOL_COOLDOWN_PANEL_DELETE", panel and panel.name or nil, nil, { panelId = panelId })
 	end)
 
-	addSpellBox:SetScript("OnEnterPressed", function(self)
-		local panelId = editor.selectedPanelId
-		local value = tonumber(self:GetText())
-		if panelId and value then CooldownPanels:AddEntrySafe(panelId, "SPELL", value) end
-		self:SetText("")
-		self:ClearFocus()
-		CooldownPanels:RefreshEditor()
+	addSpellButton:SetScript("OnClick", function()
+		editor.addEntryType = "SPELL"
+		refreshAddEntryTypeButtons()
+		if editor.addIdBox then editor.addIdBox:SetFocus() end
 	end)
 
-	addItemBox:SetScript("OnEnterPressed", function(self)
+	addItemButton:SetScript("OnClick", function()
+		editor.addEntryType = "ITEM"
+		refreshAddEntryTypeButtons()
+		if editor.addIdBox then editor.addIdBox:SetFocus() end
+	end)
+
+	addIdBox:SetScript("OnEnterPressed", function(self)
 		local panelId = editor.selectedPanelId
 		local value = tonumber(self:GetText())
-		if panelId and value then CooldownPanels:AddEntrySafe(panelId, "ITEM", value) end
+		local entryType = editor.addEntryType == "ITEM" and "ITEM" or "SPELL"
+		if panelId and value then CooldownPanels:AddEntrySafe(panelId, entryType, value) end
 		self:SetText("")
 		self:ClearFocus()
 		CooldownPanels:RefreshEditor()
 	end)
+	addIdBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+	refreshAddEntryTypeButtons()
 
 	layoutEditButton:SetScript("OnClick", function() CooldownPanels:SetEditorLayoutEditEnabled(editor.layoutEditActive ~= true) end)
 
@@ -13651,9 +13676,6 @@ local function refreshEntryList(editor, panel)
 				row.entryId = entryId
 				row.icon:SetTexture(getEntryIcon(entry))
 				local label = getEntryName(entry)
-				local group = CooldownPanels.GetFixedGroupById(panel, entry.fixedGroupId)
-				local groupLabel = group and CooldownPanels.GetFixedGroupDisplayLabel(group) or nil
-				if groupLabel then label = string.format("%s {%s}", label, groupLabel) end
 				row.label:SetText(label)
 				row.kind:SetText(getEntryTypeLabel(entry.type))
 				row:Show()
@@ -14410,18 +14432,25 @@ function CooldownPanels:RefreshEditor()
 			editor.deletePanel:Disable()
 		end
 	end
-	if editor.addSpellBox then
+	if editor.addSpellButton then
 		if panelActive then
-			editor.addSpellBox:Enable()
+			editor.addSpellButton:Enable()
 		else
-			editor.addSpellBox:Disable()
+			editor.addSpellButton:Disable()
 		end
 	end
-	if editor.addItemBox then
+	if editor.addItemButton then
 		if panelActive then
-			editor.addItemBox:Enable()
+			editor.addItemButton:Enable()
 		else
-			editor.addItemBox:Disable()
+			editor.addItemButton:Disable()
+		end
+	end
+	if editor.addIdBox then
+		if panelActive then
+			editor.addIdBox:Enable()
+		else
+			editor.addIdBox:Disable()
 		end
 	end
 	if editor.slotButton then
