@@ -1,34 +1,24 @@
 # Changelog
 
-## [10.4.0-beta2] - 2026-04-21
+## [10.4.0] - 2026-04-21
 
 ### ✨ Added
 
-- Mythic Plus / BR & Bloodlust Tracker: Added tracker icon choices and grouped the Bloodlust Edit Mode options into collapsible sections.
-- Cooldown Panels: Added direct panel settings inside the panel dialog, including panel name, enabled state, spec filters, and quick choices for common role groups.
+- Mythic Plus / BR & Bloodlust Tracker: Added tracker icon choices and grouped Bloodlust Edit Mode options into collapsible sections.
+- Cooldown Panels: Added direct panel settings inside the panel dialog, including panel name, enabled state, spec filters, and quick role-group choices.
 
 ### 🔄 Changed
 
-- Cooldown Panels: Reworked the editor so Layout Edit opens the panel controls directly next to the editor and selected entries show their settings there immediately.
-- Cooldown Panels: Simplified the editor layout with a compact drop area, a smaller manual add row, and a cleaner entries list that no longer repeats fixed subgroup labels.
-- Cooldown Panels: Removed the need to use the normal Edit Mode button for panel layout editing.
+- Cooldown Panels: Reworked Layout Edit so panel controls open directly next to the editor, selected entries show their settings immediately, and panel layout editing no longer needs the normal Edit Mode button.
+- Cooldown Panels: Simplified the editor layout with a compact drop area, smaller manual add row, and cleaner entries list without repeated fixed subgroup labels.
 
 ### 🐛 Fixed
 
-- Unit Frames / Boss Frames: Fixed the Edit Mode preview so boss resource bars and cast bars show reliably again, including after a reload.
-- Unit Frames: Fixed frame highlights sometimes no longer being visible after dungeon or raid transitions.
+- Unit Frames: Fixed boss-frame Edit Mode previews after reloads, restored frame highlights after dungeon or raid transitions, and restored the target-frame combat icon.
+- Cooldown Panels: Fixed Blizzard Cooldown Manager aura icons not always resyncing after cooldown viewer frame reassignments, which could hide tracked panel icons until a later refresh.
 - Cooldown Panels / Bars: Fixed separated stack bars so separated offset creates real bordered segments, matching Resource Bars segment rendering.
 - Cooldown Panels: Fixed new panels and bar entries defaulting to an explicit `Outline` font style instead of the global font-outline setting.
 - Cooldown Panels: Fixed cursor-anchored panels being difficult to configure from Layout Edit.
-
----
-
-## [10.4.0-beta1] - 2026-04-20
-
-### 🐛 Fixed
-
-- Cooldown Panels / CDM Auras: Fixed Blizzard Cooldown Manager aura icons not always resyncing immediately after cooldown viewer frame reassignments, which could make tracked panel icons disappear until a later refresh event.
-- Unit Frames / Target: Fixed the combat icon missing on the target frame.
 - Mythic Plus / Teleport Compendium: Fixed the World Map Teleport Compendium tab sometimes disappearing after finishing a dungeon or raid until the UI was reloaded.
 - Minimap / Instance Difficulty: Fixed the instance difficulty indicator not always updating its displayed group size after raid members left a flex instance.
 
