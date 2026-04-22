@@ -6298,13 +6298,38 @@ local function setAllHooks()
 		local score = info.leaderOverallDungeonScore
 		if not score or score == 0 or (issecretvalue and issecretvalue(score)) then return end
 
-		local color = C_ChallengeMode.GetDungeonScoreRarityColor(score)
-		local r, g, b = 1, 1, 1
-		if color and color.GetRGB then r, g, b = color:GetRGB() end
+		local mainScore
+		local leaderName = info.leaderName
+		if _G.RaiderIO and _G.RaiderIO.GetProfile and type(leaderName) == "string" then
+			local charName, charRealm = strsplit("-", leaderName)
+			if charName then
+				local profile = _G.RaiderIO.GetProfile(charName, charRealm or GetNormalizedRealmName())
+				local kp = profile and profile.mythicKeystoneProfile
+				if kp and kp.mplusMainCurrent and kp.mplusMainCurrent.score and kp.mplusMainCurrent.score > score then
+					mainScore = kp.mplusMainCurrent.score
+				end
+			end
+		end
 
 		local currentText = entry.Name:GetText()
 		if currentText then
-			entry.Name:SetFormattedText("|cff%02x%02x%02x[%d]|r %s", r * 255, g * 255, b * 255, score, currentText)
+			if mainScore then
+				local mainColor = C_ChallengeMode.GetDungeonScoreRarityColor(mainScore)
+				local mr, mg, mb = 1, 1, 1
+				if mainColor and mainColor.GetRGB then mr, mg, mb = mainColor:GetRGB() end
+				local charColor = C_ChallengeMode.GetDungeonScoreRarityColor(score)
+				local cr, cg, cb = 1, 1, 1
+				if charColor and charColor.GetRGB then cr, cg, cb = charColor:GetRGB() end
+				entry.Name:SetFormattedText("|cff%02x%02x%02x[%d|r/|cff%02x%02x%02x%d]|r %s",
+					mr * 255, mg * 255, mb * 255, mainScore,
+					cr * 255, cg * 255, cb * 255, score,
+					currentText)
+			else
+				local color = C_ChallengeMode.GetDungeonScoreRarityColor(score)
+				local r, g, b = 1, 1, 1
+				if color and color.GetRGB then r, g, b = color:GetRGB() end
+				entry.Name:SetFormattedText("|cff%02x%02x%02x[%d]|r %s", r * 255, g * 255, b * 255, score, currentText)
+			end
 		end
 	end)
 
