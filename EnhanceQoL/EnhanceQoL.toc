@@ -105,11 +105,6 @@ Modules\Sound\Sound.xml
 # Tooltip
 Modules\Tooltip\Tooltip.xml
 
-#@debug@
-# Visibility
-#Modules\Visibility\Visibility.xml
-#@end-debug@
-
 # MythicPlus
 Modules\MythicPlus\MythicPlus.xml
 

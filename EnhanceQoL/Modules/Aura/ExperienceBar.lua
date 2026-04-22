@@ -38,6 +38,11 @@ local function globalFontConfigLabel()
 	return "Use global font config"
 end
 
+local function globalFontStyleConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontStyleConfigKey then return addon.functions.GetGlobalFontStyleConfigKey() end
+	return "__EQOL_GLOBAL_FONT_STYLE__"
+end
+
 local function defaultFontFace()
 	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
 	return (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
@@ -73,7 +78,7 @@ ExperienceBar.defaults = ExperienceBar.defaults
 		textRightMode = "PERCENT_RESTED",
 		textSize = 11,
 		textFont = globalFontConfigKey(),
-		textOutline = "OUTLINE",
+		textOutline = globalFontStyleConfigKey(),
 		textColor = { r = 1, g = 1, b = 1, a = 1 },
 		abbreviateNumbers = false,
 		hideInPetBattle = false,
@@ -291,19 +296,54 @@ end
 local function resolveFontPath(key)
 	local defaultFont = defaultFontFace()
 	if not key or key == "" or key == "DEFAULT" or key == globalFontConfigKey() then return defaultFont end
+	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(key, defaultFont) or defaultFont end
 	if LSM and LSM.Fetch then
 		local font = LSM:Fetch("font", key, true)
 		if font then return font end
 	end
-	if isLikelyFilePath(key) then return key end
+	if LSM and LSM.HashTable then
+		local hash = LSM:HashTable("font") or {}
+		for _, fontPath in pairs(hash) do
+			if fontPath == key then return key end
+		end
+	end
 	return defaultFont
 end
 
+local function setFontWithFallback(fontString, fontPath, size, outline)
+	if not (fontString and fontString.SetFont and fontPath) then return false end
+	local ok, applied = pcall(fontString.SetFont, fontString, fontPath, size, outline)
+	if ok and applied ~= false then return true end
+	local fallback = defaultFontFace()
+	if not fallback or fallback == fontPath then return false end
+	ok, applied = pcall(fontString.SetFont, fontString, fallback, size, outline)
+	return ok and applied ~= false
+end
+
 local function normalizeTextOutline(value)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, defaults.textOutline or "OUTLINE", true)
+	end
 	if value == "OUTLINE" then return "OUTLINE" end
 	if value == "THICKOUTLINE" then return "THICKOUTLINE" end
 	if value == "MONOCHROME" then return "MONOCHROME" end
 	return "NONE"
+end
+
+local function resolveTextOutlineFlags(value, fallback)
+	if addon.functions and addon.functions.ResolveFontStyle then
+		local _, flags = addon.functions.ResolveFontStyle(value, fallback or defaults.textOutline or "OUTLINE")
+		return flags
+	end
+	if addon.functions and addon.functions.GetFontFlagsForStyle then
+		local flags = addon.functions.GetFontFlagsForStyle(value, fallback or defaults.textOutline or "OUTLINE")
+		if type(flags) == "string" then return flags end
+	end
+	local outline = normalizeTextOutline(value)
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then outline = normalizeTextOutline(fallback or defaults.textOutline or "OUTLINE") end
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then outline = "OUTLINE" end
+	if outline == "NONE" then return "" end
+	return outline
 end
 
 local function normalizeFillDirection(value)
@@ -1082,19 +1122,23 @@ function ExperienceBar:ApplyAppearance()
 	end
 
 	local font = resolveFontPath(self:GetTextFont())
-	local outline = self:GetTextOutline()
-	if outline == "NONE" then outline = "" end
+	local outlineChoice = self:GetTextOutline()
+	local outline = resolveTextOutlineFlags(outlineChoice, defaults.textOutline or "OUTLINE")
 	local size = self:GetTextSize()
 	local tr, tg, tb, ta = self:GetTextColor()
 	for _, key in ipairs({ "textLeft", "textCenter", "textRight" }) do
 		local fs = self.frame[key]
 		if fs then
-			fs:SetFont(font, size, outline)
+			setFontWithFallback(fs, font, size, outline)
+			if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fs, outlineChoice, defaults.textOutline or "OUTLINE") end
 			fs:SetTextColor(tr or 1, tg or 1, tb or 1, ta or 1)
 		end
 	end
 	if self.frame.editLabel then
-		self.frame.editLabel:SetFont(font, math.max(size, 11), outline)
+		setFontWithFallback(self.frame.editLabel, font, math.max(size, 11), outline)
+		if addon.functions and addon.functions.ApplyFontStyleShadow then
+			addon.functions.ApplyFontStyleShadow(self.frame.editLabel, outlineChoice, defaults.textOutline or "OUTLINE")
+		end
 		self.frame.editLabel:SetTextColor(1, 0.9, 0.2, 1)
 	end
 
@@ -2302,11 +2346,9 @@ function ExperienceBar:RegisterEditMode(frame)
 				get = function() return ExperienceBar:GetTextOutline() end,
 				set = function(_, value) applySetting("textOutline", value) end,
 				generator = function(_, root)
-					local options = {
+					local options = addon.functions and addon.functions.GetFontStyleOptionList and addon.functions.GetFontStyleOptionList(true) or {
 						{ value = "NONE", label = NONE },
 						{ value = "OUTLINE", label = L["Outline"] or "Outline" },
-						{ value = "THICKOUTLINE", label = L["Thick outline"] or "Thick outline" },
-						{ value = "MONOCHROME", label = L["xpBarTextOutlineMono"] or "Monochrome" },
 					}
 					for _, option in ipairs(options) do
 						root:CreateRadio(option.label, function() return ExperienceBar:GetTextOutline() == option.value end, function() applySetting("textOutline", option.value) end)

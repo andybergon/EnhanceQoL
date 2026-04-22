@@ -214,7 +214,7 @@ local FAMILY_DATA = {
 	{ id = "evoker_pres_echo_dream_breath", classToken = "EVOKER", spec = "Preservation", spellIds = { 376788 }, fallbackName = "Echo Dream Breath" },
 	-- Augmentation Evoker
 	{ id = "evoker_aug_blistering_scales", classToken = "EVOKER", spec = "Augmentation", spellIds = { 360827 }, fallbackName = "Blistering Scales" },
-	{ id = "evoker_aug_ebon_might", classToken = "EVOKER", spec = "Augmentation", spellIds = { 395152 }, fallbackName = "Ebon Might" },
+	{ id = "evoker_aug_ebon_might", classToken = "EVOKER", spec = "Augmentation", spellIds = { 395152, 395296 }, fallbackName = "Ebon Might" },
 	{ id = "evoker_aug_prescience", classToken = "EVOKER", spec = "Augmentation", spellIds = { 410089 }, fallbackName = "Prescience" },
 	{ id = "evoker_aug_infernos_blessing", classToken = "EVOKER", spec = "Augmentation", spellIds = { 410263 }, fallbackName = "Inferno's Blessing" },
 	{ id = "evoker_aug_symbiotic_bloom", classToken = "EVOKER", spec = "Augmentation", spellIds = { 410686 }, fallbackName = "Symbiotic Bloom" },
@@ -1085,9 +1085,11 @@ end
 
 local function setSinglePointCached(frame, point, relativeTo, relativePoint, x, y)
 	if not frame then return false end
+	x = x or 0
+	y = y or 0
 	if Pixel and Pixel.Round then
-		x = Pixel.Round(x or 0, frame)
-		y = Pixel.Round(y or 0, frame)
+		x = Pixel.Round(x, frame)
+		y = Pixel.Round(y, frame)
 	end
 	local cache = frame._hbPointCache
 	if cache and cache.mode == 1 and cache.point == point and cache.relativeTo == relativeTo and cache.relativePoint == relativePoint and cache.x == x and cache.y == y then return false end
@@ -1095,11 +1097,7 @@ local function setSinglePointCached(frame, point, relativeTo, relativePoint, x, 
 	cache = cache or {}
 	frame._hbPointCache = cache
 	if frame.ClearAllPoints then frame:ClearAllPoints() end
-	if Pixel and Pixel.SetPoint then
-		Pixel.SetPoint(frame, point, relativeTo, relativePoint, x, y)
-	else
-		frame:SetPoint(point, relativeTo, relativePoint, x, y)
-	end
+	frame:SetPoint(point, relativeTo, relativePoint, x, y)
 	cache.mode = 1
 	cache.point = point
 	cache.relativeTo = relativeTo
@@ -1111,11 +1109,15 @@ end
 
 local function setTwoPointsCached(frame, firstPoint, firstRelativeTo, firstRelativePoint, firstX, firstY, secondPoint, secondRelativeTo, secondRelativePoint, secondX, secondY)
 	if not frame then return false end
+	firstX = firstX or 0
+	firstY = firstY or 0
+	secondX = secondX or 0
+	secondY = secondY or 0
 	if Pixel and Pixel.Round then
-		firstX = Pixel.Round(firstX or 0, frame)
-		firstY = Pixel.Round(firstY or 0, frame)
-		secondX = Pixel.Round(secondX or 0, frame)
-		secondY = Pixel.Round(secondY or 0, frame)
+		firstX = Pixel.Round(firstX, frame)
+		firstY = Pixel.Round(firstY, frame)
+		secondX = Pixel.Round(secondX, frame)
+		secondY = Pixel.Round(secondY, frame)
 	end
 	local cache = frame._hbPointCache
 	if
@@ -1138,13 +1140,8 @@ local function setTwoPointsCached(frame, firstPoint, firstRelativeTo, firstRelat
 	cache = cache or {}
 	frame._hbPointCache = cache
 	if frame.ClearAllPoints then frame:ClearAllPoints() end
-	if Pixel and Pixel.SetPoint then
-		Pixel.SetPoint(frame, firstPoint, firstRelativeTo, firstRelativePoint, firstX, firstY)
-		Pixel.SetPoint(frame, secondPoint, secondRelativeTo, secondRelativePoint, secondX, secondY)
-	else
-		frame:SetPoint(firstPoint, firstRelativeTo, firstRelativePoint, firstX, firstY)
-		frame:SetPoint(secondPoint, secondRelativeTo, secondRelativePoint, secondX, secondY)
-	end
+	frame:SetPoint(firstPoint, firstRelativeTo, firstRelativePoint, firstX, firstY)
+	frame:SetPoint(secondPoint, secondRelativeTo, secondRelativePoint, secondX, secondY)
 	cache.mode = 2
 	cache.firstPoint = firstPoint
 	cache.firstRelativeTo = firstRelativeTo
@@ -1161,16 +1158,14 @@ end
 
 local function setSizeCached(frame, width, height)
 	if not (frame and frame.SetSize) then return false end
+	width = width or 0
+	height = height or 0
 	if Pixel and Pixel.Round then
-		width = Pixel.Round(width or 0, frame)
-		height = Pixel.Round(height or 0, frame)
+		width = Pixel.Round(width, frame)
+		height = Pixel.Round(height, frame)
 	end
 	if frame._hbCachedWidth == width and frame._hbCachedHeight == height then return false end
-	if Pixel and Pixel.SetSize then
-		Pixel.SetSize(frame, width, height)
-	else
-		frame:SetSize(width, height)
-	end
+	frame:SetSize(width, height)
 	frame._hbCachedWidth = width
 	frame._hbCachedHeight = height
 	return true
@@ -1539,7 +1534,7 @@ local PLAYER_HARMFUL_FILTER = "HARMFUL|PLAYER"
 local HELPFUL_FILTER = "HELPFUL"
 local HARMFUL_FILTER = "HARMFUL"
 local function isAuraFilteredByInstanceFilter(unit, aura, filter)
-	if aura == nil or filter == nil then return false end
+	if unit == nil or unit == "" or aura == nil or aura.auraInstanceID == nil or filter == nil then return false end
 	return not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, filter)
 end
 
@@ -2653,6 +2648,10 @@ function HB.UpdateFromAuras(btn, updateInfo, cache, changed, isFullUpdate, compi
 
 	ensureVisualLayersForUpdate(btn, st)
 	local unit = btn.unit
+	if unit == nil or unit == "" then
+		HB.ClearButton(btn)
+		return
+	end
 
 	if isFullUpdate or not updateInfo then
 		rebuildFamilyStateFromCache(state, compiled, cache, unit)

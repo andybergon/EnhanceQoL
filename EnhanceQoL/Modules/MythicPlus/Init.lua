@@ -59,6 +59,7 @@ function addon.MythicPlus.functions.InitDB()
 	init("mythicPlusBRTrackerRelativeFrame", "UIParent")
 	init("mythicPlusBRTrackerX", 0)
 	init("mythicPlusBRTrackerY", 0)
+	init("mythicPlusBRTrackerIcon", 136080)
 	init("mythicPlusBRTrackerIconZoom", 0)
 	init("mythicPlusBRTrackerBorderEnabled", true)
 	init("mythicPlusBRTrackerBorderTexture", "DEFAULT")
@@ -113,6 +114,8 @@ function addon.MythicPlus.functions.InitDB()
 	init("mythicPlusBloodlustTrackerUseCustomDebuffSound", false)
 	init("mythicPlusBloodlustTrackerDebuffSoundFile", "")
 	init("mythicPlusBloodlustTrackerSoundOnDebuffFade", false)
+	init("mythicPlusBloodlustTrackerUseCustomFadeSound", false)
+	init("mythicPlusBloodlustTrackerFadeSoundFile", "")
 	init("mythicPlusBloodlustTrackerReadySoundOnEncounterStart", false)
 	init("mythicPlusBloodlustTrackerUseCustomReadySound", false)
 	init("mythicPlusBloodlustTrackerReadySoundFile", "")
@@ -550,6 +553,7 @@ addon.MythicPlus.variables.portalCompendium = {
 			-- [1254580] = { text = "DON", mapID = 2514, locID = 2437, x = 0.2969, y = 0.8454, zoneID = 2514 },
 			[1254400] = { text = "WS", cId = { [557] = true }, mapID = 2494, locID = 2395, x = 0.3543, y = 0.7908, zoneID = 2494 },
 			[1271425] = { text = "ABUN", isItem = true, itemID = 252607, icon = 1362642, locID = 2437, x = 0.31263855520737, y = 0.26260265863074, zoneID = 2437 }, -- Abundont Beacon
+			[1278093] = { text = "ABUN", isItem = true, itemID = 266370, icon = 236521, locID = 2437, x = 0.31263855520737, y = 0.26260265863074, zoneID = 2437 }, -- Dundun's Abundant Travel Method
 			[1259190] = { text = "SMC", isClassTP = "MAGE", locID = 2393, x = 0.5279, y = 0.6556, zoneID = 2393 }, -- Teleport: Silvermoon City
 			[1259194] = { text = "SMC", isMagePortal = true, locID = 2393, x = 0.5279, y = 0.6556, zoneID = 2393 }, -- Portal: Silvermoon City
 			[1255801] = { text = "ARC", isToy = true, toyID = 253629, isHearthstone = true, icon = 7322718, locID = 2541, x = 0.50215210538362, y = 0.755379994799, zoneID = 2541 }, -- Personal Key to the Arcantina
@@ -1072,6 +1076,7 @@ local RANDOM_HS_ID = 999999
 local hearthstoneID = {
 	-- Midnight
 	{ isToy = true, id = 263933, spellID = 1270814 }, -- Preyseeker's Hearthstone
+	{ isToy = true, id = 265100, spellID = 1273401 }, -- Corewarden's Hearthstone
 
 	-- 11.2
 	{ isToy = true, icon = 133469, id = 245970, spellID = 1240219 }, -- P.O.S.T. Master's Express Hearthstone

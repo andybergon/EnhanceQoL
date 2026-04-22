@@ -127,7 +127,6 @@ The **CVar** section exposes common console variables as checkboxes. Changing th
 - Disable death effects
 - Show LUA-Error on UI
 - Show class colors on nameplates
-- Show the Castbar of your Target
 - Disable tutorials
 - Enable enhanced tooltips
 - Show the Guild on Players

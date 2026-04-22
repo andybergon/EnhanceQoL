@@ -29,6 +29,14 @@ local function resolveFontFace(configured)
 	return fallback
 end
 
+local function normalizeFontStyleChoice(value, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, fallback, true)
+	end
+	if value ~= nil then return value end
+	return fallback or "OUTLINE"
+end
+
 local function GetActionBarButtonPrefix(barName)
 	if not barName then return nil, 0 end
 	if barName == "MainMenuBar" or barName == "MainActionBar" then return "ActionButton", DEFAULT_ACTION_BUTTON_COUNT end
@@ -257,14 +265,52 @@ end
 
 function Labels.ResetBorderCache() Labels._lsmBorderCache = nil end
 
+local function IsValidCustomBorderStyle(style)
+	if style == QUICK_SLOT_BORDER then return true end
+	return IsLSMBorderPath(style)
+end
+
 local function GetCustomBorderStyle()
 	if not addon.db then return DEFAULT_BORDER_STYLE end
 	local style = addon.db.actionBarBorderStyle
 	if type(style) ~= "string" or style == "" then return DEFAULT_BORDER_STYLE end
+	if style ~= DEFAULT_BORDER_STYLE and not IsValidCustomBorderStyle(style) then return DEFAULT_BORDER_STYLE end
 	return style
 end
 
 local function IsCustomBorderStyle(style) return type(style) == "string" and style ~= "" and style ~= DEFAULT_BORDER_STYLE end
+
+local function BuildActionButtonBorderState()
+	local style = GetCustomBorderStyle()
+	local hasCustom = IsCustomBorderStyle(style)
+	local hide = addon.db and (addon.db.actionBarHideBorders or hasCustom) or hasCustom
+	local usesBackdrop = hasCustom and IsLSMBorderPath(style) or false
+	local padding = hasCustom and GetBorderPadding() or DEFAULT_BORDER_PADDING
+	local edgeSize = usesBackdrop and GetBorderEdgeSize() or DEFAULT_BORDER_EDGE_SIZE
+	local r, g, b, a = 1, 1, 1, 1
+	if hasCustom then r, g, b, a = GetBorderColor() end
+	return {
+		style = style,
+		hasCustom = hasCustom,
+		hide = hide == true,
+		usesBackdrop = usesBackdrop == true,
+		padding = padding,
+		edgeSize = edgeSize,
+		colorR = r,
+		colorG = g,
+		colorB = b,
+		colorA = a,
+		signature = table.concat({
+			hide == true and "1" or "0",
+			hasCustom == true and "1" or "0",
+			usesBackdrop == true and "1" or "0",
+			tostring(style or ""),
+			tostring(padding or ""),
+			tostring(edgeSize or ""),
+			string.format("%.3f,%.3f,%.3f,%.3f", r or 0, g or 0, b or 0, a or 0),
+		}, "|"),
+	}
+end
 
 local function EnsureCustomBorderTexture(button)
 	if not button then return nil end
@@ -277,9 +323,9 @@ local function EnsureCustomBorderTexture(button)
 	return border
 end
 
-local function UpdateCustomBorderSizing(border, button)
+local function UpdateCustomBorderSizing(border, button, padding)
 	if not border or not button then return end
-	local padding = GetBorderPadding()
+	padding = tonumber(padding) or DEFAULT_BORDER_PADDING
 	border:ClearAllPoints()
 	border:SetPoint("CENTER", button, "CENTER", 0, 0)
 	local normalTexture = GetNormalTexture(button)
@@ -310,48 +356,51 @@ local function EnsureCustomBorderFrame(button)
 	return frame
 end
 
-local function UpdateCustomBorderFrame(frame, button)
+local function UpdateCustomBorderFrame(frame, button, padding)
 	if not frame or not button then return end
-	local padding = GetBorderPadding()
+	padding = tonumber(padding) or DEFAULT_BORDER_PADDING
 	frame:ClearAllPoints()
 	frame:SetPoint("TOPLEFT", button, "TOPLEFT", -padding, padding)
 	frame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", padding, -padding)
 end
 
-local function ApplyBackdropBorder(button, style)
+local function ApplyBackdropBorder(button, borderState)
+	if not borderState then return end
 	local frame = EnsureCustomBorderFrame(button)
 	if not frame then return end
-	UpdateCustomBorderFrame(frame, button)
-	local edgeSize = GetBorderEdgeSize()
+	UpdateCustomBorderFrame(frame, button, borderState.padding)
+	local style = borderState.style
+	local edgeSize = borderState.edgeSize
 	if frame.EQOL_BorderStyle ~= style or frame.EQOL_BorderEdgeSize ~= edgeSize then
 		frame:SetBackdrop({ edgeFile = style, edgeSize = edgeSize })
 		frame.EQOL_BorderStyle = style
 		frame.EQOL_BorderEdgeSize = edgeSize
 	end
-	local r, g, b, a = GetBorderColor()
+	local r, g, b, a = borderState.colorR, borderState.colorG, borderState.colorB, borderState.colorA
 	frame:SetBackdropBorderColor(r, g, b, a)
 	frame:Show()
 end
 
-local function ApplyCustomBorder(button, style)
+local function ApplyCustomBorder(button, borderState)
 	local border = button and button.EQOL_CustomBorder
 	local borderFrame = button and button.EQOL_CustomBorderFrame
-	if not IsCustomBorderStyle(style) then
+	if not (borderState and borderState.hasCustom) then
 		if border then border:Hide() end
 		if borderFrame then borderFrame:Hide() end
 		return
 	end
 
-	if IsLSMBorderPath(style) then
+	local style = borderState.style
+	if borderState.usesBackdrop then
 		if border then border:Hide() end
-		ApplyBackdropBorder(button, style)
+		ApplyBackdropBorder(button, borderState)
 		return
 	end
 
 	if borderFrame then borderFrame:Hide() end
 	border = EnsureCustomBorderTexture(button)
 	if not border then return end
-	UpdateCustomBorderSizing(border, button)
+	UpdateCustomBorderSizing(border, button, borderState.padding)
 	if border.EQOL_BorderStyle ~= style then
 		border:SetTexture(style)
 		border.EQOL_BorderStyle = style
@@ -361,7 +410,7 @@ local function ApplyCustomBorder(button, style)
 	else
 		border:SetTexCoord(0, 1, 0, 1)
 	end
-	local r, g, b, a = GetBorderColor()
+	local r, g, b, a = borderState.colorR, borderState.colorG, borderState.colorB, borderState.colorA
 	border:SetVertexColor(r, g, b, a)
 	border:Show()
 end
@@ -391,25 +440,26 @@ local function ApplyBorderVisibility(button, hide)
 	end
 end
 
-local function RefreshButtonBorder(button)
+local function RefreshButtonBorder(button, borderState)
 	if not addon.db then return end
+	borderState = borderState or BuildActionButtonBorderState()
 	local isActionButton = DetermineButtonBarName(button) ~= nil
 	if not isActionButton then
 		ApplyBorderVisibility(button, false)
 		ApplyCustomBorder(button, nil)
 		return
 	end
-	local style = GetCustomBorderStyle()
-	local hasCustom = IsCustomBorderStyle(style)
-	local hide = addon.db.actionBarHideBorders or hasCustom
-	ApplyBorderVisibility(button, hide)
-	ApplyCustomBorder(button, hasCustom and style or nil)
+	ApplyBorderVisibility(button, borderState.hide)
+	ApplyCustomBorder(button, borderState)
 end
 
-function Labels.RefreshActionButtonBorders()
+function Labels.RefreshActionButtonBorders(reason)
 	if Labels.EnsureActionButtonArtHook then Labels.EnsureActionButtonArtHook() end
 	if Labels.EnsureZoneAbilityBorderHook then Labels.EnsureZoneAbilityBorderHook() end
-	ForEachActionButtonBorderTarget(function(button) RefreshButtonBorder(button) end)
+	local borderState = BuildActionButtonBorderState()
+	if reason == "PLAYER_LOGIN" and Labels._actionBarBorderFullRefreshSignature == borderState.signature then return end
+	ForEachActionButtonBorderTarget(function(button) RefreshButtonBorder(button, borderState) end)
+	Labels._actionBarBorderFullRefreshSignature = borderState.signature
 end
 
 function Labels.RefreshActionButtonBorder(button) RefreshButtonBorder(button) end
@@ -529,6 +579,7 @@ end
 
 local ApplyTextColorOverride
 local RestoreTextColorOverride
+local ApplyFontWithFallback
 
 function Labels.RefreshAllMacroNameVisibility()
 	local hide = addon.db and addon.db.hideMacroNames
@@ -549,8 +600,7 @@ function Labels.RefreshAllMacroNameVisibility()
 						local face, size, outline = nameFrame:GetFont()
 						nameFrame.EQOL_OriginalMacroFont = { face = face, size = size, outline = outline }
 					end
-					local ok = nameFrame:SetFont(fontFace or getDefaultFontFace(), fontSize, fontOutline or "OUTLINE")
-					if not ok then nameFrame:SetFont(getDefaultFontFace(), fontSize, fontOutline or "OUTLINE") end
+					ApplyFontWithFallback(nameFrame, fontFace or getDefaultFontFace(), fontSize, normalizeFontStyleChoice(fontOutline, "OUTLINE"))
 					nameFrame.EQOL_UsingMacroOverride = true
 					ApplyTextColorOverride(nameFrame, fontColor, "EQOL_OriginalMacroColor", "EQOL_UsingMacroColorOverride")
 				else
@@ -559,7 +609,7 @@ function Labels.RefreshAllMacroNameVisibility()
 						local face = orig.face or getDefaultFontFace()
 						local size = orig.size or 12
 						local outline = orig.outline or "OUTLINE"
-						nameFrame:SetFont(face, size, outline)
+						ApplyFontWithFallback(nameFrame, face, size, outline)
 						nameFrame.EQOL_UsingMacroOverride = nil
 						nameFrame.EQOL_OriginalMacroFont = nil
 					end
@@ -584,6 +634,88 @@ local function GetActionButtonCount(button)
 	return nil
 end
 
+local VALID_TEXT_ANCHORS = {
+	TOPLEFT = true,
+	TOP = true,
+	TOPRIGHT = true,
+	LEFT = true,
+	CENTER = true,
+	RIGHT = true,
+	BOTTOMLEFT = true,
+	BOTTOM = true,
+	BOTTOMRIGHT = true,
+}
+
+local function NormalizeTextAnchor(anchor, fallback)
+	local value = type(anchor) == "string" and string.upper(anchor) or nil
+	if VALID_TEXT_ANCHORS[value] then return value end
+	return fallback
+end
+
+local function NormalizeTextOffset(value, fallback)
+	local number = tonumber(value)
+	if number == nil then number = fallback or 0 end
+	if number < -50 then
+		number = -50
+	elseif number > 50 then
+		number = 50
+	end
+	return math.floor(number + 0.5)
+end
+
+local function StoreRegionAnchorPoints(region, key)
+	if not region then return end
+	local numPoints = region.GetNumPoints and region:GetNumPoints() or 0
+	local points = {}
+	for index = 1, numPoints do
+		local point, relativeTo, relativePoint, xOfs, yOfs = region:GetPoint(index)
+		points[#points + 1] = {
+			point = point,
+			relativeTo = relativeTo,
+			relativePoint = relativePoint,
+			xOfs = xOfs,
+			yOfs = yOfs,
+		}
+	end
+	region[key] = points
+end
+
+local function RestoreRegionAnchorPoints(region, key)
+	if not region then return end
+	local points = region[key]
+	region:ClearAllPoints()
+	if type(points) == "table" and #points > 0 then
+		for _, info in ipairs(points) do
+			region:SetPoint(info.point, info.relativeTo, info.relativePoint, info.xOfs, info.yOfs)
+		end
+	end
+	region[key] = nil
+end
+
+local function GetActionButtonAnchorTarget(button)
+	if not button then return nil end
+	return button.icon or button.Icon or button
+end
+
+local function ApplyRegionPositionOverride(region, button, enabled, anchor, offsetX, offsetY, stateKey, originalKey)
+	if not (region and button) then return end
+	if enabled then
+		if not region[stateKey] then StoreRegionAnchorPoints(region, originalKey) end
+		local target = GetActionButtonAnchorTarget(button)
+		local point = NormalizeTextAnchor(anchor, "CENTER")
+		region:ClearAllPoints()
+		region:SetPoint(point, target, point, NormalizeTextOffset(offsetX, 0), NormalizeTextOffset(offsetY, 0))
+		region[stateKey] = true
+	else
+		if region[stateKey] then
+			RestoreRegionAnchorPoints(region, originalKey)
+			region[stateKey] = nil
+		else
+			StoreRegionAnchorPoints(region, originalKey)
+		end
+	end
+end
+
 local function NormalizeFontSize(size, minValue, maxValue)
 	local value = tonumber(size) or minValue
 	if value < minValue then value = minValue end
@@ -593,11 +725,16 @@ end
 
 Labels.NormalizeFontSize = NormalizeFontSize
 
-local function ApplyFontWithFallback(region, face, size, outline)
+ApplyFontWithFallback = function(region, face, size, outline)
 	if not region or not region.SetFont then return end
+	local styleChoice = normalizeFontStyleChoice(outline, "OUTLINE")
+	if addon.functions and addon.functions.ApplyFontString then
+		addon.functions.ApplyFontString(region, face, size, styleChoice, getDefaultFontFace(), "OUTLINE")
+		return
+	end
 	local resolvedFace = resolveFontFace(face)
-	local ok = region:SetFont(resolvedFace or getDefaultFontFace(), size, outline or "OUTLINE")
-	if not ok then region:SetFont(getDefaultFontFace(), size, outline or "OUTLINE") end
+	local ok = region:SetFont(resolvedFace or getDefaultFontFace(), size, styleChoice or "OUTLINE")
+	if not ok then region:SetFont(getDefaultFontFace(), size, styleChoice or "OUTLINE") end
 end
 
 local function NormalizeColorComponent(value, fallback)
@@ -652,6 +789,17 @@ local function ApplyCountStyling(button)
 	if not addon.db then return end
 	local count = GetActionButtonCount(button)
 	if not count then return end
+	local positionOverride = addon.db.actionBarCountFontOverride == true
+	ApplyRegionPositionOverride(
+		count,
+		button,
+		positionOverride,
+		addon.db.actionBarCountAnchor,
+		addon.db.actionBarCountOffsetX,
+		addon.db.actionBarCountOffsetY,
+		"EQOL_UsingCountPositionOverride",
+		"EQOL_OriginalCountPoints"
+	)
 	local face = resolveFontFace(addon.db.actionBarCountFontFace)
 	local size = NormalizeFontSize(addon.db.actionBarCountFontSize, 6, 32)
 	local outline = addon.db.actionBarCountFontOutline or "OUTLINE"
@@ -823,6 +971,17 @@ local function ApplyHotkeyStyling(button, barNameOverride)
 	if not addon.db then return end
 	local hotkey = GetActionButtonHotkey(button)
 	if not hotkey then return end
+	local positionOverride = addon.db.actionBarHotkeyFontOverride == true
+	ApplyRegionPositionOverride(
+		hotkey,
+		button,
+		positionOverride,
+		addon.db.actionBarHotkeyAnchor,
+		addon.db.actionBarHotkeyOffsetX,
+		addon.db.actionBarHotkeyOffsetY,
+		"EQOL_UsingHotkeyPositionOverride",
+		"EQOL_OriginalHotkeyPoints"
+	)
 	local originalText = hotkey:GetText()
 	if hotkey.EQOL_ShortApplied and originalText ~= hotkey.EQOL_ShortValue then
 		hotkey.EQOL_ShortApplied = nil
@@ -1080,7 +1239,7 @@ local function OnPlayerLogin(self, event)
 	if Labels.RefreshAllHotkeyStyles then Labels.RefreshAllHotkeyStyles() end
 	if Labels.RefreshAllCountStyles then Labels.RefreshAllCountStyles() end
 	if Labels.RefreshAllRangeOverlays then Labels.RefreshAllRangeOverlays() end
-	if Labels.RefreshActionButtonBorders then Labels.RefreshActionButtonBorders() end
+	if Labels.RefreshActionButtonBorders then Labels.RefreshActionButtonBorders("PLAYER_LOGIN") end
 	if Labels.UpdateRangeOverlayEvents then Labels.UpdateRangeOverlayEvents() end
 	if Labels.UpdateHotkeyRefreshEvents then Labels.UpdateHotkeyRefreshEvents() end
 	if self then

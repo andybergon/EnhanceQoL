@@ -5,6 +5,7 @@ import argparse
 import ast
 import html
 import json
+import os
 import pathlib
 import re
 import sys
@@ -18,11 +19,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_DRINKS_FILE = REPO_ROOT / "EnhanceQoL/Modules/Food/Drinks.lua"
 TOOLTIP_URL = "https://nether.wowhead.com/tooltip/item/{item_id}?dataEnv={data_env}&locale={locale}"
+ITEMS_URL = "https://www.wowhead.com/items/consumables/food-and-drinks"
+DEFAULT_DISCOVERY_CACHE_FILE = pathlib.Path(
+    os.environ.get("XDG_CACHE_HOME", str(pathlib.Path.home() / ".cache"))
+) / "raizor" / "refresh_drinks_from_wowhead_cache.json"
 
 BLOCK_START_RE = re.compile(r"^\s*addon\.Drinks\.drinkList\s*=\s*\{")
 BLOCK_END_RE = re.compile(r"^\s*\}")
 ENTRY_RE = re.compile(r"^(?P<indent>\s*)\{(?P<body>.*)\},(?P<suffix>\s*(--.*)?)$")
 FIELD_RE = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<value>.+?)\s*$")
+LISTVIEW_ITEMS_RE = re.compile(r"listviewitems\s*=\s*(?P<items>\[.*?\]);\s*new Listview", re.DOTALL)
+LISTVIEW_ITEM_ID_RE = re.compile(r'"id":(\d+)')
 LEVEL_RE = re.compile(r"requires level\s+(\d+)", re.IGNORECASE)
 PERCENT_RE = re.compile(
     r"restores\s+([0-9]+(?:[.,][0-9]+)?)%\s+of your maximum.*?mana every second over\s+(\d+)\s*sec",
@@ -182,6 +189,15 @@ def get_field(fields: list[tuple[str, str]], name: str) -> str | None:
         if key == name:
             return value
     return None
+
+
+def parse_numeric_literal(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def remove_field(fields: list[tuple[str, str]], name: str) -> None:
@@ -349,6 +365,12 @@ def tooltip_has_mana(tooltip: TooltipInfo) -> bool:
     return tooltip.mana > 0 or (tooltip.mana_percent is not None and tooltip.mana_percent > 0)
 
 
+def fields_have_mana(fields: list[tuple[str, str]]) -> bool:
+    current_mana = parse_numeric_literal(get_field(fields, "mana"))
+    current_percent = parse_numeric_literal(get_field(fields, "manaPercent"))
+    return (current_mana is not None and current_mana > 0) or (current_percent is not None and current_percent > 0)
+
+
 def render_generated_lua_entry(tooltip: TooltipInfo, item_id: int) -> str:
     fields: list[tuple[str, str]] = [
         ("key", f'"{sanitize_key(tooltip.name, item_id)}"'),
@@ -360,7 +382,6 @@ def render_generated_lua_entry(tooltip: TooltipInfo, item_id: int) -> str:
         fields.append(("manaPercent", render_number(tooltip.mana_percent)))
     if tooltip.mana_duration is not None:
         fields.append(("manaDuration", str(tooltip.mana_duration)))
-    fields.append(("isBuffFood", "true" if tooltip.is_buff_food else "false"))
     return "{ " + render_lua_fields(fields) + " },"
 
 
@@ -370,9 +391,16 @@ def write_probe_outputs(
     output_json: pathlib.Path | None,
     output_lua: pathlib.Path | None,
     include_no_mana: bool,
-) -> tuple[int, int, int]:
+    ignore_buff_food: bool,
+) -> tuple[int, int, int, int]:
     ok_results = [result for result in results if result.ok and result.tooltip is not None]
     error_results = [result for result in results if not result.ok]
+    ignored_buff_food_results: list[ProbeResult] = []
+
+    if ignore_buff_food:
+        ignored_buff_food_results = [result for result in ok_results if result.tooltip is not None and result.tooltip.is_buff_food]
+        ok_results = [result for result in ok_results if result.tooltip is not None and not result.tooltip.is_buff_food]
+
     mana_results = [result for result in ok_results if tooltip_has_mana(result.tooltip)]
     no_mana_results = [result for result in ok_results if not tooltip_has_mana(result.tooltip)]
 
@@ -380,6 +408,8 @@ def write_probe_outputs(
         payload = []
         for result in results:
             if result.ok and result.tooltip is not None:
+                if ignore_buff_food and result.tooltip.is_buff_food:
+                    continue
                 payload.append(
                     {
                         "item_id": result.item_id,
@@ -404,38 +434,205 @@ def write_probe_outputs(
             tooltip = result.tooltip
             if tooltip is None:
                 continue
+            if ignore_buff_food and tooltip.is_buff_food:
+                continue
             if not include_no_mana and not tooltip_has_mana(tooltip):
                 continue
             lines.append(render_generated_lua_entry(tooltip, result.item_id))
         output_lua.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
-    return len(mana_results), len(no_mana_results), len(error_results)
+    return len(mana_results), len(no_mana_results), len(error_results), len(ignored_buff_food_results)
 
 
-def update_entry_line(line: str, tooltip: TooltipInfo) -> str:
+def update_entry_line(line: str, tooltip: TooltipInfo, *, allow_zero_downgrades: bool) -> str:
     match = ENTRY_RE.match(line)
     if not match:
         return line
 
     fields = parse_lua_fields(match.group("body"))
+    preserve_existing_mana = not allow_zero_downgrades and fields_have_mana(fields) and not tooltip_has_mana(tooltip)
+    remove_field(fields, "isBuffFood")
 
     if tooltip.required_level is not None:
         set_field(fields, "requiredLevel", render_number(tooltip.required_level))
-    set_field(fields, "mana", render_number(tooltip.mana))
-    set_field(fields, "isBuffFood", "true" if tooltip.is_buff_food else "false")
 
-    if tooltip.mana_percent is not None:
-        set_field(fields, "manaPercent", render_number(tooltip.mana_percent), after="mana")
-        if tooltip.mana_duration is not None:
-            set_field(fields, "manaDuration", render_number(tooltip.mana_duration), after="manaPercent")
+    if not preserve_existing_mana:
+        set_field(fields, "mana", render_number(tooltip.mana))
+        if tooltip.mana_percent is not None:
+            set_field(fields, "manaPercent", render_number(tooltip.mana_percent), after="mana")
+            if tooltip.mana_duration is not None:
+                set_field(fields, "manaDuration", render_number(tooltip.mana_duration), after="manaPercent")
+            else:
+                remove_field(fields, "manaDuration")
         else:
+            remove_field(fields, "manaPercent")
             remove_field(fields, "manaDuration")
-    else:
-        remove_field(fields, "manaPercent")
-        remove_field(fields, "manaDuration")
 
     new_body = render_lua_fields(fields)
     return f"{match.group('indent')}{{ {new_body} }},{match.group('suffix')}"
+
+
+def fetch_html(url: str, *, timeout: float) -> str:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Raizor-DrinkRefresh/1.0 (+local tooling)",
+            "Accept": "text/html,application/xhtml+xml,text/plain,*/*",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        raw = response.read()
+    return raw.decode("utf-8", errors="replace")
+
+
+def extract_listview_item_ids(page_html: str) -> list[int]:
+    match = LISTVIEW_ITEMS_RE.search(page_html)
+    if not match:
+        raise ValueError("Could not locate Wowhead listviewitems payload on the page")
+
+    seen: set[int] = set()
+    ordered: list[int] = []
+    for item_id in (int(raw_id) for raw_id in LISTVIEW_ITEM_ID_RE.findall(match.group("items"))):
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        ordered.append(item_id)
+    return ordered
+
+
+def load_existing_item_ids(drinks_file: pathlib.Path) -> list[int]:
+    lines = drinks_file.read_text(encoding="utf-8").splitlines()
+    in_block = False
+    seen: set[int] = set()
+    ordered: list[int] = []
+
+    for line in lines:
+        if BLOCK_START_RE.match(line):
+            in_block = True
+            continue
+
+        if in_block and BLOCK_END_RE.match(line):
+            break
+
+        if not in_block:
+            continue
+
+        match = ENTRY_RE.match(line)
+        if not match:
+            continue
+
+        fields = parse_lua_fields(match.group("body"))
+        if get_field(fields, "isSpell") == "true":
+            continue
+
+        id_value = get_field(fields, "id")
+        if id_value is None:
+            continue
+
+        try:
+            item_id = int(id_value)
+        except ValueError:
+            continue
+
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        ordered.append(item_id)
+
+    return ordered
+
+
+def discover_missing_item_ids(
+    drinks_file: pathlib.Path,
+    *,
+    wowhead_url: str,
+    timeout: float,
+    ignored_item_ids: set[int] | None = None,
+) -> tuple[list[int], list[int], list[int]]:
+    existing_ids = set(load_existing_item_ids(drinks_file))
+    ignored_ids = ignored_item_ids or set()
+    page_html = fetch_html(wowhead_url, timeout=timeout)
+    wowhead_ids = extract_listview_item_ids(page_html)
+    missing_ids = [item_id for item_id in wowhead_ids if item_id not in existing_ids]
+    uncached_missing_ids = [item_id for item_id in missing_ids if item_id not in ignored_ids]
+    return wowhead_ids, missing_ids, uncached_missing_ids
+
+
+def write_ids_output(item_ids: list[int], output_path: pathlib.Path) -> None:
+    payload = "\n".join(str(item_id) for item_id in item_ids)
+    output_path.write_text(payload + ("\n" if payload else ""), encoding="utf-8")
+
+
+def load_discovery_cache(cache_file: pathlib.Path | None) -> dict[str, dict]:
+    if cache_file is None or not cache_file.exists():
+        return {"ignored_buff_food_ids": {}}
+
+    try:
+        payload = json.loads(cache_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"ignored_buff_food_ids": {}}
+
+    raw_ignored = payload.get("ignored_buff_food_ids", {})
+    normalized: dict[str, dict] = {}
+    if isinstance(raw_ignored, dict):
+        for raw_id, meta in raw_ignored.items():
+            try:
+                key = str(int(raw_id))
+            except (TypeError, ValueError):
+                continue
+            normalized[key] = meta if isinstance(meta, dict) else {}
+    elif isinstance(raw_ignored, list):
+        for raw_id in raw_ignored:
+            try:
+                normalized[str(int(raw_id))] = {}
+            except (TypeError, ValueError):
+                continue
+
+    return {"ignored_buff_food_ids": normalized}
+
+
+def save_discovery_cache(cache_file: pathlib.Path | None, cache_payload: dict[str, dict]) -> None:
+    if cache_file is None:
+        return
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(cache_payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def get_cached_ignored_buff_food_ids(cache_payload: dict[str, dict]) -> set[int]:
+    ignored = cache_payload.get("ignored_buff_food_ids", {})
+    if not isinstance(ignored, dict):
+        return set()
+    item_ids: set[int] = set()
+    for raw_id in ignored:
+        try:
+            item_ids.add(int(raw_id))
+        except ValueError:
+            continue
+    return item_ids
+
+
+def update_discovery_cache_with_buff_food_results(cache_payload: dict[str, dict], results: list[ProbeResult]) -> bool:
+    ignored = cache_payload.setdefault("ignored_buff_food_ids", {})
+    if not isinstance(ignored, dict):
+        ignored = {}
+        cache_payload["ignored_buff_food_ids"] = ignored
+
+    changed = False
+    for result in results:
+        tooltip = result.tooltip
+        if not result.ok or tooltip is None or not tooltip.is_buff_food:
+            continue
+
+        key = str(result.item_id)
+        new_meta = {
+            "name": tooltip.name or "",
+            "reason": "buff_food",
+        }
+        if ignored.get(key) != new_meta:
+            ignored[key] = new_meta
+            changed = True
+
+    return changed
 
 
 def refresh_drinks_file(
@@ -446,6 +643,7 @@ def refresh_drinks_file(
     timeout: float,
     sleep_seconds: float,
     limit_ids: set[int] | None,
+    allow_zero_downgrades: bool,
 ) -> tuple[str, list[str], list[str]]:
     lines = drinks_file.read_text(encoding="utf-8").splitlines()
 
@@ -496,7 +694,7 @@ def refresh_drinks_file(
 
         try:
             tooltip = fetch_tooltip(item_id, locale=locale, data_env=data_env, timeout=timeout)
-            new_line = update_entry_line(line, tooltip)
+            new_line = update_entry_line(line, tooltip, allow_zero_downgrades=allow_zero_downgrades)
             updated_lines.append(new_line)
             if new_line != line:
                 changed.append(f"line {line_number}: item {item_id}")
@@ -553,11 +751,51 @@ def self_test() -> int:
     assert formula_info.mana_duration is None
     assert formula_info.is_buff_food is False
 
-    line = '\t{ key = "RoyalRoast", id = 242275, requiredLevel = 90, mana = 0, manaPercent = 7, manaDuration = 20, isBuffFood = true },'
-    rewritten = update_entry_line(line, flat_info)
+    line = '\t{ key = "RoyalRoast", id = 242275, requiredLevel = 90, mana = 0, manaPercent = 7, manaDuration = 20 },'
+    rewritten = update_entry_line(line, flat_info, allow_zero_downgrades=False)
     assert "mana = 30000" in rewritten
     assert "manaPercent" not in rewritten
-    assert "isBuffFood = false" in rewritten
+    assert "isBuffFood" not in rewritten
+    assert "requiredLevel = 75" in rewritten
+
+    zero_payload = {
+        "name": "Broken Tooltip",
+        "tooltip": "Use: Must remain seated while eating. Requires Level 75",
+    }
+    zero_info = parse_tooltip_payload(zero_payload)
+    unchanged = update_entry_line(
+        '\t{ key = "SippingAether", id = 111111, requiredLevel = 75, mana = 30000 },',
+        zero_info,
+        allow_zero_downgrades=False,
+    )
+    assert "mana = 30000" in unchanged
+
+    downgraded = update_entry_line(
+        '\t{ key = "SippingAether", id = 111111, requiredLevel = 75, mana = 30000 },',
+        zero_info,
+        allow_zero_downgrades=True,
+    )
+    assert "mana = 0" in downgraded
+
+    generated_entry = render_generated_lua_entry(flat_info, 222222)
+    assert "isBuffFood" not in generated_entry
+
+    sample_page = """
+        <script>
+        listviewitems = [
+            {"id":159,"name":"Refreshing Spring Water",firstseenpatch: 0},
+            {"id":117,"name":"Tough Jerky",firstseenpatch: 0},
+            {"id":159,"name":"Refreshing Spring Water",firstseenpatch: 0}
+        ];
+        new Listview({template: 'item'});
+        </script>
+    """
+    assert extract_listview_item_ids(sample_page) == [159, 117]
+
+    cache_payload = load_discovery_cache(None)
+    changed = update_discovery_cache_with_buff_food_results(cache_payload, [ProbeResult(item_id=159, ok=True, tooltip=info)])
+    assert changed is True
+    assert get_cached_ignored_buff_food_ids(cache_payload) == {159}
     return 0
 
 
@@ -566,6 +804,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--file", type=pathlib.Path, default=DEFAULT_DRINKS_FILE, help="Path to Drinks.lua")
     parser.add_argument("--output", type=pathlib.Path, help="Write the refreshed Lua file to this path")
     parser.add_argument("--write", action="store_true", help="Overwrite the input file in place")
+    parser.add_argument("--allow-zero-downgrades", action="store_true", help="Allow existing non-zero mana entries to be overwritten with 0/no-mana tooltip results")
+    parser.add_argument("--discover", action="store_true", help="Fetch the live Wowhead Food & Drinks list, diff it against Drinks.lua, and probe the missing item ids")
+    parser.add_argument("--discover-url", default=ITEMS_URL, help="Wowhead Food & Drinks URL used for discovery mode")
+    parser.add_argument("--discover-limit", type=int, help="Only probe the first N ids found by discovery mode")
+    parser.add_argument("--discover-output-ids", type=pathlib.Path, help="Write missing Wowhead item ids from discovery mode, one per line")
+    parser.add_argument("--discovery-cache-file", type=pathlib.Path, default=DEFAULT_DISCOVERY_CACHE_FILE, help="Local cache file used to skip already-ignored buff food ids during discovery")
+    parser.add_argument("--no-discovery-cache", action="store_true", help="Do not read or update the local discovery cache")
     parser.add_argument("--locale", type=int, default=0, help="Wowhead locale id, default: 0 (enUS)")
     parser.add_argument("--data-env", type=int, default=1, help="Wowhead dataEnv query parameter")
     parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds")
@@ -587,12 +832,40 @@ def main(argv: list[str]) -> int:
         return self_test()
 
     item_ids = load_item_ids(args)
+    discovery_cache_file = None if args.no_discovery_cache else args.discovery_cache_file
+    discovery_cache = load_discovery_cache(discovery_cache_file) if args.discover else {"ignored_buff_food_ids": {}}
+    cached_ignored_ids = get_cached_ignored_buff_food_ids(discovery_cache) if args.discover else set()
+
+    if args.discover and item_ids:
+        print("Use either --discover or --ids/--ids-file, not both.", file=sys.stderr)
+        return 2
+
+    if args.discover:
+        wowhead_ids, missing_ids, uncached_missing_ids = discover_missing_item_ids(
+            args.file,
+            wowhead_url=args.discover_url,
+            timeout=args.timeout,
+            ignored_item_ids=cached_ignored_ids,
+        )
+        print(f"Wowhead list ids: {len(wowhead_ids)}")
+        print(f"Missing ids vs current Drinks.lua: {len(missing_ids)}")
+        if discovery_cache_file is not None:
+            print(f"Cached ignored buff food ids: {len(cached_ignored_ids)}")
+            print(f"Discovery ids after local cache: {len(uncached_missing_ids)}")
+        if args.discover_output_ids:
+            write_ids_output(uncached_missing_ids, args.discover_output_ids)
+            print(f"Wrote missing ids to {args.discover_output_ids}")
+        if args.discover_limit is not None:
+            uncached_missing_ids = uncached_missing_ids[: max(0, args.discover_limit)]
+            print(f"Discovery probe ids: {len(uncached_missing_ids)}")
+        item_ids = uncached_missing_ids
+
     limit_ids = set(item_ids) if item_ids else None
 
-    if args.probe_output_json or args.probe_output_lua:
+    if args.probe_output_json or args.probe_output_lua or args.discover:
         if not item_ids:
-            print("Probe mode requires --ids or --ids-file.", file=sys.stderr)
-            return 2
+            print("No ids to probe.")
+            return 0
         results = probe_items(
             item_ids,
             locale=args.locale,
@@ -600,16 +873,27 @@ def main(argv: list[str]) -> int:
             timeout=args.timeout,
             workers=args.workers,
         )
-        mana_count, no_mana_count, error_count = write_probe_outputs(
+        cache_changed = False
+        if args.discover and discovery_cache_file is not None:
+            cache_changed = update_discovery_cache_with_buff_food_results(discovery_cache, results)
+            if cache_changed:
+                save_discovery_cache(discovery_cache_file, discovery_cache)
+
+        mana_count, no_mana_count, error_count, ignored_buff_food_count = write_probe_outputs(
             results,
             output_json=args.probe_output_json,
             output_lua=args.probe_output_lua,
             include_no_mana=args.include_no_mana,
+            ignore_buff_food=True,
         )
         print(f"Probed ids: {len(results)}")
+        if ignored_buff_food_count:
+            print(f"Ignored buff food ids: {ignored_buff_food_count}")
         print(f"Entries with mana data: {mana_count}")
         print(f"Entries without mana data: {no_mana_count}")
         print(f"Errors: {error_count}")
+        if cache_changed and discovery_cache_file is not None:
+            print(f"Updated discovery cache: {discovery_cache_file}")
         if args.show_failures:
             for result in results:
                 if not result.ok:
@@ -623,6 +907,7 @@ def main(argv: list[str]) -> int:
         timeout=args.timeout,
         sleep_seconds=args.sleep,
         limit_ids=limit_ids,
+        allow_zero_downgrades=args.allow_zero_downgrades,
     )
 
     if args.write and args.output:

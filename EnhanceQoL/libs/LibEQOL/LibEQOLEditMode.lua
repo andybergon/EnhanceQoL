@@ -87,6 +87,7 @@ local DEFAULT_SETTINGS_SPACING = 2
 local DEFAULT_SLIDER_HEIGHT = 32
 local COLOR_BUTTON_WIDTH = 22
 local DEFAULT_INPUT_MAX_WIDTH = 193
+local DEFAULT_INPUT_MIN_WIDTH = 80
 local DROPDOWN_COLOR_MAX_WIDTH = 200
 local DEFAULT_MANAGER_TOGGLE_MAX_HEIGHT = 220
 local DEFAULT_MANAGER_TOGGLE_ROW_HEIGHT = 32
@@ -214,6 +215,12 @@ local function UpdateScrollChildWidth(dialog)
 	local child = dialog and dialog.Settings
 	if not (scroll and child) then return end
 	UpdateScrollChildWidthFor(scroll, child)
+end
+
+local function ApplySettingsRowWidth(row, settings)
+	if not (row and row.SetWidth and settings) then return end
+	local width = settings._eqolLastWidth or settings:GetWidth() or 0
+	if width > 0 then row:SetWidth(width) end
 end
 
 -- Blizzard frames we also toggle via the manager eye (if they exist)
@@ -2582,8 +2589,8 @@ local function buildInput()
 		local maxWidth = DEFAULT_INPUT_MAX_WIDTH
 		local totalWidth = self:GetWidth() or 0
 		if totalWidth > 0 then
-			local available = totalWidth - labelWidth - 6 - 2
-			if available < 1 then available = 1 end
+			local available = totalWidth - labelWidth - 12 - 2
+			if available < DEFAULT_INPUT_MIN_WIDTH then available = DEFAULT_INPUT_MIN_WIDTH end
 			if available < maxWidth then maxWidth = available end
 		end
 		if inputWidth and inputWidth > 0 then
@@ -3370,6 +3377,7 @@ function Dialog:UpdateSettings()
 			if pool then
 				local setting = pool:Acquire(self.Settings)
 				setting.layoutIndex = index
+				ApplySettingsRowWidth(setting, self.Settings)
 				setting:Setup(data, self.selection)
 				local visible = evaluateVisibility(data, layoutName, layoutIndex)
 				if data.parentId and collapsedById[data.parentId] then visible = false end
@@ -4547,6 +4555,7 @@ function Internal:RefreshSettingValues(targetSettings, fromDeferred)
 			data = child.setting
 		end
 		if data and child.Setup and (not targets or targets[data]) then
+			ApplySettingsRowWidth(child, parent)
 			child:Setup(data, selection)
 			child.setting = data
 			if child.SetEnabled then

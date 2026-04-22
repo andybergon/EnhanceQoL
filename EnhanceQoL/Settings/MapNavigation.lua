@@ -44,13 +44,11 @@ local squareMinimapStatsFontOrder = {}
 local squareMinimapBorderTextureOptions = {}
 local squareMinimapBorderTextureOrder = {}
 local squareMinimapBorderTextureCacheVersion = -1
-local squareMinimapStatsOutlineOrder = { "NONE", "OUTLINE", "THICKOUTLINE", "MONOCHROMEOUTLINE" }
-local squareMinimapStatsOutlineOptions = {
-	NONE = NONE,
-	OUTLINE = L["Outline"] or "Outline",
-	THICKOUTLINE = L["Thick Outline"] or "Thick Outline",
-	MONOCHROMEOUTLINE = L["Monochrome Outline"] or "Monochrome Outline",
-}
+local squareMinimapStatsOutlineOptions, squareMinimapStatsOutlineOrder =
+	addon.functions.GetFontStyleOptions and addon.functions.GetFontStyleOptions(true) or {
+		NONE = NONE,
+		OUTLINE = L["Outline"] or "Outline",
+	}, { "NONE", "OUTLINE" }
 local squareMinimapStatsAnchorOrder = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
 local squareMinimapStatsAnchorOptions = {
 	TOPLEFT = L["Top Left"] or "Top Left",
@@ -62,6 +60,17 @@ local squareMinimapStatsAnchorOptions = {
 	BOTTOMLEFT = L["Bottom Left"] or "Bottom Left",
 	BOTTOM = L["Bottom"] or "Bottom",
 	BOTTOMRIGHT = L["Bottom Right"] or "Bottom Right",
+}
+local instanceDifficultyAnchorOptions = {
+	TOPLEFT = squareMinimapStatsAnchorOptions.TOPLEFT,
+	TOP = squareMinimapStatsAnchorOptions.TOP,
+	TOPRIGHT = squareMinimapStatsAnchorOptions.TOPRIGHT,
+	LEFT = squareMinimapStatsAnchorOptions.LEFT,
+	CENTER = _G.DEFAULT or "Default",
+	RIGHT = squareMinimapStatsAnchorOptions.RIGHT,
+	BOTTOMLEFT = squareMinimapStatsAnchorOptions.BOTTOMLEFT,
+	BOTTOM = squareMinimapStatsAnchorOptions.BOTTOM,
+	BOTTOMRIGHT = squareMinimapStatsAnchorOptions.BOTTOMRIGHT,
 }
 local squareMinimapStatsTimeLeftClickActionOrder = { "calendar", "clock" }
 local squareMinimapStatsTimeLeftClickActionOptions = {
@@ -87,12 +96,20 @@ local function getGlobalFontConfigLabel()
 	return "Use global font config"
 end
 
+local function getGlobalFontStyleConfigKey()
+	if addon.functions and addon.functions.GetGlobalFontStyleConfigKey then return addon.functions.GetGlobalFontStyleConfigKey() end
+	return "__EQOL_GLOBAL_FONT_STYLE__"
+end
+
 local function normalizeSquareMinimapStatsOutlineSelection(primary, secondary)
 	local outline = getSettingSelectedValue(primary, secondary)
-	if outline == nil or outline == "" then return "OUTLINE" end
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(outline, getGlobalFontStyleConfigKey(), true)
+	end
+	if outline == nil or outline == "" then return getGlobalFontStyleConfigKey() end
 	if outline == "NONE" then return "NONE" end
 	if squareMinimapStatsOutlineOptions[outline] then return outline end
-	return "OUTLINE"
+	return getGlobalFontStyleConfigKey()
 end
 
 local function normalizeSquareMinimapTimeLeftClickAction(primary, secondary)
@@ -505,7 +522,7 @@ data = {
 					addon.db["squareMinimapStatsOutline"] = normalizeSquareMinimapStatsOutlineSelection(value, maybeValue)
 					applySquareMinimapStatsNow(true)
 				end,
-				default = "OUTLINE",
+				default = getGlobalFontStyleConfigKey(),
 				sType = "dropdown",
 				parent = true,
 				parentCheck = isSquareMinimapStatsEnabledSetting,
@@ -1801,6 +1818,26 @@ data = {
 				parentSection = mapExpandable,
 			},
 			{
+				var = "instanceDifficultyAnchor",
+				text = L["Anchor"] or "Anchor",
+				list = instanceDifficultyAnchorOptions,
+				order = squareMinimapStatsAnchorOrder,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["showInstanceDifficulty"]
+						and addon.SettingsLayout.elements["showInstanceDifficulty"].setting
+						and addon.SettingsLayout.elements["showInstanceDifficulty"].setting:GetValue() == true
+				end,
+				get = function() return normalizeSquareMinimapAnchorSelection(addon.db and addon.db.instanceDifficultyAnchor, nil, "CENTER") end,
+				set = function(value, maybeValue)
+					addon.db["instanceDifficultyAnchor"] = normalizeSquareMinimapAnchorSelection(value, maybeValue, "CENTER")
+					if addon.InstanceDifficulty then addon.InstanceDifficulty:Update() end
+				end,
+				default = "CENTER",
+				sType = "dropdown",
+				parent = true,
+				parentSection = mapExpandable,
+			},
+			{
 				var = "instanceDifficultyOffsetX",
 				text = L["Horizontal offset"],
 				parentCheck = function()
@@ -2544,7 +2581,7 @@ end
 local squareMinimapStatsDefaults = {
 	enableSquareMinimapStats = false,
 	squareMinimapStatsFont = getGlobalFontConfigKey(),
-	squareMinimapStatsOutline = "OUTLINE",
+	squareMinimapStatsOutline = getGlobalFontStyleConfigKey(),
 	squareMinimapStatsTime = true,
 	squareMinimapStatsTimeAnchor = "BOTTOMLEFT",
 	squareMinimapStatsTimeOffsetX = 3,
@@ -2846,7 +2883,11 @@ end
 
 local function getSquareMinimapStatsOutlineFlag()
 	local outline = normalizeSquareMinimapStatsOutlineSelection(addon.db and addon.db.squareMinimapStatsOutline, nil)
+	if addon.functions and addon.functions.GetFontFlagsForStyle then
+		return addon.functions.GetFontFlagsForStyle(outline, "OUTLINE")
+	end
 	if outline == nil or outline == "" or outline == "NONE" then return nil end
+	if outline == getGlobalFontStyleConfigKey() then return "OUTLINE" end
 	return outline
 end
 
@@ -3446,7 +3487,8 @@ local function getSquareMinimapStatRenderConfig(statKey)
 	local state = getSquareMinimapStatsState()
 	state.renderConfig = state.renderConfig or {}
 	local cached = state.renderConfig[statKey]
-	if cached then return cached end
+	local globalFontStateVersion = addon.functions and addon.functions.GetGlobalFontStateVersion and addon.functions.GetGlobalFontStateVersion() or 0
+	if cached and cached.globalFontStateVersion == globalFontStateVersion then return cached end
 
 	local cfg = squareMinimapStatsConfig[statKey]
 	if not (cfg and addon.db) then return nil end
@@ -3464,6 +3506,7 @@ local function getSquareMinimapStatRenderConfig(statKey)
 	local r, g, b, a = getSquareMinimapStatsColor(cfg.colorKey)
 
 	cached = {
+		globalFontStateVersion = globalFontStateVersion,
 		point = point,
 		x = x,
 		y = y,
@@ -3584,14 +3627,20 @@ local function updateSquareMinimapStat(statKey)
 
 	local fontPath = renderCfg.fontPath
 	local outline = renderCfg.outline
-	if frame._eqolFontPath ~= fontPath or frame._eqolFontSize ~= size or frame._eqolFontOutline ~= outline then
+	local outlineChoice = normalizeSquareMinimapStatsOutlineSelection(addon.db and addon.db.squareMinimapStatsOutline, nil)
+	if frame._eqolFontPath ~= fontPath or frame._eqolFontSize ~= size or frame._eqolFontOutline ~= outline or frame._eqolFontStyleChoice ~= outlineChoice then
 		local ok = frame.text:SetFont(fontPath, size, outline)
 		if not ok then frame.text:SetFont((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, outline) end
 		local okSecondary = frame.textSecondary:SetFont(fontPath, size, outline)
 		if not okSecondary then frame.textSecondary:SetFont((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size, outline) end
+		if addon.functions and addon.functions.ApplyFontStyleShadow then
+			addon.functions.ApplyFontStyleShadow(frame.text, outlineChoice, "OUTLINE")
+			addon.functions.ApplyFontStyleShadow(frame.textSecondary, outlineChoice, "OUTLINE")
+		end
 		frame._eqolFontPath = fontPath
 		frame._eqolFontSize = size
 		frame._eqolFontOutline = outline
+		frame._eqolFontStyleChoice = outlineChoice
 	end
 	if frame._eqolTextColorR ~= r or frame._eqolTextColorG ~= g or frame._eqolTextColorB ~= b or frame._eqolTextColorA ~= a then
 		frame.text:SetTextColor(r, g, b, a)

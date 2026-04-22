@@ -57,16 +57,14 @@ for i = 1, #ANCHOR_POINTS do
 	VALID_ANCHOR_POINTS[ANCHOR_POINTS[i]] = true
 end
 
-local OUTLINE_OPTIONS = {
-	"NONE",
-	"OUTLINE",
-	"THICKOUTLINE",
-	"MONOCHROMEOUTLINE",
+local OUTLINE_OPTIONS = addon.functions and addon.functions.GetFontStyleOptionList and addon.functions.GetFontStyleOptionList(true) or {
+	{ value = "NONE", label = NONE },
+	{ value = "OUTLINE", label = L["Outline"] or "Outline" },
 }
-
 local VALID_OUTLINES = {}
 for i = 1, #OUTLINE_OPTIONS do
-	VALID_OUTLINES[OUTLINE_OPTIONS[i]] = true
+	local option = OUTLINE_OPTIONS[i]
+	if option and option.value then VALID_OUTLINES[option.value] = true end
 end
 
 local DISPLAY_MODES = {
@@ -94,11 +92,11 @@ local CLASS_INTERRUPT_SPELLS = {
 	HUNTER = { 147362, 187707 },
 	MAGE = { 2139 },
 	MONK = { 116705 },
-	PALADIN = { 96231 },
+	PALADIN = { 31935, 96231 },
 	PRIEST = { 15487 },
 	ROGUE = { 1766 },
 	SHAMAN = { 57994 },
-	WARLOCK = { 19647 },
+	WARLOCK = { 132409, 119914, 19647 },
 	WARRIOR = { 6552 },
 }
 
@@ -210,11 +208,30 @@ local function normalizeAnchorPoint(value, fallback)
 end
 
 local function normalizeOutline(value, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, fallback or defaults.textOutline or "NONE", true)
+	end
 	local outline = type(value) == "string" and string.upper(value) or nil
 	if outline and VALID_OUTLINES[outline] then return outline end
 	local fallbackOutline = type(fallback) == "string" and string.upper(fallback) or "NONE"
 	if VALID_OUTLINES[fallbackOutline] then return fallbackOutline end
 	return "NONE"
+end
+
+local function resolveFontFlags(style, fallback)
+	if addon.functions and addon.functions.ResolveFontStyle then
+		local _, flags = addon.functions.ResolveFontStyle(style, fallback)
+		return flags
+	end
+	if addon.functions and addon.functions.GetFontFlagsForStyle then
+		local flags = addon.functions.GetFontFlagsForStyle(style, fallback)
+		if type(flags) == "string" then return flags end
+	end
+	local outline = normalizeOutline(style, fallback or defaults.textOutline or "NONE")
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then outline = normalizeOutline(fallback or defaults.textOutline or "NONE", "NONE") end
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then outline = "NONE" end
+	if outline == "NONE" then return "" end
+	return outline
 end
 
 local function normalizeDisplayMode(value, fallback)
@@ -747,9 +764,19 @@ function Tracker:ApplyLayoutData(data)
 
 	if isText then
 		local fontPath = self:ResolveTextFont()
-		local fontOutline = cfg.textOutline == "NONE" and "" or cfg.textOutline
-		local ok = frame.text:SetFont(fontPath, cfg.textSize, fontOutline)
+		local fontStyleChoice = normalizeOutline(cfg.textOutline, defaults.textOutline)
+		local fontOutline = resolveFontFlags(fontStyleChoice, defaults.textOutline)
+		local ok = false
+		if addon.functions and addon.functions.ApplyFontString then
+			ok = addon.functions.ApplyFontString(frame.text, fontPath, cfg.textSize, fontStyleChoice, STANDARD_TEXT_FONT, defaults.textOutline)
+		else
+			ok = frame.text:SetFont(fontPath, cfg.textSize, fontOutline)
+			if ok == false then ok = frame.text:SetFont(STANDARD_TEXT_FONT, cfg.textSize, fontOutline) end
+		end
 		if ok == false then frame.text:SetFont(STANDARD_TEXT_FONT, cfg.textSize, fontOutline) end
+		if addon.functions and addon.functions.ApplyFontStyleShadow then
+			addon.functions.ApplyFontStyleShadow(frame.text, fontStyleChoice, defaults.textOutline)
+		end
 		local color = normalizeColor(cfg.textColor, defaults.textColor)
 		frame.text:SetTextColor(color[1], color[2], color[3], color[4])
 		frame.text:SetText(previewText)
@@ -1256,8 +1283,10 @@ function Tracker:RegisterEditMode()
 				set = function(_, value) Tracker:ApplyLayoutData({ textOutline = value }) end,
 				generator = function(_, root)
 					for i = 1, #OUTLINE_OPTIONS do
-						local value = OUTLINE_OPTIONS[i]
-						root:CreateRadio(value == "NONE" and NONE or value, function() return Tracker:GetConfig().textOutline == value end, function()
+						local option = OUTLINE_OPTIONS[i]
+						local value = option.value
+						local label = option.label or value
+						root:CreateRadio(label, function() return Tracker:GetConfig().textOutline == value end, function()
 							Tracker:ApplyLayoutData({ textOutline = value })
 						end)
 					end

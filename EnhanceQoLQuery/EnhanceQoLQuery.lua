@@ -7,6 +7,8 @@ else
 	error(parentAddonName .. " is not loaded")
 end
 
+local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
+
 -- Event frame (no visible UI)
 local eventFrame = CreateFrame("Frame")
 local AceGUI = LibStub and LibStub("AceGUI-3.0", true)
@@ -21,7 +23,75 @@ local browseStallCount = 0
 local executeSearch = false
 local loadedResults = {}
 
+local restrictionForcedCVars = {
+	"addonChatRestrictionsForced",
+	"addonChallengeModeRestrictionsForced",
+	"addonCombatRestrictionsForced",
+	"addonEncounterRestrictionsForced",
+	"addonMapRestrictionsForced",
+	"addonPvPMatchRestrictionsForced",
+}
+
 -- No AH sharding/browse in this tool
+
+local function getCVarValue(cvarName)
+	if C_CVar and C_CVar.GetCVar then return C_CVar.GetCVar(cvarName) end
+	if GetCVar then return GetCVar(cvarName) end
+	return nil
+end
+
+local function setCVarValue(cvarName, value)
+	if C_CVar and C_CVar.SetCVar then return C_CVar.SetCVar(cvarName, tostring(value)) end
+	if SetCVar then return SetCVar(cvarName, value) end
+end
+
+local function getRestrictionForcedState()
+	local enabled = 0
+	local disabled = 0
+	for _, cvarName in ipairs(restrictionForcedCVars) do
+		if tostring(getCVarValue(cvarName) or "0") == "1" then
+			enabled = enabled + 1
+		else
+			disabled = disabled + 1
+		end
+	end
+	if enabled == #restrictionForcedCVars then return "on", L["queryRestrictionStatusOn"] end
+	if disabled == #restrictionForcedCVars then return "off", L["queryRestrictionStatusOff"] end
+	return "mixed", L["queryRestrictionStatusMixed"]
+end
+
+local function updateRestrictionForcedUI()
+	local state, stateText = getRestrictionForcedState()
+	if addon.Query.ui and addon.Query.ui.restrictionStatus then addon.Query.ui.restrictionStatus:SetText(string.format(L["queryRestrictionStatusLabel"], stateText)) end
+	if addon.Query.ui and addon.Query.ui.restrictionEnableButton then addon.Query.ui.restrictionEnableButton:SetDisabled(state == "on") end
+	if addon.Query.ui and addon.Query.ui.restrictionDisableButton then addon.Query.ui.restrictionDisableButton:SetDisabled(state == "off") end
+end
+
+local function printRestrictionForcedValues()
+	print(L["queryRestrictionEnvironment"])
+	for _, cvarName in ipairs(restrictionForcedCVars) do
+		print(cvarName .. " = " .. tostring(getCVarValue(cvarName)))
+	end
+	updateRestrictionForcedUI()
+end
+
+local function setRestrictionForcedCVars(enabled)
+	local targetValue = enabled and 1 or 0
+	for _, cvarName in ipairs(restrictionForcedCVars) do
+		setCVarValue(cvarName, targetValue)
+	end
+	print(string.format(L["queryRestrictionApplied"], targetValue))
+end
+
+local function enableRestrictionForcedCVars()
+	setRestrictionForcedCVars(true)
+	updateRestrictionForcedUI()
+end
+
+local function disableRestrictionForcedCVars()
+	setRestrictionForcedCVars(false)
+	updateRestrictionForcedUI()
+end
 
 local function ensureProfilerDefaults()
 	if not addon or not addon.functions or not addon.functions.InitDBValue then return end
@@ -566,6 +636,7 @@ local function BuildAceWindow()
 		{ value = "generator", text = "Generator" },
 		{ value = "inspector", text = "GetItemInfo" },
 		{ value = "profiler", text = "Addon profiler" },
+		{ value = "restrictions", text = L["queryRestrictionEnvironment"] },
 		{ value = "transmog", text = "Transmog Sets" },
 		{ value = "transmogId", text = "Transmog IDs" },
 		{ value = "transmogWeapon", text = "Transmog Waffen" },
@@ -742,6 +813,44 @@ local function BuildAceWindow()
 		outer:AddChild(note)
 	end
 
+	local function buildRestrictionEnvironment(container)
+		addon.Query.ui.activeGroup = "restrictions"
+		container:ReleaseChildren()
+
+		local outer = AceGUI:Create("SimpleGroup")
+		outer:SetFullWidth(true)
+		outer:SetFullHeight(true)
+		outer:SetLayout("List")
+		container:AddChild(outer)
+
+		local status = AceGUI:Create("Label")
+		status:SetFullWidth(true)
+		outer:AddChild(status)
+		addon.Query.ui.restrictionStatus = status
+
+		local enableButton = AceGUI:Create("Button")
+		enableButton:SetText(L["queryRestrictionToggleEnable"])
+		enableButton:SetFullWidth(true)
+		enableButton:SetCallback("OnClick", enableRestrictionForcedCVars)
+		outer:AddChild(enableButton)
+		addon.Query.ui.restrictionEnableButton = enableButton
+
+		local disableButton = AceGUI:Create("Button")
+		disableButton:SetText(L["queryRestrictionToggleDisable"])
+		disableButton:SetFullWidth(true)
+		disableButton:SetCallback("OnClick", disableRestrictionForcedCVars)
+		outer:AddChild(disableButton)
+		addon.Query.ui.restrictionDisableButton = disableButton
+
+		local printButton = AceGUI:Create("Button")
+		printButton:SetText(L["queryRestrictionPrintValues"])
+		printButton:SetWidth(180)
+		printButton:SetCallback("OnClick", printRestrictionForcedValues)
+		outer:AddChild(printButton)
+
+		updateRestrictionForcedUI()
+	end
+
 	local function buildTransmog(container)
 		addon.Query.ui.activeGroup = "transmog"
 		container:ReleaseChildren()
@@ -904,6 +1013,8 @@ local function BuildAceWindow()
 			buildInspector(tree)
 		elseif group == "profiler" then
 			buildAddonProfiler(tree)
+		elseif group == "restrictions" then
+			buildRestrictionEnvironment(tree)
 		elseif group == "transmog" then
 			buildTransmog(tree)
 		elseif group == "transmogId" then

@@ -39,6 +39,8 @@ local BLOODLUST_MAX_SIZE = 100
 local BLOODLUST_DEFAULT_ICON_IDS = {
 	136090,
 	458224,
+	4723908,
+	136224,
 }
 local BLOODLUST_DEFAULT_ICON_SET = {}
 for i = 1, #BLOODLUST_DEFAULT_ICON_IDS do
@@ -53,15 +55,14 @@ local BLOODLUST_COOLDOWN_TEXT_SIZE_MIN = 8
 local BLOODLUST_COOLDOWN_TEXT_SIZE_MAX = 64
 local BLOODLUST_COOLDOWN_TEXT_OFFSET_MIN = -40
 local BLOODLUST_COOLDOWN_TEXT_OFFSET_MAX = 40
-local BLOODLUST_COOLDOWN_OUTLINE_OPTIONS = {
-	"NONE",
-	"OUTLINE",
-	"THICKOUTLINE",
-	"MONOCHROMEOUTLINE",
+local BLOODLUST_COOLDOWN_OUTLINE_OPTIONS = addon.functions and addon.functions.GetFontStyleOptionList and addon.functions.GetFontStyleOptionList(true) or {
+	{ value = "NONE", label = NONE },
+	{ value = "OUTLINE", label = L["Outline"] or "Outline" },
 }
 local BLOODLUST_COOLDOWN_OUTLINE_SET = {}
 for i = 1, #BLOODLUST_COOLDOWN_OUTLINE_OPTIONS do
-	BLOODLUST_COOLDOWN_OUTLINE_SET[BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]] = true
+	local option = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+	if option and option.value then BLOODLUST_COOLDOWN_OUTLINE_SET[option.value] = true end
 end
 local BLOODLUST_LOCKOUT_IDS = {
 	57723, -- Exhaustion
@@ -94,7 +95,17 @@ local bloodlustStateActive = false
 local bloodlustStateInitialized = false
 local bloodlustCooldownDeferredApplyPending = false
 local bloodlustUnitAuraRegistered = false
-local BR_DEFAULT_ICON = 136080
+local BR_DEFAULT_ICON_IDS = {
+	136080,
+	134336,
+	4726195,
+	136143,
+}
+local BR_DEFAULT_ICON_SET = {}
+for i = 1, #BR_DEFAULT_ICON_IDS do
+	BR_DEFAULT_ICON_SET[BR_DEFAULT_ICON_IDS[i]] = true
+end
+local BR_DEFAULT_ICON = BR_DEFAULT_ICON_IDS[1]
 local BR_BORDER_SIZE_MIN = BLOODLUST_BORDER_SIZE_MIN
 local BR_BORDER_SIZE_MAX = BLOODLUST_BORDER_SIZE_MAX
 local BR_BORDER_OFFSET_MIN = BLOODLUST_BORDER_OFFSET_MIN
@@ -173,8 +184,56 @@ local function getTrackerAnchorDefaults(target)
 	}
 end
 
+local function getUserSelectedTrackerAnchorTargetDefaults(target)
+	local defaults = getTrackerAnchorDefaults(target)
+	defaults.x = 0
+	defaults.y = 0
+	return defaults
+end
+
+local function applyTrackerEditModeAnchorData(editModeId, target, defaults)
+	if not (EditMode and EditMode.SetValue and defaults) then return end
+	EditMode:SetValue(editModeId, "anchorTarget", target, nil, true)
+	EditMode:SetValue(editModeId, "point", defaults.point, nil, true)
+	EditMode:SetValue(editModeId, "relativePoint", defaults.relativePoint, nil, true)
+	EditMode:SetValue(editModeId, "x", defaults.x, nil, true)
+	EditMode:SetValue(editModeId, "y", defaults.y, nil, true)
+	if EditMode.ApplyLayout then EditMode:ApplyLayout(editModeId) end
+end
+
 local function maybeScheduleTrackerAnchorRefresh(target)
 	if SharedAnchors and SharedAnchors.MaybeScheduleRefresh then SharedAnchors:MaybeScheduleRefresh(target) end
+end
+
+local function trackerAnchorNeedsReapply(target)
+	if trackerAnchorUsesUIParent(target) then return false end
+	return resolveTrackerAnchorFrame(target) == UIParent
+end
+
+local function trackersNeedAnchorReapply()
+	if not addon.db then return false end
+	if addon.db["mythicPlusBRTrackerEnabled"] and trackerAnchorNeedsReapply(addon.db["mythicPlusBRTrackerRelativeFrame"]) then return true end
+	if addon.db["mythicPlusBloodlustTrackerEnabled"] and trackerAnchorNeedsReapply(addon.db["mythicPlusBloodlustTrackerRelativeFrame"]) then return true end
+	return false
+end
+
+local function trackerUsesAnchorTarget(dbKey, target)
+	if not (addon.db and type(target) == "string" and target ~= "") then return false end
+	local normalizeRelativeFrame = SharedAnchors and SharedAnchors.NormalizeRelativeFrame
+	local normalizedTarget = normalizeRelativeFrame and SharedAnchors:NormalizeRelativeFrame(target) or target
+	local currentTarget = addon.db[dbKey] or "UIParent"
+	local normalizedCurrent = normalizeRelativeFrame and SharedAnchors:NormalizeRelativeFrame(currentTarget) or currentTarget
+	return normalizedCurrent == normalizedTarget
+end
+
+local function cancelTrackerAnchorReapplyTicker()
+	local variables = addon.MythicPlus and addon.MythicPlus.variables
+	local ticker = variables and variables.trackerAnchorReapplyTicker or nil
+	if ticker and ticker.Cancel then ticker:Cancel() end
+	if variables then
+		variables.trackerAnchorReapplyTicker = nil
+		variables.trackerAnchorReapplyAttempts = nil
+	end
 end
 
 local function normalizeBRSize(value)
@@ -184,6 +243,17 @@ local function normalizeBRSize(value)
 	if size > BR_MAX_SIZE then size = BR_MAX_SIZE end
 	return size
 end
+
+local function normalizeBRIcon(value)
+	local iconId = tonumber(value)
+	if iconId then
+		iconId = math.floor(iconId + 0.5)
+		if BR_DEFAULT_ICON_SET[iconId] then return iconId end
+	end
+	return BR_DEFAULT_ICON
+end
+
+local function getBRConfiguredIcon() return normalizeBRIcon(addon.db and addon.db["mythicPlusBRTrackerIcon"]) end
 
 local function normalizeTrackerIconZoom(value)
 	local zoom = tonumber(value) or 0
@@ -221,8 +291,39 @@ local function normalizeBRTextOffset(value)
 end
 
 local function normalizeBRTextOutline(value)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, "OUTLINE", true)
+	end
 	if type(value) == "string" and BLOODLUST_COOLDOWN_OUTLINE_SET[value] then return value end
 	return "OUTLINE"
+end
+
+local function resolveTrackerFontFlags(value, fallback)
+	if addon.functions and addon.functions.ResolveFontStyle then
+		local _, flags = addon.functions.ResolveFontStyle(value, fallback or "OUTLINE")
+		return flags
+	end
+	if addon.functions and addon.functions.GetFontFlagsForStyle then
+		local flags = addon.functions.GetFontFlagsForStyle(value, fallback or "OUTLINE")
+		if type(flags) == "string" then return flags end
+	end
+	local outline = value
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then outline = fallback or "OUTLINE" end
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then outline = "OUTLINE" end
+	if outline == "NONE" then return "" end
+	if type(outline) == "string" and BLOODLUST_COOLDOWN_OUTLINE_SET[outline] then return outline end
+	return fallback or "OUTLINE"
+end
+
+local function applyTrackerFontString(fontString, fontFace, fontSize, fontStyle, fallbackStyle)
+	local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
+	if addon.functions and addon.functions.ApplyFontString then
+		return addon.functions.ApplyFontString(fontString, fontFace, fontSize, fontStyle, fallback, fallbackStyle or "OUTLINE")
+	end
+	local flags = resolveTrackerFontFlags(fontStyle, fallbackStyle or "OUTLINE")
+	local ok = fontString:SetFont(fontFace, fontSize, flags)
+	if ok == false then ok = fontString:SetFont(fallback, fontSize, flags) end
+	return ok
 end
 
 local function normalizeBRColor(value, defaultColor)
@@ -349,6 +450,18 @@ local function applyBRBorderFrame(frame, target, enabled, textureKey, borderSize
 	frame:Show()
 end
 
+local function syncTrackerTextOverlay(owner, overlay, border)
+	if not (owner and overlay) then return end
+	overlay:SetAllPoints(owner)
+	overlay:SetFrameStrata(owner:GetFrameStrata())
+	local level = owner:GetFrameLevel() or 0
+	if border and border.GetFrameLevel then
+		local borderLevel = border:GetFrameLevel()
+		if type(borderLevel) == "number" and borderLevel > level then level = borderLevel end
+	end
+	overlay:SetFrameLevel(level + 1)
+end
+
 local function applyBRBorderVisualSettings()
 	local db = addon.db or {}
 	local enabled = db["mythicPlusBRTrackerBorderEnabled"] ~= false
@@ -361,6 +474,8 @@ local function applyBRBorderVisualSettings()
 		applyBRBorderFrame(brAnchor.previewBorder, brAnchor.previewIcon, enabled, textureKey, borderSize, borderOffset, borderColor)
 	end
 	if brButton and brButton.border then applyBRBorderFrame(brButton.border, brButton, enabled, textureKey, borderSize, borderOffset, borderColor) end
+	if brAnchor and brAnchor.textOverlay then syncTrackerTextOverlay(brAnchor, brAnchor.textOverlay, brAnchor.previewBorder) end
+	if brButton and brButton.textOverlay then syncTrackerTextOverlay(brButton, brButton.textOverlay, brButton.border) end
 end
 
 local function applyBRCooldownTextStyle(fontString, anchorFrame, db)
@@ -368,12 +483,8 @@ local function applyBRCooldownTextStyle(fontString, anchorFrame, db)
 	local fontFace = resolveBRFontFace("mythicPlusBRTrackerCooldownFontFace")
 	local fontSize = normalizeBRTextSize(db["mythicPlusBRTrackerCooldownTextSize"], defaultFontSize)
 	local outlineValue = normalizeBRTextOutline(db["mythicPlusBRTrackerCooldownTextOutline"])
-	local outlineFlags = outlineValue == "NONE" and "" or outlineValue
-	local ok = fontString:SetFont(fontFace, fontSize, outlineFlags)
-	if ok == false then
-		local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
-		fontString:SetFont(fallback, fontSize, outlineFlags)
-	end
+	applyTrackerFontString(fontString, fontFace, fontSize, outlineValue, "OUTLINE")
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, outlineValue, "OUTLINE") end
 	local color = normalizeBRColor(db["mythicPlusBRTrackerCooldownTextColor"], BR_DEFAULT_COOLDOWN_COLOR)
 	fontString:SetTextColor(color[1], color[2], color[3], color[4])
 	local point = normalizeBRTextPoint(db["mythicPlusBRTrackerCooldownTextPoint"], "CENTER")
@@ -487,12 +598,8 @@ local function applyBRChargesTextStyle(fontString, anchorFrame, db)
 	local fontFace = resolveBRFontFace("mythicPlusBRTrackerChargesFontFace")
 	local fontSize = normalizeBRTextSize(db["mythicPlusBRTrackerChargesTextSize"], defaultFontSize)
 	local outlineValue = normalizeBRTextOutline(db["mythicPlusBRTrackerChargesTextOutline"])
-	local outlineFlags = outlineValue == "NONE" and "" or outlineValue
-	local ok = fontString:SetFont(fontFace, fontSize, outlineFlags)
-	if ok == false then
-		local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
-		fontString:SetFont(fallback, fontSize, outlineFlags)
-	end
+	applyTrackerFontString(fontString, fontFace, fontSize, outlineValue, "OUTLINE")
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, outlineValue, "OUTLINE") end
 	local color = normalizeBRColor(db["mythicPlusBRTrackerChargesTextColor"], BR_DEFAULT_CHARGES_COLOR)
 	fontString:SetTextColor(color[1], color[2], color[3], color[4])
 	local point = normalizeBRTextPoint(db["mythicPlusBRTrackerChargesTextPoint"], "BOTTOMRIGHT")
@@ -617,6 +724,7 @@ local function applyBRLayoutData(data)
 	local y = config.y
 	if y == nil then y = addon.db["mythicPlusBRTrackerY"] or 0 end
 	local size = normalizeBRSize(addon.db["mythicPlusBRButtonSize"] or config.size or defaultButtonSize)
+	local iconId = normalizeBRIcon(addon.db["mythicPlusBRTrackerIcon"])
 	local iconZoom = normalizeTrackerIconZoom(addon.db["mythicPlusBRTrackerIconZoom"])
 	local borderEnabled = addon.db["mythicPlusBRTrackerBorderEnabled"] ~= false
 	local borderTexture = normalizeBRBorderTexture(addon.db["mythicPlusBRTrackerBorderTexture"])
@@ -650,6 +758,7 @@ local function applyBRLayoutData(data)
 		addon.db["mythicPlusBRTrackerX"] = x
 		addon.db["mythicPlusBRTrackerY"] = y
 		addon.db["mythicPlusBRButtonSize"] = size
+		addon.db["mythicPlusBRTrackerIcon"] = iconId
 		addon.db["mythicPlusBRTrackerIconZoom"] = iconZoom
 		addon.db["mythicPlusBRTrackerBorderEnabled"] = borderEnabled
 		addon.db["mythicPlusBRTrackerBorderTexture"] = borderTexture
@@ -684,8 +793,11 @@ local function applyBRLayoutData(data)
 		brAnchor:SetSize(size, size)
 		brAnchor:ClearAllPoints()
 		brAnchor:SetPoint(point, resolvedAnchorFrame, relativePoint, x, y)
-		if brAnchor.previewIcon then brAnchor.previewIcon:SetAllPoints(brAnchor) end
-		if brAnchor.previewIcon then applyTrackerIconZoom(brAnchor.previewIcon, iconZoom) end
+		if brAnchor.previewIcon then
+			brAnchor.previewIcon:SetAllPoints(brAnchor)
+			brAnchor.previewIcon:SetTexture(iconId)
+			applyTrackerIconZoom(brAnchor.previewIcon, iconZoom)
+		end
 	end
 
 	if brButton then
@@ -693,12 +805,21 @@ local function applyBRLayoutData(data)
 		brButton:ClearAllPoints()
 		brButton:SetPoint(point, resolvedAnchorFrame, relativePoint, x, y)
 		if brButton.cooldownFrame then brButton.cooldownFrame:SetScale(1) end
-		if brButton.icon then applyTrackerIconZoom(brButton.icon, iconZoom) end
+		if brButton.icon then
+			brButton.icon:SetTexture(iconId)
+			applyTrackerIconZoom(brButton.icon, iconZoom)
+		end
 	end
 
 	applyBRBorderVisualSettings()
 	applyBRCooldownVisualSettings()
 	applyBRChargesVisualSettings()
+	if trackerAnchorNeedsReapply(relativeFrame)
+		and not (addon.MythicPlus and addon.MythicPlus.variables and addon.MythicPlus.variables.trackerAnchorReapplyBusy)
+		and addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.ScheduleTrackerAnchorReapply
+	then
+		addon.MythicPlus.functions.ScheduleTrackerAnchorReapply("BR")
+	end
 end
 
 local function ensureBRAnchor()
@@ -715,22 +836,26 @@ local function ensureBRAnchor()
 
 		brAnchor.previewIcon = brAnchor:CreateTexture(nil, "ARTWORK")
 		brAnchor.previewIcon:SetAllPoints(brAnchor)
-		brAnchor.previewIcon:SetTexture(BR_DEFAULT_ICON)
+		brAnchor.previewIcon:SetTexture(getBRConfiguredIcon())
 		applyTrackerIconZoom(brAnchor.previewIcon, addon.db and addon.db["mythicPlusBRTrackerIconZoom"])
 
 		brAnchor.previewBorder = CreateFrame("Frame", nil, brAnchor, "BackdropTemplate")
 		brAnchor.previewBorder:SetFrameLevel((brAnchor:GetFrameLevel() or 0) + 4)
 		brAnchor.previewBorder:SetFrameStrata(brAnchor:GetFrameStrata())
 
-		brAnchor.previewCooldownText = brAnchor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		brAnchor.textOverlay = CreateFrame("Frame", nil, brAnchor)
+		brAnchor.textOverlay:SetAllPoints(brAnchor)
+		brAnchor.textOverlay:EnableMouse(false)
+
+		brAnchor.previewCooldownText = brAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		brAnchor.previewCooldownText:SetPoint("CENTER", brAnchor, "CENTER", 0, 0)
 		brAnchor.previewCooldownText:SetText(BR_PREVIEW_COOLDOWN_TEXT)
 
-		brAnchor.previewCharges = brAnchor:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+		brAnchor.previewCharges = brAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 		brAnchor.previewCharges:SetPoint("BOTTOMRIGHT", brAnchor, "BOTTOMRIGHT", -3, 3)
 		brAnchor.previewCharges:SetText(BR_PREVIEW_CHARGES_TEXT)
 
-		brAnchor.label = brAnchor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		brAnchor.label = brAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 		brAnchor.label:SetPoint("CENTER")
 		brAnchor.label:SetText(L["mythicPlusBRTrackerAnchor"])
 		brAnchor.label:SetAlpha(0)
@@ -767,10 +892,7 @@ local function ensureBRAnchor()
 			end
 
 			local function outlineOptionLabel(value)
-				if value == "NONE" then return NONE end
-				if value == "OUTLINE" then return L["Outline"] or "Outline" end
-				if value == "THICKOUTLINE" then return L["Thick Outline"] or "Thick Outline" end
-				if value == "MONOCHROMEOUTLINE" then return L["Monochrome Outline"] or "Monochrome Outline" end
+				if addon.functions and addon.functions.GetFontStyleLabel then return addon.functions.GetFontStyleLabel(value) end
 				return value
 			end
 
@@ -794,19 +916,13 @@ local function ensureBRAnchor()
 					set = function(_, value)
 						local current = addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent"
 						local target = validateTrackerAnchorTarget(value, current)
-						local defaults = getTrackerAnchorDefaults(target)
+						local defaults = getUserSelectedTrackerAnchorTargetDefaults(target)
 						addon.db["mythicPlusBRTrackerRelativeFrame"] = target
 						addon.db["mythicPlusBRTrackerPoint"] = defaults.point
 						addon.db["mythicPlusBRTrackerRelativePoint"] = defaults.relativePoint
 						addon.db["mythicPlusBRTrackerX"] = defaults.x
 						addon.db["mythicPlusBRTrackerY"] = defaults.y
-						if EditMode and EditMode.SetValue then
-							EditMode:SetValue(BR_EDITMODE_ID, "anchorTarget", target, nil, true)
-							EditMode:SetValue(BR_EDITMODE_ID, "point", defaults.point, nil, true)
-							EditMode:SetValue(BR_EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
-							EditMode:SetValue(BR_EDITMODE_ID, "x", defaults.x, nil, true)
-							EditMode:SetValue(BR_EDITMODE_ID, "y", defaults.y, nil, true)
-						end
+						applyTrackerEditModeAnchorData(BR_EDITMODE_ID, target, defaults)
 						applyBRLayoutData({
 							anchorTarget = target,
 							point = defaults.point,
@@ -827,19 +943,13 @@ local function ensureBRAnchor()
 							root:CreateRadio(entry.label, function() return current == entry.key end, function()
 								local currentTarget = addon.db["mythicPlusBRTrackerRelativeFrame"] or "UIParent"
 								local target = validateTrackerAnchorTarget(entry.key, currentTarget)
-								local defaults = getTrackerAnchorDefaults(target)
+								local defaults = getUserSelectedTrackerAnchorTargetDefaults(target)
 								addon.db["mythicPlusBRTrackerRelativeFrame"] = target
 								addon.db["mythicPlusBRTrackerPoint"] = defaults.point
 								addon.db["mythicPlusBRTrackerRelativePoint"] = defaults.relativePoint
 								addon.db["mythicPlusBRTrackerX"] = defaults.x
 								addon.db["mythicPlusBRTrackerY"] = defaults.y
-								if EditMode and EditMode.SetValue then
-									EditMode:SetValue(BR_EDITMODE_ID, "anchorTarget", target, nil, true)
-									EditMode:SetValue(BR_EDITMODE_ID, "point", defaults.point, nil, true)
-									EditMode:SetValue(BR_EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
-									EditMode:SetValue(BR_EDITMODE_ID, "x", defaults.x, nil, true)
-									EditMode:SetValue(BR_EDITMODE_ID, "y", defaults.y, nil, true)
-								end
+								applyTrackerEditModeAnchorData(BR_EDITMODE_ID, target, defaults)
 								applyBRLayoutData({
 									anchorTarget = target,
 									point = defaults.point,
@@ -964,6 +1074,26 @@ local function ensureBRAnchor()
 						addon.db["mythicPlusBRButtonSize"] = size
 						if EditMode and EditMode.SetValue then EditMode:SetValue(BR_EDITMODE_ID, "size", size, nil, true) end
 						applyBRLayoutData()
+					end,
+				},
+				{
+					name = L["Tracker icon"] or "Tracker icon",
+					kind = settingType.Dropdown,
+					parentId = "mythicPlusBRTrackerLayout",
+					get = function() return normalizeBRIcon(addon.db and addon.db["mythicPlusBRTrackerIcon"]) end,
+					set = function(_, value)
+						if addon.db then addon.db["mythicPlusBRTrackerIcon"] = normalizeBRIcon(value) end
+						applyBRLayoutData()
+					end,
+					generator = function(_, root)
+						for i = 1, #BR_DEFAULT_ICON_IDS do
+							local iconId = BR_DEFAULT_ICON_IDS[i]
+							local label = string.format("|T%d:22:22:0:0|t", iconId)
+							root:CreateRadio(label, function() return normalizeBRIcon(addon.db and addon.db["mythicPlusBRTrackerIcon"]) == iconId end, function()
+								if addon.db then addon.db["mythicPlusBRTrackerIcon"] = iconId end
+								applyBRLayoutData()
+							end)
+						end
 					end,
 				},
 				{
@@ -1176,7 +1306,8 @@ local function ensureBRAnchor()
 					end,
 					generator = function(_, root)
 						for i = 1, #BLOODLUST_COOLDOWN_OUTLINE_OPTIONS do
-							local value = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local option = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local value = option.value
 							root:CreateRadio(
 								outlineOptionLabel(value),
 								function() return normalizeBRTextOutline(addon.db and addon.db["mythicPlusBRTrackerCooldownTextOutline"]) == value end,
@@ -1338,7 +1469,8 @@ local function ensureBRAnchor()
 					end,
 					generator = function(_, root)
 						for i = 1, #BLOODLUST_COOLDOWN_OUTLINE_OPTIONS do
-							local value = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local option = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local value = option.value
 							root:CreateRadio(
 								outlineOptionLabel(value),
 								function() return normalizeBRTextOutline(addon.db and addon.db["mythicPlusBRTrackerChargesTextOutline"]) == value end,
@@ -1446,7 +1578,7 @@ local function ensureBRAnchor()
 			},
 			legacyKeys = {
 				point = "mythicPlusBRTrackerPoint",
-				relativePoint = "mythicPlusBRTrackerPoint",
+				relativePoint = "mythicPlusBRTrackerRelativePoint",
 				x = "mythicPlusBRTrackerX",
 				y = "mythicPlusBRTrackerY",
 				size = "mythicPlusBRButtonSize",
@@ -1458,10 +1590,7 @@ local function ensureBRAnchor()
 					local record = data or {}
 					seedBREditModeRecordFromProfile(record)
 					applyBRLayoutData(record)
-					if EditMode and EditMode.SetFramePosition then
-						EditMode:SetFramePosition(BR_EDITMODE_ID, record.point or "CENTER", record.x or 0, record.y or 0, layoutName)
-						return
-					end
+					return
 				end
 				applyBRLayoutData(data)
 			end,
@@ -1504,6 +1633,7 @@ local function createBRFrame()
 		local size = layout.size or defaultButtonSize
 
 		brButton = CreateFrame("Button", nil, UIParent)
+		brButton:SetClampedToScreen(true)
 		brButton:SetSize(size, size)
 		brButton:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
 		setFrameClickThrough(brButton)
@@ -1514,13 +1644,17 @@ local function createBRFrame()
 
 		local icon = brButton:CreateTexture(nil, "ARTWORK")
 		icon:SetAllPoints(brButton)
-		icon:SetTexture(BR_DEFAULT_ICON)
+		icon:SetTexture(getBRConfiguredIcon())
 		applyTrackerIconZoom(icon, addon.db and addon.db["mythicPlusBRTrackerIconZoom"])
 		brButton.icon = icon
 
 		brButton.border = CreateFrame("Frame", nil, brButton, "BackdropTemplate")
 		brButton.border:SetFrameLevel((brButton:GetFrameLevel() or 0) + 5)
 		brButton.border:SetFrameStrata(brButton:GetFrameStrata())
+
+		brButton.textOverlay = CreateFrame("Frame", nil, brButton)
+		brButton.textOverlay:SetAllPoints(brButton)
+		brButton.textOverlay:EnableMouse(false)
 
 		brButton.cooldownFrame = CreateFrame("Cooldown", nil, brButton, "CooldownFrameTemplate")
 		brButton.cooldownFrame:SetAllPoints(brButton)
@@ -1529,7 +1663,7 @@ local function createBRFrame()
 		brButton.cooldownFrame:SetCountdownAbbrevThreshold(600)
 		brButton.cooldownFrame:SetScale(1)
 
-		brButton.charges = brButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+		brButton.charges = brButton.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 		brButton.charges:SetPoint("BOTTOMRIGHT", brButton, "BOTTOMRIGHT", -3, 3)
 		brButton.charges:SetText("")
 		brButton.cooldownFrame:Clear()
@@ -1660,6 +1794,9 @@ local function normalizeBloodlustCooldownTextOffset(value)
 end
 
 local function normalizeBloodlustCooldownOutline(value)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(value, "OUTLINE", true)
+	end
 	if type(value) == "string" and BLOODLUST_COOLDOWN_OUTLINE_SET[value] then return value end
 	return "OUTLINE"
 end
@@ -1736,6 +1873,8 @@ local function applyBloodlustBorderVisualSettings()
 		applyBloodlustBorderFrame(bloodlustAnchor.previewBorder, bloodlustAnchor.previewIcon, enabled, textureKey, borderSize, borderOffset, borderColor)
 	end
 	if bloodlustButton and bloodlustButton.border then applyBloodlustBorderFrame(bloodlustButton.border, bloodlustButton, enabled, textureKey, borderSize, borderOffset, borderColor) end
+	if bloodlustAnchor and bloodlustAnchor.textOverlay then syncTrackerTextOverlay(bloodlustAnchor, bloodlustAnchor.textOverlay, bloodlustAnchor.previewBorder) end
+	if bloodlustButton and bloodlustButton.textOverlay then syncTrackerTextOverlay(bloodlustButton, bloodlustButton.textOverlay, bloodlustButton.border) end
 end
 
 local function applyBloodlustCooldownTextStyle(fontString, anchorFrame, db)
@@ -1743,12 +1882,8 @@ local function applyBloodlustCooldownTextStyle(fontString, anchorFrame, db)
 	local fontFace = resolveBloodlustCooldownFontFace()
 	local fontSize = normalizeBloodlustCooldownTextSize(db["mythicPlusBloodlustTrackerCooldownTextSize"])
 	local outlineValue = normalizeBloodlustCooldownOutline(db["mythicPlusBloodlustTrackerCooldownTextOutline"])
-	local outlineFlags = outlineValue == "NONE" and "" or outlineValue
-	local ok = fontString:SetFont(fontFace, fontSize, outlineFlags)
-	if ok == false then
-		local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
-		fontString:SetFont(fallback, fontSize, outlineFlags)
-	end
+	applyTrackerFontString(fontString, fontFace, fontSize, outlineValue, "OUTLINE")
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, outlineValue, "OUTLINE") end
 	local color = normalizeBloodlustCooldownColor(db["mythicPlusBloodlustTrackerCooldownTextColor"])
 	fontString:SetTextColor(color[1], color[2], color[3], color[4])
 	fontString:ClearAllPoints()
@@ -1926,6 +2061,12 @@ local function applyBloodlustLayoutData(data)
 	-- Always apply text styling so Edit Mode preview updates even without a live tracker button.
 	applyBloodlustCooldownVisualSettings()
 	applyBloodlustBorderVisualSettings()
+	if trackerAnchorNeedsReapply(relativeFrame)
+		and not (addon.MythicPlus and addon.MythicPlus.variables and addon.MythicPlus.variables.trackerAnchorReapplyBusy)
+		and addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.ScheduleTrackerAnchorReapply
+	then
+		addon.MythicPlus.functions.ScheduleTrackerAnchorReapply("Bloodlust")
+	end
 end
 
 local function ensureBloodlustAnchor()
@@ -1949,12 +2090,16 @@ local function ensureBloodlustAnchor()
 		bloodlustAnchor.previewBorder:SetFrameLevel((bloodlustAnchor:GetFrameLevel() or 0) + 4)
 		bloodlustAnchor.previewBorder:SetFrameStrata(bloodlustAnchor:GetFrameStrata())
 
-		bloodlustAnchor.previewCooldownText = bloodlustAnchor:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		bloodlustAnchor.textOverlay = CreateFrame("Frame", nil, bloodlustAnchor)
+		bloodlustAnchor.textOverlay:SetAllPoints(bloodlustAnchor)
+		bloodlustAnchor.textOverlay:EnableMouse(false)
+
+		bloodlustAnchor.previewCooldownText = bloodlustAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		bloodlustAnchor.previewCooldownText:SetPoint("CENTER", bloodlustAnchor, "CENTER", 0, 0)
 		bloodlustAnchor.previewCooldownText:SetText(BLOODLUST_PREVIEW_COOLDOWN_TEXT)
 		bloodlustAnchor.previewCooldownText:Show()
 
-		bloodlustAnchor.label = bloodlustAnchor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		bloodlustAnchor.label = bloodlustAnchor.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 		bloodlustAnchor.label:SetPoint("CENTER")
 		bloodlustAnchor.label:SetText(L["mythicPlusBloodlustTrackerAnchor"] or "Bloodlust Tracker Anchor")
 		bloodlustAnchor.label:SetAlpha(0)
@@ -2021,18 +2166,22 @@ local function ensureBloodlustAnchor()
 			end
 
 			local function outlineOptionLabel(value)
-				if value == "NONE" then return NONE end
-				if value == "OUTLINE" then return L["Outline"] or "Outline" end
-				if value == "THICKOUTLINE" then return L["Thick Outline"] or "Thick Outline" end
-				if value == "MONOCHROMEOUTLINE" then return L["Monochrome Outline"] or "Monochrome Outline" end
+				if addon.functions and addon.functions.GetFontStyleLabel then return addon.functions.GetFontStyleLabel(value) end
 				return value
 			end
 
 			settings = {
 				{
+					name = L["Anchor"] or "Anchor",
+					kind = settingType.Collapsible,
+					id = "mythicPlusBloodlustTrackerAnchor",
+					defaultCollapsed = false,
+				},
+				{
 					field = "anchorTarget",
 					name = L["Anchor to"] or "Anchor to",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerAnchor",
 					height = 220,
 					default = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent",
 					get = function()
@@ -2041,19 +2190,13 @@ local function ensureBloodlustAnchor()
 					set = function(_, value)
 						local current = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent"
 						local target = validateTrackerAnchorTarget(value, current)
-						local defaults = getTrackerAnchorDefaults(target)
+						local defaults = getUserSelectedTrackerAnchorTargetDefaults(target)
 						addon.db["mythicPlusBloodlustTrackerRelativeFrame"] = target
 						addon.db["mythicPlusBloodlustTrackerPoint"] = defaults.point
 						addon.db["mythicPlusBloodlustTrackerRelativePoint"] = defaults.relativePoint
 						addon.db["mythicPlusBloodlustTrackerX"] = defaults.x
 						addon.db["mythicPlusBloodlustTrackerY"] = defaults.y
-						if EditMode and EditMode.SetValue then
-							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "anchorTarget", target, nil, true)
-							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "point", defaults.point, nil, true)
-							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
-							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "x", defaults.x, nil, true)
-							EditMode:SetValue(BLOODLUST_EDITMODE_ID, "y", defaults.y, nil, true)
-						end
+						applyTrackerEditModeAnchorData(BLOODLUST_EDITMODE_ID, target, defaults)
 						applyBloodlustLayoutData({
 							anchorTarget = target,
 							point = defaults.point,
@@ -2074,19 +2217,13 @@ local function ensureBloodlustAnchor()
 							root:CreateRadio(entry.label, function() return current == entry.key end, function()
 								local currentTarget = addon.db["mythicPlusBloodlustTrackerRelativeFrame"] or "UIParent"
 								local target = validateTrackerAnchorTarget(entry.key, currentTarget)
-								local defaults = getTrackerAnchorDefaults(target)
+								local defaults = getUserSelectedTrackerAnchorTargetDefaults(target)
 								addon.db["mythicPlusBloodlustTrackerRelativeFrame"] = target
 								addon.db["mythicPlusBloodlustTrackerPoint"] = defaults.point
 								addon.db["mythicPlusBloodlustTrackerRelativePoint"] = defaults.relativePoint
 								addon.db["mythicPlusBloodlustTrackerX"] = defaults.x
 								addon.db["mythicPlusBloodlustTrackerY"] = defaults.y
-								if EditMode and EditMode.SetValue then
-									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "anchorTarget", target, nil, true)
-									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "point", defaults.point, nil, true)
-									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "relativePoint", defaults.relativePoint, nil, true)
-									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "x", defaults.x, nil, true)
-									EditMode:SetValue(BLOODLUST_EDITMODE_ID, "y", defaults.y, nil, true)
-								end
+								applyTrackerEditModeAnchorData(BLOODLUST_EDITMODE_ID, target, defaults)
 								applyBloodlustLayoutData({
 									anchorTarget = target,
 									point = defaults.point,
@@ -2106,6 +2243,7 @@ local function ensureBloodlustAnchor()
 					field = "point",
 					name = L["Anchor point"] or "Anchor point",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerAnchor",
 					height = 180,
 					default = normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER"),
 					get = function() return normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER") end,
@@ -2128,6 +2266,7 @@ local function ensureBloodlustAnchor()
 					field = "relativePoint",
 					name = L["Relative point"] or "Relative point",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerAnchor",
 					height = 180,
 					default = normalizeTrackerAnchorPoint(addon.db["mythicPlusBloodlustTrackerRelativePoint"] or addon.db["mythicPlusBloodlustTrackerPoint"], "CENTER"),
 					get = function()
@@ -2164,6 +2303,7 @@ local function ensureBloodlustAnchor()
 					field = "x",
 					name = L["X Offset"] or "X Offset",
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerAnchor",
 					minValue = -1000,
 					maxValue = 1000,
 					valueStep = 1,
@@ -2180,6 +2320,7 @@ local function ensureBloodlustAnchor()
 					field = "y",
 					name = L["Y Offset"] or "Y Offset",
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerAnchor",
 					minValue = -1000,
 					maxValue = 1000,
 					valueStep = 1,
@@ -2193,13 +2334,16 @@ local function ensureBloodlustAnchor()
 					end,
 				},
 				{
-					name = "",
-					kind = settingType.Divider,
+					name = L["Layout"] or "Layout",
+					kind = settingType.Collapsible,
+					id = "mythicPlusBloodlustTrackerLayout",
+					defaultCollapsed = true,
 				},
 				{
 					field = "size",
 					name = L["Button Size"] or (L["Button Size"] or "Button Size"),
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerLayout",
 					minValue = BLOODLUST_MIN_SIZE,
 					maxValue = BLOODLUST_MAX_SIZE,
 					valueStep = 1,
@@ -2215,6 +2359,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Tracker icon"] or "Tracker icon",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerLayout",
 					get = function() return normalizeBloodlustIcon(addon.db and addon.db["mythicPlusBloodlustTrackerIcon"]) end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerIcon"] = normalizeBloodlustIcon(value) end
@@ -2233,11 +2378,12 @@ local function ensureBloodlustAnchor()
 								end
 							end)
 						end
-						end,
-					},
+					end,
+				},
 				{
 					name = L["Icon zoom"] or "Icon zoom",
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerLayout",
 					minValue = TRACKER_ICON_ZOOM_MIN,
 					maxValue = TRACKER_ICON_ZOOM_MAX,
 					valueStep = 1,
@@ -2250,12 +2396,15 @@ local function ensureBloodlustAnchor()
 					end,
 				},
 				{
-					name = "",
-					kind = settingType.Divider,
+					name = L["Border"] or "Border",
+					kind = settingType.Collapsible,
+					id = "mythicPlusBloodlustTrackerBorder",
+					defaultCollapsed = true,
 				},
 				{
 					name = L["Use border"] or "Use border",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerBorder",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerBorderEnabled"] ~= false end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerBorderEnabled"] = value == true end
@@ -2265,6 +2414,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Border texture"] or "Border texture",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerBorder",
 					height = 220,
 					get = function() return normalizeBloodlustBorderTexture(addon.db and addon.db["mythicPlusBloodlustTrackerBorderTexture"]) end,
 					set = function(_, value)
@@ -2290,6 +2440,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Border size"] or "Border size",
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerBorder",
 					minValue = BLOODLUST_BORDER_SIZE_MIN,
 					maxValue = BLOODLUST_BORDER_SIZE_MAX,
 					valueStep = 1,
@@ -2304,6 +2455,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Border offset"] or "Border offset",
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerBorder",
 					minValue = BLOODLUST_BORDER_OFFSET_MIN,
 					maxValue = BLOODLUST_BORDER_OFFSET_MAX,
 					valueStep = 1,
@@ -2318,6 +2470,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = EMBLEM_BORDER_COLOR,
 					kind = settingType.Color,
+					parentId = "mythicPlusBloodlustTrackerBorder",
 					get = function()
 						local c = normalizeBloodlustBorderColor(addon.db and addon.db["mythicPlusBloodlustTrackerBorderColor"])
 						return { r = c[1], g = c[2], b = c[3], a = c[4] }
@@ -2339,12 +2492,15 @@ local function ensureBloodlustAnchor()
 					isEnabled = function() return addon.db and addon.db["mythicPlusBloodlustTrackerBorderEnabled"] ~= false end,
 				},
 				{
-					name = "",
-					kind = settingType.Divider,
+					name = L["Cooldown"] or "Cooldown",
+					kind = settingType.Collapsible,
+					id = "mythicPlusBloodlustTrackerCooldown",
+					defaultCollapsed = false,
 				},
 				{
 					name = L["Draw cooldown swipe"] or "Draw cooldown swipe",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerCooldownDrawSwipe"] ~= false end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerCooldownDrawSwipe"] = value == true end
@@ -2354,6 +2510,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Draw cooldown edge"] or "Draw cooldown edge",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerCooldownDrawEdge"] == true end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerCooldownDrawEdge"] = value == true end
@@ -2363,6 +2520,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Draw cooldown bling"] or "Draw cooldown bling",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerCooldownDrawBling"] == true end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerCooldownDrawBling"] = value == true end
@@ -2372,10 +2530,12 @@ local function ensureBloodlustAnchor()
 				{
 					name = "",
 					kind = settingType.Divider,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 				},
 				{
 					name = L["Cooldown font"] or "Cooldown font",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					height = 280,
 					get = function()
 						local current = getStoredFontKey()
@@ -2394,6 +2554,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Cooldown text size"] or "Cooldown text size",
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					minValue = BLOODLUST_COOLDOWN_TEXT_SIZE_MIN,
 					maxValue = BLOODLUST_COOLDOWN_TEXT_SIZE_MAX,
 					valueStep = 1,
@@ -2407,6 +2568,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Cooldown text outline"] or "Cooldown text outline",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					get = function() return normalizeBloodlustCooldownOutline(addon.db and addon.db["mythicPlusBloodlustTrackerCooldownTextOutline"]) end,
 					set = function(_, value)
 						addon.db["mythicPlusBloodlustTrackerCooldownTextOutline"] = normalizeBloodlustCooldownOutline(value)
@@ -2414,7 +2576,8 @@ local function ensureBloodlustAnchor()
 					end,
 					generator = function(_, root)
 						for i = 1, #BLOODLUST_COOLDOWN_OUTLINE_OPTIONS do
-							local value = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local option = BLOODLUST_COOLDOWN_OUTLINE_OPTIONS[i]
+							local value = option.value
 							root:CreateRadio(
 								outlineOptionLabel(value),
 								function() return normalizeBloodlustCooldownOutline(addon.db and addon.db["mythicPlusBloodlustTrackerCooldownTextOutline"]) == value end,
@@ -2429,6 +2592,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Cooldown text color"] or "Cooldown text color",
 					kind = settingType.Color,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					get = function()
 						local c = normalizeBloodlustCooldownColor(addon.db and addon.db["mythicPlusBloodlustTrackerCooldownTextColor"])
 						return { r = c[1], g = c[2], b = c[3], a = c[4] }
@@ -2451,6 +2615,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Cooldown text X offset"] or "Cooldown text X offset",
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					minValue = BLOODLUST_COOLDOWN_TEXT_OFFSET_MIN,
 					maxValue = BLOODLUST_COOLDOWN_TEXT_OFFSET_MAX,
 					valueStep = 1,
@@ -2464,6 +2629,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["Cooldown text Y offset"] or "Cooldown text Y offset",
 					kind = settingType.Slider,
+					parentId = "mythicPlusBloodlustTrackerCooldown",
 					minValue = BLOODLUST_COOLDOWN_TEXT_OFFSET_MIN,
 					maxValue = BLOODLUST_COOLDOWN_TEXT_OFFSET_MAX,
 					valueStep = 1,
@@ -2475,12 +2641,15 @@ local function ensureBloodlustAnchor()
 					end,
 				},
 				{
-					name = "",
-					kind = settingType.Divider,
+					name = SOUND or "Sound",
+					kind = settingType.Collapsible,
+					id = "mythicPlusBloodlustTrackerSound",
+					defaultCollapsed = false,
 				},
 				{
 					name = L["mythicPlusBloodlustTrackerSoundOnDebuffActive"] or "Play sound when Bloodlust lockout becomes active",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerSound",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffActive"] == true end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerSoundOnDebuffActive"] = value == true end
@@ -2489,6 +2658,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["mythicPlusBloodlustTrackerUseCustomDebuffSound"] or "Use custom sound for active lockout",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerSound",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerUseCustomDebuffSound"] == true end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerUseCustomDebuffSound"] = value == true end
@@ -2498,6 +2668,7 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["mythicPlusBloodlustTrackerDebuffSound"] or "Active lockout sound",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerSound",
 					height = 280,
 					get = function()
 						local value = getStoredSoundKey("mythicPlusBloodlustTrackerDebuffSoundFile")
@@ -2525,18 +2696,62 @@ local function ensureBloodlustAnchor()
 				{
 					name = "",
 					kind = settingType.Divider,
+					parentId = "mythicPlusBloodlustTrackerSound",
 				},
 				{
 					name = L["mythicPlusBloodlustTrackerSoundOnDebuffFade"] or "Play sound when Bloodlust lockout fades",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerSound",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffFade"] == true end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerSoundOnDebuffFade"] = value == true end
 					end,
 				},
 				{
+					name = L["mythicPlusBloodlustTrackerUseCustomFadeSound"] or "Use custom sound for lockout fade",
+					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerSound",
+					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerUseCustomFadeSound"] == true end,
+					set = function(_, value)
+						if addon.db then addon.db["mythicPlusBloodlustTrackerUseCustomFadeSound"] = value == true end
+					end,
+					isEnabled = function() return addon.db and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffFade"] == true end,
+				},
+				{
+					name = L["mythicPlusBloodlustTrackerFadeSound"] or "Lockout fade sound",
+					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerSound",
+					height = 280,
+					get = function()
+						local value = getStoredSoundKey("mythicPlusBloodlustTrackerFadeSoundFile")
+						return value
+					end,
+					set = function(_, value) setStoredSoundKey("mythicPlusBloodlustTrackerFadeSoundFile", value, true) end,
+					generator = function(_, root)
+						local _, entries = getStoredSoundKey("mythicPlusBloodlustTrackerFadeSoundFile")
+						root:CreateRadio(
+							NONE,
+							function() return getStoredSoundKey("mythicPlusBloodlustTrackerFadeSoundFile") == "" end,
+							function() setStoredSoundKey("mythicPlusBloodlustTrackerFadeSoundFile", "", false) end
+						)
+						for i = 1, #entries do
+							local soundName = entries[i]
+							root:CreateRadio(
+								soundName,
+								function() return getStoredSoundKey("mythicPlusBloodlustTrackerFadeSoundFile") == soundName end,
+								function() setStoredSoundKey("mythicPlusBloodlustTrackerFadeSoundFile", soundName, true) end
+							)
+						end
+					end,
+					isEnabled = function()
+						return addon.db and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffFade"] == true
+							and addon.db["mythicPlusBloodlustTrackerUseCustomFadeSound"] == true
+					end,
+				},
+				{
 					name = L["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] or "Play sound on ENCOUNTER_START when Bloodlust is ready",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerSound",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] == true end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] = value == true end
@@ -2545,17 +2760,19 @@ local function ensureBloodlustAnchor()
 				{
 					name = L["mythicPlusBloodlustTrackerUseCustomReadySound"] or "Use custom sound for ready reminder",
 					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerSound",
 					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerUseCustomReadySound"] == true end,
 					set = function(_, value)
 						if addon.db then addon.db["mythicPlusBloodlustTrackerUseCustomReadySound"] = value == true end
 					end,
 					isEnabled = function()
-						return addon.db and (addon.db["mythicPlusBloodlustTrackerSoundOnDebuffFade"] == true or addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] == true)
+						return addon.db and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] == true
 					end,
 				},
 				{
 					name = L["mythicPlusBloodlustTrackerReadySound"] or "Ready reminder sound",
 					kind = settingType.Dropdown,
+					parentId = "mythicPlusBloodlustTrackerSound",
 					height = 280,
 					get = function()
 						local value = getStoredSoundKey("mythicPlusBloodlustTrackerReadySoundFile")
@@ -2580,7 +2797,7 @@ local function ensureBloodlustAnchor()
 					end,
 					isEnabled = function()
 						return addon.db and addon.db["mythicPlusBloodlustTrackerUseCustomReadySound"] == true
-							and (addon.db["mythicPlusBloodlustTrackerSoundOnDebuffFade"] == true or addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] == true)
+							and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] == true
 					end,
 				},
 			}
@@ -2599,7 +2816,7 @@ local function ensureBloodlustAnchor()
 			},
 			legacyKeys = {
 				point = "mythicPlusBloodlustTrackerPoint",
-				relativePoint = "mythicPlusBloodlustTrackerPoint",
+				relativePoint = "mythicPlusBloodlustTrackerRelativePoint",
 				x = "mythicPlusBloodlustTrackerX",
 				y = "mythicPlusBloodlustTrackerY",
 				size = "mythicPlusBloodlustButtonSize",
@@ -2610,12 +2827,8 @@ local function ensureBloodlustAnchor()
 					bloodlustAnchor._eqolEditModeHydrated = true
 					local record = data or {}
 					seedBloodlustEditModeRecordFromProfile(record)
-					-- Apply visual settings immediately on first Edit Mode open.
 					applyBloodlustLayoutData(record)
-					if EditMode and EditMode.SetFramePosition then
-						EditMode:SetFramePosition(BLOODLUST_EDITMODE_ID, record.point or "CENTER", record.x or 0, record.y or 0, layoutName)
-						return
-					end
+					return
 				end
 				applyBloodlustLayoutData(data)
 			end,
@@ -2672,6 +2885,7 @@ local function createBloodlustFrame()
 		local defaultIcon = getBloodlustDefaultIcon()
 
 		bloodlustButton = CreateFrame("Button", nil, UIParent)
+		bloodlustButton:SetClampedToScreen(true)
 		bloodlustButton:SetSize(size, size)
 		bloodlustButton:SetPoint(point, UIParent, relativePoint, xOfs, yOfs)
 		setFrameClickThrough(bloodlustButton)
@@ -2691,6 +2905,10 @@ local function createBloodlustFrame()
 		bloodlustButton.border:SetFrameLevel((bloodlustButton:GetFrameLevel() or 0) + 5)
 		bloodlustButton.border:SetFrameStrata(bloodlustButton:GetFrameStrata())
 
+		bloodlustButton.textOverlay = CreateFrame("Frame", nil, bloodlustButton)
+		bloodlustButton.textOverlay:SetAllPoints(bloodlustButton)
+		bloodlustButton.textOverlay:EnableMouse(false)
+
 		local scaleFactor = size / defaultButtonSize
 		local timerFontSize = math.floor(defaultFontSize * 0.75 * scaleFactor + 0.5)
 		if timerFontSize < 10 then timerFontSize = 10 end
@@ -2705,7 +2923,7 @@ local function createBloodlustFrame()
 		if bloodlustButton.cooldownFrame.SetDrawBling then bloodlustButton.cooldownFrame:SetDrawBling(addon.db["mythicPlusBloodlustTrackerCooldownDrawBling"] == true) end
 		if bloodlustButton.cooldownFrame.SetHideCountdownNumbers then bloodlustButton.cooldownFrame:SetHideCountdownNumbers(false) end
 
-		bloodlustButton.status = bloodlustButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		bloodlustButton.status = bloodlustButton.textOverlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		bloodlustButton.status:SetPoint("BOTTOM", bloodlustButton, "BOTTOM", 0, 4)
 		bloodlustButton.status:SetFont(addon.variables.defaultFont, timerFontSize, "OUTLINE")
 		bloodlustButton.status:SetText(L["mythicPlusBloodlustTrackerReadyLabel"] or "READY")
@@ -2838,6 +3056,7 @@ end
 
 local function getBloodlustFallbackSoundKit(soundSettingKey)
 	if not SOUNDKIT then return nil end
+	if soundSettingKey == "mythicPlusBloodlustTrackerFadeSoundFile" then return SOUNDKIT.READY_CHECK or SOUNDKIT.RAID_WARNING end
 	if soundSettingKey == "mythicPlusBloodlustTrackerReadySoundFile" then return SOUNDKIT.READY_CHECK or SOUNDKIT.RAID_WARNING end
 	return SOUNDKIT.RAID_WARNING or SOUNDKIT.READY_CHECK
 end
@@ -2923,7 +3142,7 @@ local function refreshBloodlustTracker(playReadySound)
 		shouldPlayDebuffFadeSound = true
 	end
 	if shouldPlayDebuffActiveSound then playBloodlustSound("mythicPlusBloodlustTrackerUseCustomDebuffSound", "mythicPlusBloodlustTrackerDebuffSoundFile") end
-	if shouldPlayDebuffFadeSound then playBloodlustSound("mythicPlusBloodlustTrackerUseCustomReadySound", "mythicPlusBloodlustTrackerReadySoundFile") end
+	if shouldPlayDebuffFadeSound then playBloodlustSound("mythicPlusBloodlustTrackerUseCustomFadeSound", "mythicPlusBloodlustTrackerFadeSoundFile") end
 	if playReadySound and not isActive and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] and BLOODLUST_READY_CLASSES[classToken] then
 		playBloodlustSound("mythicPlusBloodlustTrackerUseCustomReadySound", "mythicPlusBloodlustTrackerReadySoundFile")
 	end
@@ -2936,6 +3155,79 @@ end
 
 addon.MythicPlus.functions.refreshBloodlustTracker = refreshBloodlustTracker
 addon.MythicPlus.functions.syncBloodlustUnitAuraRegistration = syncBloodlustUnitAuraRegistration
+
+local function reapplyTrackerAnchors()
+	if not addon.db then
+		cancelTrackerAnchorReapplyTicker()
+		return false
+	end
+
+	local variables = addon.MythicPlus and addon.MythicPlus.variables
+	if variables then variables.trackerAnchorReapplyAttempts = (variables.trackerAnchorReapplyAttempts or 0) + 1 end
+
+	if addon.db["mythicPlusBRTrackerEnabled"] then
+		ensureBRAnchor()
+		applyBRLayoutData()
+		if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(BR_EDITMODE_ID) end
+	end
+
+	if addon.db["mythicPlusBloodlustTrackerEnabled"] then
+		ensureBloodlustAnchor()
+		applyBloodlustLayoutData()
+		if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(BLOODLUST_EDITMODE_ID) end
+	end
+
+	if not trackersNeedAnchorReapply() then
+		cancelTrackerAnchorReapplyTicker()
+		return false
+	end
+
+	if variables and (variables.trackerAnchorReapplyAttempts or 0) >= 15 then
+		cancelTrackerAnchorReapplyTicker()
+		return false
+	end
+
+	return true
+end
+
+local function scheduleTrackerAnchorReapply()
+	if not addon.db or not trackersNeedAnchorReapply() then
+		cancelTrackerAnchorReapplyTicker()
+		return
+	end
+
+	local variables = addon.MythicPlus and addon.MythicPlus.variables
+	if not variables or variables.trackerAnchorReapplyBusy then return end
+
+	if not variables.trackerAnchorReapplyTicker then variables.trackerAnchorReapplyAttempts = 0 end
+
+	variables.trackerAnchorReapplyBusy = true
+	local shouldContinue = reapplyTrackerAnchors()
+	variables.trackerAnchorReapplyBusy = nil
+	if not shouldContinue or variables.trackerAnchorReapplyTicker or not (C_Timer and C_Timer.NewTicker) then return end
+
+	variables.trackerAnchorReapplyTicker = C_Timer.NewTicker(0.2, function()
+		if variables.trackerAnchorReapplyBusy then return end
+		variables.trackerAnchorReapplyBusy = true
+		local keepTrying = reapplyTrackerAnchors()
+		variables.trackerAnchorReapplyBusy = nil
+		if not keepTrying then cancelTrackerAnchorReapplyTicker() end
+	end)
+end
+
+addon.MythicPlus.functions.ReapplyTrackerAnchors = reapplyTrackerAnchors
+addon.MythicPlus.functions.ScheduleTrackerAnchorReapply = scheduleTrackerAnchorReapply
+addon.MythicPlus.functions.ReapplyTrackerAnchorsForTarget = function(target)
+	if not addon.db then return false end
+	if type(target) ~= "string" or target == "" then return false end
+
+	local needsBR = addon.db["mythicPlusBRTrackerEnabled"] and trackerUsesAnchorTarget("mythicPlusBRTrackerRelativeFrame", target)
+	local needsBloodlust = addon.db["mythicPlusBloodlustTrackerEnabled"] and trackerUsesAnchorTarget("mythicPlusBloodlustTrackerRelativeFrame", target)
+	if not needsBR and not needsBloodlust then return false end
+
+	reapplyTrackerAnchors()
+	return true
+end
 
 local function setBRInfo(info)
 	if brButton and brButton.cooldownFrame and info then
@@ -3176,6 +3468,9 @@ function addon.MythicPlus.functions.InitMain()
 	if bloodlustStateActive and (not bloodlustButton or not bloodlustButton.cooldownFrame) then
 		createBloodlustFrame()
 		refreshBloodlustTracker(false)
+	end
+	if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.ScheduleTrackerAnchorReapply then
+		addon.MythicPlus.functions.ScheduleTrackerAnchorReapply("InitMain")
 	end
 
 	if addon.db["mythicPlusEnableDungeonFilter"] then addon.MythicPlus.functions.addDungeonFilter() end

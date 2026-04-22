@@ -11,6 +11,14 @@ addon.SharedAnchors = addon.SharedAnchors or {}
 local SharedAnchors = addon.SharedAnchors
 
 local UIParent = _G.UIParent
+local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
+
+local COOLDOWN_VIEWER_LABELS = {
+	EssentialCooldownViewer = L["cooldownViewerEssential"] or "Essential Cooldown Viewer",
+	UtilityCooldownViewer = L["cooldownViewerUtility"] or "Utility Cooldown Viewer",
+	BuffBarCooldownViewer = L["cooldownViewerBuffBar"] or "Buff Bar Cooldowns",
+	BuffIconCooldownViewer = L["cooldownViewerBuffIcon"] or "Buff Icon Cooldowns",
+}
 
 local RAW_ANCHOR_POINTS = {
 	"TOPLEFT",
@@ -109,6 +117,9 @@ function SharedAnchors:GetTargetLabel(value)
 	local helper = getCooldownPanelHelper()
 	local generic = helper and helper.GENERIC_ANCHORS and helper.GENERIC_ANCHORS[target]
 	if generic and generic.label then return generic.label end
+
+	local viewerLabel = COOLDOWN_VIEWER_LABELS[target]
+	if viewerLabel then return viewerLabel end
 
 	local panelId = frameNameToPanelId(target)
 	if panelId then

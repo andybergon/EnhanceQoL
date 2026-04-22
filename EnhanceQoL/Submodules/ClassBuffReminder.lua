@@ -5816,7 +5816,7 @@ function editModeSettingsBuilders.buildLayout()
 			end,
 		},
 		{
-			name = L["Grow from center"] or L["Grow from center"] or "Grow from center",
+			name = L["Grow from center"] or "Grow from center",
 			kind = SettingType.Checkbox,
 			parentId = "anchorSize",
 			default = defaults.growthFromCenter == true,

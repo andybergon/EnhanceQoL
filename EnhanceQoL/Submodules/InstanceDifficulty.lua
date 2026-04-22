@@ -1,4 +1,4 @@
--- luacheck: globals MinimapCluster C_DelvesUI
+-- luacheck: globals MinimapCluster C_DelvesUI C_GossipInfo C_UIWidgetManager C_Timer Minimap
 local parentAddonName = "EnhanceQoL"
 local addonName, addon = ...
 if _G[parentAddonName] then
@@ -14,6 +14,30 @@ InstanceDifficulty.enabled = InstanceDifficulty.enabled or false
 InstanceDifficulty.frame = InstanceDifficulty.frame or CreateFrame("Frame")
 
 local function getIndicator() return MinimapCluster and MinimapCluster.InstanceDifficulty end
+local validAnchors = {
+	TOPLEFT = true,
+	TOP = true,
+	TOPRIGHT = true,
+	LEFT = true,
+	CENTER = true,
+	RIGHT = true,
+	BOTTOMLEFT = true,
+	BOTTOM = true,
+	BOTTOMRIGHT = true,
+}
+
+local function normalizeAnchor(anchor)
+	if type(anchor) == "string" then
+		anchor = string.upper(anchor)
+		if validAnchors[anchor] then return anchor end
+	end
+	return "CENTER"
+end
+
+local function resolveAnchorTarget(indicator, anchor)
+	if anchor ~= "CENTER" and Minimap then return Minimap, anchor end
+	return indicator, "CENTER"
+end
 
 local function defaultFontFace()
 	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
@@ -38,6 +62,15 @@ function InstanceDifficulty:ApplyTextStyle()
 	if ok == false then self.text:SetFont((addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT, fontSize, "OUTLINE") end
 end
 
+function InstanceDifficulty:DeferredUpdate()
+	if self.deferredUpdate then return end
+	self.deferredUpdate = true
+	C_Timer.After(0.25, function()
+		self.deferredUpdate = nil
+		self:Update()
+	end)
+end
+
 local nmNames = {
 	[RAID_DIFFICULTY1] = true,
 	[RAID_DIFFICULTY2] = true,
@@ -54,17 +87,60 @@ local hcNames = {
 	[RAID_DIFFICULTY_25PLAYER_HEROIC] = true,
 }
 
-local function getActiveDelveTier()
-	if not C_DelvesUI or not C_GossipInfo then return nil end
+local function hasDelveGossipTierAPI()
+	return C_GossipInfo and C_GossipInfo.GetActiveDelveGossip
+end
 
+local DELVE_SCENARIO_HEADER_WIDGET_IDS = { 6183, 6184, 6185 }
+local DELVE_SCENARIO_HEADER_WIDGET_ID_LOOKUP = {
+	[6183] = true,
+	[6184] = true,
+	[6185] = true,
+}
+
+local function hasActiveDelve()
+	if not (C_DelvesUI and C_DelvesUI.HasActiveDelve) then return false end
 	local _, _, _, mapID = UnitPosition("player")
-	if not C_DelvesUI.HasActiveDelve(mapID) then return nil end
+	if not mapID then return false end
+	return C_DelvesUI.HasActiveDelve(mapID)
+end
+
+local function getActiveDelveGossipTierText()
+	-- Removed on 12.0.5. Keep the old path guarded so the tier display starts working again if Blizzard restores it.
+	if not (C_DelvesUI and hasDelveGossipTierAPI()) then return nil end
+	if not hasActiveDelve() then return nil end
 
 	local gossipInfo = C_GossipInfo.GetActiveDelveGossip()
 	local orderIndex = gossipInfo and gossipInfo.orderIndex
-	if type(orderIndex) == "number" and orderIndex >= 0 then return orderIndex + 1 end
+	if type(orderIndex) == "number" and orderIndex >= 0 then return tostring(orderIndex + 1) end
 
 	return nil
+end
+
+local function getActiveDelveWidgetTierText()
+	if not (C_UIWidgetManager and C_UIWidgetManager.GetScenarioHeaderDelvesWidgetVisualizationInfo) then return nil end
+	if not hasActiveDelve() then return nil end
+
+	for _, widgetID in ipairs(DELVE_SCENARIO_HEADER_WIDGET_IDS) do
+		local widgetInfo = C_UIWidgetManager.GetScenarioHeaderDelvesWidgetVisualizationInfo(widgetID)
+		if widgetInfo and widgetInfo.shownState ~= 0 then
+			local tierText = widgetInfo.tierText
+			if type(tierText) == "number" then tierText = tostring(tierText) end
+			if type(tierText) == "string" then
+				tierText = tierText:gsub("^%s+", ""):gsub("%s+$", "")
+				if tierText ~= "" then return tierText end
+			end
+		end
+	end
+
+	return nil
+end
+
+local function getActiveDelveTierText()
+	local tierText = getActiveDelveGossipTierText()
+	if tierText then return tierText end
+	if hasDelveGossipTierAPI() then return nil end
+	return getActiveDelveWidgetTierText()
 end
 
 local function getShortLabel(difficultyID, difficultyName)
@@ -83,8 +159,8 @@ local function getShortLabel(difficultyID, difficultyName)
 	elseif difficultyID == 24 then
 		return "TW"
 	elseif difficultyID == 208 then
-		local tier = getActiveDelveTier()
-		if tier then return "D" .. tier end
+		local tierText = getActiveDelveTierText()
+		if tierText then return "D" .. tierText end
 		return "D"
 	end
 	return difficultyName
@@ -99,7 +175,7 @@ function InstanceDifficulty:Update()
 		return
 	end
 
-	local _, _, difficultyID, difficultyName, _, _, _, _, maxPlayers = GetInstanceInfo()
+	local _, _, difficultyID, difficultyName, _, _, _, _, instanceGroupSize = GetInstanceInfo()
 	local short = getShortLabel(difficultyID, difficultyName)
 	-- Stable code for color mapping
 	local code
@@ -118,17 +194,19 @@ function InstanceDifficulty:Update()
 	end
 
 	local text
-	if maxPlayers and maxPlayers > 0 then
-		text = string.format("%d (%s)", maxPlayers, short)
+	if difficultyID == 208 and not hasDelveGossipTierAPI() then
+		text = short
+	elseif instanceGroupSize and instanceGroupSize > 0 then
+		text = string.format("%d (%s)", instanceGroupSize, short)
 	else
 		text = short
 	end
-	-- Apply anchor (fixed center) and offsets
-	local anchor = "CENTER"
+	local anchor = normalizeAnchor(addon.db and addon.db["instanceDifficultyAnchor"])
 	local offX = (addon.db and addon.db["instanceDifficultyOffsetX"]) or 0
 	local offY = (addon.db and addon.db["instanceDifficultyOffsetY"]) or 0
+	local anchorTarget, relativePoint = resolveAnchorTarget(indicator, anchor)
 	self.text:ClearAllPoints()
-	self.text:SetPoint(anchor, indicator, anchor, offX, offY)
+	self.text:SetPoint(anchor, anchorTarget, relativePoint, offX, offY)
 
 	self.text:SetText(text)
 	self:ApplyTextStyle()
@@ -172,6 +250,9 @@ function InstanceDifficulty:SetEnabled(value)
 		self.frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 		self.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 		self.frame:RegisterEvent("PLAYER_DIFFICULTY_CHANGED")
+		self.frame:RegisterEvent("GROUP_ROSTER_UPDATE")
+		self.frame:RegisterEvent("INSTANCE_GROUP_SIZE_CHANGED")
+		self.frame:RegisterEvent("UPDATE_INSTANCE_INFO")
 		self.frame:RegisterEvent("CHALLENGE_MODE_START")
 		self.frame:RegisterEvent("ACTIVE_DELVE_DATA_UPDATE")
 		self:Update()
@@ -179,6 +260,9 @@ function InstanceDifficulty:SetEnabled(value)
 		self.frame:UnregisterEvent("PLAYER_ENTERING_WORLD")
 		self.frame:UnregisterEvent("ZONE_CHANGED_NEW_AREA")
 		self.frame:UnregisterEvent("PLAYER_DIFFICULTY_CHANGED")
+		self.frame:UnregisterEvent("GROUP_ROSTER_UPDATE")
+		self.frame:UnregisterEvent("INSTANCE_GROUP_SIZE_CHANGED")
+		self.frame:UnregisterEvent("UPDATE_INSTANCE_INFO")
 		self.frame:UnregisterEvent("CHALLENGE_MODE_START")
 		self.frame:UnregisterEvent("ACTIVE_DELVE_DATA_UPDATE")
 		if self.text then self.text:Hide() end
@@ -200,4 +284,6 @@ function InstanceDifficulty:SetEnabled(value)
 	end
 end
 
-InstanceDifficulty.frame:SetScript("OnEvent", function(e) InstanceDifficulty:Update() end)
+InstanceDifficulty.frame:SetScript("OnEvent", function()
+	InstanceDifficulty:DeferredUpdate()
+end)

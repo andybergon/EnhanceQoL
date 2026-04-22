@@ -27,15 +27,34 @@ function ResourceBars.ShouldHideInVehicle(cfg) return resolveVisibilityFlag(cfg,
 
 function ResourceBars.ShouldHideInPetBattle(cfg) return resolveVisibilityFlag(cfg, "hidePetBattle", "resourceBarsHidePetBattle", false) end
 
+local function updateManagedFrameAlpha(frame)
+	if not (frame and frame.SetAlpha) then return end
+	local shouldHide = frame._rbClientSceneAlphaHidden == true or frame._rbRuntimeForcedAlphaHidden == true
+	if shouldHide then
+		if frame.GetAlpha and frame:GetAlpha() ~= 0 then frame:SetAlpha(0) end
+	else
+		if frame.GetAlpha and frame:GetAlpha() == 0 then frame:SetAlpha(1) end
+	end
+end
+
 function ResourceBars.ApplyClientSceneAlphaToFrame(frame, forceHide)
 	if not (frame and frame.SetAlpha) then return end
 	if forceHide then
 		frame._rbClientSceneAlphaHidden = true
-		if frame.GetAlpha and frame:GetAlpha() ~= 0 then frame:SetAlpha(0) end
 	elseif frame._rbClientSceneAlphaHidden then
 		frame._rbClientSceneAlphaHidden = nil
-		if frame.GetAlpha and frame:GetAlpha() == 0 then frame:SetAlpha(1) end
 	end
+	updateManagedFrameAlpha(frame)
+end
+
+function ResourceBars.ApplyRuntimeForceHiddenAlphaToFrame(frame, forceHide)
+	if not (frame and frame.SetAlpha) then return end
+	if forceHide then
+		frame._rbRuntimeForcedAlphaHidden = true
+	elseif frame._rbRuntimeForcedAlphaHidden then
+		frame._rbRuntimeForcedAlphaHidden = nil
+	end
+	updateManagedFrameAlpha(frame)
 end
 
 local function normalizeGradientColor(value)
@@ -47,6 +66,7 @@ local function normalizeGradientColor(value)
 end
 
 local function isSecretGradientComponent(value) return issecretvalue and issecretvalue(value) end
+local USE_ESSENCE_REGEN_API = false -- GetPowerRegenForPowerType is secret-only on current patch; keep disabled until Blizzard fixes it.
 
 local function hasSecretGradientColor(r, g, b, a) return isSecretGradientComponent(r) or isSecretGradientComponent(g) or isSecretGradientComponent(b) or isSecretGradientComponent(a) end
 
@@ -245,7 +265,11 @@ function ResourceBars.ComputeEssenceFraction(bar, current, maxPower, now, powerE
 		bar._essenceFraction = 0
 		return 0, 0
 	end
-	local regen = GetPowerRegenForPowerType and GetPowerRegenForPowerType(powerEnum)
+	local regen
+	if USE_ESSENCE_REGEN_API and GetPowerRegenForPowerType then
+		regen = GetPowerRegenForPowerType(powerEnum)
+		if issecretvalue and issecretvalue(regen) then regen = nil end
+	end
 	if not regen or regen <= 0 then regen = 0.2 end
 	local tickDuration = 1 / regen
 
@@ -377,6 +401,7 @@ function ResourceBars.LayoutEssences(bar, cfg, count, texturePath)
 		ensureStatusBarTexturePath(sb, texturePath)
 		sb:ClearAllPoints()
 		if sb:GetParent() ~= inner then sb:SetParent(inner) end
+		if sb.SetFrameStrata then sb:SetFrameStrata(bar:GetFrameStrata()) end
 		sb:SetFrameLevel((bar:GetFrameLevel() or 1) + 1)
 		if vertical then
 			sb:SetWidth(w)
@@ -765,6 +790,7 @@ function ResourceBars.LayoutDiscreteSegments(bar, cfg, count, texturePath, separ
 	local segments = bar._rbDiscreteSegments
 	local nameBase = bar:GetName() or "EQOLDiscrete"
 	local texPath = texturePath or "Interface\\Buttons\\WHITE8x8"
+	local segmentBgPath, _, _, _, _, segmentBgVisible = resolveDiscreteSegmentBackground(cfg, texPath, 0, 0, 0, 0.8)
 
 	for i = 1, count do
 		local sb = segments[i]
@@ -774,6 +800,7 @@ function ResourceBars.LayoutDiscreteSegments(bar, cfg, count, texturePath, separ
 			segments[i] = sb
 		end
 		if sb:GetParent() ~= inner then sb:SetParent(inner) end
+		if sb.SetFrameStrata then sb:SetFrameStrata(bar:GetFrameStrata()) end
 		sb:SetFrameLevel((bar:GetFrameLevel() or 1) + 1)
 		ensureStatusBarTexturePath(sb, texPath)
 		if sb.SetReverseFill then sb:SetReverseFill(reverse) end
@@ -781,9 +808,16 @@ function ResourceBars.LayoutDiscreteSegments(bar, cfg, count, texturePath, separ
 			sb._rbSegmentBg = sb:CreateTexture(nil, "BACKGROUND")
 			sb._rbSegmentBg:SetAllPoints(sb)
 		end
-		if sb._rbSegmentBgPath ~= texPath then
-			sb._rbSegmentBg:SetTexture(texPath)
-			sb._rbSegmentBgPath = texPath
+		if segmentBgVisible then
+			if sb._rbSegmentBgPath ~= segmentBgPath then
+				sb._rbSegmentBg:SetTexture(segmentBgPath)
+				sb._rbSegmentBgPath = segmentBgPath
+			end
+			if not sb._rbSegmentBg:IsShown() then sb._rbSegmentBg:Show() end
+		else
+			if sb._rbSegmentBg:IsShown() then sb._rbSegmentBg:Hide() end
+			sb._rbSegmentBgPath = nil
+			sb._rbSegmentBgColorKey = nil
 		end
 		sb:ClearAllPoints()
 		if vertical then

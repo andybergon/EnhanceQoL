@@ -96,6 +96,31 @@ local function createRootSlashCommandHints(category)
 			},
 		},
 		{
+			title = L["rootSlashCommandsMacroHeader"] or "Macro Examples",
+			entries = {
+				{
+					commands = { "/click EQOLRandomHearthstoneButton LeftButton 1" },
+					desc = L["rootSlashCommandRandomHearthstoneDesc"] or "Use random hearthstone.",
+					note = L["rootSlashCommandNoteUseInMacro"] or "Use this in a macro.",
+				},
+				{
+					commands = { "/click EQOLRandomMountButton LeftButton 1" },
+					desc = L["rootSlashCommandRandomMountDesc"] or "Use random mount.",
+					note = L["rootSlashCommandNoteUseInMacro"] or "Use this in a macro.",
+				},
+				{
+					commands = { "/click EQOLRepairMountButton LeftButton 1" },
+					desc = L["rootSlashCommandRepairMountDesc"] or "Use repair mount.",
+					note = L["rootSlashCommandNoteUseInMacro"] or "Use this in a macro.",
+				},
+				{
+					commands = { "/click EQOLAuctionMountButton LeftButton 1" },
+					desc = L["rootSlashCommandAuctionMountDesc"] or "Use Auction House mount.",
+					note = L["rootSlashCommandNoteUseInMacro"] or "Use this in a macro.",
+				},
+			},
+		},
+		{
 			title = L["rootSlashCommandsSocialHeader"] or "Chat & Social",
 			entries = {
 				{

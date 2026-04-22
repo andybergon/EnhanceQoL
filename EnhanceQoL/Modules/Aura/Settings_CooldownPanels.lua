@@ -14,12 +14,9 @@ if not (cat and addon.functions and addon.functions.SettingsCreateExpandableSect
 
 local expandable = addon.functions.SettingsCreateExpandableSection(cat, {
 	name = L["Cooldown Panels"] or "Cooldown Panels",
+	newTagID = "CooldownPanels",
 	expanded = false,
 	colorizeTitle = false,
-})
-
-addon.functions.SettingsCreateText(cat, "|cffffd700" .. (L["CooldownPanelEditModeHint"] or "Use Edit Mode to move and resize panels.") .. "|r", {
-	parentSection = expandable,
 })
 
 local function withCooldownPanels(action)

@@ -26,6 +26,7 @@ local SOURCE_ICON = "icon"
 local SOURCE_BAR = "bar"
 local IMPORT_SOURCE_ICON = "BUFF_ICON"
 local IMPORT_SOURCE_BAR = "BUFF_BAR"
+local RESHUFFLE_REFRESH_DELAY = 0.05
 
 local function isSecretValue(value) return Api.issecretvalue and Api.issecretvalue(value) end
 
@@ -576,6 +577,26 @@ local function scanInfoHasOnlyMismatchedFrames(scanInfo, preferredSource, expect
 	return matchingFrame == nil
 end
 
+local function selectScanInfoFrame(scanInfo, preferredSource, expectedCooldownID)
+	preferredSource = normalizeSourceType(preferredSource)
+
+	local preferredFrame = preferredSource == SOURCE_BAR and scanInfo and scanInfo.barFrame or scanInfo and scanInfo.iconFrame or nil
+	local fallbackFrame = preferredSource == SOURCE_BAR and scanInfo and scanInfo.iconFrame or scanInfo and scanInfo.barFrame or nil
+	local chosenFrame = preferredFrame
+	local chosenSource = preferredSource
+
+	if chosenFrame and not cooldownIDsEqual(getCooldownIDFromFrame(chosenFrame, chosenSource), expectedCooldownID) then chosenFrame = nil end
+	if not chosenFrame and fallbackFrame then
+		local fallbackSource = preferredSource == SOURCE_BAR and SOURCE_ICON or SOURCE_BAR
+		if cooldownIDsEqual(getCooldownIDFromFrame(fallbackFrame, fallbackSource), expectedCooldownID) then
+			chosenFrame = fallbackFrame
+			chosenSource = fallbackSource
+		end
+	end
+
+	return chosenFrame, chosenSource, preferredFrame, fallbackFrame
+end
+
 local function ensureScanInfo(scan, cooldownID)
 	local info = scan.byCooldownID[cooldownID]
 	if info then return info end
@@ -613,6 +634,33 @@ local function populateScanInfoDerivedFields(info, cooldownID, frame, overwrite)
 	if not overwrite and info.spellID and info.buffName and info.iconTextureID then return end
 	local spellID, buffName, iconTextureID = resolveSpellFromCooldownID(cooldownID, frame)
 	mergeResolvedScanInfo(info, spellID, buffName, iconTextureID, overwrite)
+end
+
+local function frameHasActiveAuraOrTotem(frame)
+	if not frame then return false end
+	return hasAuraInstanceID(frame.auraInstanceID) or frame.totemData ~= nil
+end
+
+local function frameIsShown(frame)
+	if not (frame and frame.IsShown) then return false end
+	local ok, shown = pcall(frame.IsShown, frame)
+	return ok and shown == true
+end
+
+local function shouldPreferCollectedFrame(existingFrame, candidateFrame)
+	if candidateFrame == existingFrame then return false end
+	if not existingFrame then return true end
+	if not candidateFrame then return false end
+
+	local existingActive = frameHasActiveAuraOrTotem(existingFrame)
+	local candidateActive = frameHasActiveAuraOrTotem(candidateFrame)
+	if existingActive ~= candidateActive then return candidateActive end
+
+	local existingShown = frameIsShown(existingFrame)
+	local candidateShown = frameIsShown(candidateFrame)
+	if existingShown ~= candidateShown then return candidateShown end
+
+	return false
 end
 
 local function shouldPreferSpellLookupInfo(primary, candidate)
@@ -672,6 +720,7 @@ local function collectFrame(scan, frame, sourceType, viewerName, seenFrames)
 	local cooldownID = getCooldownIDFromFrame(frame, sourceType)
 	if not cooldownID then return end
 	seenFrames[frame] = true
+	frame._eqolLastTrackedCooldownID = cooldownID
 
 	local info = scan.byCooldownID[cooldownID]
 	if not info then
@@ -679,10 +728,13 @@ local function collectFrame(scan, frame, sourceType, viewerName, seenFrames)
 		info = ensureScanInfo(scan, cooldownID)
 	end
 	info.availableSources[sourceType] = true
+	local replaceFrame = false
 	if sourceType == SOURCE_ICON then
-		info.iconFrame = frame
+		replaceFrame = shouldPreferCollectedFrame(info.iconFrame, frame)
+		if replaceFrame then info.iconFrame = frame end
 	else
-		info.barFrame = frame
+		replaceFrame = shouldPreferCollectedFrame(info.barFrame, frame)
+		if replaceFrame then info.barFrame = frame end
 	end
 	if sourceType == SOURCE_ICON or not info.sourceType then
 		info.sourceType = sourceType
@@ -696,8 +748,8 @@ local function collectFrame(scan, frame, sourceType, viewerName, seenFrames)
 	if not auraUnit then auraUnit = normalizeTrackedUnit(frame.auraDataUnit) end
 	if auraUnit and not info.auraUnit then info.auraUnit = auraUnit end
 
-	populateScanInfoDerivedFields(info, cooldownID, frame, true)
-	if hasAuraInstanceID(frame.auraInstanceID) or frame.totemData ~= nil then info.isActive = true end
+	populateScanInfoDerivedFields(info, cooldownID, frame, replaceFrame)
+	if frameHasActiveAuraOrTotem(frame) then info.isActive = true end
 end
 
 local function collectFramesFromContainer(scan, container, sourceType, viewerName, seenFrames)
@@ -751,7 +803,7 @@ local function sortTrackedBuffs(a, b)
 	return tostring(a and a.cooldownID or "") < tostring(b and b.cooldownID or "")
 end
 
-function CDMAuras:InvalidateScan(clearCooldownViewerInfo)
+function CDMAuras:InvalidateScan(clearCooldownViewerInfo, reason)
 	local runtime = getRuntime()
 	runtime.scan = nil
 	runtime.forcedRescanPass = nil
@@ -922,6 +974,7 @@ local function clearEntryState(key, state, clearTrackedAura)
 	state.cachedFrameMatchSpellID = nil
 	state.cachedFrameMatchCooldownID = nil
 	state.cachedFrameMatchResult = nil
+	state.frameReacquirePass = nil
 end
 
 function CDMAuras:SweepInvalidStates()
@@ -1016,9 +1069,11 @@ function CDMAuras:UpdateEventRegistration()
 
 	self:EnsureEventFrame()
 	frame = self.eventFrame
+	self:EnsureCooldownViewerHooks()
 	if not self.eventsRegistered then
 		frame:RegisterEvent("ADDON_LOADED")
 		frame:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
+		frame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
 		frame:RegisterEvent("PLAYER_LOGIN")
 		frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 		frame:RegisterEvent("PLAYER_TARGET_CHANGED")
@@ -1296,7 +1351,7 @@ function CDMAuras:HandleFrameTotemMutation(frame)
 
 	-- Totem-backed tracked buffs can change state on an existing viewer frame without
 	-- touching aura instance data or cooldownID. Force the next runtime build to rescan.
-	self:InvalidateScan(false)
+	self:InvalidateScan(false, "HandleFrameTotemMutation")
 
 	local refreshedPanels = {}
 	for key in pairs(keys) do
@@ -1732,7 +1787,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 			else
 				-- A negative first lookup can happen before Cooldown Viewer data or frames are ready.
 				-- Clear cached viewer info too so the forced rescan can recover once Blizzard finishes initialization.
-				self:InvalidateScan(true)
+				self:InvalidateScan(true, "BuildRuntimeData:ForcedRescan")
 				local _, rescannedByCooldownID, rescannedBySpellLookup, rescannedCooldownLookup = self:ScanTrackedBuffs(true)
 				rescanned = rescannedByCooldownID
 				rescannedBySpellID = rescannedBySpellLookup
@@ -1784,17 +1839,38 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 	if not next(availableSources) then availableSources[normalizeSourceType(entry.sourceType)] = true end
 
 	local preferredSource = normalizeSourceType(entry.sourceType)
-	local preferredFrame = scanInfo and ((preferredSource == SOURCE_BAR) and scanInfo.barFrame or scanInfo.iconFrame) or nil
-	local fallbackFrame = scanInfo and ((preferredSource == SOURCE_BAR) and scanInfo.iconFrame or scanInfo.barFrame) or nil
+	local chosenFrame, chosenSource, _, fallbackFrame = selectScanInfoFrame(scanInfo, preferredSource, resolvedCooldownID)
+	local trackedUnit = getEntryTrackedUnit(scanInfo, state, chosenFrame or fallbackFrame, resolvedCooldownID or entry.cooldownID, preferredSource)
 
-	local chosenFrame = preferredFrame
-	local chosenSource = preferredSource
-	if chosenFrame and not cooldownIDsEqual(getCooldownIDFromFrame(chosenFrame, chosenSource), resolvedCooldownID) then chosenFrame = nil end
-	if not chosenFrame and fallbackFrame then
-		local fallbackSource = preferredSource == SOURCE_BAR and SOURCE_ICON or SOURCE_BAR
-		if cooldownIDsEqual(getCooldownIDFromFrame(fallbackFrame, fallbackSource), resolvedCooldownID) then
-			chosenFrame = fallbackFrame
-			chosenSource = fallbackSource
+	if state.lastActive == true and chosenFrame then
+		local chosenFrameLooksActive = frameHasActiveAuraOrTotem(chosenFrame)
+		local chosenFrameMatchesTrackedSpell = chosenFrameLooksActive and cdm.GetCachedFrameSpellMatch(runtime, state, chosenFrame, trackedUnit)
+		local runtimePass = runtime.runtimePass
+		local canReacquireThisPass = runtimePass == nil or state.frameReacquirePass ~= runtimePass
+		if canReacquireThisPass and (not chosenFrameLooksActive or not chosenFrameMatchesTrackedSpell) then
+			self:InvalidateScan(false, "BuildRuntimeData:Reacquire")
+			local _, rescannedByCooldownID, rescannedBySpellID, rescannedByCooldownKey = self:ScanTrackedBuffs(true)
+			scanInfo, resolvedCooldownID = resolveEntryScanInfo(entry, rescannedByCooldownID, rescannedBySpellID, rescannedByCooldownKey)
+			if not isValidCooldownID(resolvedCooldownID) then resolvedCooldownID = entry.cooldownID end
+			if scanInfo ~= nil then
+				state.cachedScanEpoch = runtime.scanEpoch or 0
+				state.cachedScanCooldownID = entry.cooldownID
+				state.cachedScanSpellID = entry.spellID
+				state.cachedScanSourceType = entry.sourceType
+				state.cachedScanInfo = scanInfo
+				state.cachedResolvedCooldownID = resolvedCooldownID
+			else
+				state.cachedScanEpoch = nil
+				state.cachedScanCooldownID = nil
+				state.cachedScanSpellID = nil
+				state.cachedScanSourceType = nil
+				state.cachedScanInfo = nil
+				state.cachedResolvedCooldownID = nil
+			end
+			local reacquiredChosenFrame, reacquiredChosenSource, _, reacquiredFallbackFrame = selectScanInfoFrame(scanInfo, preferredSource, resolvedCooldownID)
+			chosenFrame, chosenSource, fallbackFrame = reacquiredChosenFrame, reacquiredChosenSource, reacquiredFallbackFrame
+			trackedUnit = getEntryTrackedUnit(scanInfo, state, chosenFrame or fallbackFrame, resolvedCooldownID or entry.cooldownID, preferredSource)
+			if runtimePass then state.frameReacquirePass = runtimePass end
 		end
 	end
 
@@ -1805,7 +1881,7 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 		if chosenFrame then registerFrameBinding(runtime, key, chosenFrame) end
 	end
 	if state.boundFrame then updatePandemicFrameBinding(runtime, key, state.boundFrame, entry.pandemicGlow == true) end
-	state.trackUnit = getEntryTrackedUnit(scanInfo, state, chosenFrame or fallbackFrame, resolvedCooldownID or entry.cooldownID, preferredSource)
+	state.trackUnit = trackedUnit
 	registerTrackedPanel(runtime, state.trackUnit, panelId)
 
 	local auraData
@@ -1963,6 +2039,66 @@ local function refreshAllTrackedPanels(unit)
 	end
 end
 
+function CDMAuras:ScheduleTrackedPanelsRescan(reason)
+	local runtime = getRuntime()
+	runtime.pendingRescanRefresh = runtime.pendingRescanRefresh or {}
+	local pending = runtime.pendingRescanRefresh
+	pending.reason = pending.reason or reason
+	if pending.queued == true then return end
+	pending.queued = true
+	C_Timer.After(RESHUFFLE_REFRESH_DELAY, function()
+		local latestRuntime = getRuntime()
+		local latestPending = latestRuntime.pendingRescanRefresh
+		latestRuntime.pendingRescanRefresh = nil
+		if not self:HasActiveTrackedPanels() then return end
+		self:InvalidateScan(false, latestPending and latestPending.reason or reason or "TrackedPanelsRescan")
+		self:SweepInvalidStates()
+		self:RebuildTrackedPanelIndex()
+		refreshAllTrackedPanels()
+	end)
+end
+
+function CDMAuras:EnsureCooldownViewerHooks()
+	local runtime = getRuntime()
+	local installed = false
+	local cooldownViewerItemDataMixin = _G.CooldownViewerItemDataMixin
+	if cooldownViewerItemDataMixin and cooldownViewerItemDataMixin.SetCooldownID and not runtime.cooldownViewerSetHookInstalled then
+		hooksecurefunc(cooldownViewerItemDataMixin, "SetCooldownID", function(itemFrame, cooldownID)
+			local previousCooldownID = itemFrame and itemFrame._eqolLastTrackedCooldownID or nil
+			itemFrame._eqolLastTrackedCooldownID = cooldownID
+			if not self:HasActiveTrackedPanels() then return end
+			if previousCooldownID ~= nil and cooldownIDsEqual(previousCooldownID, cooldownID) then return end
+			self:ScheduleTrackedPanelsRescan("SetCooldownID", itemFrame)
+		end)
+		runtime.cooldownViewerSetHookInstalled = true
+		installed = true
+	end
+	if cooldownViewerItemDataMixin and cooldownViewerItemDataMixin.ClearCooldownID and not runtime.cooldownViewerClearHookInstalled then
+		hooksecurefunc(cooldownViewerItemDataMixin, "ClearCooldownID", function(itemFrame)
+			local previousCooldownID = itemFrame and itemFrame._eqolLastTrackedCooldownID or itemFrame and itemFrame.cooldownID or nil
+			if itemFrame then itemFrame._eqolLastTrackedCooldownID = nil end
+			if not self:HasActiveTrackedPanels() then return end
+			if previousCooldownID == nil then return end
+			self:ScheduleTrackedPanelsRescan("ClearCooldownID", itemFrame)
+		end)
+		runtime.cooldownViewerClearHookInstalled = true
+		installed = true
+	end
+	if EventRegistry and EventRegistry.RegisterCallback and not runtime.cooldownViewerDataChangedHookInstalled then
+		EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
+			if not self:HasActiveTrackedPanels() then return end
+			self:ScheduleTrackedPanelsRescan("CooldownViewerSettings.OnDataChanged")
+		end, "EnhanceQoL.CDMAuras")
+		runtime.cooldownViewerDataChangedHookInstalled = true
+		installed = true
+	end
+	runtime.cooldownViewerHooksInstalled = installed == true
+		or runtime.cooldownViewerSetHookInstalled == true
+		or runtime.cooldownViewerClearHookInstalled == true
+		or runtime.cooldownViewerDataChangedHookInstalled == true
+	return runtime.cooldownViewerHooksInstalled == true
+end
+
 local function clearTrackedUnitAuraIndex(unit)
 	unit = normalizeTrackedUnit(unit)
 	if not unit then return end
@@ -2045,7 +2181,8 @@ function CDMAuras:HandleResetEvent(event, ...)
 		local unit = ...
 		if unit and unit ~= "player" then return end
 	end
-	self:InvalidateScan(true)
+	self:EnsureCooldownViewerHooks()
+	self:InvalidateScan(true, "HandleResetEvent:" .. tostring(event))
 	self:SweepInvalidStates()
 	local runtime = getRuntime()
 	cdm.BumpUnitAuraEpoch(runtime, "player")

@@ -77,7 +77,11 @@ local provider = {
 	OnMouseEnter = function(btn)
 		local tip = GameTooltip
 		tip:ClearLines()
-		tip:SetOwner(btn, "ANCHOR_TOPLEFT")
+		if addon.DataPanel and addon.DataPanel.SetTooltipOwner then
+			addon.DataPanel.SetTooltipOwner(btn, tip)
+		else
+			tip:SetOwner(btn, "ANCHOR_TOPLEFT")
+		end
 
 		if not lastScore then
 			tip:SetText(L["No Mythic+ rating"] or "No Mythic+ rating")
@@ -91,7 +95,7 @@ local provider = {
 		if lastRuns and #lastRuns > 0 then
 			tip:AddLine(" ")
 			for _, run in ipairs(lastRuns) do
-				addRunLine(tip, run, lastScore)
+				addRunLine(tip, run)
 			end
 		end
 

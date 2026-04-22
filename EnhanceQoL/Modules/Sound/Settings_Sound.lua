@@ -20,7 +20,9 @@ local SOUND_LABEL_ALIASES = {
 	mounts = { locale = "Mounts", fallback = "Mounts" },
 	professions = { locale = "Professions", fallback = "Professions" },
 	quest = { locale = "Quest", fallback = "Quest" },
+	soundMuteGazeOfTheAlnseer = { itemID = 249343, locale = "soundMuteGazeOfTheAlnseer", fallback = "Gaze of the Alnseer" },
 	soundExtraEventChatWhisper = { global = "WHISPER", fallback = "Whisper" },
+	trinkets = { locale = "trinkets", global = "INVTYPE_TRINKET", fallback = "Trinkets" },
 	whisper = { global = "WHISPER", fallback = "Whisper" },
 }
 
@@ -36,11 +38,31 @@ local function GetGlobalStringIfPresent(key)
 	return nil
 end
 
+local function GetItemNameIfPresent(itemID)
+	itemID = tonumber(itemID)
+	if not itemID or itemID <= 0 then return nil end
+
+	if C_Item and C_Item.GetItemNameByID then
+		local itemName = C_Item.GetItemNameByID(itemID)
+		if type(itemName) == "string" and itemName ~= "" then return itemName end
+	end
+
+	if GetItemInfo then
+		local itemName = GetItemInfo(itemID)
+		if type(itemName) == "string" and itemName ~= "" then return itemName end
+	end
+
+	return nil
+end
+
 local function GetLabel(key)
 	if type(key) ~= "string" or key == "" then return key end
 
 	local alias = SOUND_LABEL_ALIASES[key]
 	if alias then
+		local itemName = GetItemNameIfPresent(alias.itemID)
+		if itemName then return itemName end
+
 		local globalValue = GetGlobalStringIfPresent(alias.global)
 		if globalValue then return globalValue end
 

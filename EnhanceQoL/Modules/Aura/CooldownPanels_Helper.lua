@@ -43,6 +43,7 @@ Api.GetSpellChargesInfo = C_Spell and C_Spell.GetSpellCharges
 Api.GetAuraDuration = C_UnitAuras and C_UnitAuras.GetAuraDuration
 Api.GetBaseSpell = C_Spell and C_Spell.GetBaseSpell
 Api.GetOverrideSpell = C_Spell and C_Spell.GetOverrideSpell
+Api.IsSpellOverlayed = C_SpellActivationOverlay and C_SpellActivationOverlay.IsSpellOverlayed
 Api.GetSpellPowerCost = C_Spell and C_Spell.GetSpellPowerCost
 Api.EnableSpellRangeCheck = C_Spell and C_Spell.EnableSpellRangeCheck
 Api.GetActiveTalentConfigID = C_ClassTalents and C_ClassTalents.GetActiveConfigID
@@ -119,12 +120,11 @@ Helper.FixedGroupStartPointOptions = {
 	{ value = "BOTTOM", label = DIRECTION_BOTTOM_LABEL },
 	{ value = "BOTTOMRIGHT", label = L["Bottom Right"] or "Bottom Right" },
 }
-Helper.FontStyleOptions = {
-	{ value = "NONE", label = _G.NONE },
-	{ value = "OUTLINE", label = L["Outline"] or "Outline" },
-	{ value = "THICKOUTLINE", label = L["Thick Outline"] or "Thick Outline" },
-	{ value = "MONOCHROMEOUTLINE", label = L["Monochrome Outline"] or "Monochrome Outline" },
-}
+Helper.FontStyleOptions = addon.functions and addon.functions.GetFontStyleOptionList and addon.functions.GetFontStyleOptionList(true)
+	or {
+		{ value = "NONE", label = _G.NONE },
+		{ value = "OUTLINE", label = L["Outline"] or "Outline" },
+	}
 
 -- need for static text hide on CD
 local curveFake = C_CurveUtil:CreateCurve()
@@ -138,6 +138,19 @@ local function normalizeCDMAuraAlwaysShowMode(value, fallback)
 	local mode = type(value) == "string" and string.upper(value) or nil
 	if mode == "SHOW" or mode == "DESATURATE" or mode == "HIDE" then return mode end
 	return fallback or "HIDE"
+end
+
+local function globalFontStyleKey()
+	if addon.functions and addon.functions.GetGlobalFontStyleConfigKey then return addon.functions.GetGlobalFontStyleConfigKey() end
+	return "__EQOL_GLOBAL_FONT_STYLE__"
+end
+
+local function migrateLegacyPanelFontStyleDefault(value, legacyDefault)
+	local globalStyle = globalFontStyleKey()
+	if value == nil or value == "" then return globalStyle end
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then value = addon.functions.NormalizeFontStyleChoice(value, globalStyle, true) end
+	if value == legacyDefault then return globalStyle end
+	return value
 end
 
 Helper.PANEL_LAYOUT_DEFAULTS = {
@@ -188,13 +201,13 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	stackX = -1,
 	stackY = 1,
 	stackFontSize = 12,
-	stackFontStyle = "OUTLINE",
+	stackFontStyle = globalFontStyleKey(),
 	stackColor = { 1, 1, 1, 1 },
 	chargesAnchor = "TOP",
 	chargesX = 0,
 	chargesY = -1,
 	chargesFontSize = 12,
-	chargesFontStyle = "OUTLINE",
+	chargesFontStyle = globalFontStyleKey(),
 	chargesColor = { 1, 1, 1, 1 },
 	chargesHideWhenZero = false,
 	keybindsEnabled = false,
@@ -203,7 +216,7 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	keybindX = 2,
 	keybindY = -2,
 	keybindFontSize = 10,
-	keybindFontStyle = "OUTLINE",
+	keybindFontStyle = globalFontStyleKey(),
 	cooldownDrawEdge = true,
 	cooldownDrawBling = true,
 	cooldownDrawSwipe = true,
@@ -211,9 +224,10 @@ Helper.PANEL_LAYOUT_DEFAULTS = {
 	cooldownGcdDrawBling = false,
 	cooldownGcdDrawSwipe = false,
 	cooldownTextColor = { 1, 1, 1, 1 },
+	cooldownTextStyle = globalFontStyleKey(),
 	staticTextFont = "",
 	staticTextSize = 12,
-	staticTextStyle = "OUTLINE",
+	staticTextStyle = globalFontStyleKey(),
 	staticTextColor = { 1, 1, 1, 1 },
 	staticTextAnchor = "CENTER",
 	staticTextX = 0,
@@ -244,7 +258,7 @@ Helper.ENTRY_DEFAULTS = {
 	stackY = 1,
 	stackFont = "",
 	stackFontSize = 12,
-	stackFontStyle = "OUTLINE",
+	stackFontStyle = globalFontStyleKey(),
 	stackColor = { 1, 1, 1, 1 },
 	chargesStyleUseGlobal = true,
 	chargesAnchor = "TOP",
@@ -252,7 +266,7 @@ Helper.ENTRY_DEFAULTS = {
 	chargesY = -1,
 	chargesFont = "",
 	chargesFontSize = 12,
-	chargesFontStyle = "OUTLINE",
+	chargesFontStyle = globalFontStyleKey(),
 	chargesColor = { 1, 1, 1, 1 },
 	showItemUses = false,
 	showWhenEmpty = false,
@@ -269,6 +283,7 @@ Helper.ENTRY_DEFAULTS = {
 	cooldownGcdDrawBling = false,
 	cooldownGcdDrawSwipe = false,
 	cooldownTextUseGlobal = true,
+	cooldownTextStyle = globalFontStyleKey(),
 	noDesaturationUseGlobal = true,
 	noDesaturation = false,
 	checkPowerUseGlobal = true,
@@ -290,7 +305,7 @@ Helper.ENTRY_DEFAULTS = {
 	staticTextUseGlobal = true,
 	staticTextFont = "",
 	staticTextSize = 12,
-	staticTextStyle = "OUTLINE",
+	staticTextStyle = globalFontStyleKey(),
 	staticTextColor = { 1, 1, 1, 1 },
 	staticTextAnchor = "CENTER",
 	staticTextX = 0,
@@ -437,12 +452,11 @@ Helper.VALID_ANCHORS = {
 	BOTTOM = true,
 	BOTTOMRIGHT = true,
 }
-Helper.VALID_FONT_STYLE = {
-	NONE = true,
-	OUTLINE = true,
-	THICKOUTLINE = true,
-	MONOCHROMEOUTLINE = true,
-}
+Helper.VALID_FONT_STYLE = {}
+for i = 1, #Helper.FontStyleOptions do
+	local option = Helper.FontStyleOptions[i]
+	if option and option.value then Helper.VALID_FONT_STYLE[option.value] = true end
+end
 Helper.GENERIC_ANCHORS = {
 	EQOL_ANCHOR_PLAYER = {
 		label = L["UFPlayerFrame"] or _G.HUD_EDIT_MODE_PLAYER_FRAME_LABEL or "Player Frame",
@@ -474,6 +488,18 @@ Helper.GENERIC_ANCHORS = {
 		uf = "EQOLUFPetFrame",
 		ufKey = "pet",
 	},
+	EQOL_ANCHOR_PARTY = {
+		label = _G.PARTY or L["Party"] or "Party",
+		blizz = "CompactPartyFrame",
+		uf = "EQOLUFPartyAnchor",
+		ufKey = "party",
+	},
+	EQOL_ANCHOR_RAID = {
+		label = _G.RAID or L["Raid"] or "Raid",
+		blizz = "CompactRaidFrameContainer",
+		uf = "EQOLUFRaidAnchor",
+		ufKey = "raid",
+	},
 	EQOL_ANCHOR_BOSS = {
 		label = L["UFBossFrame"] or _G.HUD_EDIT_MODE_BOSS_FRAMES_LABEL or "Boss Frame",
 		blizz = "BossTargetFrameContainer",
@@ -487,6 +513,8 @@ Helper.GENERIC_ANCHOR_ORDER = {
 	"EQOL_ANCHOR_TARGETTARGET",
 	"EQOL_ANCHOR_FOCUS",
 	"EQOL_ANCHOR_PET",
+	"EQOL_ANCHOR_PARTY",
+	"EQOL_ANCHOR_RAID",
 	"EQOL_ANCHOR_BOSS",
 }
 Helper.GENERIC_ANCHOR_BY_FRAME = {
@@ -500,6 +528,10 @@ Helper.GENERIC_ANCHOR_BY_FRAME = {
 	EQOLUFFocusFrame = "EQOL_ANCHOR_FOCUS",
 	PetFrame = "EQOL_ANCHOR_PET",
 	EQOLUFPetFrame = "EQOL_ANCHOR_PET",
+	CompactPartyFrame = "EQOL_ANCHOR_PARTY",
+	EQOLUFPartyAnchor = "EQOL_ANCHOR_PARTY",
+	CompactRaidFrameContainer = "EQOL_ANCHOR_RAID",
+	EQOLUFRaidAnchor = "EQOL_ANCHOR_RAID",
 	BossTargetFrameContainer = "EQOL_ANCHOR_BOSS",
 	EQOLUFBossContainer = "EQOL_ANCHOR_BOSS",
 }
@@ -603,8 +635,14 @@ function Helper.GetFixedGroupMode(group)
 	return Helper.NormalizeFixedGroupMode(group.mode, "DYNAMIC")
 end
 
+local getFixedGroupStaticState
+local getFixedGroupCapacityCached
+local getFixedGroupDynamicTargetIndices
+local setFixedGroupDynamicTargetIndices
+
 function Helper.FixedGroupUsesStaticSlots(group)
-	if type(group) == "table" and type(group._eqolIsStatic) == "boolean" then return group._eqolIsStatic == true end
+	local cached = getFixedGroupStaticState(group)
+	if cached ~= nil then return cached == true end
 	return Helper.GetFixedGroupMode(group) == "STATIC"
 end
 
@@ -657,7 +695,7 @@ local function fixedLayoutCacheHasMissingDynamicTargets(candidate)
 	if type(groups) ~= "table" then return false end
 	for i = 1, #groups do
 		local group = groups[i]
-		if group and Helper.FixedGroupUsesStaticSlots(group) ~= true and type(group._eqolDynamicTargetIndices) ~= "table" then return true end
+		if group and Helper.FixedGroupUsesStaticSlots(group) ~= true and type(getFixedGroupDynamicTargetIndices(group)) ~= "table" then return true end
 	end
 	return false
 end
@@ -708,6 +746,45 @@ end
 
 local fixedGroupOrderedCellsCache = setmetatable({}, { __mode = "k" })
 local fixedGroupDynamicPlacementCache = setmetatable({}, { __mode = "k" })
+local fixedLayoutCacheByPanel = setmetatable({}, { __mode = "k" })
+local fixedGroupStaticStateByGroup = setmetatable({}, { __mode = "k" })
+local fixedGroupCapacityByGroup = setmetatable({}, { __mode = "k" })
+local fixedGroupDynamicTargetIndicesByGroup = setmetatable({}, { __mode = "k" })
+
+getFixedGroupStaticState = function(group)
+	if type(group) ~= "table" then return nil end
+	local cached = fixedGroupStaticStateByGroup[group]
+	if cached ~= nil then return cached == true end
+	return nil
+end
+
+getFixedGroupCapacityCached = function(group)
+	if type(group) ~= "table" then return 0 end
+	local cached = fixedGroupCapacityByGroup[group]
+	if type(cached) == "number" then return cached end
+	local columns = Helper.NormalizeFixedGridSize(group.columns, 0)
+	local rows = Helper.NormalizeFixedGridSize(group.rows, 0)
+	if columns <= 0 or rows <= 0 then return 0 end
+	local capacity = columns * rows
+	fixedGroupCapacityByGroup[group] = capacity
+	return capacity
+end
+
+getFixedGroupDynamicTargetIndices = function(group)
+	if type(group) ~= "table" then return nil end
+	local cached = fixedGroupDynamicTargetIndicesByGroup[group]
+	if type(cached) == "table" then return cached end
+	return nil
+end
+
+setFixedGroupDynamicTargetIndices = function(group, targetIndices)
+	if type(group) ~= "table" then return end
+	if type(targetIndices) == "table" then
+		fixedGroupDynamicTargetIndicesByGroup[group] = targetIndices
+	else
+		fixedGroupDynamicTargetIndicesByGroup[group] = nil
+	end
+end
 
 local function getFixedGroupPlacementSignature(columns, rows, originColumn, originRow, startPoint, direction)
 	return table.concat({
@@ -912,8 +989,8 @@ function Helper.NormalizeFixedGroups(layout)
 				group.columns = columns
 				group.rows = rows
 				group.mode = Helper.NormalizeFixedGroupMode(group.mode, "DYNAMIC")
-				group._eqolIsStatic = group.mode == "STATIC"
-				group._eqolCapacity = columns * rows
+				fixedGroupStaticStateByGroup[group] = group.mode == "STATIC"
+				fixedGroupCapacityByGroup[group] = columns * rows
 				group.dynamicStartPoint = Helper.NormalizeFixedGroupStartPoint(group.dynamicStartPoint, "TOPLEFT")
 				group.dynamicDirection = Helper.NormalizeFixedGroupDynamicDirection(group.dynamicStartPoint, group.dynamicDirection, nil)
 				group.iconSize = Helper.NormalizeFixedGroupIconSize(group.iconSize)
@@ -933,7 +1010,7 @@ end
 
 function Helper.InvalidateFixedLayoutCache(panel)
 	if type(panel) ~= "table" then return end
-	panel._eqolFixedLayoutCache = nil
+	fixedLayoutCacheByPanel[panel] = nil
 end
 
 function Helper.GetFixedGroupById(panelOrLayout, groupId)
@@ -956,11 +1033,11 @@ end
 
 function Helper.GetFixedGroupCapacity(group)
 	if type(group) ~= "table" then return 0 end
-	if type(group._eqolCapacity) == "number" then return group._eqolCapacity end
-	local columns = Helper.NormalizeFixedGridSize(group.columns, 0)
-	local rows = Helper.NormalizeFixedGridSize(group.rows, 0)
-	if columns <= 0 or rows <= 0 then return 0 end
-	return columns * rows
+	return getFixedGroupCapacityCached(group)
+end
+
+function Helper.GetFixedGroupDynamicTargetIndices(group)
+	return getFixedGroupDynamicTargetIndices(group)
 end
 
 function Helper.GetFixedGridCapacity(panel)
@@ -1053,7 +1130,7 @@ function Helper.GetFixedLayoutCache(panel)
 	if type(panel) ~= "table" or type(panel.entries) ~= "table" or type(panel.order) ~= "table" then return nil end
 	panel.layout = type(panel.layout) == "table" and panel.layout or {}
 	local layout = panel.layout
-	local cache = panel._eqolFixedLayoutCache
+	local cache = fixedLayoutCacheByPanel[panel]
 	local groupsRef = type(layout.fixedGroups) == "table" and layout.fixedGroups or nil
 	if
 		cache
@@ -1237,7 +1314,7 @@ function Helper.GetFixedLayoutCache(panel)
 				local capacity = Helper.GetFixedGroupCapacity(group)
 				local dynamicCount = list and #list or 0
 				local targetCount = Helper.IsFixedGroupCenterGrowth(group) and dynamicCount or capacity
-				local targetIndices = group._eqolDynamicTargetIndices or {}
+				local targetIndices = getFixedGroupDynamicTargetIndices(group) or {}
 				for groupIndex = 1, targetCount do
 					local placement = Helper.GetFixedGroupDynamicPlacement(group, groupIndex, targetCount)
 					local column = placement and placement.column or nil
@@ -1251,9 +1328,9 @@ function Helper.GetFixedLayoutCache(panel)
 				for groupIndex = targetCount + 1, #targetIndices do
 					targetIndices[groupIndex] = nil
 				end
-				group._eqolDynamicTargetIndices = targetIndices
+				setFixedGroupDynamicTargetIndices(group, targetIndices)
 			elseif group then
-				group._eqolDynamicTargetIndices = nil
+				setFixedGroupDynamicTargetIndices(group, nil)
 			end
 		end
 		for i = 1, #placedEntries do
@@ -1270,7 +1347,7 @@ function Helper.GetFixedLayoutCache(panel)
 			local group = fixedGroups[i]
 			local list = group and not Helper.FixedGroupUsesStaticSlots(group) and dynamicGroupEntries[group.id] or nil
 			if list then
-				local targetIndices = group._eqolDynamicTargetIndices
+				local targetIndices = getFixedGroupDynamicTargetIndices(group)
 				local limit = math.min(targetIndices and #targetIndices or 0, #list)
 				for groupIndex = 1, limit do
 					local targetIndex = targetIndices[groupIndex]
@@ -1307,7 +1384,7 @@ function Helper.GetFixedLayoutCache(panel)
 		slotEntryIds = slotEntryIds,
 		staticTargetIndexByEntryId = staticTargetIndexByEntryId,
 	}
-	panel._eqolFixedLayoutCache = cache
+	fixedLayoutCacheByPanel[panel] = cache
 	return cache
 end
 
@@ -1430,9 +1507,9 @@ function Helper.BuildFixedSlotEntryIds(panel, filterFn, includePreviewPadding)
 		local list = group and not Helper.FixedGroupUsesStaticSlots(group) and dynamicGroupEntries[group.id] or nil
 		if list then
 			local useCenterGrowth = Helper.IsFixedGroupCenterGrowth(group)
-			local usePreparedTargets = cache and cache.boundsColumns == columns and cache.boundsRows == rows and group._eqolDynamicTargetIndices and not useCenterGrowth
+			local targetIndices = getFixedGroupDynamicTargetIndices(group)
+			local usePreparedTargets = cache and cache.boundsColumns == columns and cache.boundsRows == rows and targetIndices and not useCenterGrowth
 			if usePreparedTargets then
-				local targetIndices = group._eqolDynamicTargetIndices
 				local limit = math.min(targetIndices and #targetIndices or 0, #list)
 				for groupIndex = 1, limit do
 					local targetIndex = targetIndices[groupIndex]
@@ -1561,6 +1638,7 @@ function Helper.NormalizeRelativeFrameName(value)
 end
 
 function Helper.NormalizeFontStyle(style, fallback)
+	if addon.functions and addon.functions.GetFontFlagsForStyle then return addon.functions.GetFontFlagsForStyle(style, fallback) or "" end
 	if style == nil then style = fallback end
 	if style == nil then return nil end
 	if style == "" or style == "NONE" then return "" end
@@ -1569,6 +1647,9 @@ function Helper.NormalizeFontStyle(style, fallback)
 end
 
 function Helper.NormalizeFontStyleChoice(style, fallback)
+	if addon.functions and addon.functions.NormalizeFontStyleChoice then
+		return addon.functions.NormalizeFontStyleChoice(style, fallback, true)
+	end
 	if style == nil then style = fallback end
 	if style == nil or style == "" then return "NONE" end
 	if style == "OUTLINE,MONOCHROME" or style == "MONOCHROME,OUTLINE" then return "MONOCHROMEOUTLINE" end
@@ -1591,14 +1672,40 @@ function Helper.ResolveFontPath(value, fallback)
 		value = nil
 	end
 	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(fallback) then fallback = nil end
-	if type(value) == "string" and value ~= "" then return value end
+	local fallbackPath = fallback
 	if useGlobalConfig and addon.functions and addon.functions.GetGlobalDefaultFontFace then
 		local globalFace = addon.functions.GetGlobalDefaultFontFace()
-		if type(globalFace) == "string" and globalFace ~= "" then return globalFace end
+		if type(globalFace) == "string" and globalFace ~= "" then fallbackPath = globalFace end
 	end
-	if type(fallback) == "string" and fallback ~= "" then return fallback end
-	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
-	return STANDARD_TEXT_FONT
+	if type(fallbackPath) ~= "string" or fallbackPath == "" then
+		if addon.functions and addon.functions.GetGlobalDefaultFontFace then fallbackPath = addon.functions.GetGlobalDefaultFontFace() end
+	end
+	if type(fallbackPath) ~= "string" or fallbackPath == "" then fallbackPath = STANDARD_TEXT_FONT end
+	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(value, fallbackPath) or fallbackPath end
+	if type(value) == "string" and value ~= "" and LSM then
+		if LSM.IsValid and LSM:IsValid("font", value) then
+			local fetched = LSM.Fetch and LSM:Fetch("font", value, true)
+			if type(fetched) == "string" and fetched ~= "" then return fetched end
+		end
+		if LSM.HashTable then
+			local hash = LSM:HashTable("font") or {}
+			for _, fontPath in pairs(hash) do
+				if fontPath == value then return value end
+			end
+		end
+	end
+	return fallbackPath
+end
+
+function Helper.SetFont(fontString, fontPath, fontSize, fontStyle, fallbackPath)
+	if not (fontString and fontString.SetFont and fontPath) then return false end
+	local ok, applied = pcall(fontString.SetFont, fontString, fontPath, fontSize, fontStyle)
+	if ok and applied ~= false then return true end
+
+	local fallback = Helper.ResolveFontPath(nil, fallbackPath or STANDARD_TEXT_FONT)
+	if not fallback or fallback == fontPath then return false end
+	ok, applied = pcall(fontString.SetFont, fontString, fallback, fontSize, fontStyle)
+	return ok and applied ~= false
 end
 
 function Helper.GetCountFontDefaults(frame)
@@ -1610,7 +1717,7 @@ function Helper.GetCountFontDefaults(frame)
 		or (addon.variables and addon.variables.defaultFont)
 		or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font))
 		or STANDARD_TEXT_FONT
-	return fallback, 12, "OUTLINE"
+	return fallback, 12, globalFontStyleKey()
 end
 
 function Helper.GetChargesFontDefaults(frame)
@@ -1813,6 +1920,177 @@ function Helper.CopyTableDeep(source, seen)
 	return result
 end
 
+local function isStorageEmptyTable(value) return type(value) == "table" and next(value) == nil end
+
+local function isStorageColorLikeTable(value)
+	if type(value) ~= "table" then return false end
+	return value.r ~= nil or value.g ~= nil or value.b ~= nil or value.a ~= nil or value[1] ~= nil or value[2] ~= nil or value[3] ~= nil or value[4] ~= nil
+end
+
+local function storageValuesEqual(left, right, seen)
+	if left == right then return true end
+	local leftType = type(left)
+	local rightType = type(right)
+	if leftType ~= rightType then return false end
+	if leftType ~= "table" then return false end
+	if isStorageColorLikeTable(left) and isStorageColorLikeTable(right) then
+		local leftColor = Helper.NormalizeColor(left, right)
+		local rightColor = Helper.NormalizeColor(right, right)
+		return leftColor[1] == rightColor[1] and leftColor[2] == rightColor[2] and leftColor[3] == rightColor[3] and leftColor[4] == rightColor[4]
+	end
+	seen = seen or {}
+	if seen[left] == right then return true end
+	seen[left] = right
+	for key, value in pairs(left) do
+		if not storageValuesEqual(value, right[key], seen) then return false end
+	end
+	for key in pairs(right) do
+		if left[key] == nil then return false end
+	end
+	return true
+end
+
+local function pruneStorageKeysMatchingDefaults(target, defaultResolver)
+	if type(target) ~= "table" or type(defaultResolver) ~= "function" then return end
+	for key, value in pairs(target) do
+		local defaultValue = defaultResolver(key, value)
+		if defaultValue ~= nil and storageValuesEqual(value, defaultValue) then target[key] = nil end
+	end
+end
+
+local function pruneInternalStorageKeys(root, seen)
+	if type(root) ~= "table" then return end
+	seen = seen or {}
+	if seen[root] then return end
+	seen[root] = true
+	for key, value in pairs(root) do
+		if type(key) == "string" and (key == "_orderDirty" or string.match(key, "^_eqol")) then
+			root[key] = nil
+		elseif type(value) == "table" then
+			pruneInternalStorageKeys(value, seen)
+		end
+	end
+end
+
+local function getStorageBarsDefaults()
+	local bars = CooldownPanels and CooldownPanels.Bars or nil
+	local defaults = type(bars) == "table" and type(bars.DEFAULTS) == "table" and bars.DEFAULTS or nil
+	local colors = type(bars) == "table" and type(bars.COLORS) == "table" and bars.COLORS or nil
+	return defaults, colors
+end
+
+local function getStorageBarColorDefault(mode, barsDefaults, barsColors)
+	local normalizedMode = type(mode) == "string" and string.upper(mode) or nil
+	if normalizedMode == "CHARGES" and type(barsColors) == "table" and type(barsColors.CHARGES) == "table" then return barsColors.CHARGES end
+	if normalizedMode == "STACKS" and type(barsColors) == "table" and type(barsColors.STACKS) == "table" then return barsColors.STACKS end
+	if type(barsColors) == "table" and type(barsColors.COOLDOWN) == "table" then return barsColors.COOLDOWN end
+	return barsDefaults and barsDefaults.barColor or nil
+end
+
+local function getStorageRootEntryDefault(rootEntryDefaults, key, barsDefaults, barsColors)
+	if key == "barColor" then
+		local mode = rootEntryDefaults and rootEntryDefaults.barMode or (barsDefaults and barsDefaults.barMode)
+		return getStorageBarColorDefault(mode, barsDefaults, barsColors)
+	end
+	if Helper.ENTRY_DEFAULTS[key] ~= nil then return Helper.ENTRY_DEFAULTS[key] end
+	if barsDefaults and barsDefaults[key] ~= nil then return barsDefaults[key] end
+	return nil
+end
+
+local function getStorageEntryDefault(entry, entryDefaults, key, barsDefaults, barsColors)
+	if key == "barColor" then
+		if entryDefaults and entryDefaults.barColor ~= nil then return entryDefaults.barColor end
+		local mode = entry and entry.barMode
+		if mode == nil and entryDefaults then mode = entryDefaults.barMode end
+		if mode == nil and barsDefaults then mode = barsDefaults.barMode end
+		return getStorageBarColorDefault(mode, barsDefaults, barsColors)
+	end
+	if entryDefaults and entryDefaults[key] ~= nil then return entryDefaults[key] end
+	if Helper.ENTRY_DEFAULTS[key] ~= nil then return Helper.ENTRY_DEFAULTS[key] end
+	if barsDefaults and barsDefaults[key] ~= nil then return barsDefaults[key] end
+	return nil
+end
+
+function Helper.PruneEntryForStorage(entry, defaults)
+	if type(entry) ~= "table" then return end
+	defaults = defaults or {}
+	local entryDefaults = type(defaults.entry) == "table" and defaults.entry or nil
+	local barsDefaults, barsColors = getStorageBarsDefaults()
+	entry.id = nil
+	entry.customIconID = nil
+	entry.ignoreMasque = nil
+	entry.glowDuration = nil
+	entry.stateTextureType = nil
+	entry.stateTextureAtlas = nil
+	entry.stateTextureFileID = nil
+	entry.fixedGroupIconSizeInherited = nil
+	entry.fixedGroupIconSizePrevUseGlobal = nil
+	entry.fixedGroupIconSizePrev = nil
+	if entry.fixedGroupId ~= nil and entry.slotColumn ~= nil and entry.slotRow ~= nil then entry.slotIndex = nil end
+	pruneStorageKeysMatchingDefaults(entry, function(key)
+		return getStorageEntryDefault(entry, entryDefaults, key, barsDefaults, barsColors)
+	end)
+end
+
+function Helper.PrunePanelForStorage(panel, defaults)
+	if type(panel) ~= "table" then return end
+	defaults = defaults or {}
+	local layoutDefaults = type(defaults.layout) == "table" and defaults.layout or nil
+	panel.id = nil
+	panel.editorGroup = nil
+	if type(panel.anchor) == "table" then
+		local anchor = panel.anchor
+		if anchor.point ~= nil and anchor.relativePoint ~= nil and anchor.x ~= nil and anchor.y ~= nil and type(anchor.relativeFrame) == "string" and anchor.relativeFrame ~= "" then
+			panel.point = nil
+			panel.x = nil
+			panel.y = nil
+		end
+	end
+	if type(panel.layout) == "table" then
+		panel.layout.readyGlowDuration = nil
+		if isStorageEmptyTable(panel.layout.fixedGroups) then panel.layout.fixedGroups = nil end
+		pruneStorageKeysMatchingDefaults(panel.layout, function(key)
+			if layoutDefaults and layoutDefaults[key] ~= nil then return layoutDefaults[key] end
+			return Helper.PANEL_LAYOUT_DEFAULTS[key]
+		end)
+	end
+	if type(panel.entries) == "table" then
+		for _, entry in pairs(panel.entries) do
+			Helper.PruneEntryForStorage(entry, defaults)
+		end
+	end
+end
+
+function Helper.PruneRootForStorage(root)
+	if type(root) ~= "table" then return end
+	pruneInternalStorageKeys(root)
+	local barsDefaults, barsColors = getStorageBarsDefaults()
+	if type(root.defaults) == "table" then
+		if type(root.defaults.layout) == "table" then
+			root.defaults.layout.readyGlowDuration = nil
+			pruneStorageKeysMatchingDefaults(root.defaults.layout, function(key) return Helper.PANEL_LAYOUT_DEFAULTS[key] end)
+			if not next(root.defaults.layout) then root.defaults.layout = nil end
+		end
+		if type(root.defaults.entry) == "table" then
+			root.defaults.entry.glowDuration = nil
+			pruneStorageKeysMatchingDefaults(root.defaults.entry, function(key)
+				return getStorageRootEntryDefault(root.defaults.entry, key, barsDefaults, barsColors)
+			end)
+			if not next(root.defaults.entry) then root.defaults.entry = nil end
+		end
+		if not next(root.defaults) then root.defaults = nil end
+	end
+	local defaults = {
+		layout = type(root.defaults) == "table" and type(root.defaults.layout) == "table" and root.defaults.layout or nil,
+		entry = type(root.defaults) == "table" and type(root.defaults.entry) == "table" and root.defaults.entry or nil,
+	}
+	if type(root.panels) == "table" then
+		for _, panel in pairs(root.panels) do
+			Helper.PrunePanelForStorage(panel, defaults)
+		end
+	end
+end
+
 function Helper.NormalizeBool(value, fallback)
 	if value == nil then return fallback end
 	return value and true or false
@@ -1862,6 +2140,15 @@ function Helper.NormalizeRoot(root)
 			if root.defaults.entry[key] == nil then root.defaults.entry[key] = value end
 		end
 	end
+	root.defaults.layout.stackFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.stackFontStyle, "OUTLINE")
+	root.defaults.layout.chargesFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.chargesFontStyle, "OUTLINE")
+	root.defaults.layout.keybindFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.keybindFontStyle, "OUTLINE")
+	root.defaults.layout.cooldownTextStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.cooldownTextStyle, "NONE")
+	root.defaults.layout.staticTextStyle = migrateLegacyPanelFontStyleDefault(root.defaults.layout.staticTextStyle, "OUTLINE")
+	root.defaults.entry.stackFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.entry.stackFontStyle, "OUTLINE")
+	root.defaults.entry.chargesFontStyle = migrateLegacyPanelFontStyleDefault(root.defaults.entry.chargesFontStyle, "OUTLINE")
+	root.defaults.entry.cooldownTextStyle = migrateLegacyPanelFontStyleDefault(root.defaults.entry.cooldownTextStyle, "NONE")
+	root.defaults.entry.staticTextStyle = migrateLegacyPanelFontStyleDefault(root.defaults.entry.staticTextStyle, "OUTLINE")
 	root.defaults.entry.alwaysShow = Helper.ENTRY_DEFAULTS.alwaysShow
 	root.defaults.entry.showCooldown = Helper.ENTRY_DEFAULTS.showCooldown
 	root.defaults.entry.showCooldownText = Helper.ENTRY_DEFAULTS.showCooldownText
@@ -1934,12 +2221,15 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.cooldownTextColor = Helper.NormalizeColor(panel.layout.cooldownTextColor, layoutDefaults.cooldownTextColor or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor)
 	if panel.layout.cooldownTextFont ~= nil and type(panel.layout.cooldownTextFont) ~= "string" then panel.layout.cooldownTextFont = nil end
 	if panel.layout.cooldownTextSize ~= nil then panel.layout.cooldownTextSize = Helper.ClampInt(panel.layout.cooldownTextSize, 6, 64, 12) end
-	if panel.layout.cooldownTextStyle ~= nil then panel.layout.cooldownTextStyle = Helper.NormalizeFontStyleChoice(panel.layout.cooldownTextStyle, "NONE") end
+	if panel.layout.cooldownTextStyle ~= nil then
+		panel.layout.cooldownTextStyle =
+			Helper.NormalizeFontStyleChoice(panel.layout.cooldownTextStyle, layoutDefaults.cooldownTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or globalFontStyleKey())
+	end
 	if panel.layout.cooldownTextX ~= nil then panel.layout.cooldownTextX = Helper.ClampInt(panel.layout.cooldownTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if panel.layout.cooldownTextY ~= nil then panel.layout.cooldownTextY = Helper.ClampInt(panel.layout.cooldownTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if type(panel.layout.staticTextFont) ~= "string" then panel.layout.staticTextFont = layoutDefaults.staticTextFont or Helper.PANEL_LAYOUT_DEFAULTS.staticTextFont or "" end
 	panel.layout.staticTextSize = Helper.ClampInt(panel.layout.staticTextSize, 6, 64, layoutDefaults.staticTextSize or Helper.PANEL_LAYOUT_DEFAULTS.staticTextSize or 12)
-	panel.layout.staticTextStyle = Helper.NormalizeFontStyleChoice(panel.layout.staticTextStyle, layoutDefaults.staticTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.staticTextStyle or "OUTLINE")
+	panel.layout.staticTextStyle = Helper.NormalizeFontStyleChoice(panel.layout.staticTextStyle, layoutDefaults.staticTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.staticTextStyle or globalFontStyleKey())
 	panel.layout.staticTextColor = Helper.NormalizeColor(panel.layout.staticTextColor, layoutDefaults.staticTextColor or Helper.PANEL_LAYOUT_DEFAULTS.staticTextColor or { 1, 1, 1, 1 })
 	panel.layout.staticTextAnchor = Helper.NormalizeAnchor(panel.layout.staticTextAnchor, layoutDefaults.staticTextAnchor or Helper.PANEL_LAYOUT_DEFAULTS.staticTextAnchor or "CENTER")
 	panel.layout.staticTextX = Helper.ClampInt(panel.layout.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, layoutDefaults.staticTextX or Helper.PANEL_LAYOUT_DEFAULTS.staticTextX or 0)
@@ -2032,7 +2322,7 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.stackY = Helper.ClampInt(entry.stackY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.stackY or 0)
 	if type(entry.stackFont) ~= "string" then entry.stackFont = Helper.ENTRY_DEFAULTS.stackFont or "" end
 	entry.stackFontSize = Helper.ClampInt(entry.stackFontSize, 6, 64, Helper.ENTRY_DEFAULTS.stackFontSize or Helper.PANEL_LAYOUT_DEFAULTS.stackFontSize or 12)
-	entry.stackFontStyle = Helper.NormalizeFontStyleChoice(entry.stackFontStyle, Helper.ENTRY_DEFAULTS.stackFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.stackFontStyle or "OUTLINE")
+	entry.stackFontStyle = Helper.NormalizeFontStyleChoice(entry.stackFontStyle, Helper.ENTRY_DEFAULTS.stackFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.stackFontStyle or globalFontStyleKey())
 	entry.stackColor = Helper.NormalizeColor(entry.stackColor, Helper.ENTRY_DEFAULTS.stackColor or Helper.PANEL_LAYOUT_DEFAULTS.stackColor or { 1, 1, 1, 1 })
 	if type(entry.chargesStyleUseGlobal) ~= "boolean" then entry.chargesStyleUseGlobal = true end
 	entry.chargesAnchor = Helper.NormalizeAnchor(entry.chargesAnchor, Helper.ENTRY_DEFAULTS.chargesAnchor or Helper.PANEL_LAYOUT_DEFAULTS.chargesAnchor or "TOP")
@@ -2040,7 +2330,7 @@ function Helper.NormalizeEntry(entry, defaults)
 	entry.chargesY = Helper.ClampInt(entry.chargesY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.chargesY or 0)
 	if type(entry.chargesFont) ~= "string" then entry.chargesFont = Helper.ENTRY_DEFAULTS.chargesFont or "" end
 	entry.chargesFontSize = Helper.ClampInt(entry.chargesFontSize, 6, 64, Helper.ENTRY_DEFAULTS.chargesFontSize or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontSize or 12)
-	entry.chargesFontStyle = Helper.NormalizeFontStyleChoice(entry.chargesFontStyle, Helper.ENTRY_DEFAULTS.chargesFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontStyle or "OUTLINE")
+	entry.chargesFontStyle = Helper.NormalizeFontStyleChoice(entry.chargesFontStyle, Helper.ENTRY_DEFAULTS.chargesFontStyle or Helper.PANEL_LAYOUT_DEFAULTS.chargesFontStyle or globalFontStyleKey())
 	entry.chargesColor = Helper.NormalizeColor(entry.chargesColor, Helper.ENTRY_DEFAULTS.chargesColor or Helper.PANEL_LAYOUT_DEFAULTS.chargesColor or { 1, 1, 1, 1 })
 	if type(entry.cooldownVisualsUseGlobal) ~= "boolean" then entry.cooldownVisualsUseGlobal = true end
 	if type(entry.cooldownVisibilityUseGlobal) ~= "boolean" then entry.cooldownVisibilityUseGlobal = Helper.ENTRY_DEFAULTS.cooldownVisibilityUseGlobal end
@@ -2087,7 +2377,8 @@ function Helper.NormalizeEntry(entry, defaults)
 		local normalizedDefaultStaticColor = Helper.NormalizeColor(defaultStaticColor, defaultStaticColor)
 		local usesDefaultStaticStyle = (type(entry.staticTextFont) ~= "string" or entry.staticTextFont == "")
 			and Helper.ClampInt(entry.staticTextSize, 6, 64, Helper.ENTRY_DEFAULTS.staticTextSize or 12) == (Helper.ENTRY_DEFAULTS.staticTextSize or 12)
-			and Helper.NormalizeFontStyleChoice(entry.staticTextStyle, Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE") == (Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE")
+			and Helper.NormalizeFontStyleChoice(entry.staticTextStyle, Helper.ENTRY_DEFAULTS.staticTextStyle or globalFontStyleKey())
+				== (Helper.ENTRY_DEFAULTS.staticTextStyle or globalFontStyleKey())
 			and currentStaticColor[1] == normalizedDefaultStaticColor[1]
 			and currentStaticColor[2] == normalizedDefaultStaticColor[2]
 			and currentStaticColor[3] == normalizedDefaultStaticColor[3]
@@ -2099,7 +2390,10 @@ function Helper.NormalizeEntry(entry, defaults)
 	end
 	if type(entry.staticTextFont) ~= "string" then entry.staticTextFont = Helper.ENTRY_DEFAULTS.staticTextFont end
 	entry.staticTextSize = Helper.ClampInt(entry.staticTextSize, 6, 64, Helper.ENTRY_DEFAULTS.staticTextSize or 12)
-	entry.staticTextStyle = Helper.NormalizeFontStyleChoice(entry.staticTextStyle, Helper.ENTRY_DEFAULTS.staticTextStyle or "OUTLINE")
+	entry.staticTextStyle = Helper.NormalizeFontStyleChoice(
+		entry.staticTextStyle,
+		Helper.ENTRY_DEFAULTS.staticTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.staticTextStyle or globalFontStyleKey()
+	)
 	entry.staticTextColor = Helper.NormalizeColor(entry.staticTextColor, Helper.ENTRY_DEFAULTS.staticTextColor or { 1, 1, 1, 1 })
 	entry.staticTextAnchor = Helper.NormalizeAnchor(entry.staticTextAnchor, Helper.ENTRY_DEFAULTS.staticTextAnchor or "CENTER")
 	entry.staticTextX = Helper.ClampInt(entry.staticTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, Helper.ENTRY_DEFAULTS.staticTextX or 0)
@@ -2138,7 +2432,12 @@ function Helper.NormalizeEntry(entry, defaults)
 	end
 	if entry.cooldownTextFont ~= nil and type(entry.cooldownTextFont) ~= "string" then entry.cooldownTextFont = nil end
 	if entry.cooldownTextSize ~= nil then entry.cooldownTextSize = Helper.ClampInt(entry.cooldownTextSize, 6, 64, 12) end
-	if entry.cooldownTextStyle ~= nil then entry.cooldownTextStyle = Helper.NormalizeFontStyleChoice(entry.cooldownTextStyle, "NONE") end
+	if entry.cooldownTextStyle ~= nil then
+		entry.cooldownTextStyle = Helper.NormalizeFontStyleChoice(
+			entry.cooldownTextStyle,
+			Helper.ENTRY_DEFAULTS.cooldownTextStyle or Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextStyle or globalFontStyleKey()
+		)
+	end
 	if entry.cooldownTextColor ~= nil then entry.cooldownTextColor = Helper.NormalizeColor(entry.cooldownTextColor, Helper.PANEL_LAYOUT_DEFAULTS.cooldownTextColor) end
 	if entry.cooldownTextX ~= nil then entry.cooldownTextX = Helper.ClampInt(entry.cooldownTextX, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
 	if entry.cooldownTextY ~= nil then entry.cooldownTextY = Helper.ClampInt(entry.cooldownTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, 0) end
@@ -2176,11 +2475,17 @@ function Helper.CreatePanel(name, defaults)
 	local layoutDefaults = defaults.layout or Helper.PANEL_LAYOUT_DEFAULTS
 	local layout = Helper.CopyTableShallow(layoutDefaults)
 	local globalFontKey = addon.functions and addon.functions.GetGlobalFontConfigKey and addon.functions.GetGlobalFontConfigKey() or "__EQOL_GLOBAL_FONT__"
+	local globalStyle = globalFontStyleKey()
 	if layout.stackFont == nil or layout.stackFont == "" then layout.stackFont = globalFontKey end
 	if layout.chargesFont == nil or layout.chargesFont == "" then layout.chargesFont = globalFontKey end
 	if layout.keybindFont == nil or layout.keybindFont == "" then layout.keybindFont = globalFontKey end
 	if layout.cooldownTextFont == nil or layout.cooldownTextFont == "" then layout.cooldownTextFont = globalFontKey end
 	if layout.staticTextFont == nil or layout.staticTextFont == "" then layout.staticTextFont = globalFontKey end
+	if layout.stackFontStyle == nil or layout.stackFontStyle == "" then layout.stackFontStyle = globalStyle end
+	if layout.chargesFontStyle == nil or layout.chargesFontStyle == "" then layout.chargesFontStyle = globalStyle end
+	if layout.keybindFontStyle == nil or layout.keybindFontStyle == "" then layout.keybindFontStyle = globalStyle end
+	if layout.cooldownTextStyle == nil or layout.cooldownTextStyle == "" then layout.cooldownTextStyle = globalStyle end
+	if layout.staticTextStyle == nil or layout.staticTextStyle == "" then layout.staticTextStyle = globalStyle end
 	layout.fixedGroups = {}
 	return {
 		name = (type(name) == "string" and name ~= "" and name) or "Cooldown Panel",
