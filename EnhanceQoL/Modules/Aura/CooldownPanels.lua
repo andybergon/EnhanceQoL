@@ -4879,7 +4879,11 @@ function CooldownPanels:ApplyEntryCooldownTextStyle(icon, layout, entry)
 		or fontString._eqolCooldownFontStyle ~= fontStyle
 		or fontString._eqolCooldownFontStyleChoice ~= fontStyleChoice
 	then
-		fontString:SetFont(fontPath, fontSize, fontStyle)
+		if Helper.SetFont then
+			Helper.SetFont(fontString, fontPath, fontSize, fontStyle, defaults and defaults.font)
+		else
+			fontString:SetFont(fontPath, fontSize, fontStyle)
+		end
 		if addon.functions and addon.functions.ApplyFontStyleShadow then
 			addon.functions.ApplyFontStyleShadow(fontString, fontStyleChoice, defaults and defaults.style)
 		end
@@ -5011,7 +5015,11 @@ function CooldownPanels:ApplyEntryStackTextStyle(icon, layout, entry, fallbackFo
 		or icon.count._eqolStackFontStyle ~= fontStyle
 		or icon.count._eqolStackFontStyleChoice ~= fontStyleChoice
 	then
-		icon.count:SetFont(fontPath, fontSize, fontStyle)
+		if Helper.SetFont then
+			Helper.SetFont(icon.count, fontPath, fontSize, fontStyle, fallbackFontPath)
+		else
+			icon.count:SetFont(fontPath, fontSize, fontStyle)
+		end
 		if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(icon.count, fontStyleChoice, fallbackFontStyle) end
 		icon.count._eqolStackFont = fontPath
 		icon.count._eqolStackFontSize = fontSize
@@ -5134,7 +5142,11 @@ function CooldownPanels:ApplyEntryChargesTextStyle(icon, layout, entry, fallback
 		or icon.charges._eqolChargesFontStyle ~= fontStyle
 		or icon.charges._eqolChargesFontStyleChoice ~= fontStyleChoice
 	then
-		icon.charges:SetFont(fontPath, fontSize, fontStyle)
+		if Helper.SetFont then
+			Helper.SetFont(icon.charges, fontPath, fontSize, fontStyle, fallbackFontPath)
+		else
+			icon.charges:SetFont(fontPath, fontSize, fontStyle)
+		end
 		if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(icon.charges, fontStyleChoice, fallbackFontStyle) end
 		icon.charges._eqolChargesFont = fontPath
 		icon.charges._eqolChargesFontSize = fontSize
@@ -5913,7 +5925,11 @@ local function applyStaticText(icon, layout, entry, defaultFontPath, defaultFont
 	if text:find("|n", 1, true) then text = text:gsub("|n", "\n") end
 	local fontPath, fontSize, fontStyleChoice, fontStyle, fontColor, anchor, x, y =
 		CooldownPanels:ResolveEntryStaticTextStyle(layout, entry, defaultFontPath, defaultFontSize, defaultFontStyle)
-	icon.staticText:SetFont(fontPath, fontSize, fontStyle)
+	if Helper.SetFont then
+		Helper.SetFont(icon.staticText, fontPath, fontSize, fontStyle, defaultFontPath)
+	else
+		icon.staticText:SetFont(fontPath, fontSize, fontStyle)
+	end
 	if addon.functions and addon.functions.ApplyFontStyleShadow then
 		addon.functions.ApplyFontStyleShadow(icon.staticText, fontStyleChoice, defaultFontStyle)
 	end
@@ -7979,7 +7995,11 @@ local function applyIconLayout(frame, count, layout)
 			local a = countFontColor[4] or 1
 			icon.count:ClearAllPoints()
 			icon.count:SetPoint(stackAnchor, icon, stackAnchor, stackX, stackY)
-			icon.count:SetFont(countFontPath, countFontSize, countFontStyle)
+			if Helper.SetFont then
+				Helper.SetFont(icon.count, countFontPath, countFontSize, countFontStyle, fontPath)
+			else
+				icon.count:SetFont(countFontPath, countFontSize, countFontStyle)
+			end
 			if addon.functions and addon.functions.ApplyFontStyleShadow then
 				addon.functions.ApplyFontStyleShadow(icon.count, Helper.NormalizeFontStyleChoice(layout and layout.stackFontStyle, fontStyle), fontStyle)
 			end
@@ -8002,7 +8022,11 @@ local function applyIconLayout(frame, count, layout)
 			local a = chargesFontColor[4] or 1
 			icon.charges:ClearAllPoints()
 			icon.charges:SetPoint(chargesAnchor, icon, chargesAnchor, chargesX, chargesY)
-			icon.charges:SetFont(chargesPath, chargesSize, chargesStyle)
+			if Helper.SetFont then
+				Helper.SetFont(icon.charges, chargesPath, chargesSize, chargesStyle, chargesFontPath)
+			else
+				icon.charges:SetFont(chargesPath, chargesSize, chargesStyle)
+			end
 			if addon.functions and addon.functions.ApplyFontStyleShadow then
 				addon.functions.ApplyFontStyleShadow(icon.charges, Helper.NormalizeFontStyleChoice(layout and layout.chargesFontStyle, chargesFontStyle), chargesFontStyle)
 			end
@@ -8021,7 +8045,11 @@ local function applyIconLayout(frame, count, layout)
 		if icon.keybind then
 			icon.keybind:ClearAllPoints()
 			icon.keybind:SetPoint(keybindAnchor, icon, keybindAnchor, keybindX, keybindY)
-			icon.keybind:SetFont(keybindFontPath, keybindFontSize, keybindFontStyle)
+			if Helper.SetFont then
+				Helper.SetFont(icon.keybind, keybindFontPath, keybindFontSize, keybindFontStyle, countFontPath)
+			else
+				icon.keybind:SetFont(keybindFontPath, keybindFontSize, keybindFontStyle)
+			end
 			if addon.functions and addon.functions.ApplyFontStyleShadow then
 				addon.functions.ApplyFontStyleShadow(icon.keybind, Helper.NormalizeFontStyleChoice(layout and layout.keybindFontStyle, countFontStyle), countFontStyle)
 			end
@@ -8046,7 +8074,11 @@ local function applyIconLayout(frame, count, layout)
 				local g = cooldownTextColor[2] or 1
 				local b = cooldownTextColor[3] or 1
 				local a = cooldownTextColor[4] or 1
-				fontString:SetFont(fontPath, fontSize, fontStyle)
+				if Helper.SetFont then
+					Helper.SetFont(fontString, fontPath, fontSize, fontStyle, defaults and defaults.font)
+				else
+					fontString:SetFont(fontPath, fontSize, fontStyle)
+				end
 				if addon.functions and addon.functions.ApplyFontStyleShadow then
 					addon.functions.ApplyFontStyleShadow(fontString, Helper.NormalizeFontStyleChoice(cooldownTextStyle, defaults and defaults.style), defaults and defaults.style)
 				end

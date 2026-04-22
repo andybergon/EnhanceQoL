@@ -62,6 +62,20 @@ local function IsTooltipMutable(tooltip)
 	return true
 end
 
+local function IsUnitIdentitySecret(unit)
+	if not unit or isSecret(unit) then return true end
+	if not (C_Secrets and C_Secrets.ShouldUnitIdentityBeSecret) then return false end
+	local secret = C_Secrets.ShouldUnitIdentityBeSecret(unit)
+	return secret == true or isSecret(secret)
+end
+
+local function SafeUnitName(unit)
+	if IsUnitIdentitySecret(unit) or not UnitName then return nil end
+	local name, realm = UnitName(unit)
+	if isSecret(name) or isSecret(realm) then return nil end
+	return name, realm
+end
+
 local function GetUnitTokenFromTooltip(tt)
 	local hadTooltipUnit = false
 	if not tt then return nil, hadTooltipUnit end
@@ -80,13 +94,7 @@ local function GetUnitTokenFromTooltip(tt)
 			end
 		end
 	end
-	if not tt.GetUnit then return nil, hadTooltipUnit end
-	local _, unit = tt:GetUnit()
-	if unit ~= nil then
-		hadTooltipUnit = true
-		if isSecret(unit) then return nil, hadTooltipUnit end
-	end
-	return unit, hadTooltipUnit
+	return nil, hadTooltipUnit
 end
 
 -- no compact score formatting needed anymore
@@ -346,15 +354,14 @@ local function GetNPCIDFromGUID(guid)
 end
 
 local function FormatUnitName(unit)
-	if not unit or (issecretvalue and issecretvalue(unit)) then return nil end
+	if IsUnitIdentitySecret(unit) then return nil end
 	if UnitIsUnit then
 		local same = UnitIsUnit(unit, "player")
 		if issecretvalue and issecretvalue(same) then return nil end
 		if same then return "<YOU>" end
 	end
-	local name, realm = UnitName(unit)
+	local name, realm = SafeUnitName(unit)
 	if not name then return nil end
-	if issecretvalue and issecretvalue(name) then return nil end
 	if realm and realm ~= "" then name = name .. "-" .. realm end
 	return name
 end

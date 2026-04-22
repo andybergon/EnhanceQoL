@@ -295,6 +295,10 @@ local function normalizeMediaValue(value)
 	return value
 end
 
+local function isMediaPath(value)
+	return type(value) == "string" and (value:find("\\", 1, true) or value:find("/", 1, true)) ~= nil
+end
+
 local function isGlobalFontConfigValue(value) return normalizeMediaValue(value) == GLOBAL_FONT_CONFIG_KEY end
 local function isGlobalFontStyleConfigValue(value) return normalizeMediaValue(value) == GLOBAL_FONT_STYLE_CONFIG_KEY end
 local function normalizeFontStyleValue(value)
@@ -337,14 +341,14 @@ local function getFontStyleLabel(style)
 end
 
 function addon.functions.ResolveLSMMedia(mediaType, configured, fallback, allowPath)
-	local mediaKind = normalizeMediaValue(mediaType)
+	local mediaKind = normalizeMediaType(mediaType)
 	local fallbackValue = normalizeMediaValue(fallback)
 	local configuredValue = normalizeMediaValue(configured)
 	if isGlobalFontConfigValue(configuredValue) then return fallbackValue end
 	if not configuredValue then return fallbackValue end
 	if configuredValue == fallbackValue then return configuredValue end
 	if not mediaKind then
-		if allowPath ~= false and (configuredValue:find("\\", 1, true) or configuredValue:find("/", 1, true)) then return configuredValue end
+		if allowPath ~= false and isMediaPath(configuredValue) then return configuredValue end
 		return fallbackValue
 	end
 	local lsm = getSharedMedia()
@@ -352,7 +356,7 @@ function addon.functions.ResolveLSMMedia(mediaType, configured, fallback, allowP
 		if lsm.IsValid and lsm:IsValid(mediaKind, configuredValue) then
 			local fetched = lsm.Fetch and lsm:Fetch(mediaKind, configuredValue, true)
 			if type(fetched) == "string" and fetched ~= "" then return fetched end
-			return configuredValue
+			return fallbackValue
 		end
 		if lsm.HashTable then
 			local hash = lsm:HashTable(mediaKind) or {}
@@ -363,14 +367,17 @@ function addon.functions.ResolveLSMMedia(mediaType, configured, fallback, allowP
 			end
 		end
 	end
-	if allowPath ~= false and (configuredValue:find("\\", 1, true) or configuredValue:find("/", 1, true)) then return configuredValue end
+	if allowPath ~= false and mediaKind ~= "font" and isMediaPath(configuredValue) then return configuredValue end
 	return fallbackValue
 end
 
 function addon.functions.ResolveFontFace(configured, fallback)
-	local fallbackFace = normalizeMediaValue(fallback) or defaultFontFace()
+	local defaultFace = defaultFontFace()
+	local fallbackFace = normalizeMediaValue(fallback)
+	if isGlobalFontConfigValue(fallbackFace) then fallbackFace = nil end
+	fallbackFace = addon.functions.ResolveLSMMedia("font", fallbackFace, defaultFace, false) or defaultFace
 	if isGlobalFontConfigValue(configured) then return fallbackFace end
-	return addon.functions.ResolveLSMMedia("font", configured, fallbackFace, true) or fallbackFace
+	return addon.functions.ResolveLSMMedia("font", configured, fallbackFace, false) or fallbackFace
 end
 
 function addon.functions.GetGlobalFontStyleConfigKey() return GLOBAL_FONT_STYLE_CONFIG_KEY end
@@ -477,16 +484,22 @@ function addon.functions.ApplyFontStyleShadow(fontString, style, fallback)
 	end
 end
 
+local function setFontStringFont(fontString, fontFace, size, flags)
+	if not (fontString and fontString.SetFont and fontFace) then return false end
+	local ok, applied = pcall(fontString.SetFont, fontString, fontFace, size, flags)
+	return ok and applied ~= false
+end
+
 function addon.functions.ApplyFontString(fontString, fontFace, size, style, fallbackFace, fallbackStyle)
 	if not (fontString and fontString.SetFont) then return false end
 	local resolvedFallback = addon.functions.ResolveFontFace(fallbackFace, defaultFontFace())
 	local resolvedFace = addon.functions.ResolveFontFace(fontFace, resolvedFallback)
 	local fontSize = tonumber(size) or 12
 	local _, flags = addon.functions.ResolveFontStyle(style, fallbackStyle)
-	local ok = fontString:SetFont(resolvedFace, fontSize, flags)
-	if ok == false then fontString:SetFont(resolvedFallback, fontSize, flags) end
+	local ok = setFontStringFont(fontString, resolvedFace, fontSize, flags)
+	if not ok then ok = setFontStringFont(fontString, resolvedFallback, fontSize, flags) end
 	addon.functions.ApplyFontStyleShadow(fontString, style, fallbackStyle)
-	return ok ~= false
+	return ok
 end
 
 local PRIVATE_PROFILE_KEYS = {
@@ -1076,8 +1089,8 @@ local function applyBagUpgradeTrackStyle(fontString)
 	local style = addon.db and addon.db["ilvlFontOutline"]
 	local outline = normalizeItemLevelOutline(style)
 	local size = math.max(8, getItemLevelFontSize() - 4)
-	local ok = fontString:SetFont(face, size, outline)
-	if ok == false then fontString:SetFont(addon.variables.defaultFont, size, outline) end
+	local ok = setFontStringFont(fontString, face, size, outline)
+	if not ok then setFontStringFont(fontString, addon.variables.defaultFont, size, outline) end
 	addon.functions.ApplyFontStyleShadow(fontString, style, FONT_STYLE_OUTLINE)
 end
 
@@ -1103,8 +1116,8 @@ function addon.functions.ApplyItemLevelTextStyle(fontString)
 	local size = getItemLevelFontSize()
 	local style = addon.db and addon.db["ilvlFontOutline"]
 	local outline = normalizeItemLevelOutline(style)
-	local ok = fontString:SetFont(face, size, outline)
-	if ok == false then fontString:SetFont(addon.variables.defaultFont, size, outline) end
+	local ok = setFontStringFont(fontString, face, size, outline)
+	if not ok then setFontStringFont(fontString, addon.variables.defaultFont, size, outline) end
 	addon.functions.ApplyFontStyleShadow(fontString, style, FONT_STYLE_OUTLINE)
 end
 

@@ -1670,7 +1670,12 @@ local function applyFontStringStyle(fontString, fontValue, sizeValue, styleValue
 	local fontStyleChoice = normalizeBarFontStyle(styleValue, fallbackStyle)
 	local fontStyle = Helper.NormalizeFontStyle(fontStyleChoice, fallbackStyle) or ""
 	if fontString.SetFont then
-		local applied = fontString:SetFont(fontPath, fontSize, fontStyle)
+		local applied
+		if Helper.SetFont then
+			applied = Helper.SetFont(fontString, fontPath, fontSize, fontStyle, fallbackPath)
+		else
+			applied = fontString:SetFont(fontPath, fontSize, fontStyle)
+		end
 		if applied == false then fontString:SetFont(STANDARD_TEXT_FONT, fontSize, fontStyle) end
 	end
 	local color = Helper.NormalizeColor(colorValue, { 1, 1, 1, 1 })

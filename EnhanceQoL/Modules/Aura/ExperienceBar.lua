@@ -296,12 +296,28 @@ end
 local function resolveFontPath(key)
 	local defaultFont = defaultFontFace()
 	if not key or key == "" or key == "DEFAULT" or key == globalFontConfigKey() then return defaultFont end
+	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(key, defaultFont) or defaultFont end
 	if LSM and LSM.Fetch then
 		local font = LSM:Fetch("font", key, true)
 		if font then return font end
 	end
-	if isLikelyFilePath(key) then return key end
+	if LSM and LSM.HashTable then
+		local hash = LSM:HashTable("font") or {}
+		for _, fontPath in pairs(hash) do
+			if fontPath == key then return key end
+		end
+	end
 	return defaultFont
+end
+
+local function setFontWithFallback(fontString, fontPath, size, outline)
+	if not (fontString and fontString.SetFont and fontPath) then return false end
+	local ok, applied = pcall(fontString.SetFont, fontString, fontPath, size, outline)
+	if ok and applied ~= false then return true end
+	local fallback = defaultFontFace()
+	if not fallback or fallback == fontPath then return false end
+	ok, applied = pcall(fontString.SetFont, fontString, fallback, size, outline)
+	return ok and applied ~= false
 end
 
 local function normalizeTextOutline(value)
@@ -1098,13 +1114,13 @@ function ExperienceBar:ApplyAppearance()
 	for _, key in ipairs({ "textLeft", "textCenter", "textRight" }) do
 		local fs = self.frame[key]
 		if fs then
-			fs:SetFont(font, size, outline)
+			setFontWithFallback(fs, font, size, outline)
 			if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fs, outlineChoice, defaults.textOutline or "OUTLINE") end
 			fs:SetTextColor(tr or 1, tg or 1, tb or 1, ta or 1)
 		end
 	end
 	if self.frame.editLabel then
-		self.frame.editLabel:SetFont(font, math.max(size, 11), outline)
+		setFontWithFallback(self.frame.editLabel, font, math.max(size, 11), outline)
 		if addon.functions and addon.functions.ApplyFontStyleShadow then
 			addon.functions.ApplyFontStyleShadow(self.frame.editLabel, outlineChoice, defaults.textOutline or "OUTLINE")
 		end

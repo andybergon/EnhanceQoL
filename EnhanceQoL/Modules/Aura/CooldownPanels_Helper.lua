@@ -1672,14 +1672,40 @@ function Helper.ResolveFontPath(value, fallback)
 		value = nil
 	end
 	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(fallback) then fallback = nil end
-	if type(value) == "string" and value ~= "" then return value end
+	local fallbackPath = fallback
 	if useGlobalConfig and addon.functions and addon.functions.GetGlobalDefaultFontFace then
 		local globalFace = addon.functions.GetGlobalDefaultFontFace()
-		if type(globalFace) == "string" and globalFace ~= "" then return globalFace end
+		if type(globalFace) == "string" and globalFace ~= "" then fallbackPath = globalFace end
 	end
-	if type(fallback) == "string" and fallback ~= "" then return fallback end
-	if addon.functions and addon.functions.GetGlobalDefaultFontFace then return addon.functions.GetGlobalDefaultFontFace() end
-	return STANDARD_TEXT_FONT
+	if type(fallbackPath) ~= "string" or fallbackPath == "" then
+		if addon.functions and addon.functions.GetGlobalDefaultFontFace then fallbackPath = addon.functions.GetGlobalDefaultFontFace() end
+	end
+	if type(fallbackPath) ~= "string" or fallbackPath == "" then fallbackPath = STANDARD_TEXT_FONT end
+	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(value, fallbackPath) or fallbackPath end
+	if type(value) == "string" and value ~= "" and LSM then
+		if LSM.IsValid and LSM:IsValid("font", value) then
+			local fetched = LSM.Fetch and LSM:Fetch("font", value, true)
+			if type(fetched) == "string" and fetched ~= "" then return fetched end
+		end
+		if LSM.HashTable then
+			local hash = LSM:HashTable("font") or {}
+			for _, fontPath in pairs(hash) do
+				if fontPath == value then return value end
+			end
+		end
+	end
+	return fallbackPath
+end
+
+function Helper.SetFont(fontString, fontPath, fontSize, fontStyle, fallbackPath)
+	if not (fontString and fontString.SetFont and fontPath) then return false end
+	local ok, applied = pcall(fontString.SetFont, fontString, fontPath, fontSize, fontStyle)
+	if ok and applied ~= false then return true end
+
+	local fallback = Helper.ResolveFontPath(nil, fallbackPath or STANDARD_TEXT_FONT)
+	if not fallback or fallback == fontPath then return false end
+	ok, applied = pcall(fontString.SetFont, fontString, fallback, fontSize, fontStyle)
+	return ok and applied ~= false
 end
 
 function Helper.GetCountFontDefaults(frame)

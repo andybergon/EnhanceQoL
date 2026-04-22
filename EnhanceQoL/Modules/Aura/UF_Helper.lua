@@ -342,7 +342,10 @@ function H.setFontWithFallback(target, fontFile, size, flags)
 		target:SetFontObject(family)
 		return true
 	end
-	if target.SetFont then return target:SetFont(fontFile, size, flags) end
+	if target.SetFont then
+		local ok, applied = pcall(target.SetFont, target, fontFile, size, flags)
+		return ok and applied ~= false
+	end
 	return nil
 end
 
@@ -537,15 +540,19 @@ function H.getFont(path)
 		or (addon.variables and addon.variables.defaultFont)
 		or (LSM and LSM:Fetch("font", LSM.DefaultMedia.font))
 		or STANDARD_TEXT_FONT
+	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(path, fallbackFont) or fallbackFont end
 	if addon.functions and addon.functions.IsGlobalFontConfigValue and addon.functions.IsGlobalFontConfigValue(path) then return fallbackFont end
 	if type(path) == "string" and path ~= "" then
-		local lower = path:lower()
-		if path:find("\\") or path:find("/") or lower:find(".ttf", 1, true) or lower:find(".otf", 1, true) or lower:find(".ttc", 1, true) then return path end
 		if LSM and LSM.Fetch then
 			local fetched = LSM:Fetch("font", path, true)
 			if type(fetched) == "string" and fetched ~= "" then return fetched end
 		end
-		return path
+		if LSM and LSM.HashTable then
+			local hash = LSM:HashTable("font") or {}
+			for _, fontPath in pairs(hash) do
+				if fontPath == path then return path end
+			end
+		end
 	end
 	return fallbackFont
 end

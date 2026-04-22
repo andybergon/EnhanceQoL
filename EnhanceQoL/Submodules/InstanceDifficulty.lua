@@ -1,4 +1,4 @@
--- luacheck: globals MinimapCluster C_DelvesUI C_Timer Minimap
+-- luacheck: globals MinimapCluster C_DelvesUI C_GossipInfo C_Timer Minimap
 local parentAddonName = "EnhanceQoL"
 local addonName, addon = ...
 if _G[parentAddonName] then
@@ -87,8 +87,13 @@ local hcNames = {
 	[RAID_DIFFICULTY_25PLAYER_HEROIC] = true,
 }
 
+local function hasDelveGossipTierAPI()
+	return C_GossipInfo and C_GossipInfo.GetActiveDelveGossip
+end
+
 local function getActiveDelveTier()
-	if not C_DelvesUI or not C_GossipInfo then return nil end
+	-- Removed on 12.0.5. Keep the old path guarded so the tier display starts working again if Blizzard restores it.
+	if not (C_DelvesUI and hasDelveGossipTierAPI()) then return nil end
 
 	local _, _, _, mapID = UnitPosition("player")
 	if not C_DelvesUI.HasActiveDelve(mapID) then return nil end
@@ -151,7 +156,9 @@ function InstanceDifficulty:Update()
 	end
 
 	local text
-	if instanceGroupSize and instanceGroupSize > 0 then
+	if difficultyID == 208 and not hasDelveGossipTierAPI() then
+		text = short
+	elseif instanceGroupSize and instanceGroupSize > 0 then
 		text = string.format("%d (%s)", instanceGroupSize, short)
 	else
 		text = short

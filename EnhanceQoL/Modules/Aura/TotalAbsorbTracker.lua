@@ -464,16 +464,16 @@ function Tracker:ApplyLayoutData(data)
 	end
 
 	local fontPath = self:ResolveTextFont()
-	local fontStyleChoice = normalizeFontStyleChoice(textOutline, defaults.textOutline)
-	local fontOutline = addon.functions and addon.functions.GetFontFlagsForStyle and addon.functions.GetFontFlagsForStyle(fontStyleChoice, defaults.textOutline)
-		or (fontStyleChoice == "NONE" and "" or fontStyleChoice)
-	local ok = frame.text:SetFont(fontPath, textSize, fontOutline)
-	if ok == false then
-		local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
-		frame.text:SetFont(fallback, textSize, fontOutline)
-	end
-	if addon.functions and addon.functions.ApplyFontStyleShadow then
-		addon.functions.ApplyFontStyleShadow(frame.text, fontStyleChoice, defaults.textOutline)
+		local fontStyleChoice = normalizeFontStyleChoice(textOutline, defaults.textOutline)
+		local fontOutline = addon.functions and addon.functions.GetFontFlagsForStyle and addon.functions.GetFontFlagsForStyle(fontStyleChoice, defaults.textOutline)
+			or (fontStyleChoice == "NONE" and "" or fontStyleChoice)
+		local ok = frame.text:SetFont(fontPath, textSize, fontOutline)
+		if ok == false then
+			local fallback = addon.variables.defaultFont or STANDARD_TEXT_FONT
+			frame.text:SetFont(fallback, textSize, fontOutline)
+		end
+		if addon.functions and addon.functions.ApplyFontStyleShadow then
+			addon.functions.ApplyFontStyleShadow(frame.text, fontStyleChoice, defaults.textOutline)
 	end
 	local color = copyColor(textColor, defaults.textColor)
 	frame.text:SetTextColor(color[1], color[2], color[3], color[4])

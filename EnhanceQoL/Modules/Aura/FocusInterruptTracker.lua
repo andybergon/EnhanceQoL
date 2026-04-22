@@ -747,15 +747,15 @@ function Tracker:ApplyLayoutData(data)
 	local width, height
 
 	if isText then
-		local fontPath = self:ResolveTextFont()
-		local fontStyleChoice = normalizeOutline(cfg.textOutline, defaults.textOutline)
-		local fontOutline = addon.functions and addon.functions.GetFontFlagsForStyle and addon.functions.GetFontFlagsForStyle(fontStyleChoice, defaults.textOutline)
-			or (fontStyleChoice == "NONE" and "" or fontStyleChoice)
-		local ok = frame.text:SetFont(fontPath, cfg.textSize, fontOutline)
-		if ok == false then frame.text:SetFont(STANDARD_TEXT_FONT, cfg.textSize, fontOutline) end
-		if addon.functions and addon.functions.ApplyFontStyleShadow then
-			addon.functions.ApplyFontStyleShadow(frame.text, fontStyleChoice, defaults.textOutline)
-		end
+			local fontPath = self:ResolveTextFont()
+			local fontStyleChoice = normalizeOutline(cfg.textOutline, defaults.textOutline)
+			local fontOutline = addon.functions and addon.functions.GetFontFlagsForStyle and addon.functions.GetFontFlagsForStyle(fontStyleChoice, defaults.textOutline)
+				or (fontStyleChoice == "NONE" and "" or fontStyleChoice)
+			local ok = frame.text:SetFont(fontPath, cfg.textSize, fontOutline)
+			if ok == false then frame.text:SetFont(STANDARD_TEXT_FONT, cfg.textSize, fontOutline) end
+			if addon.functions and addon.functions.ApplyFontStyleShadow then
+				addon.functions.ApplyFontStyleShadow(frame.text, fontStyleChoice, defaults.textOutline)
+			end
 		local color = normalizeColor(cfg.textColor, defaults.textColor)
 		frame.text:SetTextColor(color[1], color[2], color[3], color[4])
 		frame.text:SetText(previewText)

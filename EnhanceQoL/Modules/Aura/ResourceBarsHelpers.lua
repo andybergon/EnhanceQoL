@@ -66,6 +66,7 @@ local function normalizeGradientColor(value)
 end
 
 local function isSecretGradientComponent(value) return issecretvalue and issecretvalue(value) end
+local USE_ESSENCE_REGEN_API = false -- GetPowerRegenForPowerType is secret-only on current patch; keep disabled until Blizzard fixes it.
 
 local function hasSecretGradientColor(r, g, b, a) return isSecretGradientComponent(r) or isSecretGradientComponent(g) or isSecretGradientComponent(b) or isSecretGradientComponent(a) end
 
@@ -264,7 +265,11 @@ function ResourceBars.ComputeEssenceFraction(bar, current, maxPower, now, powerE
 		bar._essenceFraction = 0
 		return 0, 0
 	end
-	local regen = GetPowerRegenForPowerType and GetPowerRegenForPowerType(powerEnum)
+	local regen
+	if USE_ESSENCE_REGEN_API and GetPowerRegenForPowerType then
+		regen = GetPowerRegenForPowerType(powerEnum)
+		if issecretvalue and issecretvalue(regen) then regen = nil end
+	end
 	if not regen or regen <= 0 then regen = 0.2 end
 	local tickDuration = 1 / regen
 
