@@ -265,10 +265,16 @@ end
 
 function Labels.ResetBorderCache() Labels._lsmBorderCache = nil end
 
+local function IsValidCustomBorderStyle(style)
+	if style == QUICK_SLOT_BORDER then return true end
+	return IsLSMBorderPath(style)
+end
+
 local function GetCustomBorderStyle()
 	if not addon.db then return DEFAULT_BORDER_STYLE end
 	local style = addon.db.actionBarBorderStyle
 	if type(style) ~= "string" or style == "" then return DEFAULT_BORDER_STYLE end
+	if style ~= DEFAULT_BORDER_STYLE and not IsValidCustomBorderStyle(style) then return DEFAULT_BORDER_STYLE end
 	return style
 end
 

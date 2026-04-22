@@ -330,6 +330,22 @@ local function normalizeTextOutline(value)
 	return "NONE"
 end
 
+local function resolveTextOutlineFlags(value, fallback)
+	if addon.functions and addon.functions.ResolveFontStyle then
+		local _, flags = addon.functions.ResolveFontStyle(value, fallback or defaults.textOutline or "OUTLINE")
+		return flags
+	end
+	if addon.functions and addon.functions.GetFontFlagsForStyle then
+		local flags = addon.functions.GetFontFlagsForStyle(value, fallback or defaults.textOutline or "OUTLINE")
+		if type(flags) == "string" then return flags end
+	end
+	local outline = normalizeTextOutline(value)
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then outline = normalizeTextOutline(fallback or defaults.textOutline or "OUTLINE") end
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then outline = "OUTLINE" end
+	if outline == "NONE" then return "" end
+	return outline
+end
+
 local function normalizeFillDirection(value)
 	if type(value) == "string" then value = string.upper(value) end
 	if value == "RIGHT" then return "RIGHT" end
@@ -1107,8 +1123,7 @@ function ExperienceBar:ApplyAppearance()
 
 	local font = resolveFontPath(self:GetTextFont())
 	local outlineChoice = self:GetTextOutline()
-	local outline = addon.functions and addon.functions.GetFontFlagsForStyle and addon.functions.GetFontFlagsForStyle(outlineChoice, defaults.textOutline or "OUTLINE")
-		or (outlineChoice == "NONE" and "" or outlineChoice)
+	local outline = resolveTextOutlineFlags(outlineChoice, defaults.textOutline or "OUTLINE")
 	local size = self:GetTextSize()
 	local tr, tg, tb, ta = self:GetTextColor()
 	for _, key in ipairs({ "textLeft", "textCenter", "textRight" }) do

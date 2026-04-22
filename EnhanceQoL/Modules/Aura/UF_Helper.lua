@@ -295,6 +295,7 @@ local function normalizeFontOutline(outline)
 	if addon.functions and addon.functions.GetFontFlagsForStyle then return addon.functions.GetFontFlagsForStyle(outline, "OUTLINE") end
 	if outline == nil then return "OUTLINE" end
 	if outline == "" or outline == "NONE" then return nil end
+	if outline == "__EQOL_GLOBAL_FONT_STYLE__" then return "OUTLINE" end
 	return outline
 end
 

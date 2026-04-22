@@ -2887,6 +2887,7 @@ local function getSquareMinimapStatsOutlineFlag()
 		return addon.functions.GetFontFlagsForStyle(outline, "OUTLINE")
 	end
 	if outline == nil or outline == "" or outline == "NONE" then return nil end
+	if outline == getGlobalFontStyleConfigKey() then return "OUTLINE" end
 	return outline
 end
 

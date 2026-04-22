@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.5.2] - 2026-04-22
+
+### 🐛 Fixed
+
+- Action Bars: Ignored stale or invalid custom border texture paths from SavedVariables so old profile data can no longer render action buttons as solid black blocks.
+- Profiles / Fonts: Guarded remaining tracker and bar font applications so global font-style SavedVariables are resolved before calling `SetFont`.
+
+---
+
 ## [10.5.1] - 2026-04-22
 
 ### 🐛 Fixed

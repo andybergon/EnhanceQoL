@@ -3870,7 +3870,8 @@ function AuraUtil.styleAuraCount(btn, ac, countFontSizeOverride)
 	if UFHelper and UFHelper.applyFont then
 		UFHelper.applyFont(btn.count, ac.countFont, size, flags)
 	else
-		btn.count:SetFont(UFHelper.getFont(ac.countFont), size, flags)
+		local fallbackFlags = flags == "__EQOL_GLOBAL_FONT_STYLE__" and "OUTLINE" or flags
+		btn.count:SetFont(UFHelper.getFont(ac.countFont), size, fallbackFlags)
 	end
 end
 
@@ -3945,7 +3946,8 @@ function AuraUtil.styleAuraDRText(btn, ac, drFontSizeOverride)
 	if UFHelper and UFHelper.applyFont then
 		UFHelper.applyFont(btn.drText, ac.drFont, size, flags)
 	else
-		btn.drText:SetFont(UFHelper.getFont(ac.drFont), size, flags)
+		local fallbackFlags = flags == "__EQOL_GLOBAL_FONT_STYLE__" and "OUTLINE" or flags
+		btn.drText:SetFont(UFHelper.getFont(ac.drFont), size, fallbackFlags)
 	end
 end
 
