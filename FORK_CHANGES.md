@@ -199,4 +199,8 @@ Settings include enable toggle, custom color with opacity, texture selection, fi
 
 **Fix:** Track the user's note via `EditBox:HookScript("OnTextChanged", ...)` (only saves when `userInput` is true so Blizzard's clears don't overwrite the saved value), then restore it in a `hooksecurefunc("LFGListApplicationDialog_Show", ...)` post-hook. Both `HookScript` and `hooksecurefunc` are taint-safe additive hooks; neither replaces a global. The hook is idempotent and gates on `addon.db.persistSignUpNote` at call time, so toggling the setting at runtime works without re-installing anything.
 
+**Follow-up (2026-04-22):** BugSack reported a spurious `AceLocale-3.0: EnhanceQoL: Missing entry for 'ToDebugString'` originating at the `eb:SetText(persistedSignUpNote)` line. Calling `SetText` synchronously inside the `hooksecurefunc` runs the assignment (and any handlers it triggers) in the same secure execution context that just invoked `LFGListApplicationDialog_Show`, which surfaced as the AceLocale warning via BugGrabber's debug-locals capture. Two mitigations applied:
+1. Skip the call entirely when `eb:GetText() == persistedSignUpNote` — no-op `SetText`s do nothing useful and still fire `OnTextChanged` cascades.
+2. Defer the `SetText` to the next frame via `C_Timer.After(0, ...)`. This breaks out of the secure stack so the assignment runs in a clean context. The deferred callback re-validates `addon.db.persistSignUpNote`, the saved note, the dialog/editbox, and the no-op check before writing, in case the dialog has been hidden or repurposed.
+
 **Files changed:** `EnhanceQoL.lua`.

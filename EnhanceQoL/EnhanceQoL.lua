@@ -332,7 +332,30 @@ local function ensurePersistSignUpNoteHooks()
 		if not addon.db.persistSignUpNote then return end
 		if not persistedSignUpNote or persistedSignUpNote == "" then return end
 		local eb = dlg and dlg.Description and dlg.Description.EditBox
-		if eb then eb:SetText(persistedSignUpNote) end
+		if not eb then return end
+		-- Skip no-op SetText: avoid firing OnTextChanged when the text is
+		-- already what we'd set it to. This prevents downstream addons /
+		-- handlers (e.g. anything that introspects via :ToDebugString())
+		-- from doing extra work on every dialog show.
+		if eb:GetText() == persistedSignUpNote then return end
+		-- Defer to the next frame via C_Timer.After(0, ...). Calling
+		-- SetText synchronously inside this hooksecurefunc means the
+		-- SetText (and any handlers it triggers) runs in the same
+		-- secure execution context that just invoked
+		-- LFGListApplicationDialog_Show. That has been observed to
+		-- surface as a spurious "Missing entry for 'ToDebugString'"
+		-- AceLocale warning from BugGrabber's debug-locals capture.
+		-- Pushing the SetText to the next frame breaks us out of the
+		-- secure stack so the assignment runs in a clean context.
+		C_Timer.After(0, function()
+			-- Re-validate: the dialog may have been hidden / repurposed
+			-- between hook fire and the next frame.
+			if not addon.db.persistSignUpNote then return end
+			if not persistedSignUpNote or persistedSignUpNote == "" then return end
+			if not eb or not dlg or not dlg:IsShown() then return end
+			if eb:GetText() == persistedSignUpNote then return end
+			eb:SetText(persistedSignUpNote)
+		end)
 	end)
 end
 
