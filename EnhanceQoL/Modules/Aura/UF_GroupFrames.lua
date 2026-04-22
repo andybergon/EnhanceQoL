@@ -14331,6 +14331,9 @@ function GF.SetGroupAnchorPointFromCfg(frame, kind, cfg)
 	else
 		frame:SetPoint(point, relativeFrame, relativePoint, x, y)
 	end
+	if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.ReapplyTrackerAnchorsForTarget and frame.GetName then
+		addon.MythicPlus.functions.ReapplyTrackerAnchorsForTarget(frame:GetName())
+	end
 end
 
 local function anchorUsesUIParent(kind) return GF.GetGroupAnchorTargetValue(kind) == "UIParent" end

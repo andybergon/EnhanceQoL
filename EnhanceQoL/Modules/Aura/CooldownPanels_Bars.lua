@@ -104,6 +104,7 @@ Bars.DEFAULTS = Bars.DEFAULTS
 		barShowIcon = true,
 		barShowLabel = true,
 		barShowValueText = true,
+		barShowChargeDuration = false,
 		barShowStackText = true,
 		barIconSize = 18,
 		barIconPosition = "LEFT",
@@ -315,10 +316,72 @@ Bars.GetCooldownValueText = function(icon, durationObject, startTime, duration, 
 	return getCooldownText(icon)
 end
 
+Bars.GetChargeDurationTextSource = function(state)
+	if type(state) ~= "table" then return nil end
+	local phase = state.renderChargePhase or state.chargePhase
+	if phase == "EMPTY" and state.cooldownDurationObject ~= nil then
+		return state.cooldownDurationObject, state.cooldownStart, state.cooldownDuration, state.cooldownRate, 1
+	end
+	if phase == "PARTIAL" and state.deferChargeTimerHandoff ~= true and state.chargeInfoActive == true and state.chargeDurationObject ~= nil then
+		return state.chargeDurationObject, state.rechargeStart, state.rechargeDuration, state.rechargeRate, 2
+	end
+	if state.chargeDurationObject ~= nil then
+		local maxCharges = safeNumber(state.maxCharges)
+		local currentCharges = safeNumber(state.currentCharges) or inferChargeBaseCount(state, maxCharges)
+		local segmentIndex = currentCharges and maxCharges and currentCharges < maxCharges and min(max(floor(currentCharges) + 1, 1), maxCharges) or nil
+		return state.chargeDurationObject, state.rechargeStart, state.rechargeDuration, state.rechargeRate, segmentIndex
+	end
+	if state.cooldownDurationObject ~= nil and state.cooldownGCD ~= true then
+		return state.cooldownDurationObject, state.cooldownStart, state.cooldownDuration, state.cooldownRate, 1
+	end
+	local rechargeStart = safeNumber(state.rechargeStart)
+	local rechargeDuration = safeNumber(state.rechargeDuration)
+	if rechargeStart and rechargeDuration and rechargeDuration > 0 then
+		local maxCharges = safeNumber(state.maxCharges)
+		local currentCharges = safeNumber(state.currentCharges) or inferChargeBaseCount(state, maxCharges)
+		local segmentIndex = currentCharges and maxCharges and currentCharges < maxCharges and min(max(floor(currentCharges) + 1, 1), maxCharges) or nil
+		return nil, rechargeStart, rechargeDuration, state.rechargeRate, segmentIndex
+	end
+	return nil
+end
+
+Bars.UpdateChargeDurationTextState = function(state)
+	if type(state) ~= "table" then return nil end
+	state.chargeDurationTextActive = nil
+	state.chargeDurationTextObject = nil
+	state.chargeDurationTextStart = nil
+	state.chargeDurationTextDuration = nil
+	state.chargeDurationTextRate = nil
+	state.chargeDurationTextSegmentIndex = nil
+	state.chargeDurationTextNative = nil
+
+	local durationObject, startTime, duration, rate, segmentIndex = Bars.GetChargeDurationTextSource(state)
+	if not durationObject then
+		local text = Bars.GetCooldownValueText(nil, nil, startTime, duration, rate)
+		if not hasTextValue(text) then return nil end
+		state.chargeDurationTextActive = true
+		state.chargeDurationTextStart = safeNumber(startTime)
+		state.chargeDurationTextDuration = safeNumber(duration)
+		state.chargeDurationTextRate = safeNumber(rate) or 1
+		state.chargeDurationTextSegmentIndex = safeNumber(segmentIndex)
+		return text
+	end
+
+	state.chargeDurationTextActive = true
+	state.chargeDurationTextNative = true
+	state.chargeDurationTextObject = durationObject
+	state.chargeDurationTextSegmentIndex = safeNumber(segmentIndex)
+	return nil
+end
+
 Bars.GetLiveBarValueText = function(state)
 	if type(state) ~= "table" or state.showValueText ~= true then return nil end
-	if state.mode ~= Bars.BAR_MODE.COOLDOWN then return nil end
-	if state.cooldownVisibilityActive ~= true then return nil end
+	if state.mode == Bars.BAR_MODE.CHARGES then
+		if state.showChargeDuration ~= true or state.chargeDurationTextActive ~= true then return nil end
+		if state.chargeDurationTextNative == true then return nil end
+		return Bars.GetCooldownValueText(nil, state.chargeDurationTextObject, state.chargeDurationTextStart, state.chargeDurationTextDuration, state.chargeDurationTextRate)
+	end
+	if state.mode ~= Bars.BAR_MODE.COOLDOWN or state.cooldownVisibilityActive ~= true then return nil end
 	return Bars.GetCooldownValueText(state.icon, state.fillDurationObject, state.startTime, state.duration, state.rate)
 end
 
@@ -484,6 +547,7 @@ Bars.ApplyNewBarStyleDefaults = function(entry)
 	if entry.barTexture == nil or normalizeBarTexture(entry.barTexture, BAR_TEXTURE_DEFAULT) == BAR_TEXTURE_DEFAULT then entry.barTexture = Bars.DEFAULTS.barTexture end
 	if safeNumber(entry.barIconSize) == nil or safeNumber(entry.barIconSize) <= 0 then entry.barIconSize = Bars.DEFAULTS.barIconSize end
 	if entry.barBorderEnabled == nil then entry.barBorderEnabled = Bars.DEFAULTS.barBorderEnabled end
+	if entry.barShowChargeDuration == nil then entry.barShowChargeDuration = Bars.DEFAULTS.barShowChargeDuration end
 	if entry.barShowStackText == nil then entry.barShowStackText = Bars.DEFAULTS.barShowStackText end
 	if entry.barStacksSegmented == nil then entry.barStacksSegmented = Bars.DEFAULTS.barStacksSegmented end
 	if entry.barStackDividerColor == nil then entry.barStackDividerColor = Bars.DEFAULTS.barStackDividerColor end
@@ -673,32 +737,10 @@ getRuntimeState = function()
 			chargePhaseByEntryKey = {},
 			chargeEmptyDurationObjectByEntryKey = {},
 			pendingChargeTimerHandoffByEntryKey = {},
-			recentChargeSpellcastAtBySpellId = {},
+			pendingChargeTimerHandoffRefreshByEntryKey = {},
 		}
 	return CooldownPanels.runtime.cooldownPanelBars
 end
-
-Bars.EnsureChargeSpellcastWatcher = function()
-	if Bars._eqolChargeSpellcastWatcher then return Bars._eqolChargeSpellcastWatcher end
-	local frame = CreateFrame("Frame")
-	frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-	frame:SetScript("OnEvent", function(_, _, unit, _, spellId)
-		if unit ~= "player" then return end
-		spellId = safeNumber(spellId)
-		if not spellId then return end
-		local runtime = getRuntimeState()
-		local cache = runtime.recentChargeSpellcastAtBySpellId or {}
-		runtime.recentChargeSpellcastAtBySpellId = cache
-		local now = (Api.GetTime and Api.GetTime()) or GetTime()
-		cache[spellId] = now
-		local overrideSpellId = Api.GetOverrideSpell and safeNumber(Api.GetOverrideSpell(spellId)) or nil
-		if overrideSpellId and overrideSpellId ~= spellId then cache[overrideSpellId] = now end
-	end)
-	Bars._eqolChargeSpellcastWatcher = frame
-	return frame
-end
-
-Bars.EnsureChargeSpellcastWatcher()
 
 local function getEntryResolvedType(entry)
 	if not entry then return nil, nil end
@@ -762,6 +804,7 @@ normalizeBarEntry = function(entry)
 	entry.barShowIcon = getStoredBoolean(entry, "barShowIcon", Bars.DEFAULTS.barShowIcon)
 	entry.barShowLabel = getStoredBoolean(entry, "barShowLabel", Bars.DEFAULTS.barShowLabel)
 	entry.barShowValueText = getStoredBoolean(entry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
+	entry.barShowChargeDuration = getStoredBoolean(entry, "barShowChargeDuration", Bars.DEFAULTS.barShowChargeDuration)
 	entry.barShowStackText = getStoredBoolean(entry, "barShowStackText", Bars.DEFAULTS.barShowStackText)
 	entry.barIconSize = normalizeBarIconSize(entry.barIconSize, Bars.DEFAULTS.barIconSize)
 	if entry.barIconSize <= 0 then entry.barIconSize = Bars.DEFAULTS.barIconSize end
@@ -1358,6 +1401,77 @@ local function setCooldownFrameDuration(frame, durationObject, cacheKey)
 	return false
 end
 
+Bars.RequestChargeBarPanelRefresh = function(panelId)
+	if not (CooldownPanels and panelId) then return end
+	if CooldownPanels.RequestPanelRefresh then
+		CooldownPanels:RequestPanelRefresh(panelId)
+	elseif CooldownPanels.RefreshPanel then
+		CooldownPanels:RefreshPanel(panelId)
+	end
+end
+
+Bars.InvalidateChargeBarSpellCaches = function(spellId)
+	spellId = safeNumber(spellId)
+	if not (spellId and CooldownPanels and CooldownPanels.InvalidateSpellQueryCaches) then return end
+	CooldownPanels:InvalidateSpellQueryCaches("info", spellId)
+	CooldownPanels:InvalidateSpellQueryCaches("duration", spellId)
+	CooldownPanels:InvalidateSpellQueryCaches("charges", spellId)
+	CooldownPanels:InvalidateSpellQueryCaches("chargeDuration", spellId)
+	local overrideSpellId = Api.GetOverrideSpell and safeNumber(Api.GetOverrideSpell(spellId)) or nil
+	if overrideSpellId and overrideSpellId ~= spellId then
+		CooldownPanels:InvalidateSpellQueryCaches("info", overrideSpellId)
+		CooldownPanels:InvalidateSpellQueryCaches("duration", overrideSpellId)
+		CooldownPanels:InvalidateSpellQueryCaches("charges", overrideSpellId)
+		CooldownPanels:InvalidateSpellQueryCaches("chargeDuration", overrideSpellId)
+	end
+end
+
+Bars.OnChargeGateCooldownDone = function(self)
+	if not self then return end
+	Bars.InvalidateChargeBarSpellCaches(self._eqolSpellId)
+	Bars.RequestChargeBarPanelRefresh(self._eqolPanelId)
+end
+
+Bars.ClearChargeGateCooldown = function(barFrame)
+	local gate = barFrame and barFrame._eqolCooldownGate or nil
+	if not gate then return end
+	if gate.SetScript then gate:SetScript("OnCooldownDone", nil) end
+	gate._eqolPanelId = nil
+	gate._eqolEntryId = nil
+	gate._eqolSpellId = nil
+	clearCooldownFrame(gate)
+end
+
+Bars.ScheduleChargeTimerHandoffRefresh = function(state)
+	if not (state and state.panelId) then return end
+	local panelId = state.panelId
+	local spellId = state.spellId
+	local entryKey = state.entryKey or state.entryId
+	if not entryKey then
+		Bars.RequestChargeBarPanelRefresh(panelId)
+		return
+	end
+	local runtime = getRuntimeState()
+	local pending = runtime.pendingChargeTimerHandoffRefreshByEntryKey or {}
+	runtime.pendingChargeTimerHandoffRefreshByEntryKey = pending
+	if pending[entryKey] == true then return end
+	pending[entryKey] = true
+
+	local function refresh()
+		local activeRuntime = getRuntimeState()
+		local activePending = activeRuntime.pendingChargeTimerHandoffRefreshByEntryKey
+		if activePending then activePending[entryKey] = nil end
+		Bars.InvalidateChargeBarSpellCaches(spellId)
+		Bars.RequestChargeBarPanelRefresh(panelId)
+	end
+
+	if C_Timer and C_Timer.After then
+		C_Timer.After(0, refresh)
+	else
+		refresh()
+	end
+end
+
 local function hideUnusedBarSegments(frame, firstIndex)
 	if not (frame and frame.segments) then return end
 	for index = firstIndex or 1, #frame.segments do
@@ -1683,6 +1797,117 @@ local function applyFontStringStyle(fontString, fontValue, sizeValue, styleValue
 	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, fontStyleChoice, fallbackStyle) end
 end
 
+Bars.EnsureChargeDurationCountdown = function(barFrame)
+	if not barFrame then return nil end
+	if barFrame._eqolChargeDurationCountdown then return barFrame._eqolChargeDurationCountdown end
+	local parent = barFrame.textOverlay or barFrame
+	local cooldown = CreateFrame("Cooldown", nil, parent, "CooldownFrameTemplate")
+	if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(false) end
+	if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
+	if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
+	if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(false) end
+	if cooldown.SetAlpha then cooldown:SetAlpha(1) end
+	if cooldown.EnableMouse then cooldown:EnableMouse(false) end
+	cooldown:Hide()
+	barFrame._eqolChargeDurationCountdown = cooldown
+	return cooldown
+end
+
+Bars.ClearChargeDurationCountdown = function(barFrame)
+	if not barFrame then return end
+	local cooldown = barFrame._eqolChargeDurationCountdown
+	if not cooldown then return end
+	clearCooldownFrame(cooldown)
+	local fontString = cooldown.GetCountdownFontString and cooldown:GetCountdownFontString() or nil
+	if fontString then
+		fontString:SetText("")
+		fontString:Hide()
+	end
+end
+
+Bars.ApplyChargeDurationCountdown = function(
+	barFrame,
+	state,
+	relativeFrame,
+	orientation,
+	fontPath,
+	fontSize,
+	fontStyle,
+	fontColor,
+	defaultFontPath,
+	defaultFontSize,
+	defaultFontStyle,
+	anchor,
+	offsetX,
+	offsetY
+)
+	if not (barFrame and state and state.chargeDurationTextObject) then
+		Bars.ClearChargeDurationCountdown(barFrame)
+		return false
+	end
+
+	local cooldown = Bars.EnsureChargeDurationCountdown(barFrame)
+	if not cooldown then return false end
+	local anchorFrame = relativeFrame or barFrame.textOverlay or barFrame.body or barFrame
+	cooldown:SetParent(barFrame.textOverlay or barFrame)
+	cooldown:ClearAllPoints()
+	cooldown:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
+	cooldown:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
+	cooldown:SetFrameStrata((barFrame.textOverlay and barFrame.textOverlay:GetFrameStrata()) or barFrame:GetFrameStrata())
+	cooldown:SetFrameLevel(((barFrame.textOverlay and barFrame.textOverlay:GetFrameLevel()) or barFrame:GetFrameLevel()) + 1)
+	if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(false) end
+	if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
+	if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
+	if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(false) end
+	if cooldown.SetAlpha then cooldown:SetAlpha(1) end
+
+	local durationKey = table.concat({
+		"charge-duration-text",
+		tostring(state.entryKey or state.entryId or "nil"),
+		tostring(state.chargeDurationTextSegmentIndex or "nil"),
+		tostring(state.renderChargePhase or state.chargePhase or "nil"),
+	}, ":")
+	if not setCooldownFrameDuration(cooldown, state.chargeDurationTextObject, durationKey) then
+		Bars.ClearChargeDurationCountdown(barFrame)
+		return false
+	end
+
+	local fontString = cooldown.GetCountdownFontString and cooldown:GetCountdownFontString() or nil
+	if fontString then
+		applyFontStringStyle(fontString, fontPath, fontSize, fontStyle, fontColor, defaultFontPath, defaultFontSize, defaultFontStyle)
+		local resolvedAnchor = Bars.GetResolvedTextAnchor(anchor, orientation, "VALUE")
+		local point, relativePoint, justifyH = Bars.GetTextAnchorConfig(anchor, orientation, "VALUE")
+		local insetX = pixelSnap(offsetX or 0, barFrame and barFrame.textOverlay or barFrame)
+		local insetY = pixelSnap(offsetY or 0, barFrame and barFrame.textOverlay or barFrame)
+		local justifyV = "MIDDLE"
+		local textInset = 4
+
+		fontString:ClearAllPoints()
+		if fontString.SetWordWrap then fontString:SetWordWrap(false) end
+		if fontString.SetNonSpaceWrap then fontString:SetNonSpaceWrap(false) end
+		if fontString.SetMaxLines then fontString:SetMaxLines(1) end
+		fontString:SetWidth(0)
+		if resolvedAnchor == Bars.TEXT_ANCHOR.LEFT then
+			fontString:SetPoint("LEFT", cooldown, "LEFT", textInset + insetX, insetY)
+		elseif resolvedAnchor == Bars.TEXT_ANCHOR.RIGHT then
+			fontString:SetPoint("RIGHT", cooldown, "RIGHT", -textInset + insetX, insetY)
+		elseif resolvedAnchor == Bars.TEXT_ANCHOR.TOP then
+			justifyV = "TOP"
+			fontString:SetPoint(point, cooldown, relativePoint, insetX, insetY - textInset)
+		elseif resolvedAnchor == Bars.TEXT_ANCHOR.BOTTOM then
+			justifyV = "BOTTOM"
+			fontString:SetPoint(point, cooldown, relativePoint, insetX, insetY + textInset)
+		else
+			fontString:SetPoint(point, cooldown, relativePoint, insetX, insetY)
+		end
+		fontString:SetJustifyH(justifyH)
+		if fontString.SetJustifyV then fontString:SetJustifyV(justifyV) end
+		fontString:Show()
+	end
+	cooldown:Show()
+	return true
+end
+
 local function ensureModeButton(icon)
 	if icon._eqolBarsModeButton then return icon._eqolBarsModeButton end
 	local parent = icon.layoutHandle or icon.slotAnchor or icon
@@ -1715,6 +1940,8 @@ local function hideBarPresentation(icon)
 		stopBarAnimation(barFrame)
 		barFrame._eqolBarState = nil
 		Bars.ClearBarValueTextUpdater(barFrame)
+		Bars.ClearChargeDurationCountdown(barFrame)
+		Bars.ClearChargeGateCooldown(barFrame)
 		hideBarHitHandle(barFrame)
 		barFrame:Hide()
 	end
@@ -1734,6 +1961,8 @@ local function hideEditorBarDragPreview(editor)
 		stopBarAnimation(previewFrame)
 		previewFrame._eqolBarState = nil
 		Bars.ClearBarValueTextUpdater(previewFrame)
+		Bars.ClearChargeDurationCountdown(previewFrame)
+		Bars.ClearChargeGateCooldown(previewFrame)
 		previewFrame:Hide()
 	end
 	if dragIcon.texture then
@@ -1778,7 +2007,16 @@ end
 
 Bars.ConfigureBarValueTextUpdater = function(barFrame, state)
 	if not barFrame then return end
-	local useDynamicText = state and state.preview ~= true and state.showValueText == true and state.mode == Bars.BAR_MODE.COOLDOWN and state.cooldownVisibilityActive == true
+	local useDynamicText = state and state.preview ~= true and state.showValueText == true
+		and (
+			(state.mode == Bars.BAR_MODE.COOLDOWN and state.cooldownVisibilityActive == true)
+			or (
+				state.mode == Bars.BAR_MODE.CHARGES
+				and state.showChargeDuration == true
+				and state.chargeDurationTextActive == true
+				and state.chargeDurationTextNative ~= true
+			)
+		)
 	if useDynamicText ~= true then
 		Bars.ClearBarValueTextUpdater(barFrame)
 		return
@@ -2143,11 +2381,9 @@ refreshChargeBarRuntimeState = function(state, icon, runtimeData)
 	local phaseByKey = runtime.chargePhaseByEntryKey or {}
 	local chargeEmptyDurationObjectByEntryKey = runtime.chargeEmptyDurationObjectByEntryKey or {}
 	local pendingChargeTimerHandoffByEntryKey = runtime.pendingChargeTimerHandoffByEntryKey or {}
-	local recentSpellcastAtBySpellId = runtime.recentChargeSpellcastAtBySpellId or {}
 	runtime.chargePhaseByEntryKey = phaseByKey
 	runtime.chargeEmptyDurationObjectByEntryKey = chargeEmptyDurationObjectByEntryKey
 	runtime.pendingChargeTimerHandoffByEntryKey = pendingChargeTimerHandoffByEntryKey
-	runtime.recentChargeSpellcastAtBySpellId = recentSpellcastAtBySpellId
 	local entryKey = state.entryKey
 	local activeByKey, durationByKey, cachedCooldownActive, cachedCooldownDurationObject = getChargeCooldownCache(entryKey)
 	state.previousChargePhase = entryKey and phaseByKey[entryKey] or nil
@@ -2160,7 +2396,6 @@ refreshChargeBarRuntimeState = function(state, icon, runtimeData)
 		cachedCooldownDurationObject = cachedCooldownActive and cooldownDurationObject or nil
 		activeByKey[entryKey] = cachedCooldownActive
 		durationByKey[entryKey] = cachedCooldownDurationObject
-		recentSpellcastAtBySpellId[spellId] = nil
 	end
 
 	local rechargeActive = chargeApiIsActive == true
@@ -2170,10 +2405,6 @@ refreshChargeBarRuntimeState = function(state, icon, runtimeData)
 	local hasRecharge = rechargeActive == true or lastChargeDepleted == true
 	maxCharges = getChargeSessionMax(entryKey, maxCharges, displayedCharges, hasRecharge, false)
 	local chargePhase = nil
-	local now = (Api.GetTime and Api.GetTime()) or GetTime()
-	local recentChargeSpellcastAt = recentSpellcastAtBySpellId[spellId]
-	local recentChargeSpend = state.previousChargePhase == "PARTIAL" and type(recentChargeSpellcastAt) == "number" and (now - recentChargeSpellcastAt) >= 0 and (now - recentChargeSpellcastAt) <= 2
-	local syntheticPartialHandoff = false
 	local chargeDurationObjectRefreshed = false
 	local renderChargePhase = nil
 	local freezeChargeRender = false
@@ -2276,7 +2507,6 @@ refreshChargeBarRuntimeState = function(state, icon, runtimeData)
 	state.cooldownInfoActive = cachedCooldownActive == true
 	state.lastNonGCDCooldownActive = cachedCooldownActive == true
 	state.lastNonGCDCooldownDurationObject = cachedCooldownDurationObject
-	state.syntheticPartialHandoff = syntheticPartialHandoff == true
 	state.chargeDurationObjectRefreshed = chargeDurationObjectRefreshed == true
 	state.deferChargeTimerHandoff = deferChargeTimerHandoff == true
 	state.freezeChargeRender = freezeChargeRender == true
@@ -2435,6 +2665,10 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 	local runtimeData = nil
 	local entryKey = Helper.GetEntryKey(panelId, entryId)
 	local barsRuntime = getRuntimeState()
+	local showChargeDuration = mode == Bars.BAR_MODE.CHARGES and getStoredBoolean(entry, "barShowChargeDuration", Bars.DEFAULTS.barShowChargeDuration) or false
+	local showValueText = mode ~= Bars.BAR_MODE.STACKS and getStoredBoolean(entry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
+	local showChargeCount = mode == Bars.BAR_MODE.CHARGES and showValueText == true or false
+	if showChargeDuration then showValueText = true end
 	local state = {
 		mode = mode,
 		label = label,
@@ -2442,7 +2676,9 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 		preview = preview == true,
 		showIcon = getStoredBoolean(entry, "barShowIcon", Bars.DEFAULTS.barShowIcon),
 		showLabel = getStoredBoolean(entry, "barShowLabel", Bars.DEFAULTS.barShowLabel),
-		showValueText = mode ~= Bars.BAR_MODE.STACKS and getStoredBoolean(entry, "barShowValueText", Bars.DEFAULTS.barShowValueText),
+		showValueText = showValueText,
+		showChargeDuration = showChargeDuration,
+		showChargeCount = showChargeCount,
 		showStackText = mode == Bars.BAR_MODE.STACKS and getStoredBoolean(entry, "barShowStackText", Bars.DEFAULTS.barShowStackText),
 		showStacks = Bars.ShouldEntryShowStacks(entry, resolvedType),
 		stackDisplayText = nil,
@@ -2523,7 +2759,15 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 			state.rechargeProgress = 0.48
 			state.progress = clamp((state.currentCharges or 0) / state.maxCharges, 0, 1)
 			if state.currentCharges < state.maxCharges then state.progress = clamp((state.currentCharges + state.rechargeProgress) / state.maxCharges, 0, 1) end
-			state.valueText = format("%d/%d", state.currentCharges or 0, state.maxCharges)
+			if state.showChargeDuration == true then
+				state.valueText = "12.4"
+				state.valueTextIsChargeDuration = true
+				state.chargeDurationTextActive = true
+				state.chargeDurationTextSegmentIndex = state.segmentedCharges == true and 2 or nil
+			else
+				state.valueText = format("%d/%d", state.currentCharges or 0, state.maxCharges)
+				if state.showChargeCount ~= true then state.valueText = nil end
+			end
 		else
 			local stackDisplayText, stackValue = Bars.ResolveStackDisplay(panelId, entryId, resolvedType, icon, nil)
 			state.stackDisplayText = stackDisplayText or tostring(stackValue or min(max(1, state.stackMax or Bars.DEFAULTS.barStackMax), 2))
@@ -2645,7 +2889,16 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 			state.entryKey = entryKey
 			refreshChargeBarRuntimeState(state, icon, reusableRuntimeData)
 			progress = getChargeBarProgress(state)
-			valueText = getChargeBarValueText(icon, state.currentCharges, state.maxCharges)
+			valueText = state.showChargeCount == true and getChargeBarValueText(icon, state.currentCharges, state.maxCharges) or nil
+			if state.showChargeDuration == true then
+				local durationText = Bars.UpdateChargeDurationTextState(state)
+				if state.chargeDurationTextActive == true then
+					valueText = state.chargeDurationTextNative == true and nil or durationText
+					state.valueTextIsChargeDuration = true
+				else
+					state.valueTextIsChargeDuration = nil
+				end
+			end
 			animate = state.animate == true
 			cooldownVisibilityActive = state.lastNonGCDCooldownActive == true
 		end
@@ -2707,7 +2960,14 @@ buildBarState = function(panelId, entryId, entry, icon, preview, runtimeDataOver
 		if mode == Bars.BAR_MODE.COOLDOWN then
 			state.valueText = "12.4"
 		elseif mode == Bars.BAR_MODE.CHARGES then
-			state.valueText = state.segmentedCharges == true and "1/2" or "2/3"
+			if state.showChargeDuration == true then
+				state.valueText = "12.4"
+				state.valueTextIsChargeDuration = true
+				state.chargeDurationTextActive = true
+				state.chargeDurationTextSegmentIndex = state.segmentedCharges == true and 2 or nil
+			else
+				state.valueText = state.segmentedCharges == true and "1/2" or "2/3"
+			end
 		end
 	end
 	if layoutEditActive and state.showStackText and not (Helper.HasDisplayCount and Helper.HasDisplayCount(state.stackDisplayText)) then
@@ -2799,7 +3059,12 @@ local function layoutChargeSegmentsIntoBar(
 
 	local chargePhase = state.renderChargePhase or state.chargePhase
 	local freezeChargeRender = state.freezeChargeRender == true
-	local gateDurationObject = chargePhase == "EMPTY" and state.cooldownDurationObject or nil
+	local gateDurationObject = nil
+	if chargePhase == "EMPTY" then
+		gateDurationObject = state.cooldownDurationObject
+	elseif chargePhase == "PARTIAL" and state.deferChargeTimerHandoff ~= true and state.chargeInfoActive == true then
+		gateDurationObject = state.chargeDurationObject
+	end
 	local gateCooldown = ensureBarCooldownGate(barFrame)
 	local gateCacheKey = table.concat({
 		"gate",
@@ -2810,8 +3075,20 @@ local function layoutChargeSegmentsIntoBar(
 	}, ":")
 	local gateActive = barFrame._eqolChargeGateActive == true
 	if freezeChargeRender ~= true then
-		setCooldownFrameDuration(gateCooldown, gateDurationObject, gateCacheKey)
-		gateActive = chargePhase == "EMPTY" and gateDurationObject ~= nil
+		if gateDurationObject ~= nil then
+			gateCooldown._eqolPanelId = state.panelId
+			gateCooldown._eqolEntryId = state.entryId
+			gateCooldown._eqolSpellId = state.spellId
+			if gateCooldown.SetScript then gateCooldown:SetScript("OnCooldownDone", Bars.OnChargeGateCooldownDone) end
+			if setCooldownFrameDuration(gateCooldown, gateDurationObject, gateCacheKey) and gateCooldown.Show then gateCooldown:Show() end
+		else
+			if gateCooldown.SetScript then gateCooldown:SetScript("OnCooldownDone", nil) end
+			gateCooldown._eqolPanelId = nil
+			gateCooldown._eqolEntryId = nil
+			gateCooldown._eqolSpellId = nil
+			setCooldownFrameDuration(gateCooldown, nil, gateCacheKey)
+		end
+		gateActive = gateDurationObject ~= nil
 		local previousGateActive = barFrame._eqolChargeGateActive == true
 		if gateActive ~= previousGateActive then
 			if gateActive then
@@ -2850,6 +3127,7 @@ local function layoutChargeSegmentsIntoBar(
 				elseif state.deferChargeTimerHandoff == true then
 					setStatusBarImmediateValue(segment.fill, 0)
 					if segment.fill.Hide then segment.fill:Hide() end
+					Bars.ScheduleChargeTimerHandoffRefresh(state)
 				elseif state.chargeInfoActive == true and state.chargeDurationObject ~= nil then
 					setStatusBarTimerDuration(
 						segment.fill,
@@ -3024,11 +3302,13 @@ local function layoutBarTextElement(
 	defaultFontStyle,
 	anchor,
 	offsetX,
-	offsetY
+	offsetY,
+	relativeFrame
 )
 	applyFontStringStyle(fontString, fontPath, fontSize, fontStyle, fontColor, defaultFontPath, defaultFontSize, defaultFontStyle)
 	local resolvedAnchor = Bars.GetResolvedTextAnchor(anchor, orientation, role)
 	local point, relativePoint, justifyH = Bars.GetTextAnchorConfig(anchor, orientation, role)
+	local anchorFrame = relativeFrame or barFrame.textOverlay
 	local insetX = offsetX or 0
 	local insetY = offsetY or 0
 	local justifyV = "MIDDLE"
@@ -3048,19 +3328,19 @@ local function layoutBarTextElement(
 		fontString:SetWidth(pixelSnap(max(1, stringWidth + 2), barFrame and barFrame.textOverlay or barFrame))
 	end
 	if resolvedAnchor == Bars.TEXT_ANCHOR.LEFT then
-		fontString:SetPoint("LEFT", barFrame.textOverlay, "LEFT", textInset + insetX, insetY)
+		fontString:SetPoint("LEFT", anchorFrame, "LEFT", textInset + insetX, insetY)
 	elseif resolvedAnchor == Bars.TEXT_ANCHOR.RIGHT then
-		fontString:SetPoint("RIGHT", barFrame.textOverlay, "RIGHT", -textInset + insetX, insetY)
+		fontString:SetPoint("RIGHT", anchorFrame, "RIGHT", -textInset + insetX, insetY)
 	elseif resolvedAnchor == Bars.TEXT_ANCHOR.TOP then
 		insetY = insetY - textInset
 		justifyV = "TOP"
-		fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
+		fontString:SetPoint(point, anchorFrame, relativePoint, insetX, insetY)
 	elseif resolvedAnchor == Bars.TEXT_ANCHOR.BOTTOM then
 		insetY = insetY + textInset
 		justifyV = "BOTTOM"
-		fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
+		fontString:SetPoint(point, anchorFrame, relativePoint, insetX, insetY)
 	else
-		fontString:SetPoint(point, barFrame.textOverlay, relativePoint, insetX, insetY)
+		fontString:SetPoint(point, anchorFrame, relativePoint, insetX, insetY)
 	end
 	fontString:SetJustifyH(justifyH)
 	if fontString.SetJustifyV then fontString:SetJustifyV(justifyV) end
@@ -3393,7 +3673,35 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 	else
 		barFrame.label:Hide()
 	end
-	if state.showValueText and state.valueText then
+	local valueRelativeFrame = nil
+	if useChargeSegments and state.valueTextIsChargeDuration == true and state.chargeDurationTextSegmentIndex then
+		valueRelativeFrame = barFrame.segments and barFrame.segments[state.chargeDurationTextSegmentIndex] or nil
+	end
+	if
+		state.showValueText
+		and state.valueTextIsChargeDuration == true
+		and state.chargeDurationTextNative == true
+		and state.chargeDurationTextObject
+	then
+		barFrame.value:Hide()
+		Bars.ApplyChargeDurationCountdown(
+			barFrame,
+			state,
+			valueRelativeFrame,
+			orientation,
+			state.valueFont,
+			state.valueSize,
+			state.valueStyle,
+			state.valueColor,
+			valueDefaultFontPath,
+			valueDefaultFontSize,
+			valueDefaultFontStyle,
+			state.valueAnchor,
+			state.valueOffsetX,
+			state.valueOffsetY
+		)
+	elseif state.showValueText and state.valueText then
+		Bars.ClearChargeDurationCountdown(barFrame)
 		layoutBarTextElement(
 			barFrame,
 			orientation,
@@ -3410,9 +3718,11 @@ layoutBarFrame = function(barFrame, icon, span, layout, state)
 			valueDefaultFontStyle,
 			state.valueAnchor,
 			state.valueOffsetX,
-			state.valueOffsetY
+			state.valueOffsetY,
+			valueRelativeFrame
 		)
 	else
+		Bars.ClearChargeDurationCountdown(barFrame)
 		barFrame.value:Hide()
 	end
 	if state.showStackText and state.stackDisplayText then
@@ -3630,6 +3940,13 @@ local function showBarModeMenu(owner, panelId, entryId)
 			function() return entry.barShowValueText == true end,
 			function() toggleEntryBarFlag(panelId, entryId, "barShowValueText") end
 		)
+		if normalizeBarMode(entry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES then
+			rootDescription:CreateCheckbox(
+				L["Show duration"] or "Show duration",
+				function() return entry.barShowChargeDuration == true end,
+				function() toggleEntryBarFlag(panelId, entryId, "barShowChargeDuration") end
+			)
+		end
 	end)
 end
 
@@ -4297,6 +4614,16 @@ Bars.AppendBarStandaloneBorderSettings = function(settings, ctx)
 	}
 end
 
+Bars.ShouldShowBarValueTextSettings = function(entry)
+	if type(entry) ~= "table" then return false end
+	local mode = normalizeBarMode(entry.barMode, Bars.DEFAULTS.barMode)
+	if mode == Bars.BAR_MODE.CHARGES then
+		return getStoredBoolean(entry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
+			or getStoredBoolean(entry, "barShowChargeDuration", Bars.DEFAULTS.barShowChargeDuration)
+	end
+	return getStoredBoolean(entry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
+end
+
 local function appendBarStandaloneTextSettings(settings, ctx)
 	local panelId = ctx.panelId
 	local entryId = ctx.entryId
@@ -4489,6 +4816,20 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 			return getStoredBoolean(currentEntry, "barShowValueText", Bars.DEFAULTS.barShowValueText)
 		end,
 		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowValueText", value) end,
+	}
+	settings[#settings + 1] = {
+		name = L["Show duration"] or "Show duration",
+		kind = SettingType.Checkbox,
+		parentId = "eqolCooldownPanelStandaloneBarCharges",
+		isShown = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return normalizeBarMode(currentEntry and currentEntry.barMode, Bars.DEFAULTS.barMode) == Bars.BAR_MODE.CHARGES
+		end,
+		get = function()
+			local currentEntry = getStandaloneBarContextEntry(ctx)
+			return getStoredBoolean(currentEntry, "barShowChargeDuration", Bars.DEFAULTS.barShowChargeDuration)
+		end,
+		set = function(_, value) setEntryBarBoolean(panelId, entryId, "barShowChargeDuration", value) end,
 	}
 	settings[#settings + 1] = {
 		name = L["CooldownPanelBarShowValueText"] or "Show value",
@@ -4771,7 +5112,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -4798,7 +5139,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -4828,7 +5169,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -4851,7 +5192,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -4874,7 +5215,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -4897,7 +5238,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -4998,7 +5339,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -5025,7 +5366,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -5052,7 +5393,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -5079,7 +5420,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -5109,7 +5450,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -5132,7 +5473,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -5152,7 +5493,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
@@ -5172,7 +5513,7 @@ local function appendBarStandaloneTextSettings(settings, ctx)
 		end,
 		disabled = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
-			return not (currentEntry and currentEntry.barShowValueText == true)
+			return not Bars.ShouldShowBarValueTextSettings(currentEntry)
 		end,
 		get = function()
 			local currentEntry = getStandaloneBarContextEntry(ctx)
