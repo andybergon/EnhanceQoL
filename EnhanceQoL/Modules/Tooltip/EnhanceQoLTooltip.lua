@@ -1360,6 +1360,22 @@ local function registerTooltipHooks()
 		end
 	end
 
+	-- Same pattern for UIWidgetTemplateItemDisplayMixin:Setup.
+	-- Item display widgets (e.g. tooltips with item rewards like Angler Pearls,
+	-- itemID 267278) resume from an async ContinuableContainer callback into
+	-- Blizzard_UIWidgetTemplateBase.lua:1638, which performs arithmetic on
+	-- dimensions that return secret values in tainted contexts. Item icon, name,
+	-- and tooltip data are populated before the error point, so the visible
+	-- widget renders correctly — only the final size arithmetic is suppressed.
+	if UIWidgetTemplateItemDisplayMixin and UIWidgetTemplateItemDisplayMixin.Setup then
+		local origItemSetup = UIWidgetTemplateItemDisplayMixin.Setup
+		UIWidgetTemplateItemDisplayMixin.Setup = function(self, ...)
+			local ok, err = pcall(origItemSetup, self, ...)
+			if not ok and type(err) == "string" and err:find("secret") then return end
+			if not ok then error(err, 0) end
+		end
+	end
+
 	-- Apply initial tooltip scale once the UI is ready
 	C_Timer.After(0, function()
 		if addon.Tooltip and addon.Tooltip.ApplyScale then addon.Tooltip.ApplyScale() end
