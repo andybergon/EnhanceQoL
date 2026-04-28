@@ -1,21 +1,114 @@
 # Changelog
 
-## [10.6.0-beta2] - 2026-04-22
-
-### 🐛 Fixed
-
-- Cooldown Panels: Polished the Original Blizzard icon border so the frame, icon, and cooldown swipe line up more cleanly.
-
----
-
-## [10.6.0] - 2026-04-22
+## [10.8.0] - 2026-04-26
 
 ### ✨ Added
 
+- Group Frames / Party: Added an optional border around the full party group .
+- Mover: Added per-frame position persistence overrides.
+
+### 🐛 Fixed
+
+- Class Buff Reminder: Fixed the content filter missing Follower Dungeons, and limited missing flask, food, and weapon buff reminders to current dungeon and raid content while class buff reminders continue to work independently.
+- Cooldown Panels / Bars: Fixed Assisted Combat highlights appearing on hidden ghost icons used by fixed-layout bar entries.
+- Cooldown Panels / Bars: Fixed icon borders and other icon overlays appearing as empty boxes on hidden ghost icons used by fixed-layout bar entries.
+- Gem Helper: Fixed the CharacterFrame gem tracker showing before max level while keeping the socketing helper panel available for selecting gems.
+- Group Frames / Auras: Fixed aura tooltips still appearing for some users even though the aura tooltip option was shown as disabled.
+- Group Frames / Healer Buffs: Fixed the Cooldown Swipe, Draw Edge, and Draw Bling options not being applied to active healer buff indicators.
+- Loot: Fixed moved group loot anchors causing bonus roll prompts to overlap group loot roll frames.
+- Mover: Fixed LFG popup dialogs sometimes being restored to the top-left corner.
+- Mover: Fixed combat handling for supported protected frames and reset actions.
+- Mover: Limited several frame drag areas to their intended headers or handles.
+- Mythic Plus / Bloodlust Tracker: Fixed active Sated/Exhaustion debuff icons showing outside instances by adding an instance-only visibility option covering dungeons, raids, and delves.
+
+---
+
+## [10.7.0] - 2026-04-25
+
+### ✨ Added
+
+- Unit Frames / Focus Frame: Added Combat Indicator support to the Focus Frame.
+- Unit Frames / Group Frames: Added an optional Blizzard aura rendering mode. This lets Blizzard render selected aura categories such as buffs, debuffs, defensives, dispels, and private auras directly, giving the same aura filtering and visibility behavior as the default Blizzard frames. It can be mixed with EnhanceQoL's custom aura rendering per category, but Blizzard-rendered categories intentionally offer less customization and focus on native frame parity.
+
+### 🐛 Fixed
+
+- Class Buff Reminder: Fixed food, flask, rune, and weapon buff reminders sometimes not showing for classes, such as Warlock, Death Knight, Demon Hunter, Monk, and Hunter.
+- Cooldown Panels / Bars: Fixed Blizzard Cooldown Manager aura bars so stack counts can be shown while using Cooldown bar mode.
+- Unit Frames: Fixed the Player Frame name sometimes disappearing after login or reload until a font or outline setting was changed.
+- Group Frames: Fixed party and raid frame growth directions sometimes turning into a stepped layout after profile or layout changes.
+- Unit Frames / Group Frames: Fixed Blizzard-rendered aura borders so debuff frames scale correctly with the global Blizzard aura icon size.
+- Unit Frames / Group Frames: Fixed Private Auras rendering behind party and raid frames by matching their layer to the regular aura containers.
+
+---
+
+## [10.6.5] - 2026-04-24
+
+### 🐛 Fixed
+
+- Data Panels: Fixed missing text color controls by adding panel-wide class/custom colors and Friends/Guild stream color options.
+- Cooldown Panels: Fixed panels anchored to unit frames sometimes using the wrong effective anchor after login, reload, or specialization changes until an anchor setting was toggled.
+- Cooldown Panels / Bars: Fixed old button charge text carrying over into BAR-mode charge entries after switching display modes.
+- Cooldown Panels / Bars: Fixed standalone bar borders so border size and offset no longer shrink, shift, or squash the bar fill texture.
+- Group Frames / Healer Buff Editor: Fixed preview cooldown and charge text using unresolved global font-style settings, preventing `SetFont` errors when opening the editor with global font styling enabled.
+- Square Minimap Stats: Fixed the default Tracking Button placement so new profiles start at the top-right corner instead of overlapping the mail icon at top-left.
+- Unit Frames / Group Frames: Fixed hover highlight layering by adding Frame Strata controls, allowing borders to render above dispel overlays while hover highlights still render on top.
+
+---
+
+## [10.6.4] - 2026-04-24
+
+### 🐛 Fixed
+
+- Cooldown Panels: Fixed shared talent and capstone spell entries so they now switch more reliably to the correct active spell, no longer collapse unrelated active spells into one entry, and stay stable after `/reload`.
+- Cooldown Panels / Bars: Fixed bar fills sometimes drawing slightly outside their border.
+- Group Frames: Improved name text stability on party and raid frames, reducing visible shaking when frames update, resize, or refresh their layout.
+- Profiles / Fonts: Fixed global font and font-style propagation for the BR tracker, Total Absorb tracker, and target/focus buff text so they now update without manually switching fonts first.
+- Unit Frames / Boss Frames: Fixed boss frames disappearing after resetting and re-pulling an encounter.
+- Vendor: Fixed Auto Vendor selling cosmetic appearance items with vendor prices, including event-cache cosmetics.
+
+---
+
+## [10.6.3] - 2026-04-23
+
+### 🐛 Fixed
+
+- Cooldown Panels: Fixed some passive talent entries being treated like swappable talent-choice spells, which could incorrectly replace them with active spells such as `Temporal Anomaly`.
+- Cooldown Panels / Keybinds: Fixed spell keybind resolution so talent and capstone entries no longer inherit bindings from unrelated spells through fuzzy spell lookups.
+
+---
+
+## [10.6.2] - 2026-04-23
+
+### 🐛 Fixed
+
+- Resource Bars: Fixed the Devorer Void Meta bar so it now fills correctly while in Void Meta and no longer looks empty after you go past the cast threshold.
+- Cooldown Panels / Bars: Fixed BAR-mode entries in keybind-enabled panels so hidden source icons no longer leave behind floating keybind.
+
+---
+
+## [10.6.1] - 2026-04-23
+
+### 🐛 Fixed
+
+- Cooldown Panels: Fixed shared panels with talent-choice spells so entries like `Divine Toll` / `Holy Prism` or `Tremor Totem` / `Poison Cleansing Totem` now switch to the correct spell for the current spec and talent choice without disappearing or getting stuck on the wrong icon.
+- Profiles: Fixed profile export/import so the Mover on/off setting is now included.
+
+---
+
+## [10.6.0] - 2026-04-23
+
+### ✨ Added
+
+- Group Frames: Added "Don't overflow health bar" controls for Absorb and Heal Absorb bars in the Party/Raid panels, plus an optional Absorb glow indicator. Absorb no-overflow is available with reverse fill; Heal Absorb no-overflow is available without reverse fill.
 - Cooldown Panels: Added an Original Blizzard icon border option, matching the rounded Cooldown Manager look for panel icons.
 
 ### 🐛 Fixed
 
+- Cooldown Panels: Polished the Original Blizzard icon border so the frame, icon, and cooldown swipe line up more cleanly.
+- Cooldown Panels: Fixed Ready Glow sometimes disappearing or failing to appear after a cooldown finished, especially when the global cooldown briefly overlapped the spell.
+- Cooldown Panels: Fixed "Require resource for ready glow" so Ready Glow no longer appears while a spell is not currently usable, such as `Rampage` without enough Rage or `Execute` outside its usable conditions.
+- Party/Raid Frames: Fixed the Dispel indicator highlight so it now covers the full frame, including the resource bar, and the Edit Mode sample stays visible.
+- Party Frames: Fixed role-based Power Bar visibility in solo scenarios so the current specialization role is used when no party role is assigned.
 - Cooldown Panels: Fixed panels for other specializations sometimes staying visible after switching specs.
 
 ---

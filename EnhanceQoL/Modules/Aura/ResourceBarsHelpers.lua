@@ -112,7 +112,11 @@ local function resolveDiscreteSegmentBorderStyle(cfg, forceSegmentBorders)
 	if edgeSize <= 0 then return false end
 
 	local borderTexture = bd.borderTexture or "Interface\\Tooltips\\UI-Tooltip-Border"
-	if DISCRETE_LEGACY_BORDER_TEXTURE_IDS[borderTexture] then borderTexture = "Interface\\Tooltips\\UI-Tooltip-Border" end
+	if ResourceBars.ResolveBorderTexture then
+		borderTexture = ResourceBars.ResolveBorderTexture(borderTexture, "Interface\\Tooltips\\UI-Tooltip-Border")
+	elseif DISCRETE_LEGACY_BORDER_TEXTURE_IDS[borderTexture] then
+		borderTexture = "Interface\\Tooltips\\UI-Tooltip-Border"
+	end
 	if not borderTexture or borderTexture == "" then return false end
 
 	local outset = tonumber(bd.outset) or 0

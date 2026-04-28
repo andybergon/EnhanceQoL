@@ -1012,7 +1012,7 @@ registerEditModeBars = function()
 				for i = 1, #names do
 					local name = names[i]
 					local path = hash[name]
-					if type(path) == "string" and path ~= "" then map[path] = tostring(name) end
+					if type(path) == "string" and path ~= "" then map[name] = tostring(name) end
 				end
 				return addon.functions.prepareListForDropdown(map)
 			end

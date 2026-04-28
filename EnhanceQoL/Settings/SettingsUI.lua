@@ -110,6 +110,38 @@ function addon.functions.SettingsCreateCheckboxes(cat, data)
 end
 
 ---------------------------------------------------------
+-- Checkbox + Dropdown
+---------------------------------------------------------
+function addon.functions.SettingsCreateCheckboxDropdown(cat, cbData)
+	local dropdownKey = cbData.dropdownVar or cbData.dropdownKey
+	local initializer, checkboxSetting, dropdownSetting = SettingsLib:CreateCheckboxDropdown(cat, {
+		key = cbData.var,
+		name = cbData.text,
+		default = cbData.default or false,
+		get = cbData.get or function() return addon.db[cbData.var] end,
+		set = cbData.func or cbData.set or function(v) addon.db[cbData.var] = v end,
+		desc = cbData.desc,
+		dropdownKey = dropdownKey,
+		dropdownName = cbData.dropdownText or cbData.dropdownName,
+		dropdownDefault = cbData.dropdownDefault,
+		dropdownValues = cbData.dropdownList or cbData.dropdownValues or cbData.list or cbData.values,
+		dropdownOrder = cbData.dropdownOrder or cbData.order,
+		dropdownGet = cbData.dropdownGet or function() return addon.db[dropdownKey] end,
+		dropdownSet = cbData.dropdownSet or function(v) addon.db[dropdownKey] = v end,
+		dropdownDesc = cbData.dropdownDesc,
+		searchtags = cbData.searchtags,
+		parent = cbData.element or cbData.parent,
+		parentCheck = cbData.parentCheck,
+		parentSection = cbData.parentSection,
+		prefix = prefix,
+	})
+	addon.SettingsLayout.elements = addon.SettingsLayout.elements or {}
+	addon.SettingsLayout.elements[cbData.var] = { initializer = initializer, setting = checkboxSetting, dropdownSetting = dropdownSetting }
+	if dropdownKey then addon.SettingsLayout.elements[dropdownKey] = { initializer = initializer, setting = dropdownSetting, checkboxSetting = checkboxSetting } end
+	return addon.SettingsLayout.elements[cbData.var]
+end
+
+---------------------------------------------------------
 -- Slider
 ---------------------------------------------------------
 function addon.functions.SettingsCreateSlider(cat, cbData)

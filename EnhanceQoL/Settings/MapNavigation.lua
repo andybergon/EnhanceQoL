@@ -1499,12 +1499,12 @@ data = {
 						text = L["Anchor"] or "Anchor",
 						list = squareMinimapStatsAnchorOptions,
 						order = squareMinimapStatsAnchorOrder,
-						get = function() return addon.db and addon.db.squareMinimapStatsTrackingButtonAnchor or "TOPLEFT" end,
+						get = function() return addon.db and addon.db.squareMinimapStatsTrackingButtonAnchor or "TOPRIGHT" end,
 						set = function(value, maybeValue)
-							addon.db["squareMinimapStatsTrackingButtonAnchor"] = normalizeSquareMinimapAnchorSelection(value, maybeValue, "TOPLEFT")
+							addon.db["squareMinimapStatsTrackingButtonAnchor"] = normalizeSquareMinimapAnchorSelection(value, maybeValue, "TOPRIGHT")
 							applySquareMinimapStatsNow(true)
 						end,
-						default = "TOPLEFT",
+						default = "TOPRIGHT",
 						sType = "dropdown",
 						parent = true,
 						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsTrackingButton"),
@@ -1513,7 +1513,7 @@ data = {
 					{
 						var = "squareMinimapStatsTrackingButtonOffsetX",
 						text = L["Horizontal offset"] or "Horizontal offset",
-						get = function() return addon.db and addon.db.squareMinimapStatsTrackingButtonOffsetX or 3 end,
+						get = function() return addon.db and addon.db.squareMinimapStatsTrackingButtonOffsetX or -3 end,
 						set = function(value)
 							addon.db["squareMinimapStatsTrackingButtonOffsetX"] = value
 							applySquareMinimapStatsNow(true)
@@ -1521,7 +1521,7 @@ data = {
 						min = -220,
 						max = 220,
 						step = 1,
-						default = 3,
+						default = -3,
 						sType = "slider",
 						parent = true,
 						parentCheck = isSquareMinimapStatElementEnabled("squareMinimapStatsTrackingButton"),
@@ -2642,8 +2642,8 @@ local squareMinimapStatsDefaults = {
 	squareMinimapStatsCoordinatesDecimals = 2,
 	squareMinimapStatsCoordinatesUpdateInterval = 0.2,
 	squareMinimapStatsTrackingButton = false,
-	squareMinimapStatsTrackingButtonAnchor = "TOPLEFT",
-	squareMinimapStatsTrackingButtonOffsetX = 3,
+	squareMinimapStatsTrackingButtonAnchor = "TOPRIGHT",
+	squareMinimapStatsTrackingButtonOffsetX = -3,
 	squareMinimapStatsTrackingButtonOffsetY = -3,
 	squareMinimapStatsTrackingButtonShowBackground = true,
 	squareMinimapStatsTrackingButtonScale = 1.0,

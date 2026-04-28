@@ -39,6 +39,7 @@ local AURA_SLOT_BATCH_SIZE = 32
 local AURA_SLOT_SCAN_GUARD = 16
 local REMINDER_GLOW_KEY = "CLASS_BUFF_REMINDER"
 local SHARED_FOOD_AURA_ICON_ID = 136000
+local CURRENT_EXPANSION_INSTANCE_CACHE = {}
 
 local DB_ENABLED = "classBuffReminderEnabled"
 local DB_SHOW_PARTY = "classBuffReminderShowParty"
@@ -103,6 +104,7 @@ Reminder.runeTracking = Reminder.runeTracking or {
 local TRACKING_CONTENT = {
 	OPEN_WORLD = "openWorld",
 	SCENARIO = "scenario",
+	PARTY_FOLLOWER = "partyFollower",
 	PARTY_NORMAL = "partyNormal",
 	PARTY_HEROIC = "partyHeroic",
 	PARTY_MYTHIC = "partyMythic",
@@ -122,6 +124,7 @@ TRACKING_CONTENT.db = {
 TRACKING_CONTENT.order = {
 	TRACKING_CONTENT.OPEN_WORLD,
 	TRACKING_CONTENT.SCENARIO,
+	TRACKING_CONTENT.PARTY_FOLLOWER,
 	TRACKING_CONTENT.PARTY_NORMAL,
 	TRACKING_CONTENT.PARTY_HEROIC,
 	TRACKING_CONTENT.PARTY_MYTHIC,
@@ -134,6 +137,7 @@ TRACKING_CONTENT.order = {
 TRACKING_CONTENT.keys = {
 	[TRACKING_CONTENT.OPEN_WORLD] = true,
 	[TRACKING_CONTENT.SCENARIO] = true,
+	[TRACKING_CONTENT.PARTY_FOLLOWER] = true,
 	[TRACKING_CONTENT.PARTY_NORMAL] = true,
 	[TRACKING_CONTENT.PARTY_HEROIC] = true,
 	[TRACKING_CONTENT.PARTY_MYTHIC] = true,
@@ -145,6 +149,9 @@ TRACKING_CONTENT.keys = {
 
 TRACKING_CONTENT.difficulties = {
 	party = {
+		follower = {
+			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).FollowerDungeon or 205] = true,
+		},
 		normal = {
 			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).DungeonNormal or 1] = true,
 			[((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).DungeonTimewalker or 24] = true,
@@ -203,6 +210,7 @@ end
 
 function Reminder.CreateLegacyInstanceTrackingContentSelection()
 	return {
+		[TRACKING_CONTENT.PARTY_FOLLOWER] = true,
 		[TRACKING_CONTENT.PARTY_NORMAL] = true,
 		[TRACKING_CONTENT.PARTY_HEROIC] = true,
 		[TRACKING_CONTENT.PARTY_MYTHIC] = true,
@@ -641,6 +649,7 @@ end
 function Reminder.GetTrackingContentLabel(key)
 	if key == TRACKING_CONTENT.OPEN_WORLD then return _G.WORLD or "World" end
 	if key == TRACKING_CONTENT.SCENARIO then return _G.SCENARIOS or _G.TRACKER_HEADER_SCENARIO or "Scenarios" end
+	if key == TRACKING_CONTENT.PARTY_FOLLOWER then return L["timeoutReleaseGroupDungeonFollower"] or Reminder.BuildContentDifficultyLabel(_G.DUNGEONS or _G.LFG_TYPE_DUNGEON or "Dungeon", _G.FOLLOWER or "Follower") end
 	if key == TRACKING_CONTENT.PARTY_NORMAL then return Reminder.BuildContentDifficultyLabel(_G.PARTY or "Party", _G.PLAYER_DIFFICULTY1 or _G.NORMAL or "Normal") end
 	if key == TRACKING_CONTENT.PARTY_HEROIC then return Reminder.BuildContentDifficultyLabel(_G.PARTY or "Party", _G.PLAYER_DIFFICULTY2 or _G.HEROIC or "Heroic") end
 	if key == TRACKING_CONTENT.PARTY_MYTHIC then return Reminder.BuildContentDifficultyLabel(_G.PARTY or "Party", _G.PLAYER_DIFFICULTY6 or "Mythic") end
@@ -725,6 +734,35 @@ local function getPlayerEquippedItemEquipLoc(slot)
 	local itemLink = GetInventoryItemLink("player", slot)
 	if type(itemLink) ~= "string" or itemLink == "" then return nil end
 	return select(4, C_Item.GetItemInfoInstant(itemLink))
+end
+
+function Reminder.NormalizeIconTexture(value)
+	if value == nil then return nil end
+	if issecretvalue and issecretvalue(value) then return nil end
+	if type(value) == "number" then return value > 0 and value or nil end
+	if type(value) == "string" and value ~= "" then return value end
+	return nil
+end
+
+function Reminder.GetItemIcon(itemId)
+	itemId = tonumber(itemId)
+	if not itemId or itemId <= 0 then return nil end
+	if C_Item and C_Item.GetItemIconByID then
+		local icon = C_Item.GetItemIconByID(itemId)
+		icon = Reminder.NormalizeIconTexture(icon)
+		if icon then return icon end
+	end
+	if C_Item and C_Item.GetItemInfoInstant then
+		local icon = select(5, C_Item.GetItemInfoInstant(itemId))
+		icon = Reminder.NormalizeIconTexture(icon)
+		if icon then return icon end
+	end
+	if GetItemIcon then
+		local icon = GetItemIcon(itemId)
+		icon = Reminder.NormalizeIconTexture(icon)
+		if icon then return icon end
+	end
+	return nil
 end
 
 local function isEnchantableWeaponEquipLoc(equipLoc)
@@ -1045,13 +1083,14 @@ local function setProviderDisplaySpellId(provider, spellId)
 	provider._presentationAttempted = nil
 end
 
-local function makeSelfMissingEntry(spellId, label, countMissing, countTotal, sourceKind)
+local function makeSelfMissingEntry(spellId, label, countMissing, countTotal, sourceKind, icon)
 	return {
 		spellId = normalizeSpellId(spellId),
 		label = label,
 		countMissing = tonumber(countMissing),
 		countTotal = tonumber(countTotal),
 		sourceKind = sourceKind,
+		icon = Reminder.NormalizeIconTexture(icon),
 	}
 end
 
@@ -1088,7 +1127,9 @@ local function resolveProviderPresentation(provider, force)
 	local resolvedName
 	local resolvedIcon
 	local preferredId = normalizeSpellId(provider.displaySpellId)
+	local preferredIcon = Reminder.NormalizeIconTexture(provider.displayIcon)
 	if preferredId then resolvedId = preferredId end
+	if preferredIcon then resolvedIcon = preferredIcon end
 
 	if preferredId then
 		requestSpellDataLoad(preferredId)
@@ -1135,8 +1176,8 @@ local function resolveProviderPresentation(provider, force)
 
 	provider.displaySpellId = resolvedId or preferredId or normalizeSpellId(provider.spellIds[1]) or provider.displaySpellId or provider.spellIds[1]
 	provider.cachedName = resolvedName or provider.fallbackName or "Buff"
-	provider.cachedIcon = resolvedIcon or ICON_MISSING
-	provider._presentationReady = (resolvedName ~= nil and resolvedIcon ~= nil)
+	provider.cachedIcon = resolvedIcon or Reminder.NormalizeIconTexture(provider.displayIcon) or ICON_MISSING
+	provider._presentationReady = (provider.cachedName ~= nil and provider.cachedIcon ~= ICON_MISSING)
 end
 
 local function refreshProviderSpellNameSet(provider)
@@ -1253,6 +1294,7 @@ function Reminder:GetConsumableTrackingContentToken()
 
 	if instanceType == "party" then
 		if difficultyID == (((_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}).DungeonChallenge or 8) then return nil end
+		if difficultyID and TRACKING_CONTENT.difficulties.party.follower[difficultyID] then return TRACKING_CONTENT.PARTY_FOLLOWER end
 		if difficultyID and TRACKING_CONTENT.difficulties.party.heroic[difficultyID] then return TRACKING_CONTENT.PARTY_HEROIC end
 		if difficultyID and TRACKING_CONTENT.difficulties.party.mythic[difficultyID] then return TRACKING_CONTENT.PARTY_MYTHIC end
 		return TRACKING_CONTENT.PARTY_NORMAL
@@ -1275,9 +1317,81 @@ function Reminder:IsDungeonOrRaidInstance()
 	return instanceType == "party" or instanceType == "raid"
 end
 
-function Reminder:IsTrackingContentSelected(selection)
+function Reminder:GetCurrentExpansionLevel()
+	local expansionLevel
+	if type(LE_EXPANSION_LEVEL_CURRENT) == "number" then expansionLevel = LE_EXPANSION_LEVEL_CURRENT end
+	if type(expansionLevel) ~= "number" and _G.GetServerExpansionLevel then expansionLevel = _G.GetServerExpansionLevel() end
+	if issecretvalue and issecretvalue(expansionLevel) then expansionLevel = nil end
+	if type(expansionLevel) ~= "number" and _G.GetMaximumExpansionLevel then expansionLevel = _G.GetMaximumExpansionLevel() end
+	if type(expansionLevel) ~= "number" and GetExpansionLevel then expansionLevel = GetExpansionLevel() end
+	if issecretvalue and issecretvalue(expansionLevel) then expansionLevel = nil end
+	return type(expansionLevel) == "number" and expansionLevel or nil
+end
+
+function Reminder:GetCurrentExpansionInstanceCache()
+	local expansionLevel = self:GetCurrentExpansionLevel()
+	if not expansionLevel then return nil end
+	local cache = CURRENT_EXPANSION_INSTANCE_CACHE[expansionLevel]
+	if cache then return cache end
+
+	if not (EJ_SelectTier and EJ_GetInstanceByIndex) then return nil end
+
+	cache = {
+		instances = {},
+		maps = {},
+	}
+	CURRENT_EXPANSION_INSTANCE_CACHE[expansionLevel] = cache
+
+	local previousTier = EJ_GetCurrentTier and EJ_GetCurrentTier() or nil
+	EJ_SelectTier(expansionLevel + 1)
+
+	for _, showRaid in ipairs({ false, true }) do
+		local index = 1
+		while true do
+			local journalInstanceID, _, _, _, _, _, _, _, _, _, mapID = EJ_GetInstanceByIndex(index, showRaid)
+			if not journalInstanceID then break end
+			cache.instances[journalInstanceID] = true
+			if type(mapID) == "number" and mapID > 0 then cache.maps[mapID] = true end
+			index = index + 1
+		end
+	end
+
+	if previousTier then EJ_SelectTier(previousTier) end
+	return cache
+end
+
+function Reminder:IsCurrentExpansionDungeonOrRaidInstance()
+	if self:IsDungeonOrRaidInstance() ~= true then return true end
+	if not GetInstanceInfo then return true end
+
+	local _, _, difficultyID, _, _, _, _, instanceMapID, _, lfgDungeonID = GetInstanceInfo()
+	local currentExpansionLevel = self:GetCurrentExpansionLevel()
+
+	if GetLFGDungeonInfo and lfgDungeonID then
+		local _, _, _, _, _, _, _, _, expansionLevel, _, _, _, _, _, _, _, _, isTimewalker = GetLFGDungeonInfo(lfgDungeonID)
+		if issecretvalue and issecretvalue(expansionLevel) then expansionLevel = nil end
+		if issecretvalue and issecretvalue(isTimewalker) then isTimewalker = nil end
+		if isTimewalker == true then return false end
+		if type(expansionLevel) == "number" and currentExpansionLevel then return expansionLevel >= currentExpansionLevel end
+	end
+
+	local ids = (_G.DifficultyUtil and _G.DifficultyUtil.ID) or {}
+	if difficultyID == (ids.DungeonTimewalker or 24) or difficultyID == (ids.RaidTimewalker or 33) then return false end
+
+	local cache = self:GetCurrentExpansionInstanceCache()
+	if type(cache) ~= "table" then return true end
+
+	if type(instanceMapID) == "number" and cache.maps[instanceMapID] then return true end
+	local journalInstanceID = C_EncounterJournal and C_EncounterJournal.GetInstanceForGameMap and type(instanceMapID) == "number"
+		and C_EncounterJournal.GetInstanceForGameMap(instanceMapID)
+		or nil
+	return journalInstanceID ~= nil and cache.instances[journalInstanceID] == true
+end
+
+function Reminder:IsTrackingContentSelected(selection, requireCurrentExpansionInstance)
 	local token = self:GetConsumableTrackingContentToken()
 	if not token or type(selection) ~= "table" then return false end
+	if requireCurrentExpansionInstance == true and self:IsCurrentExpansionDungeonOrRaidInstance() ~= true then return false end
 	return selection[token] == true
 end
 
@@ -1299,7 +1413,7 @@ end
 function Reminder:CanCheckFlaskReminder()
 	if self:IsFlaskEnvironmentRestricted() then return false end
 	if not self:IsFlaskTrackingEnabled() then return false end
-	return self:IsTrackingContentSelected(self:GetFlaskTrackingContentSelection())
+	return self:IsTrackingContentSelected(self:GetFlaskTrackingContentSelection(), true)
 end
 
 function Reminder:IsEarthenPlayer()
@@ -1312,7 +1426,7 @@ function Reminder:CanCheckFoodReminder()
 	if self:IsFlaskEnvironmentRestricted() then return false end
 	if self:IsEarthenPlayer() then return false end
 	if not self:IsFoodTrackingEnabled() then return false end
-	return self:IsTrackingContentSelected(self:GetFoodTrackingContentSelection())
+	return self:IsTrackingContentSelected(self:GetFoodTrackingContentSelection(), true)
 end
 
 function Reminder:CanCheckRuneReminder()
@@ -1339,7 +1453,7 @@ function Reminder:CanCheckWeaponBuffReminder()
 	if self:IsFlaskEnvironmentRestricted() then return false end
 	if self:ShouldSuppressGenericWeaponBuffReminder() then return false end
 	if not self:IsWeaponBuffTrackingEnabled() then return false end
-	return self:IsTrackingContentSelected(self:GetWeaponBuffTrackingContentSelection())
+	return self:IsTrackingContentSelected(self:GetWeaponBuffTrackingContentSelection(), true)
 end
 
 function Reminder:CanEvaluateFoodReminderNow()
@@ -1570,6 +1684,7 @@ function Reminder:PrepareConsumableCandidateAuraData(candidates, fallbackLabel)
 		auraNames = {},
 		displaySpellId = nil,
 		displayLabel = nil,
+		displayIcon = nil,
 	}
 	local seenSpellIds = {}
 	local seenAuraNames = {}
@@ -1588,11 +1703,15 @@ function Reminder:PrepareConsumableCandidateAuraData(candidates, fallbackLabel)
 	for i = 1, #candidates do
 		local candidate = candidates[i]
 		local candidateSpellId = normalizeSpellId(candidate and (candidate.displaySpellId or candidate.spellId))
+		local candidateIcon = Reminder.NormalizeIconTexture(candidate and (candidate.displayIcon or candidate.icon or candidate.iconId or candidate.iconID))
 		if not prepared.displaySpellId and candidateSpellId then prepared.displaySpellId = candidateSpellId end
+		if not prepared.displayIcon and candidateIcon then prepared.displayIcon = candidateIcon end
 		appendUniquePreparedSpellId(prepared.spellIds, seenSpellIds, candidateSpellId)
 
 		local itemId = tonumber(candidate and candidate.id)
 		if itemId and itemId > 0 then
+			if not prepared.displayIcon then prepared.displayIcon = Reminder.GetItemIcon(itemId) end
+
 			local spellName, spellId
 			if C_Item and C_Item.GetItemSpell then spellName, spellId = C_Item.GetItemSpell(itemId) end
 
@@ -1651,10 +1770,12 @@ function Reminder:GetPreparedWeaponBuffCandidateData(candidates)
 		source = candidates,
 		displaySpellId = nil,
 		displayLabel = nil,
+		displayIcon = nil,
 	}
 
 	local itemId = tonumber(candidates[1] and candidates[1].id)
 	if itemId and itemId > 0 then
+		prepared.displayIcon = Reminder.GetItemIcon(itemId)
 		local spellName, spellId
 		if C_Item and C_Item.GetItemSpell then spellName, spellId = C_Item.GetItemSpell(itemId) end
 		prepared.displaySpellId = normalizeSpellId(spellId)
@@ -1980,7 +2101,7 @@ function Reminder:GetFlaskMissingEntry(evalContext)
 	local displaySpellId = prepared.displaySpellId or normalizeSpellId(SHARED_FLASK_AURA_IDS[1])
 	local displayLabel = prepared.displayLabel
 	if type(displayLabel) ~= "string" or displayLabel == "" then displayLabel = "Flask" end
-	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "FLASK")
+	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "FLASK", prepared.displayIcon)
 end
 
 function Reminder:GetFoodMissingEntry(evalContext)
@@ -2011,7 +2132,7 @@ function Reminder:GetFoodMissingEntry(evalContext)
 	local displayLabel = prepared.displayLabel
 	if not displaySpellId and #prepared.spellIds > 0 then displaySpellId = normalizeSpellId(prepared.spellIds[1]) end
 	if type(displayLabel) ~= "string" or displayLabel == "" then displayLabel = L["Buff Food Macro"] or "Buff food" end
-	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "FOOD")
+	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "FOOD", prepared.displayIcon or SHARED_FOOD_AURA_ICON_ID)
 end
 
 function Reminder:GetRuneMissingEntry(evalContext)
@@ -2039,7 +2160,7 @@ function Reminder:GetRuneMissingEntry(evalContext)
 	local displaySpellId = prepared.displaySpellId or normalizeSpellId(Reminder.runeTracking.auraIds[1])
 	local displayLabel = prepared.displayLabel
 	if type(displayLabel) ~= "string" or displayLabel == "" then displayLabel = L["ClassBuffReminderAugmentRune"] or "Augment Rune" end
-	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "RUNES")
+	return makeSelfMissingEntry(displaySpellId, displayLabel, nil, nil, "RUNES", prepared.displayIcon)
 end
 
 function Reminder:GetWeaponBuffMissingEntry(evalContext)
@@ -2069,7 +2190,7 @@ function Reminder:GetWeaponBuffMissingEntry(evalContext)
 	local prepared = context and context.weaponBuffPreparedData or self:GetPreparedWeaponBuffCandidateData(candidates)
 	if context and not context.weaponBuffPreparedData then context.weaponBuffPreparedData = prepared end
 
-	return makeSelfMissingEntry(prepared.displaySpellId, prepared.displayLabel, nil, nil, "WEAPON_BUFF")
+	return makeSelfMissingEntry(prepared.displaySpellId, prepared.displayLabel, nil, nil, "WEAPON_BUFF", prepared.displayIcon)
 end
 
 function Reminder:GetSupplementalMissingEntries(evalContext)
@@ -3016,6 +3137,7 @@ function Reminder:GetFlaskOnlyProvider()
 			spellIds = SHARED_FLASK_AURA_IDS,
 			fallbackName = "Flask",
 			displaySpellId = normalizeSpellId(SHARED_FLASK_AURA_IDS[1]),
+			isSupplementalOnly = true,
 		}
 	return self.flaskOnlyProvider
 end
@@ -3026,6 +3148,8 @@ function Reminder:GetFoodOnlyProvider()
 		spellIds = { 1 },
 		fallbackName = L["Buff Food Macro"] or "Buff food",
 		displaySpellId = 1,
+		displayIcon = SHARED_FOOD_AURA_ICON_ID,
+		isSupplementalOnly = true,
 	}
 	return self.foodOnlyProvider
 end
@@ -3036,6 +3160,7 @@ function Reminder:GetRuneOnlyProvider()
 		spellIds = Reminder.runeTracking.auraIds,
 		fallbackName = L["ClassBuffReminderAugmentRune"] or "Augment Rune",
 		displaySpellId = normalizeSpellId(Reminder.runeTracking.auraIds[1]),
+		isSupplementalOnly = true,
 	}
 	return self.runeOnlyProvider
 end
@@ -3046,6 +3171,7 @@ function Reminder:GetWeaponBuffOnlyProvider()
 		spellIds = { 1 },
 		fallbackName = L["ClassBuffReminderWeaponBuff"] or "Weapon buff",
 		displaySpellId = 1,
+		isSupplementalOnly = true,
 	}
 	return self.weaponBuffOnlyProvider
 end
@@ -4298,7 +4424,8 @@ function Reminder:RenderSelfMissingIcons(missingEntries)
 		local iconFrame = icons[i]
 		local entry = missingEntries[i]
 		local sid = type(entry) == "table" and normalizeSpellId(entry.spellId) or nil
-		local texture = sid and safeGetSpellIcon(sid) or ICON_MISSING
+		local entryIcon = type(entry) == "table" and Reminder.NormalizeIconTexture(entry.icon) or nil
+		local texture = entryIcon or (sid and safeGetSpellIcon(sid)) or ICON_MISSING
 
 		iconFrame:SetSize(scaledIconSize, scaledIconSize)
 		iconFrame:ClearAllPoints()
@@ -4804,7 +4931,7 @@ function Reminder:ShouldRegisterRuntimeEvents()
 	if getValue(DB_ENABLED, defaults.enabled) ~= true then return false end
 	if self.runtimeProviderValid ~= true then self:RefreshProviderCache(false) end
 	if self.hasProviderCached == true then return true end
-	return self:IsFlaskTrackingEnabled() or self:IsFoodTrackingEnabled() or self:IsWeaponBuffTrackingEnabled() or self:IsTrinketTrackingEnabled()
+	return self:IsFlaskTrackingEnabled() or self:IsFoodTrackingEnabled() or self:IsRuneTrackingEnabled() or self:IsWeaponBuffTrackingEnabled() or self:IsTrinketTrackingEnabled()
 end
 
 function Reminder:Render(provider, missing, total, supplementalEntries, effectiveMissing)
@@ -4863,7 +4990,8 @@ function Reminder:Render(provider, missing, total, supplementalEntries, effectiv
 	end
 
 	local providerIcon = self:GetProviderIcon(provider)
-	if providerIcon == ICON_MISSING and self.editModeActive ~= true then
+	local canRenderSupplementalIcons = provider and provider.isSupplementalOnly == true and iconEntries and #iconEntries > 0
+	if providerIcon == ICON_MISSING and self.editModeActive ~= true and canRenderSupplementalIcons ~= true then
 		self:SetGlowShown(false)
 		frame:Hide()
 		self:RequestProviderPresentationRefresh(provider)
@@ -4990,7 +5118,7 @@ function Reminder:UpdateDisplay()
 	local supplementalEntries = self:GetSupplementalMissingEntries(supplementalContext)
 	local supplementalMissing = type(supplementalEntries) == "table" and #supplementalEntries or 0
 	local primarySupplementalEntry = type(supplementalEntries) == "table" and supplementalEntries[1] or nil
-	if total <= 0 and primarySupplementalEntry and primarySupplementalEntry.spellId then
+	if total <= 0 and primarySupplementalEntry then
 		if primarySupplementalEntry.sourceKind == "FLASK" then
 			provider = self:GetFlaskOnlyProvider() or provider
 		elseif primarySupplementalEntry.sourceKind == "FOOD" then
@@ -5003,10 +5131,14 @@ function Reminder:UpdateDisplay()
 			provider = self:GetWeaponBuffOnlyProvider() or provider
 		end
 		if provider then
-			provider.displaySpellId = normalizeSpellId(primarySupplementalEntry.spellId) or provider.displaySpellId
-			provider.cachedIcon = nil
+			local entrySpellId = normalizeSpellId(primarySupplementalEntry.spellId)
+			local entryIcon = Reminder.NormalizeIconTexture(primarySupplementalEntry.icon)
+			if entrySpellId then provider.displaySpellId = entrySpellId end
+			provider.displayIcon = entryIcon or Reminder.NormalizeIconTexture(provider.displayIcon)
+			provider.cachedIcon = Reminder.NormalizeIconTexture(provider.displayIcon)
 			provider.cachedName = primarySupplementalEntry.label or provider.fallbackName or (L["ClassBuffReminderWeaponBuff"] or "Weapon buff")
-			provider._presentationReady = false
+			provider._presentationReady = provider.cachedIcon ~= nil
+			provider._presentationAttempted = provider.cachedIcon ~= nil
 		end
 	end
 	if total <= 0 and supplementalMissing <= 0 then
@@ -5314,16 +5446,24 @@ local function editModeSetGrowthFromCenter(value)
 	Reminder:RequestUpdate(true)
 end
 
+function Reminder.EditModeRefreshRuntimeAfterTrackingChange()
+	if Reminder.OnSettingChanged then
+		Reminder:OnSettingChanged()
+	else
+		Reminder:RequestUpdate(true)
+	end
+end
+
 local function editModeSetTrackFlasks(value)
 	if addon.db then addon.db[DB_TRACK_FLASKS] = value == true end
 	Reminder:InvalidateFlaskCache()
-	Reminder:RequestUpdate(true)
+	Reminder.EditModeRefreshRuntimeAfterTrackingChange()
 end
 
 local function editModeSetTrackFood(value)
 	if addon.db then addon.db[DB_TRACK_FOOD] = value == true end
 	Reminder:InvalidateFoodCache()
-	Reminder:RequestUpdate(true)
+	Reminder.EditModeRefreshRuntimeAfterTrackingChange()
 end
 
 local function editModeSetRoleFilterContext(value)
@@ -5641,7 +5781,7 @@ function editModeSettingsBuilders.buildConsumables()
 			set = function(_, value)
 				if addon.db then addon.db[Reminder.runeTracking.enabledDb] = value == true end
 				Reminder:InvalidateRuneCache()
-				Reminder:RequestUpdate(true)
+				Reminder.EditModeRefreshRuntimeAfterTrackingChange()
 			end,
 		},
 		{
@@ -5673,7 +5813,7 @@ function editModeSettingsBuilders.buildConsumables()
 			set = function(_, value)
 				if addon.db then addon.db[DB_TRACK_WEAPON_BUFFS] = value == true end
 				Reminder:InvalidateWeaponBuffCache()
-				Reminder:RequestUpdate(true)
+				Reminder.EditModeRefreshRuntimeAfterTrackingChange()
 			end,
 		},
 		{

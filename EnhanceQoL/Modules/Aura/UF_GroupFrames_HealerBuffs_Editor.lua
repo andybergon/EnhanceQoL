@@ -3286,10 +3286,33 @@ end
 local function setPreviewFont(fontString, size, outline)
 	if not fontString then return end
 	local fontPath = (addon.variables and addon.variables.defaultFont) or STANDARD_TEXT_FONT
+	local fallbackFont = STANDARD_TEXT_FONT or fontPath
 	size = tonumber(size) or 12
 	if size < 6 then size = 6 end
 	if size > 64 then size = 64 end
-	fontString:SetFont(fontPath, size, outline or "OUTLINE")
+	local styleChoice = outline or "OUTLINE"
+	local resolvedFlags = styleChoice
+	if addon.functions and addon.functions.ResolveFontStyle then
+		local _, flags = addon.functions.ResolveFontStyle(styleChoice, "OUTLINE")
+		resolvedFlags = flags
+	elseif addon.functions and addon.functions.GetFontFlagsForStyle then
+		resolvedFlags = addon.functions.GetFontFlagsForStyle(styleChoice, "OUTLINE")
+		if resolvedFlags == nil and styleChoice == "__EQOL_GLOBAL_FONT_STYLE__" then resolvedFlags = "OUTLINE" end
+	elseif styleChoice == "__EQOL_GLOBAL_FONT_STYLE__" then
+		resolvedFlags = "OUTLINE"
+	elseif styleChoice == "NONE" then
+		resolvedFlags = nil
+	end
+
+	local ok = false
+	if addon.functions and addon.functions.ApplyFontString then
+		ok = addon.functions.ApplyFontString(fontString, fontPath, size, styleChoice, fallbackFont, "OUTLINE")
+	else
+		ok = fontString:SetFont(fontPath, size, resolvedFlags)
+		if ok == false then ok = fontString:SetFont(fallbackFont, size, resolvedFlags) end
+	end
+	if ok == false then fontString:SetFont(fallbackFont, size, resolvedFlags) end
+	if addon.functions and addon.functions.ApplyFontStyleShadow then addon.functions.ApplyFontStyleShadow(fontString, styleChoice, "OUTLINE") end
 end
 
 local function getPreviewCooldownTiming(sampleIndex, now, loopEnabled, loopOrigin)

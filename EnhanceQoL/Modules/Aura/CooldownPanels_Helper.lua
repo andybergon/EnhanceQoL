@@ -2236,10 +2236,13 @@ function Helper.NormalizePanel(panel, defaults)
 	panel.layout.staticTextY = Helper.ClampInt(panel.layout.staticTextY, -Helper.OFFSET_RANGE, Helper.OFFSET_RANGE, layoutDefaults.staticTextY or Helper.PANEL_LAYOUT_DEFAULTS.staticTextY or 0)
 	if type(panel.anchor) ~= "table" then panel.anchor = {} end
 	local anchor = panel.anchor
-	if anchor.point == nil then anchor.point = panel.point or "CENTER" end
-	if anchor.relativePoint == nil then anchor.relativePoint = anchor.point end
-	if anchor.x == nil then anchor.x = panel.x or 0 end
-	if anchor.y == nil then anchor.y = panel.y or 0 end
+	local anchorPoint = Helper.NormalizeAnchor(anchor.point, panel.point)
+	anchor.point = Helper.NormalizeAnchor(anchorPoint, "CENTER")
+	anchor.relativePoint = Helper.NormalizeAnchor(anchor.relativePoint, anchor.point)
+	anchor.x = tonumber(anchor.x)
+	if anchor.x == nil then anchor.x = tonumber(panel.x) or 0 end
+	anchor.y = tonumber(anchor.y)
+	if anchor.y == nil then anchor.y = tonumber(panel.y) or 0 end
 	if not anchor.relativeFrame or anchor.relativeFrame == "" then anchor.relativeFrame = "UIParent" end
 	if panel.point == nil then panel.point = "CENTER" end
 	if panel.x == nil then panel.x = 0 end
@@ -2934,6 +2937,14 @@ local function buildKeybindLookup()
 				local macroName = GetMacroInfo(actionId)
 				if type(macroName) == "string" and macroName ~= "" and not lookup.macroName[macroName] then lookup.macroName[macroName] = keyText end
 			end
+			if Api.GetMacroSpell then
+				local macroSpell = Api.GetMacroSpell(actionId)
+				local macroSpellId = tonumber(macroSpell)
+				if macroSpellId then
+					addSpellBindingLookup(lookup, macroSpellId, keyText)
+					addSpellBindingLookup(lookup, getEffectiveSpellId(macroSpellId), keyText)
+				end
+			end
 			if getMacroItem then
 				local macroItem = getMacroItem(actionId)
 				if macroItem then
@@ -3014,7 +3025,11 @@ local function refreshPanelKeybindsOnly(panelId)
 		local keybind = icon and icon.keybind or nil
 		local data = visible[i]
 		if keybind then
-			local show = data and data.layout and data.layout.keybindsEnabled == true and data.entry ~= nil
+			local entry = data and data.entry or nil
+			local bars = CooldownPanels and CooldownPanels.Bars or nil
+			local barDisplayMode = type(bars) == "table" and type(bars.DISPLAY_MODE) == "table" and bars.DISPLAY_MODE.BAR or "BAR"
+			local suppressForBarMode = type(entry) == "table" and type(entry.displayMode) == "string" and string.upper(entry.displayMode) == barDisplayMode
+			local show = data and data.layout and data.layout.keybindsEnabled == true and entry ~= nil and not suppressForBarMode
 			local text = show and Keybinds.GetEntryKeybindText(data.entry, data.layout) or nil
 			if data then
 				data.showKeybinds = show == true
@@ -3077,8 +3092,12 @@ function Keybinds.GetEntryKeybindText(entry, layout)
 	runtime._eqolKeybindCache = runtime._eqolKeybindCache or {}
 	local slotItemId
 	if entry.type == "SLOT" and entry.slotID then slotItemId = GetInventoryItemID and GetInventoryItemID("player", entry.slotID) end
-	local effectiveSpellId = entry.type == "SPELL" and getEffectiveSpellId(entry.spellID) or nil
-	local cacheValue = effectiveSpellId or entry.spellID or entry.itemID or entry.slotID or entry.macroID or entry.macroName or ""
+	local resolvedEffectiveSpellId, resolvedSpellId, storedBaseSpellId
+	if entry.type == "SPELL" and entry.spellID and CooldownPanels and CooldownPanels.ResolveTrackedSpellID then
+		resolvedEffectiveSpellId, resolvedSpellId, storedBaseSpellId = CooldownPanels:ResolveTrackedSpellID(entry.spellID)
+	end
+	local effectiveSpellId = resolvedEffectiveSpellId or (entry.type == "SPELL" and getEffectiveSpellId(entry.spellID) or nil)
+	local cacheValue = effectiveSpellId or resolvedSpellId or storedBaseSpellId or entry.spellID or entry.itemID or entry.slotID or entry.macroID or entry.macroName or ""
 	local cacheKey = tostring(entry.type) .. ":" .. tostring(cacheValue) .. ":" .. tostring(slotItemId or "")
 	local cached = runtime._eqolKeybindCache[cacheKey]
 	if cached ~= nil then return cached or nil end
@@ -3086,11 +3105,17 @@ function Keybinds.GetEntryKeybindText(entry, layout)
 	local text = nil
 	if entry.type == "SPELL" and entry.spellID then
 		local lookup = buildKeybindLookup()
-		local spellId = effectiveSpellId or entry.spellID
-		text = getLookupSpellBindingText(lookup, spellId)
-		if not text and effectiveSpellId and effectiveSpellId ~= entry.spellID then text = getLookupSpellBindingText(lookup, entry.spellID) end
-		if not text then text = getBindingTextForSpell(spellId) end
-		if not text and effectiveSpellId and effectiveSpellId ~= entry.spellID then text = getBindingTextForSpell(entry.spellID) end
+		local seenSpellIds = {}
+		local function trySpellId(spellId)
+			local numericSpellId = tonumber(spellId)
+			if not numericSpellId or seenSpellIds[numericSpellId] then return nil end
+			seenSpellIds[numericSpellId] = true
+			return getLookupSpellBindingText(lookup, numericSpellId)
+		end
+		text = trySpellId(effectiveSpellId)
+			or trySpellId(resolvedSpellId)
+			or trySpellId(storedBaseSpellId)
+			or trySpellId(entry.spellID)
 	elseif entry.type == "ITEM" and entry.itemID then
 		local lookup = buildKeybindLookup()
 		text = lookup.item and lookup.item[entry.itemID]

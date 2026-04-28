@@ -162,7 +162,23 @@ local gemTrackerQueued = false
 local gemTrackerHooked = false
 local gemSocketHooked = false
 
-local function isGemTrackerEnabled() return addon.db and addon.db["enableGemHelper"] and not addon.db["hideGemHelperTracker"] end
+local function getGemTracker() return _G.EnhanceQoLGemTracker end
+
+local function isPlayerMaxLevel()
+	local maxLevel = addon.variables and addon.variables.maxLevel
+	if not maxLevel and GetMaxLevelForPlayerExpansion then
+		maxLevel = GetMaxLevelForPlayerExpansion()
+	end
+	local playerLevel = UnitLevel and UnitLevel("player") or 0
+	return maxLevel and maxLevel > 0 and playerLevel >= maxLevel
+end
+
+local function hideGemTracker()
+	local tracker = getGemTracker()
+	if tracker then tracker:Hide() end
+end
+
+local function isGemTrackerEnabled() return addon.db and addon.db["enableGemHelper"] and not addon.db["hideGemHelperTracker"] and isPlayerMaxLevel() end
 
 -- helper to refresh / clear buttons
 local function clearGemButtons()
@@ -180,7 +196,6 @@ local function clearGemButtons()
 	wipe(gemButtons)
 end
 
-local function getGemTracker() return _G.EnhanceQoLGemTracker end
 local function getTrackedGemIcon(info)
 	if info and info.itemID and C_Item and C_Item.GetItemIconByID then return C_Item.GetItemIconByID(info.itemID) end
 	return nil
@@ -523,13 +538,11 @@ local function eventHandler(self, event, unit, arg1, arg2, ...)
 
 	if not addon.db or not addon.db["enableGemHelper"] then
 		if EnhanceQoLGemHelper then EnhanceQoLGemHelper:Hide() end
-		local tracker = getGemTracker()
-		if tracker then tracker:Hide() end
+		hideGemTracker()
 		return
 	end
 	if addon.db["hideGemHelperTracker"] then
-		local tracker = getGemTracker()
-		if tracker then tracker:Hide() end
+		hideGemTracker()
 	end
 
 	if event == "SOCKET_INFO_UPDATE" then
@@ -544,6 +557,8 @@ local function eventHandler(self, event, unit, arg1, arg2, ...)
 		markGemTrackerDirty()
 	elseif event == "SOCKET_INFO_ACCEPT" then
 		markGemTrackerDirty()
+	elseif event == "PLAYER_LEVEL_UP" or event == "PLAYER_ENTERING_WORLD" then
+		updateGemTracker()
 	end
 end
 
@@ -551,6 +566,7 @@ frame:RegisterEvent("SOCKET_INFO_UPDATE")
 frame:RegisterEvent("CURSOR_CHANGED")
 frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 frame:RegisterEvent("SOCKET_INFO_ACCEPT")
+frame:RegisterEvent("PLAYER_LEVEL_UP")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnEvent", eventHandler)

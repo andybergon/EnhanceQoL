@@ -1805,7 +1805,7 @@ local function getAuraStyleForGroup(state, cfg, group)
 	local ac = cfg and cfg.auras and cfg.auras.buff or EMPTY
 	local cooldownOffsetX, cooldownOffsetY = getOffsetXY(ac.cooldownOffset)
 	local countOffsetX, countOffsetY = getOffsetXY(ac.countOffset)
-	local showTooltip = ac.showTooltip ~= false
+	local showTooltip = ac.showTooltip == true
 	local showCooldownSwipe = group.showCooldownSwipe ~= false
 	local showCooldownEdge = group.showCooldownEdge ~= false
 	local showCooldownBling = group.showCooldownBling ~= false

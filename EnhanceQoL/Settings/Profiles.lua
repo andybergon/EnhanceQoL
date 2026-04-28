@@ -637,13 +637,36 @@ local function resolveImportProfileName(meta)
 	return nil
 end
 
+local function captureMoverExportState()
+	if type(EnhanceQoLMoverDB) ~= "table" or type(EnhanceQoLMoverDB.enabled) ~= "boolean" then return nil end
+	return {
+		enabled = EnhanceQoLMoverDB.enabled,
+	}
+end
+
+local function applyImportedMoverState(meta)
+	local mover = type(meta) == "table" and meta.mover or nil
+	if type(mover) ~= "table" or type(mover.enabled) ~= "boolean" then return end
+
+	if type(EnhanceQoLMoverDB) ~= "table" then EnhanceQoLMoverDB = {} end
+	EnhanceQoLMoverDB.enabled = mover.enabled
+
+	if addon.Mover and addon.Mover.db then addon.Mover.db.enabled = mover.enabled end
+	if addon.Mover and addon.Mover.functions then
+		if addon.Mover.functions.ApplyAll then addon.Mover.functions.ApplyAll() end
+		if addon.Mover.functions.UpdateScaleWheelCaptureState then addon.Mover.functions.UpdateScaleWheelCaptureState() end
+	end
+end
+
 local function exportActiveProfile(profileName)
 	if not serializer or not deflate then return nil, "NO_LIB" end
 	profileName = resolveExportProfileName(profileName)
 	if not profileName then return nil, "NO_ACTIVE" end
 	local source = EnhanceQoLDB and EnhanceQoLDB.profiles and EnhanceQoLDB.profiles[profileName]
-	if type(source) ~= "table" or not next(source) then return nil, "NO_DATA" end
-	normalizeProfileStorage(source)
+	local moverState = captureMoverExportState()
+	if type(source) ~= "table" then return nil, "NO_DATA" end
+	if not next(source) and not moverState then return nil, "NO_DATA" end
+	if next(source) then normalizeProfileStorage(source) end
 
 	local payload = {
 		meta = {
@@ -653,6 +676,7 @@ local function exportActiveProfile(profileName)
 			profileVersion = 3,
 			profile = profileName,
 			ufCharacter = captureUFCharacterImportState(source),
+			mover = moverState,
 		},
 		data = sanitizeProfileData(source),
 	}
@@ -694,6 +718,7 @@ local function importProfile(encoded, options)
 	local sanitized = sanitizeProfileData(data)
 	normalizeProfileStorage(sanitized, meta)
 	EnhanceQoLDB.profiles[target] = sanitized
+	applyImportedMoverState(meta)
 
 	if useImportedTarget then
 		if options.setImportedProfileActive == true then

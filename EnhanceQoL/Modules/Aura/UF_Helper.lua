@@ -809,6 +809,8 @@ function H.FlushDeferredPrivateAuraMutations()
 				H.RemovePrivateAuras(container)
 			elseif pending.action == "apply" then
 				H.ApplyPrivateAuras(container, pending.unit, pending.cfg, pending.parent, pending.levelFrame, pending.showSample, pending.inverseAnchor)
+			elseif pending.action == "applyBlizzard" then
+				H.ApplyBlizzardAuraContainer(container, pending.unit, pending.cfg, pending.parent, pending.levelFrame, pending.showSample)
 			end
 		end
 	end
@@ -831,6 +833,13 @@ function H.QueueDeferredPrivateAuraMutation(container, action, payload)
 		pending.levelFrame = payload.levelFrame
 		pending.showSample = payload.showSample
 		pending.inverseAnchor = payload.inverseAnchor
+	elseif action == "applyBlizzard" and payload then
+		pending.unit = payload.unit
+		pending.cfg = payload.cfg
+		pending.parent = payload.parent
+		pending.levelFrame = payload.levelFrame
+		pending.showSample = payload.showSample
+		pending.inverseAnchor = nil
 	else
 		pending.unit = nil
 		pending.cfg = nil
@@ -849,6 +858,92 @@ local function removePrivateAuraAnchor(anchor)
 		pcall(C_UnitAuras.RemovePrivateAuraAnchor, anchor.anchorID)
 		anchor.anchorID = nil
 	end
+end
+
+function H.RemoveBlizzardAuraContainer(container)
+	if not container then return true end
+	if container._eqolBlizzardAuraAnchorID then
+		if not (C_UnitAuras and C_UnitAuras.RemovePrivateAuraAnchor) then return false end
+		local ok = pcall(C_UnitAuras.RemovePrivateAuraAnchor, container._eqolBlizzardAuraAnchorID)
+		if not ok then return false end
+		container._eqolBlizzardAuraAnchorID = nil
+	end
+	container._eqolBlizzardAuraSignature = nil
+	return true
+end
+
+function H.NormalizeAuraRenderer(value)
+	local renderer = tostring(value or "CUSTOM"):upper()
+	if renderer == "BLIZZARD" or renderer == "BLIZZARD_CONTAINER" then return "BLIZZARD" end
+	return "CUSTOM"
+end
+
+function H.IsBlizzardAuraRenderer(value)
+	return H.NormalizeAuraRenderer(value) == "BLIZZARD"
+end
+
+function H.ResolveBlizzardAuraOrganization(value)
+	if type(value) == "number" then return value end
+	local token = tostring(value or ""):upper()
+	local org = Enum and Enum.RaidAuraOrganizationType
+	if token == "BUFFS_TOP_DEBUFFS_BOTTOM" or token == "TOP_BOTTOM" then
+		return (org and org.BuffsTopDebuffsBottom) or 2
+	elseif token == "BUFFS_RIGHT_DEBUFFS_LEFT" or token == "RIGHT_LEFT" then
+		return (org and org.BuffsRightDebuffsLeft) or 3
+	end
+	return (org and org.Legacy) or 1
+end
+
+function H.SetBlizzardAuraContainerAttributes(container, cfg)
+	local showBuffs = cfg.showBuffs == true
+	local showDebuffs = cfg.showDebuffs == true
+	local showDispels = cfg.showDispels == true
+	local showBigDefensive = cfg.showBigDefensive == true
+
+	container:SetAttribute("max-buffs", showBuffs and (cfg.maxBuffs or 0) or 0)
+	container:SetAttribute("max-debuffs", showDebuffs and (cfg.maxDebuffs or 0) or 0)
+	container:SetAttribute("max-dispel-debuffs", showDispels and (cfg.maxDispelDebuffs or 0) or 0)
+	container:SetAttribute("aura-organization-type", H.ResolveBlizzardAuraOrganization(cfg.organizationType))
+	container:SetAttribute("display-only-dispellable-debuffs", cfg.displayOnlyDispellableDebuffs == true)
+	container:SetAttribute("ignore-buffs", not showBuffs)
+	container:SetAttribute("ignore-debuffs", not showDebuffs)
+	container:SetAttribute("ignore-dispel-debuffs", not showDispels)
+	container:SetAttribute("dispel-indicator-option", cfg.dispelIndicatorOption or 2)
+	container:SetAttribute("display-larger-role-specific-debuffs", cfg.displayLargerRoleSpecificDebuffs == true)
+	container:SetAttribute("show-dispel-indicator-overlay", cfg.showDispelOverlay == true)
+	container:SetAttribute("show-big-defensive", showBigDefensive)
+	container:SetAttribute("big-defensive-size", cfg.bigDefensiveSize or cfg.iconSize or 16)
+	container:SetAttribute("icon-size", cfg.iconSize or 16)
+	container:SetAttribute("always-hide-duration", cfg.alwaysHideDuration ~= false)
+	container:SetAttribute("set-aura-size-to-icon-size", true)
+	container:SetAttribute("power-bar-used-height", cfg.powerBarUsedHeight or 0)
+	container:SetAttribute("group-type", cfg.groupType)
+	container:SetAttribute("suppress-dispel-border-icons", cfg.suppressDispelBorderIcons ~= false)
+end
+
+function H.BuildBlizzardAuraSignature(unit, cfg)
+	return table.concat({
+		tostring(unit or ""),
+		tostring(cfg.showBuffs == true),
+		tostring(cfg.showDebuffs == true),
+		tostring(cfg.showDispels == true),
+		tostring(cfg.showBigDefensive == true),
+		tostring(cfg.maxBuffs or 0),
+		tostring(cfg.maxDebuffs or 0),
+		tostring(cfg.maxDispelDebuffs or 0),
+		tostring(H.ResolveBlizzardAuraOrganization(cfg.organizationType)),
+		tostring(cfg.displayOnlyDispellableDebuffs == true),
+		tostring(cfg.displayLargerRoleSpecificDebuffs == true),
+		tostring(cfg.dispelIndicatorOption or 2),
+		tostring(cfg.showDispelOverlay == true),
+		tostring(cfg.iconSize or 16),
+		tostring(cfg.bigDefensiveSize or cfg.iconSize or 16),
+		tostring(cfg.powerBarUsedHeight or 0),
+		tostring(cfg.groupType or ""),
+		tostring(cfg.showCountdownFrame ~= false),
+		tostring(cfg.showCountdownNumbers == true),
+		tostring(cfg.borderScale or ""),
+	}, ":")
 end
 
 local function buildPrivateAuraAnchor(anchor, unit, index, size, borderScale, showFrame, showNumbers, durationEnabled, durationPoint, durationOffsetX, durationOffsetY, durationRelativeTo)
@@ -951,6 +1046,7 @@ function H.RemovePrivateAuras(container)
 	end
 	H.ClearDeferredPrivateAuraMutation(container)
 	updatePrivateAuraShowDispelType(container, false)
+	if not H.RemoveBlizzardAuraContainer(container) then return false end
 	if container._eqolPrivateAuraFrames then
 		for _, anchor in ipairs(container._eqolPrivateAuraFrames) do
 			removePrivateAuraAnchor(anchor)
@@ -968,6 +1064,99 @@ function H.RemovePrivateAuras(container)
 		end
 	end
 	container._eqolPrivateAuraState = nil
+	return true
+end
+
+function H.ApplyBlizzardAuraContainer(container, unit, cfg, parent, levelFrame, showSample)
+	if not container then return end
+	if not (C_UnitAuras and C_UnitAuras.AddPrivateAuraAnchor) then return end
+	cfg = cfg or {}
+	if not unit then
+		H.RemovePrivateAuras(container)
+		if container.Hide then container:Hide() end
+		return
+	end
+	if UnitExists and not showSample and not UnitExists(unit) then
+		H.RemovePrivateAuras(container)
+		if container.Hide then container:Hide() end
+		return
+	end
+	if InCombatLockdown and InCombatLockdown() then
+		H.QueueDeferredPrivateAuraMutation(container, "applyBlizzard", {
+			unit = unit,
+			cfg = cfg,
+			parent = parent,
+			levelFrame = levelFrame,
+			showSample = showSample,
+		})
+		return
+	end
+	H.ClearDeferredPrivateAuraMutation(container)
+	updatePrivateAuraShowDispelType(container, false)
+
+	if container._eqolPrivateAuraFrames then
+		for _, anchor in ipairs(container._eqolPrivateAuraFrames) do
+			removePrivateAuraAnchor(anchor)
+			if anchor.Hide then anchor:Hide() end
+			if anchor._eqolPrivateAuraLayout and anchor._eqolPrivateAuraLayout.Hide then anchor._eqolPrivateAuraLayout:Hide() end
+		end
+	end
+	container._eqolPrivateAuraState = nil
+
+	local effectiveUnit = resolvePrivateAuraUnitToken(unit)
+	if parent and container.GetParent and container:GetParent() ~= parent then container:SetParent(parent) end
+	if container.SetFrameStrata then
+		local strataSource = (levelFrame and levelFrame.GetFrameStrata and levelFrame) or (parent and parent.GetFrameStrata and parent)
+		if strataSource then container:SetFrameStrata(strataSource:GetFrameStrata()) end
+	end
+	if levelFrame and container.SetFrameLevel and levelFrame.GetFrameLevel then container:SetFrameLevel((levelFrame:GetFrameLevel() or 0) + 10) end
+	container:ClearAllPoints()
+	if parent then
+		container:SetAllPoints(parent)
+	else
+		container:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+		container:SetSize(1, 1)
+	end
+	container:EnableMouse(false)
+	container:Show()
+
+	H.SetBlizzardAuraContainerAttributes(container, cfg)
+	local signature = H.BuildBlizzardAuraSignature(effectiveUnit, cfg)
+	if container._eqolBlizzardAuraAnchorID and container._eqolBlizzardAuraSignature == signature then
+		container._eqolBlizzardAuraUpdateSerial = (container._eqolBlizzardAuraUpdateSerial or 0) + 1
+		container:SetAttribute("update-settings", container._eqolBlizzardAuraUpdateSerial)
+		return
+	end
+
+	if not H.RemoveBlizzardAuraContainer(container) then return end
+	local iconSize = tonumber(cfg.iconSize) or 16
+	local borderScale = tonumber(cfg.borderScale) or (iconSize / 11)
+	local ok, anchorID = pcall(C_UnitAuras.AddPrivateAuraAnchor, {
+		unitToken = effectiveUnit,
+		auraIndex = 1,
+		parent = container,
+		showCountdownFrame = cfg.showCountdownFrame ~= false,
+		showCountdownNumbers = cfg.showCountdownNumbers == true,
+		isContainer = true,
+		iconInfo = {
+			iconWidth = iconSize,
+			iconHeight = iconSize,
+			borderScale = borderScale,
+			iconAnchor = {
+				point = "CENTER",
+				relativePoint = "CENTER",
+				relativeTo = container,
+				offsetX = 0,
+				offsetY = 0,
+			},
+		},
+	})
+	if ok and anchorID then
+		container._eqolBlizzardAuraAnchorID = anchorID
+		container._eqolBlizzardAuraSignature = signature
+	else
+		container:Hide()
+	end
 end
 
 function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSample, inverseAnchor)
@@ -1002,6 +1191,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		return
 	end
 	H.ClearDeferredPrivateAuraMutation(container)
+	if not H.RemoveBlizzardAuraContainer(container) then return end
 
 	local effectiveUnit = resolvePrivateAuraUnitToken(unit)
 	local cacheState = unit == "player" or unit == "focus"
@@ -1060,8 +1250,11 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 	local anchorPoint = useInverse and inversePoint(parentPoint) or parentPoint
 
 	if parent and container.GetParent and container:GetParent() ~= parent then container:SetParent(parent) end
-	if container.SetFrameStrata and parent and parent.GetFrameStrata then container:SetFrameStrata(parent:GetFrameStrata()) end
-	if levelFrame and container.SetFrameLevel and levelFrame.GetFrameLevel then container:SetFrameLevel((levelFrame:GetFrameLevel() or 0) + 5) end
+	if container.SetFrameStrata then
+		local strataSource = (levelFrame and levelFrame.GetFrameStrata and levelFrame) or (parent and parent.GetFrameStrata and parent)
+		if strataSource then container:SetFrameStrata(strataSource:GetFrameStrata()) end
+	end
+	if levelFrame and container.SetFrameLevel and levelFrame.GetFrameLevel then container:SetFrameLevel((levelFrame:GetFrameLevel() or 0) + 10) end
 	container:ClearAllPoints()
 	container:SetPoint(anchorPoint, parent or container:GetParent() or UIParent, parentPoint, parentOffsetX, parentOffsetY)
 	container:SetSize(size, size)
@@ -1232,7 +1425,16 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 	end
 end
 
-local function ensureHighlightFrame(frame)
+function H.NormalizeFrameStrata(value)
+	if type(value) ~= "string" or value == "" then return nil end
+	local token = string.upper(value)
+	if token == "BACKGROUND" or token == "LOW" or token == "MEDIUM" or token == "HIGH" or token == "DIALOG" or token == "FULLSCREEN" or token == "FULLSCREEN_DIALOG" or token == "TOOLTIP" then
+		return token
+	end
+	return nil
+end
+
+local function ensureHighlightFrame(frame, highlightCfg)
 	if not frame then return nil end
 	local highlight = frame._ufHighlight
 	if not highlight then
@@ -1242,11 +1444,12 @@ local function ensureHighlightFrame(frame)
 	elseif highlight.GetParent and highlight:GetParent() ~= frame and highlight.SetParent then
 		highlight:SetParent(frame)
 	end
-	highlight:SetFrameStrata(frame:GetFrameStrata())
+	local strata = H.NormalizeFrameStrata(highlightCfg and highlightCfg.strata) or (frame.GetFrameStrata and frame:GetFrameStrata())
+	if strata and highlight.SetFrameStrata and highlight:GetFrameStrata() ~= strata then highlight:SetFrameStrata(strata) end
 	local baseLevel = frame:GetFrameLevel() or 0
 	local targetLevel = baseLevel + 4
 	local border = frame._ufBorder
-	if border and border.GetFrameLevel then
+	if border and border.GetFrameLevel and border.GetFrameStrata and highlight.GetFrameStrata and border:GetFrameStrata() == highlight:GetFrameStrata() then
 		local borderLevel = border:GetFrameLevel()
 		if borderLevel and targetLevel <= borderLevel then targetLevel = borderLevel + 1 end
 	end
@@ -1295,12 +1498,15 @@ function H.buildHighlightConfig(cfg, def)
 	local combatColor = hcfg.combatColor
 	if type(combatColor) ~= "table" then combatColor = hdef.combatColor end
 	if type(combatColor) ~= "table" then combatColor = color end
+	local strata = H.NormalizeFrameStrata(hcfg.strata)
+	if strata == nil then strata = H.NormalizeFrameStrata(hdef.strata) end
 	return {
 		enabled = true,
 		mouseover = mouseover == true,
 		target = target == true,
 		aggro = aggro == true,
 		combat = combat == true,
+		strata = strata,
 		texture = texture,
 		size = size,
 		color = color,
@@ -1331,7 +1537,7 @@ function H.applyHighlightStyle(st, highlightCfg)
 	end
 	if st._highlightFrame and st._highlightFrame.GetParent and st._highlightFrame:GetParent() ~= host then st._highlightFrame:Hide() end
 	if highlight and host._ufHighlight ~= highlight then host._ufHighlight = highlight end
-	highlight = ensureHighlightFrame(host)
+	highlight = ensureHighlightFrame(host, highlightCfg)
 	if not highlight then return end
 	st._highlightFrame = highlight
 	local size = highlightCfg.size or 1
@@ -1379,7 +1585,7 @@ function H.updateHighlight(st, unit, playerUnit)
 		if not highlight then return end
 	else
 		if host._ufHighlight ~= highlight then host._ufHighlight = highlight end
-		highlight = ensureHighlightFrame(host) or highlight
+		highlight = ensureHighlightFrame(host, cfg) or highlight
 		st._highlightFrame = highlight
 	end
 	local show = false
@@ -2081,20 +2287,10 @@ function H.SetCastbarColorWithGradient(bar, ccfg, r, g, b, a, progressOverride)
 		renderR, renderG, renderB, renderA = 1, 1, 1, 1
 	end
 	local lastColor = bar._eqolLastColor
-	if
-		not lastColor
-		or lastColor[1] ~= renderR
-		or lastColor[2] ~= renderG
-		or lastColor[3] ~= renderB
-		or lastColor[4] ~= renderA
-	then
+	if not lastColor or lastColor[1] ~= renderR or lastColor[2] ~= renderG or lastColor[3] ~= renderB or lastColor[4] ~= renderA then
 		bar:SetStatusBarColor(renderR, renderG, renderB, renderA)
 		bar._eqolLastColor = bar._eqolLastColor or {}
-		bar._eqolLastColor[1], bar._eqolLastColor[2], bar._eqolLastColor[3], bar._eqolLastColor[4] =
-			renderR,
-			renderG,
-			renderB,
-			renderA
+		bar._eqolLastColor[1], bar._eqolLastColor[2], bar._eqolLastColor[3], bar._eqolLastColor[4] = renderR, renderG, renderB, renderA
 	end
 	if ccfg and ccfg.useGradient == true then
 		if not applyCastbarGradient(bar, ccfg, br, bg, bb, ba, progressOverride) then clearCastbarGradientState(bar) end

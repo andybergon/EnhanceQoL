@@ -293,7 +293,10 @@ function Tracker:GetTextOnly() return getDBValue(DB_TEXT_ONLY, defaults.textOnly
 function Tracker:GetAbbreviateNumbers() return getDBValue(DB_ABBREVIATE, defaults.abbreviateNumbers) == true end
 
 function Tracker:ResolveTextFont()
-	local fallback = (addon.functions and addon.functions.GetLocaleDefaultFontFace and addon.functions.GetLocaleDefaultFontFace()) or addon.variables.defaultFont or STANDARD_TEXT_FONT
+	local fallback = (addon.functions and addon.functions.GetGlobalDefaultFontFace and addon.functions.GetGlobalDefaultFontFace())
+		or (addon.functions and addon.functions.GetLocaleDefaultFontFace and addon.functions.GetLocaleDefaultFontFace())
+		or addon.variables.defaultFont
+		or STANDARD_TEXT_FONT
 	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(self:GetTextFontKey(), fallback) end
 	return fallback
 end

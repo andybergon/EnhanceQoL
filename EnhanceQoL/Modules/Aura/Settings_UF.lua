@@ -666,6 +666,17 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		{ value = "PLAYER", label = L["UFAuraEnemyDebuffFilterPlayer"] or "Only my debuffs" },
 		{ value = "ALL", label = L["UFAuraEnemyDebuffFilterAll"] or "All debuffs" },
 	}
+	local auraRendererOptions = {
+		{ value = "CUSTOM", label = L["UFAuraRendererCustom"] or "EnhanceQoL" },
+		{ value = "BLIZZARD", label = L["UFAuraRendererBlizzard"] or "Blizzard" },
+	}
+
+	local function getAuraRenderer()
+		local ac = ensureAuraSettingsConfig(unit, auraDef)
+		local renderer = tostring(ac.renderer or auraDef.renderer or "CUSTOM"):upper()
+		if renderer == "BLIZZARD" or renderer == "BLIZZARD_CONTAINER" then return "BLIZZARD" end
+		return "CUSTOM"
+	end
 
 	local function syncAuraState(ac)
 		if type(ac) ~= "table" then return end
@@ -1109,6 +1120,20 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		)
 		list[#list].isEnabled = isSectionEnabled
 	end
+
+	list[#list + 1] = radioDropdown(
+		L["UFAuraRenderer"] or "Aura renderer",
+		auraRendererOptions,
+		getAuraRenderer,
+		function(val)
+			local ac = ensureAuraSettingsConfig(unit, auraDef)
+			ac.renderer = (val == "BLIZZARD") and "BLIZZARD" or "CUSTOM"
+			refreshSelf()
+			refreshAuras()
+		end,
+		"CUSTOM",
+		nil
+	)
 
 	list[#list + 1] = { name = L["Buffs"] or "Buffs", kind = UF.ui.settingType.Collapsible, id = "buffs", defaultCollapsed = true }
 	appendAuraSection("buff", "buffs", false)
@@ -2140,7 +2165,7 @@ local function calcLayout(unit, frame)
 	local showName = getValue(unit, { "status", "enabled" }, statusDef.enabled ~= false) ~= false
 	local showLevel = getValue(unit, { "status", "levelEnabled" }, statusDef.levelEnabled ~= false) ~= false
 	local ciDef = statusDef.combatIndicator or {}
-	local showCombat = (unit == "player" or unit == "target") and getValue(unit, { "status", "combatIndicator", "enabled" }, ciDef.enabled ~= false) ~= false
+	local showCombat = (unit == "player" or unit == "target" or unit == "focus") and getValue(unit, { "status", "combatIndicator", "enabled" }, ciDef.enabled ~= false) ~= false
 	local usDef = statusDef.unitStatus or {}
 	local showUnitStatus = getValue(unit, { "status", "unitStatus", "enabled" }, usDef.enabled == true) == true
 	local showStatus = showName or showLevel or showCombat or showUnitStatus
@@ -3733,6 +3758,20 @@ local function buildUnitSettings(unit)
 	)
 	highlightTexture.isEnabled = isHighlightEnabled
 	list[#list + 1] = highlightTexture
+
+	local highlightStrata = radioDropdown(
+		L["Frame strata"] or "Frame strata",
+		UF.ui.strataOptionsWithDefault,
+		function() return getValue(unit, { "highlight", "strata" }, highlightDef.strata or "") or "" end,
+		function(val)
+			setValue(unit, { "highlight", "strata" }, val ~= "" and val or nil)
+			refresh()
+		end,
+		highlightDef.strata or "",
+		"highlight"
+	)
+	highlightStrata.isEnabled = isHighlightEnabled
+	list[#list + 1] = highlightStrata
 
 	local highlightSizeSetting = slider(L["UFHighlightSize"] or "Highlight size", 1, 64, 1, function() return getValue(unit, { "highlight", "size" }, highlightDef.size or 2) end, function(val)
 		debounced(unit .. "_highlightSize", function()
@@ -7608,7 +7647,7 @@ local function buildUnitSettings(unit)
 		list[#list + 1] = { name = "", kind = UF.ui.settingType.Divider, parentId = "unitStatus" }
 	end
 
-	if isPlayer or unit == "target" then
+	if isPlayer or unit == "target" or unit == "focus" then
 		local ciDef = statusDef.combatIndicator or {}
 		local function isCombatIndicatorEnabled() return getValue(unit, { "status", "combatIndicator", "enabled" }, ciDef.enabled ~= false) ~= false end
 		local combatIndicatorToggle = checkbox(

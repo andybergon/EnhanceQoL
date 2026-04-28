@@ -1364,6 +1364,10 @@ for i = 1, maxBossFrames do
 	}
 end
 
+function UF.SupportsCombatIndicator(unit)
+	return unit == UNIT.PLAYER or unit == UNIT.TARGET or unit == UNIT.FOCUS
+end
+
 local defaults = {
 	player = {
 		enabled = false,
@@ -1401,6 +1405,7 @@ local defaults = {
 			target = false,
 			aggro = true,
 			combat = false,
+			strata = nil,
 			texture = "DEFAULT",
 			size = 2,
 			color = { 1, 0, 0, 1 },
@@ -3844,6 +3849,7 @@ function AuraUtil.styleAuraCount(btn, ac, countFontSizeOverride)
 	if size == nil then size = ac.countFontSize end
 	local flags = ac.countFontOutline
 	local fontKey = ac.countFont or (addon.variables and addon.variables.defaultFont) or (LSM and LSM.DefaultMedia and LSM.DefaultMedia.font) or STANDARD_TEXT_FONT
+	local globalFontStateVersion = addon.functions and addon.functions.GetGlobalFontStateVersion and addon.functions.GetGlobalFontStateVersion() or 0
 	if
 		btn._countStyleAnchor == anchor
 		and btn._countStyleOx == ox
@@ -3851,6 +3857,7 @@ function AuraUtil.styleAuraCount(btn, ac, countFontSizeOverride)
 		and btn._countStyleFontKey == fontKey
 		and btn._countStyleSize == size
 		and btn._countStyleFlags == flags
+		and btn._countStyleFontStateVersion == globalFontStateVersion
 	then
 		return
 	end
@@ -3860,6 +3867,7 @@ function AuraUtil.styleAuraCount(btn, ac, countFontSizeOverride)
 	btn._countStyleFontKey = fontKey
 	btn._countStyleSize = size
 	btn._countStyleFlags = flags
+	btn._countStyleFontStateVersion = globalFontStateVersion
 	btn.count:ClearAllPoints()
 	btn.count:SetPoint(anchor, btn.foreground or btn.overlay or btn, anchor, ox, oy)
 	if size == nil or flags == nil then
@@ -3889,6 +3897,7 @@ function AuraUtil.styleAuraCooldownText(btn, ac, cooldownFontSizeOverride)
 	if size == nil then size = ac.cooldownFontSize end
 	local fontKey = ac.cooldownFont
 	local outline = ac.cooldownFontOutline
+	local globalFontStateVersion = addon.functions and addon.functions.GetGlobalFontStateVersion and addon.functions.GetGlobalFontStateVersion() or 0
 	local curFont, curSize, curFlags = fs:GetFont()
 	if size == nil then size = curSize or 12 end
 	if outline == nil then outline = curFlags end
@@ -3900,6 +3909,7 @@ function AuraUtil.styleAuraCooldownText(btn, ac, cooldownFontSizeOverride)
 		and btn._cooldownStyleFontKey == fontKey
 		and btn._cooldownStyleSize == size
 		and btn._cooldownStyleOutline == outline
+		and btn._cooldownStyleFontStateVersion == globalFontStateVersion
 	then
 		return
 	end
@@ -3909,6 +3919,7 @@ function AuraUtil.styleAuraCooldownText(btn, ac, cooldownFontSizeOverride)
 	btn._cooldownStyleFontKey = fontKey
 	btn._cooldownStyleSize = size
 	btn._cooldownStyleOutline = outline
+	btn._cooldownStyleFontStateVersion = globalFontStateVersion
 	fs:ClearAllPoints()
 	fs:SetPoint(anchor, btn.overlay or btn, anchor, ox, oy)
 	if UFHelper and UFHelper.applyFont then
@@ -3968,14 +3979,36 @@ function AuraUtil.applyAuraToButton(btn, aura, ac, isDebuff, unitToken, harmfulF
 	local showCooldown = ac.showCooldown ~= false
 	local showCooldownText = ac.showCooldownText
 	if showCooldownText == nil then showCooldownText = showCooldown end
-	if aura.auraInstanceID and aura.auraInstanceID > 0 then
+	local drawCooldownEdge = ac.showCooldownEdge ~= false
+	local drawCooldownSwipe = ac.showCooldownSwipe ~= false
+	local drawCooldownBling = ac.showCooldownBling ~= false
+	local hasCooldown = false
+	if btn.cd.SetDrawEdge then btn.cd:SetDrawEdge(false) end
+	if btn.cd.SetDrawSwipe then btn.cd:SetDrawSwipe(false) end
+	if btn.cd.SetDrawBling then btn.cd:SetDrawBling(false) end
+	if showCooldown and aura.auraInstanceID and aura.auraInstanceID > 0 then
 		local durObj = C_UnitAuras.GetAuraDuration(unitToken, aura.auraInstanceID)
-		if durObj then btn.cd:SetCooldownFromDurationObject(durObj) end
+		if durObj then
+			btn.cd:SetCooldownFromDurationObject(durObj)
+			hasCooldown = true
+		end
+	elseif showCooldown and aura.isSample and aura.duration and aura.expirationTime and aura.duration > 0 and aura.expirationTime > 0 then
+		local startTime = aura.expirationTime - aura.duration
+		if btn.cd.SetCooldown then
+			btn.cd:SetCooldown(startTime, aura.duration)
+			hasCooldown = true
+		elseif CooldownFrame_Set then
+			CooldownFrame_Set(btn.cd, startTime, aura.duration, true)
+			hasCooldown = true
+		end
 	end
+	if btn.cd.SetDrawEdge then btn.cd:SetDrawEdge(hasCooldown and drawCooldownEdge) end
+	if btn.cd.SetDrawSwipe then btn.cd:SetDrawSwipe(hasCooldown and drawCooldownSwipe) end
+	if btn.cd.SetDrawBling then btn.cd:SetDrawBling(hasCooldown and drawCooldownBling) end
 	local cooldownFontSize = ac.cooldownFontSize
 	if cooldownFontSize ~= nil and cooldownFontSize < 1 then cooldownFontSize = nil end
 	local countFontSize = ac.countFontSize
-	btn.cd:SetHideCountdownNumbers(showCooldownText == false)
+	btn.cd:SetHideCountdownNumbers(not hasCooldown or showCooldownText == false)
 	AuraUtil.styleAuraCount(btn, ac, countFontSize)
 	AuraUtil.styleAuraCooldownText(btn, ac, cooldownFontSize)
 	local showStacks = ac.showStacks
@@ -4324,6 +4357,62 @@ function AuraUtil.hideAuraContainers(st)
 	end
 end
 
+function AuraUtil.GetAuraRenderer(value)
+	if UFHelper and UFHelper.NormalizeAuraRenderer then return UFHelper.NormalizeAuraRenderer(value) end
+	local renderer = tostring(value or "CUSTOM"):upper()
+	return (renderer == "BLIZZARD" or renderer == "BLIZZARD_CONTAINER") and "BLIZZARD" or "CUSTOM"
+end
+
+function AuraUtil.isBlizzardAuraRenderer(ac, defAc)
+	local renderer = ac and ac.renderer
+	if renderer == nil and defAc then renderer = defAc.renderer end
+	return AuraUtil.GetAuraRenderer(renderer) == "BLIZZARD"
+end
+
+function AuraUtil.ApplyBlizzardAuraRenderer(unit, st, cfg, def, allowSample)
+	if not (st and st.privateAuras and UFHelper and UFHelper.ApplyBlizzardAuraContainer) then return end
+	cfg = cfg or {}
+	def = def or defaultsFor(unit)
+	local ac = cfg.auraIcons or (def and def.auraIcons) or defaults.target.auraIcons or {}
+	local defAc = def and def.auraIcons
+	local pcfg = cfg.privateAuras or (def and def.privateAuras) or {}
+	local auraRuntime = AuraUtil.getUnitSingleAuraRuntimeConfig(unit, ac, defAc)
+	local showBuffs = auraRuntime.enabled and auraRuntime.showBuffs == true
+	local privateEnabled = pcfg and pcfg.enabled == true
+	local showDebuffs = (auraRuntime.enabled and auraRuntime.showDebuffs == true) or privateEnabled
+	local buffStyle = auraRuntime.buff or {}
+	local debuffStyle = auraRuntime.debuff or {}
+	local privateIcon = (pcfg and pcfg.icon) or {}
+	local iconSize = (showBuffs and buffStyle.size)
+		or (showDebuffs and debuffStyle.size)
+		or privateIcon.size
+		or 24
+	local maxDebuffs = showDebuffs and (debuffStyle.max or privateIcon.amount or 0) or 0
+	if privateEnabled and maxDebuffs < (privateIcon.amount or 0) then maxDebuffs = privateIcon.amount or maxDebuffs end
+	local containerCfg = {
+		showBuffs = showBuffs,
+		showDebuffs = showDebuffs,
+		showDispels = showDebuffs and debuffStyle.blizzardDispelBorder == true,
+		showDispelOverlay = showDebuffs and debuffStyle.blizzardDispelBorder == true,
+		showBigDefensive = showBuffs,
+		maxBuffs = showBuffs and (buffStyle.max or 0) or 0,
+		maxDebuffs = maxDebuffs,
+		maxDispelDebuffs = 3,
+		iconSize = iconSize,
+		bigDefensiveSize = iconSize,
+		organizationType = ac.blizzardOrganizationType,
+		dispelIndicatorOption = 2,
+		powerBarUsedHeight = 0,
+		groupType = nil,
+	}
+	if not (containerCfg.showBuffs or containerCfg.showDebuffs or containerCfg.showDispels or containerCfg.showBigDefensive) then
+		UFHelper.RemovePrivateAuras(st.privateAuras)
+		if st.privateAuras.Hide then st.privateAuras:Hide() end
+		return
+	end
+	UFHelper.ApplyBlizzardAuraContainer(st.privateAuras, unit, containerCfg, st.frame, st.statusTextLayer or st.frame, allowSample)
+end
+
 function AuraUtil.prepareSingleAuraSectionStyle(section)
 	local style = CopyTable(section or {})
 	style.size = tonumber(style.size) or 24
@@ -4445,6 +4534,11 @@ function AuraUtil.updateTargetAuraIcons(startIndex, unit)
 	local cfg = st.cfg or ensureDB(unit)
 	local def = defaultsFor(unit)
 	local ac = cfg.auraIcons or (def and def.auraIcons) or defaults.target.auraIcons or { size = 24, padding = 2, max = 16, showCooldown = true }
+	if AuraUtil.isBlizzardAuraRenderer(ac, def and def.auraIcons) then
+		AuraUtil.hideAuraContainers(st)
+		AuraUtil.HideSingleDispelIndicator(unit)
+		return
+	end
 	local auraRuntime = AuraUtil.getUnitSingleAuraRuntimeConfig(unit, ac, def and def.auraIcons)
 	if not auraRuntime.enabled then
 		AuraUtil.hideAuraContainers(st)
@@ -4695,6 +4789,11 @@ function AuraUtil.fullScanTargetAuras(unit)
 	local cfg = (st and st.cfg) or ensureDB(unit)
 	local def = defaultsFor(unit)
 	local ac = cfg.auraIcons or (def and def.auraIcons) or defaults.target.auraIcons or {}
+	if AuraUtil.isBlizzardAuraRenderer(ac, def and def.auraIcons) then
+		if st then st._sampleAurasActive = nil end
+		AuraUtil.updateTargetAuraIcons(nil, unit)
+		return
+	end
 	local auraRuntime = AuraUtil.getUnitSingleAuraRuntimeConfig(unit, ac, def and def.auraIcons)
 	if not auraRuntime.enabled then
 		if st then st._sampleAurasActive = nil end
@@ -5304,6 +5403,11 @@ function AuraUtil.UpdateSingleDispelIndicator(unit, allowSample)
 	local scfg = cfg.status or {}
 	local dcfg = scfg.dispelTint or {}
 	local defDispel = (def.status and def.status.dispelTint) or {}
+	if not allowSample and addon.EditModeLib and addon.EditModeLib.IsInEditMode and addon.EditModeLib:IsInEditMode() then
+		local showSample = dcfg.showSample
+		if showSample == nil then showSample = defDispel.showSample == true end
+		allowSample = showSample == true
+	end
 
 	local overlayEnabled = dcfg.enabled
 	if overlayEnabled == nil then overlayEnabled = defDispel.enabled ~= false end
@@ -7510,34 +7614,61 @@ function AuraUtil.syncAuraButtonLayer(btn, container, ac)
 	if UFHelper and UFHelper.syncAuraBorderFrameLayer then UFHelper.syncAuraBorderFrameLayer(btn) end
 end
 
+function AuraUtil.getFrameZOrder(frame)
+	if not frame then return 0, 0 end
+	local strataToken = frame.GetFrameStrata and frame:GetFrameStrata() or "MEDIUM"
+	local strata = STRATA_INDEX[strataToken] or STRATA_INDEX.MEDIUM or 3
+	local level = frame.GetFrameLevel and frame:GetFrameLevel() or 0
+	return strata, level
+end
+
+function AuraUtil.getTopTextAnchor(...)
+	local topFrame
+	local topStrata = -1
+	local topLevel = -1
+	for i = 1, select("#", ...) do
+		local frame = select(i, ...)
+		if frame and (not frame.IsShown or frame:IsShown()) then
+			local strata, level = AuraUtil.getFrameZOrder(frame)
+			if strata > topStrata or (strata == topStrata and level > topLevel) then
+				topFrame = frame
+				topStrata = strata
+				topLevel = level
+			end
+		end
+	end
+	return topFrame
+end
+
 local function syncTextFrameLevels(st)
 	if not st then return end
 	local scfg = (st.cfg and st.cfg.status) or {}
 	local healthAnchor = getHealthTextAnchor(st) or st.health
 	local statusAnchor = getHealthTextAnchor(st, true) or st.status or healthAnchor
-	setFrameLevelAbove(st.healthTextLayer, healthAnchor, 5)
+	local textAnchor = AuraUtil.getTopTextAnchor(healthAnchor, statusAnchor, st.power, st.powerGroup, st.secondaryPower, st.secondaryPowerGroup) or statusAnchor or healthAnchor
+	setFrameLevelAbove(st.healthTextLayer, textAnchor, 5)
 	setFrameLevelAbove(st.powerTextLayer, st.power, 5)
 	if st.secondaryPowerTextLayer and st.secondaryPower then setFrameLevelAbove(st.secondaryPowerTextLayer, st.secondaryPower, 5) end
-	setFrameLevelAbove(st.statusTextLayer, statusAnchor, 5)
+	setFrameLevelAbove(st.statusTextLayer, textAnchor, 5)
 	local nameLayer = st.nameTextLayer or st.statusTextLayer
 	local nameLevelOffset = tonumber(scfg.nameFrameLevelOffset)
 	if nameLevelOffset == nil then nameLevelOffset = 5 end
-	setFrameLevelAbove(nameLayer, statusAnchor, nameLevelOffset)
+	setFrameLevelAbove(nameLayer, textAnchor, nameLevelOffset)
 	if nameLayer and nameLayer.SetFrameStrata then
 		local nameStrata = normalizeStrataToken(scfg.nameStrata)
 		local fallbackStrata
-		if statusAnchor and statusAnchor.GetFrameStrata then fallbackStrata = statusAnchor:GetFrameStrata() end
+		if textAnchor and textAnchor.GetFrameStrata then fallbackStrata = textAnchor:GetFrameStrata() end
 		if not fallbackStrata and st.status and st.status.GetFrameStrata then fallbackStrata = st.status:GetFrameStrata() end
 		if nameStrata or fallbackStrata then nameLayer:SetFrameStrata(nameStrata or fallbackStrata) end
 	end
 	local levelLayer = st.levelTextLayer or st.statusTextLayer
 	local levelOffset = tonumber(scfg.levelFrameLevelOffset)
 	if levelOffset == nil then levelOffset = 5 end
-	setFrameLevelAbove(levelLayer, statusAnchor, levelOffset)
+	setFrameLevelAbove(levelLayer, textAnchor, levelOffset)
 	if levelLayer and levelLayer.SetFrameStrata then
 		local levelStrata = normalizeStrataToken(scfg.levelStrata)
 		local fallbackStrata
-		if statusAnchor and statusAnchor.GetFrameStrata then fallbackStrata = statusAnchor:GetFrameStrata() end
+		if textAnchor and textAnchor.GetFrameStrata then fallbackStrata = textAnchor:GetFrameStrata() end
 		if not fallbackStrata and st.status and st.status.GetFrameStrata then fallbackStrata = st.status:GetFrameStrata() end
 		if levelStrata or fallbackStrata then levelLayer:SetFrameStrata(levelStrata or fallbackStrata) end
 	end
@@ -7737,7 +7868,7 @@ local function updateStatus(cfg, unit)
 	local showName = scfg.enabled ~= false
 	local showLevel = shouldShowLevel(scfg, unit)
 	local showUnitStatus = usCfg.enabled == true
-	local showCombatIndicator = (unit == UNIT.PLAYER or unit == UNIT.TARGET) and ciCfg.enabled ~= false
+	local showCombatIndicator = UF.SupportsCombatIndicator(unit) and ciCfg.enabled ~= false
 	local showStatus = showName or showLevel or showUnitStatus or showCombatIndicator
 	local statusHeight = UF.ResolveStatusHeight(cfg, def, showStatus)
 	if statusHeight <= 0 then statusHeight = 0.001 end
@@ -7753,7 +7884,22 @@ local function updateStatus(cfg, unit)
 		st.nameText:SetPoint(nameAnchor, st.status, nameAnchor, (scfg.nameOffset and scfg.nameOffset.x) or 0, (scfg.nameOffset and scfg.nameOffset.y) or 0)
 		if st.nameText.SetJustifyH then st.nameText:SetJustifyH(nameAnchor) end
 		st.nameText:SetShown(showName)
-		UFHelper.applyNameCharLimit(st, scfg, defStatus)
+		local maxChars = scfg.nameMaxChars
+		if maxChars == nil then maxChars = defStatus.nameMaxChars end
+		maxChars = tonumber(maxChars) or 0
+		if maxChars > 0 then
+			UFHelper.applyNameCharLimit(st, scfg, defStatus)
+		else
+			if st.nameText.SetMaxLines then st.nameText:SetMaxLines(1) end
+			if st.nameText.SetWordWrap then st.nameText:SetWordWrap(false) end
+			if st.nameText.SetNonSpaceWrap then st.nameText:SetNonSpaceWrap(false) end
+
+			local nameWidth = (st.status and st.status.GetWidth and st.status:GetWidth()) or 0
+			if not nameWidth or nameWidth <= 1 then nameWidth = (st.frame and st.frame.GetWidth and st.frame:GetWidth()) or 0 end
+			if not nameWidth or nameWidth <= 1 then nameWidth = max(MIN_WIDTH, tonumber(cfg.width or def.width) or 220) end
+			st.nameText:SetWidth(max(1, nameWidth))
+			st._eqolNameTextWidth = nil
+		end
 	end
 	if st.levelText then
 		UFHelper.applyFont(st.levelText, scfg.font, levelFontSize, scfg.fontOutline)
@@ -7790,7 +7936,7 @@ end
 
 local function updateCombatIndicator(cfg, unit)
 	unit = unit or UNIT.PLAYER
-	if unit ~= UNIT.PLAYER and unit ~= UNIT.TARGET then return end
+	if not UF.SupportsCombatIndicator(unit) then return end
 	local st = states[unit]
 	if not st or not st.combatIcon or not st.status then return end
 	local def = defaultsFor(unit)
@@ -8002,7 +8148,7 @@ local function layoutFrame(cfg, unit)
 	local showName = scfg.enabled ~= false
 	local showLevel = shouldShowLevel(scfg, unit)
 	local showUnitStatus = usCfg.enabled == true
-	local showCombatIndicator = (unit == UNIT.PLAYER or unit == UNIT.TARGET) and ciCfg.enabled ~= false
+	local showCombatIndicator = UF.SupportsCombatIndicator(unit) and ciCfg.enabled ~= false
 	local showStatus = showName or showLevel or showUnitStatus or showCombatIndicator
 	local pcfg = cfg.power or {}
 	local powerDef = def.power or {}
@@ -8649,7 +8795,7 @@ local function ensureFrames(unit)
 		st.classificationIcon:SetSize(16, 16)
 		st.classificationIcon:Hide()
 	end
-	if unit == UNIT.PLAYER or unit == UNIT.TARGET then
+	if UF.SupportsCombatIndicator(unit) then
 		st.combatIcon = st.combatIcon or st.statusTextLayer:CreateTexture(nil, "OVERLAY")
 		if st.combatIcon.GetParent and st.combatIcon:GetParent() ~= st.statusTextLayer then st.combatIcon:SetParent(st.statusTextLayer) end
 	end
@@ -8976,25 +9122,34 @@ local function updateNameAndLevel(cfg, unit, levelOverride)
 end
 
 refreshNameAndLevelSoon = function(unit)
+	if not unit then return end
+	UF._pendingNameLevelRefresh = UF._pendingNameLevelRefresh or {}
+	if UF._pendingNameLevelRefresh[unit] then return end
+	UF._pendingNameLevelRefresh[unit] = true
+
 	local function refresh()
 		local st = states[unit]
 		if not st then return end
 		local cfg = st.cfg or ensureDB(unit)
 		if not cfg or cfg.enabled == false then return end
+		updateStatus(cfg, unit)
+		syncTextFrameLevels(st)
 		updateNameAndLevel(cfg, unit)
 	end
 
-	local st = states[unit]
-	if st and st._nameLevelRefreshPending then return end
 	refresh()
-	if After then
-		st = states[unit]
-		if not st then return end
-		st._nameLevelRefreshPending = true
-		After(0, function()
-			local delayedState = states[unit]
-			if delayedState then delayedState._nameLevelRefreshPending = nil end
+	if not After then
+		UF._pendingNameLevelRefresh[unit] = nil
+		return
+	end
+
+	local delays = { 0, 0.05, 0.25, 0.75, 1.5 }
+	local remaining = #delays
+	for _, delay in ipairs(delays) do
+		After(delay, function()
 			refresh()
+			remaining = remaining - 1
+			if remaining <= 0 then UF._pendingNameLevelRefresh[unit] = nil end
 		end)
 	end
 end
@@ -9114,16 +9269,23 @@ local function applyConfig(unit)
 		st._displayPowerStructureKey = sig and sig.key or nil
 	end
 	updatePortrait(cfg, unit)
-	AuraUtil.UpdateSingleDispelIndicator(unit, UF.IsEditModeSampleEnabled and UF.IsEditModeSampleEnabled(unit))
+	local auraRendererIsBlizzard = AuraUtil.isBlizzardAuraRenderer(cfg.auraIcons, def and def.auraIcons)
+	if auraRendererIsBlizzard then
+		AuraUtil.HideSingleDispelIndicator(unit)
+	else
+		AuraUtil.UpdateSingleDispelIndicator(unit, UF.IsEditModeSampleEnabled and UF.IsEditModeSampleEnabled(unit))
+	end
 	checkRaidTargetIcon(unit, st)
 	UFHelper.updateLeaderIndicator(st, unit, cfg, defaultsFor(unit), false)
 	UFHelper.updatePvPIndicator(st, unit, cfg, defaultsFor(unit), false)
 	UFHelper.updateRoleIndicator(st, unit, cfg, defaultsFor(unit), false)
-	if st.privateAuras and UFHelper and UFHelper.ApplyPrivateAuras then
+	if st.privateAuras and auraRendererIsBlizzard and UFHelper and UFHelper.ApplyBlizzardAuraContainer then
+		AuraUtil.ApplyBlizzardAuraRenderer(unit, st, cfg, def, UF.IsEditModeSampleEnabled and UF.IsEditModeSampleEnabled(unit))
+	elseif st.privateAuras and UFHelper and UFHelper.ApplyPrivateAuras then
 		local pcfg = cfg.privateAuras or (def and def.privateAuras)
 		UFHelper.ApplyPrivateAuras(st.privateAuras, unit, pcfg, st.frame, st.statusTextLayer or st.frame, UF.IsEditModeSampleEnabled and UF.IsEditModeSampleEnabled(unit), true)
 	end
-	if unit == UNIT.PLAYER or unit == UNIT.TARGET then
+	if UF.SupportsCombatIndicator(unit) then
 		updateCombatIndicator(cfg, unit)
 	end
 	if unit == UNIT.PLAYER then
@@ -10267,6 +10429,7 @@ local function updateFocusFrame(cfg, forceApply)
 	UFHelper.updatePvPIndicator(st, UNIT.FOCUS, cfg, defaultsFor(UNIT.FOCUS), not forceApply)
 	UFHelper.updateRoleIndicator(st, UNIT.FOCUS, cfg, defaultsFor(UNIT.FOCUS), not forceApply)
 	updateUnitStatusIndicator(cfg, UNIT.FOCUS)
+	updateCombatIndicator(cfg, UNIT.FOCUS)
 	updatePortrait(cfg, UNIT.FOCUS)
 	UFHelper.updateHighlight(st, UNIT.FOCUS, UNIT.PLAYER)
 	applyVisibilityRules(UNIT.FOCUS)
@@ -11208,7 +11371,7 @@ onEvent = function(self, event, unit, ...)
 		if unit and states[unit] then UFHelper.updateClassificationIndicator(states[unit], unit, getCfg(unit), defaultsFor(unit), true) end
 	elseif event == "UNIT_FLAGS" then
 		updateUnitStatusIndicator(getCfg(unit), unit)
-		if unit == UNIT.PLAYER or unit == UNIT.TARGET then updateCombatIndicator(getCfg(unit), unit) end
+		if UF.SupportsCombatIndicator(unit) then updateCombatIndicator(getCfg(unit), unit) end
 		UFHelper.updateLeaderIndicator(states[unit], unit, getCfg(unit), defaultsFor(unit), true)
 		UFHelper.updatePvPIndicator(states[unit], unit, getCfg(unit), defaultsFor(unit), true)
 		if states[unit] then states[unit]._healthColorDirty = true end
@@ -11332,10 +11495,6 @@ onEvent = function(self, event, unit, ...)
 		updateBossFrames(true)
 	elseif event == "UNIT_TARGETABLE_CHANGED" and isBossUnit(unit) then
 		updateBossFrames(true)
-	elseif event == "ENCOUNTER_START" then
-		updateBossFrames(true)
-	elseif event == "ENCOUNTER_END" then
-		hideBossFrames()
 	elseif event == "UNIT_PET" and unit == "player" then
 		local petCfg = getCfg(UNIT.PET)
 		if petCfg.enabled then
@@ -11351,6 +11510,7 @@ onEvent = function(self, event, unit, ...)
 			checkRaidTargetIcon(UNIT.FOCUS, states[UNIT.FOCUS])
 		end
 		updateUnitStatusIndicator(focusCfg, UNIT.FOCUS)
+		updateCombatIndicator(focusCfg, UNIT.FOCUS)
 		UFHelper.updateLeaderIndicator(states[UNIT.FOCUS], UNIT.FOCUS, focusCfg, defaultsFor(UNIT.FOCUS), true)
 		UFHelper.updatePvPIndicator(states[UNIT.FOCUS], UNIT.FOCUS, focusCfg, defaultsFor(UNIT.FOCUS), true)
 		UFHelper.updateRoleIndicator(states[UNIT.FOCUS], UNIT.FOCUS, focusCfg, defaultsFor(UNIT.FOCUS), true)
@@ -11405,6 +11565,7 @@ local function ensureEventHandling()
 			addon.EditModeLib:RegisterCallback("enter", function()
 				updateCombatIndicator(states[UNIT.PLAYER] and states[UNIT.PLAYER].cfg or ensureDB(UNIT.PLAYER), UNIT.PLAYER)
 				updateCombatIndicator(states[UNIT.TARGET] and states[UNIT.TARGET].cfg or ensureDB(UNIT.TARGET), UNIT.TARGET)
+				updateCombatIndicator(states[UNIT.FOCUS] and states[UNIT.FOCUS].cfg or ensureDB(UNIT.FOCUS), UNIT.FOCUS)
 				ensureBossFramesReady(ensureDB("boss"))
 				updateBossFrames(true)
 				updateAllRaidTargetIcons()
@@ -11422,6 +11583,7 @@ local function ensureEventHandling()
 			addon.EditModeLib:RegisterCallback("exit", function()
 				updateCombatIndicator(states[UNIT.PLAYER] and states[UNIT.PLAYER].cfg or ensureDB(UNIT.PLAYER), UNIT.PLAYER)
 				updateCombatIndicator(states[UNIT.TARGET] and states[UNIT.TARGET].cfg or ensureDB(UNIT.TARGET), UNIT.TARGET)
+				updateCombatIndicator(states[UNIT.FOCUS] and states[UNIT.FOCUS].cfg or ensureDB(UNIT.FOCUS), UNIT.FOCUS)
 				hideBossFrames(true)
 				if ensureDB("boss").enabled then updateBossFrames(true) end
 				updateAllRaidTargetIcons()
@@ -11456,8 +11618,6 @@ local function ensureEventHandling()
 	if ensureDB("boss").enabled then
 		eventFrame:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
 		eventFrame:RegisterEvent("UNIT_TARGETABLE_CHANGED")
-		eventFrame:RegisterEvent("ENCOUNTER_START")
-		eventFrame:RegisterEvent("ENCOUNTER_END")
 	end
 	UF._registerUnitScopedEvents(anyPortraitEnabled())
 	syncTargetRangeFadeConfig(ensureDB(UNIT.TARGET), defaultsFor(UNIT.TARGET))

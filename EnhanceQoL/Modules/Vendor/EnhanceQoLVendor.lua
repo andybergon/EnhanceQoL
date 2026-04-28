@@ -373,6 +373,16 @@ local function shouldReadTooltipInfo(quality, bindType)
 	return type(bindType) ~= "number"
 end
 
+local function isCosmeticItem(itemID, itemLink, classID, subclassID)
+	local armorClass = Enum and Enum.ItemClass and Enum.ItemClass.Armor or 4
+	local cosmeticSubclass = Enum and Enum.ItemArmorSubclass and Enum.ItemArmorSubclass.Cosmetic or 5
+	if classID == armorClass and subclassID == cosmeticSubclass then return true end
+
+	local itemInfo = itemLink or itemID
+	if itemInfo and C_Item and C_Item.IsCosmeticItem then return C_Item.IsCosmeticItem(itemInfo) == true end
+	return false
+end
+
 local function createDestroyEntry(bag, slot, itemID, itemName, info)
 	info = info or C_Container.GetContainerItemInfo(bag, slot)
 	local count = info and info.stackCount or 1
@@ -1186,7 +1196,9 @@ local function lookupDestroyItemsFast()
 					local inDestroy = includeDestroy and includeDestroy[itemID]
 					local inSell = includeSell and includeSell[itemID]
 
-					if info.hasNoValue and (inDestroy or inSell) then
+					if isCosmeticItem(itemID, info.hyperlink) then
+						-- Cosmetics are never auto-vendored or queued by vendor helpers.
+					elseif info.hasNoValue and (inDestroy or inSell) then
 						if not getDestroyProtectionReason(itemID, info, info.quality) then table.insert(itemsToDestroy, createDestroyEntry(bag, slot, itemID, info.itemName, info)) end
 					elseif inDestroy then
 						if not getDestroyProtectionReason(itemID, info, info.quality) then table.insert(itemsToDestroy, createDestroyEntry(bag, slot, itemID, info.itemName, info)) end
@@ -1224,7 +1236,10 @@ local function lookupItems()
 				local inSellList = addon.db["vendorIncludeSellList"] and addon.db["vendorIncludeSellList"][itemID]
 
 				local processed = false
-				if hasNoValue and (inDestroyList or inSellList) then
+				if isCosmeticItem(itemID, itemLink) then
+					processed = true
+				end
+				if not processed and hasNoValue and (inDestroyList or inSellList) then
 					local reason = getDestroyProtectionReason(itemID, bagInfo, qualityFromBag)
 					if reason then
 						notifyDestroyProtection(itemID, itemLink or itemNameFromBag, reason)
@@ -1246,7 +1261,9 @@ local function lookupItems()
 						local resolvedName = itemNameFromBag or itemName
 						local reason
 
-						if inDestroyList then
+						if isCosmeticItem(itemID, itemLink, classID, subclassID) then
+							-- Cosmetics can have a vendor price, but should never be auto-vendored.
+						elseif inDestroyList then
 							reason = getDestroyProtectionReason(itemID, bagInfo, quality)
 							if reason then
 								notifyDestroyProtection(itemID, itemLink or resolvedName, reason)
@@ -1279,8 +1296,6 @@ local function lookupItems()
 								end
 								local bindFilter = addon.Vendor.variables.itemBindTypeQualityFilter[quality]
 								if bindFilter and bindFilter[effectiveBindType] then table.insert(itemsToSell, { bag = bag, slot = slot, itemID = itemID }) end
-							elseif classID == 4 and subclassID == 5 and not C_TransmogCollection.PlayerHasTransmog(itemID) then
-								-- do not sell appearances
 							elseif classID == 7 and addon.Vendor.variables.itemQualityFilter[quality] then
 								local expTable = addon.db["vendor" .. addon.Vendor.variables.tabNames[quality] .. "CraftingExpansions"]
 								if expTable and expTable[expansionID] then table.insert(itemsToSell, { bag = bag, slot = slot, itemID = itemID }) end

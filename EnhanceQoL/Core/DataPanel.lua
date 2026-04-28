@@ -10,6 +10,7 @@ local LDB = LibStub("LibDataBroker-1.1", true)
 local issecretvalue = _G.issecretvalue
 
 local DEFAULT_TEXT_ALPHA = 100
+local DEFAULT_TEXT_COLOR = { r = 1, g = 1, b = 1, a = 1 }
 local DEFAULT_BACKDROP_ALPHA = 0.5
 local DEFAULT_BORDER_ALPHA = 1
 local DEFAULT_BORDER_SIZE = 16
@@ -391,6 +392,7 @@ local function ensureFadeWatcher()
 		end
 	end)
 end
+ensureFadeWatcher()
 
 local function normalizeStrata(strata, fallback)
 	if type(strata) == "string" then
@@ -867,6 +869,8 @@ local function seedEditModeRecordFromPanelInfo(panel, defaults, record)
 	record.fontStyle = normalizePanelFontStyle(info.fontStyle, defaults.fontStyle or DEFAULT_FONT_STYLE, info.fontOutline, info.fontShadow)
 	record.streamFontScale = normalizeStreamFontScale(info.streamFontScale, defaults.streamFontScale)
 	record.useClassTextColor = info.useClassTextColor == true
+	record.useCustomTextColor = info.useCustomTextColor == true
+	record.textColor = normalizeColorTable(info.textColor, defaults.textColor)
 	record.fontFace = normalizeFontSetting(info.fontFace, defaults.fontFace)
 	record.backgroundTexture = normalizeMediaKey(info.backgroundTexture, defaults.backgroundTexture)
 	record.backgroundColor = normalizeColorTable(info.backgroundColor, defaults.backgroundColor)
@@ -905,6 +909,8 @@ local function registerEditModePanel(panel)
 		fontStyle = normalizePanelFontStyle(panel.info.fontStyle, DEFAULT_FONT_STYLE, panel.info.fontOutline, panel.info.fontShadow),
 		streamFontScale = normalizeStreamFontScale(panel.info.streamFontScale, DEFAULT_STREAM_FONT_SCALE),
 		useClassTextColor = panel.info.useClassTextColor == true,
+		useCustomTextColor = panel.info.useCustomTextColor == true,
+		textColor = normalizeColorTable(panel.info.textColor, DEFAULT_TEXT_COLOR),
 		fontFace = normalizeFontSetting(panel.info.fontFace, globalFontConfigKey()),
 		backgroundTexture = normalizeMediaKey(panel.info.backgroundTexture, "DEFAULT"),
 		backgroundColor = normalizeColorTable(panel.info.backgroundColor, DEFAULT_BACKDROP_COLOR),
@@ -930,6 +936,8 @@ local function registerEditModePanel(panel)
 	panel.info.showTooltips = defaults.showTooltips
 	panel.info.tooltipGrowth = defaults.tooltipGrowth
 	panel.info.streamGap = defaults.streamGap
+	panel.info.useCustomTextColor = defaults.useCustomTextColor
+	panel.info.textColor = defaults.textColor
 
 	local settings
 	if SettingType then
@@ -956,6 +964,16 @@ local function registerEditModePanel(panel)
 				return normalizePanelFontStyle(style, defaults.fontStyle, legacyOutline, legacyShadow)
 			end
 			return normalizePanelFontStyle(panel.info and panel.info.fontStyle, defaults.fontStyle, panel.info and panel.info.fontOutline, panel.info and panel.info.fontShadow)
+		end
+
+		local function isCustomTextColorEnabled(layoutName)
+			if EditMode and EditMode.GetValue then
+				local useClass = EditMode:GetValue(id, "useClassTextColor", layoutName)
+				if useClass == true then return false end
+				local useCustom = EditMode:GetValue(id, "useCustomTextColor", layoutName)
+				if useCustom ~= nil then return useCustom == true end
+			end
+			return panel.info and panel.info.useClassTextColor ~= true and panel.info.useCustomTextColor == true
 		end
 
 		settings = {
@@ -1281,6 +1299,40 @@ local function registerEditModePanel(panel)
 				default = defaults.useClassTextColor,
 			},
 			{
+				name = L["Use custom text color"] or "Use custom text color",
+				kind = SettingType.Checkbox,
+				field = "useCustomTextColor",
+				default = defaults.useCustomTextColor,
+				isEnabled = function(layoutName)
+					if EditMode and EditMode.GetValue then
+						local value = EditMode:GetValue(id, "useClassTextColor", layoutName)
+						if value ~= nil then return value ~= true end
+					end
+					return panel.info and panel.info.useClassTextColor ~= true
+				end,
+			},
+			{
+				name = L["Text color"] or "Text color",
+				kind = SettingType.Color,
+				field = "textColor",
+				default = defaults.textColor,
+				get = function(layoutName)
+					if EditMode and EditMode.GetValue then return normalizeColorTable(EditMode:GetValue(id, "textColor", layoutName), defaults.textColor) end
+					return normalizeColorTable(panel.info and panel.info.textColor, defaults.textColor)
+				end,
+				set = function(layoutName, value)
+					local desired = normalizeColorTable(value, DEFAULT_TEXT_COLOR)
+					if EditMode and EditMode.SetValue then
+						EditMode:SetValue(id, "textColor", desired, layoutName)
+					elseif panel.info then
+						panel.info.textColor = desired
+						panel:ReapplyPayloads()
+						panel:ApplyTextStyle()
+					end
+				end,
+				isEnabled = isCustomTextColorEnabled,
+			},
+			{
 				name = L["DataPanelOpacityInCombat"] or "Opacity in combat",
 				kind = SettingType.Slider,
 				field = "textAlphaInCombat",
@@ -1415,6 +1467,8 @@ local function ensureSettings(id, name)
 			fontStyle = DEFAULT_FONT_STYLE,
 			streamFontScale = DEFAULT_STREAM_FONT_SCALE,
 			useClassTextColor = false,
+			useCustomTextColor = false,
+			textColor = { r = 1, g = 1, b = 1, a = 1 },
 			fontFace = globalFontConfigKey(),
 			backgroundTexture = "DEFAULT",
 			backgroundColor = { r = 0, g = 0, b = 0, a = DEFAULT_BACKDROP_ALPHA },
@@ -1452,6 +1506,8 @@ local function ensureSettings(id, name)
 		info.fontShadow = nil
 		info.streamFontScale = normalizeStreamFontScale(info.streamFontScale, DEFAULT_STREAM_FONT_SCALE)
 		if info.useClassTextColor == nil then info.useClassTextColor = false end
+		if info.useCustomTextColor == nil then info.useCustomTextColor = false end
+		info.textColor = normalizeColorTable(info.textColor, DEFAULT_TEXT_COLOR)
 		info.fontFace = normalizeFontSetting(info.fontFace, globalFontConfigKey())
 		info.backgroundTexture = normalizeMediaKey(info.backgroundTexture, "DEFAULT")
 		info.backgroundColor = normalizeColorTable(info.backgroundColor, DEFAULT_BACKDROP_COLOR)
@@ -1695,6 +1751,10 @@ function DataPanel.Create(id, name, existingOnly)
 	function panel:ApplyClassTextColor(text, skip)
 		if skip or isSecretValue(text) or type(text) ~= "string" or text == "" then return text end
 		local hex = self:GetClassTextColorHex()
+		if not hex and self.info and self.info.useCustomTextColor then
+			local color = normalizeColorTable(self.info.textColor, { r = 1, g = 1, b = 1, a = 1 })
+			hex = string.format("%02x%02x%02x", math.floor((color.r or 1) * 255 + 0.5), math.floor((color.g or 1) * 255 + 0.5), math.floor((color.b or 1) * 255 + 0.5))
+		end
 		if not hex then return text end
 		return "|cff" .. hex .. text .. "|r"
 	end
@@ -1824,6 +1884,8 @@ function DataPanel.Create(id, name, existingOnly)
 			or field == "fontStyle"
 			or field == "streamFontScale"
 			or field == "useClassTextColor"
+			or field == "useCustomTextColor"
+			or field == "textColor"
 			or field == "showTooltips"
 			or field == "tooltipGrowth"
 			or field == "textAlphaInCombat"
@@ -2004,6 +2066,20 @@ function DataPanel.Create(id, name, existingOnly)
 			local desired = data.useClassTextColor and true or false
 			if info.useClassTextColor ~= desired then
 				info.useClassTextColor = desired
+				payloadStyleChanged = true
+			end
+		end
+		if data.useCustomTextColor ~= nil then
+			local desired = data.useCustomTextColor and true or false
+			if info.useCustomTextColor ~= desired then
+				info.useCustomTextColor = desired
+				payloadStyleChanged = true
+			end
+		end
+		if data.textColor ~= nil then
+			local desired = normalizeColorTable(data.textColor, { r = 1, g = 1, b = 1, a = 1 })
+			if not colorsEqual(info.textColor, desired) then
+				info.textColor = desired
 				payloadStyleChanged = true
 			end
 		end
@@ -2651,7 +2727,6 @@ function DataPanel.Create(id, name, existingOnly)
 	panel:SyncEditModeStreams()
 	panel:SyncEditModeStrata()
 	updateSelectionStrata(panel, info.strata)
-	ensureFadeWatcher()
 	panel:ApplyClickThrough()
 	panel:ApplyBorder()
 	panel:ApplyAlpha()

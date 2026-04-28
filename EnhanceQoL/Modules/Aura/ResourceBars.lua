@@ -621,10 +621,11 @@ RB.AURA_POWER_CONFIG = {
 		spellIds = { RB.VOID_METAMORPHOSIS_SPELL_ID, RB.COLLAPSING_STAR_SPELL_ID },
 		maxStacks = 50,
 		maxStacksBySpellId = {
-			[RB.COLLAPSING_STAR_SPELL_ID] = 30,
+			[RB.COLLAPSING_STAR_SPELL_ID] = 40,
 		},
 		maxStacksTalent = { spellId = RB.VOID_META_TALENT_SOUL_GLUTTON_SPELL_ID, value = 35 },
 		visualSegments = 0,
+		clampOverflowToMax = true,
 		defaultColor = { 0.35, 0.25, 0.73, 1 }, -- #5940BA (Blizzard voidMetamorphosisProgess)
 		useMaxColorDefault = true,
 		defaultShowSeparator = false,
@@ -1303,9 +1304,7 @@ function ResourceBars.SetClassMode(classTag, mode)
 	return true
 end
 
-function ResourceBars.SetSpecMode(specIndex, mode)
-	return ResourceBars.SetClassMode(addon.variables.unitClass, mode)
-end
+function ResourceBars.SetSpecMode(specIndex, mode) return ResourceBars.SetClassMode(addon.variables.unitClass, mode) end
 
 function ResourceBars.SpecUsesSharedMode(specIndex) return ResourceBars.GetSpecMode(specIndex) == "SHARED" end
 
@@ -2328,15 +2327,29 @@ RB.LEGACY_CUSTOM_BORDER_IDS = {
 	EQOL_BORDER_MODERN = true,
 	EQOL_BORDER_CLASSIC = true,
 }
+RB.DEFAULT_BACKDROP_BORDER_TEXTURE = "Interface\\Tooltips\\UI-Tooltip-Border"
+
+function ResourceBars.ResolveBorderTexture(value, fallback)
+	local borderTexture = type(value) == "string" and value or nil
+	if not borderTexture or borderTexture == "" then return fallback end
+	if borderTexture == "DEFAULT" then return fallback or RB.DEFAULT_BACKDROP_BORDER_TEXTURE end
+	if RB.LEGACY_CUSTOM_BORDER_IDS[borderTexture] then return RB.DEFAULT_BACKDROP_BORDER_TEXTURE end
+	if borderTexture:find("\\", 1, true) or borderTexture:find("/", 1, true) then return borderTexture end
+	if LSM and LSM.Fetch then
+		local texture = LSM:Fetch("border", borderTexture, true)
+		if type(texture) == "string" and texture ~= "" then return texture end
+	end
+	return fallback or RB.DEFAULT_BACKDROP_BORDER_TEXTURE
+end
 
 local function normalizeBorderTexture(bd)
 	if not bd then return nil end
 	local borderTexture = bd.borderTexture
 	if borderTexture and RB.LEGACY_CUSTOM_BORDER_IDS[borderTexture] then
-		borderTexture = "Interface\\Tooltips\\UI-Tooltip-Border"
+		borderTexture = RB.DEFAULT_BACKDROP_BORDER_TEXTURE
 		bd.borderTexture = borderTexture
 	end
-	return borderTexture
+	return ResourceBars.ResolveBorderTexture(borderTexture, RB.DEFAULT_BACKDROP_BORDER_TEXTURE)
 end
 
 -- Statusbar content inset controller
@@ -5206,7 +5219,16 @@ function updatePowerBar(type, runeSlot)
 
 		local style = bar._style or "CURMAX"
 		local smooth = cfg.smoothFill == true
-		local shownStacks = (visualMax and visualMax > 0) and ((stacks <= 0) and 0 or (((stacks - 1) % visualMax) + 1)) or stacks
+		local shownStacks = stacks
+		if visualMax and visualMax > 0 then
+			if stacks <= 0 then
+				shownStacks = 0
+			elseif cfgDef.clampOverflowToMax or cfg.clampOverflowToMax then
+				shownStacks = min(stacks, visualMax)
+			else
+				shownStacks = (((stacks - 1) % visualMax) + 1)
+			end
+		end
 		setBarValue(bar, shownStacks, smooth)
 		bar._lastVal = shownStacks
 
@@ -6216,9 +6238,7 @@ function layoutRunes(bar)
 	end
 end
 
-function ResourceBars.RequestRelativeWidthSync()
-	ResourceBars._widthSyncRequested = true
-end
+function ResourceBars.RequestRelativeWidthSync() ResourceBars._widthSyncRequested = true end
 
 function ResourceBars.RequestStructuralLayoutRefresh(needsReanchor)
 	ResourceBars.RequestRelativeWidthSync()
@@ -6294,9 +6314,7 @@ function ResourceBars.ReuseExistingPowerBar(type, sharedSlot)
 	bar:SetStatusBarTexture(resolveTexture(settings or {}))
 	configureSpecialTexture(bar, type, settings or {})
 
-	if type ~= "RUNES" then
-		applyBarFillColor(bar, settings, type)
-	end
+	if type ~= "RUNES" then applyBarFillColor(bar, settings, type) end
 
 	if type == "RUNES" then
 		bar:SetStatusBarColor(getPowerBarColor(type))
@@ -6787,9 +6805,7 @@ local function forEachResourceBarFrame(callback)
 	end
 end
 
-local function resolveBarConfigForFrame(pType, frame)
-	return ResourceBars.GetFrameRuntimeConfig(pType, frame)
-end
+local function resolveBarConfigForFrame(pType, frame) return ResourceBars.GetFrameRuntimeConfig(pType, frame) end
 
 local visibilityLogic = {
 	ruleMapCache = nil,
@@ -8096,7 +8112,7 @@ function ResourceBars.Refresh()
 			SetColorCurvePoints()
 		end
 		wasMax = hCfg.useMaxColor == true
-			healthBar:SetStatusBarTexture(resolveTexture(hCfg))
+		healthBar:SetStatusBarTexture(resolveTexture(hCfg))
 		configureSpecialTexture(healthBar, "HEALTH", hCfg)
 		applyBarFrameLayers(healthBar, hCfg)
 		applyBackdrop(healthBar, hCfg)
@@ -8109,8 +8125,8 @@ function ResourceBars.Refresh()
 
 	for pType, bar in pairs(powerbar) do
 		if bar then
-				local cfg = ResourceBars.GetFrameRuntimeConfig(pType, bar) or {}
-				if pType == "RUNES" then
+			local cfg = ResourceBars.GetFrameRuntimeConfig(pType, bar) or {}
+			if pType == "RUNES" then
 				bar:SetStatusBarTexture(resolveTexture(cfg))
 				local tex = bar:GetStatusBarTexture()
 				if tex then tex:SetAlpha(0) end

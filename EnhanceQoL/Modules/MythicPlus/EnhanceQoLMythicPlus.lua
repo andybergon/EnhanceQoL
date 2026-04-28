@@ -82,6 +82,7 @@ local BLOODLUST_FALLBACK_ICON = BLOODLUST_DEFAULT_ICON_IDS[1]
 local BLOODLUST_LOCKOUT_DURATION_SECONDS = 600
 local BLOODLUST_ACTIVE_SOUND_GRACE_SECONDS = 10
 local BLOODLUST_ACTIVE_SOUND_MIN_REMAINING = BLOODLUST_LOCKOUT_DURATION_SECONDS - BLOODLUST_ACTIVE_SOUND_GRACE_SECONDS
+local BLOODLUST_DELVE_DIFFICULTY_ID = 208
 local BLOODLUST_READY_CLASSES = {
 	SHAMAN = true,
 	HUNTER = true,
@@ -352,8 +353,10 @@ end
 
 local function resolveBRFontFace(dbKey)
 	local configured = normalizeBRFontFace(addon.db and addon.db[dbKey])
-	local localeFallback = addon.functions and addon.functions.GetLocaleDefaultFontFace and addon.functions.GetLocaleDefaultFontFace()
-	local fallback = localeFallback or addon.variables.defaultFont or STANDARD_TEXT_FONT
+	local fallback = (addon.functions and addon.functions.GetGlobalDefaultFontFace and addon.functions.GetGlobalDefaultFontFace())
+		or (addon.functions and addon.functions.GetLocaleDefaultFontFace and addon.functions.GetLocaleDefaultFontFace())
+		or addon.variables.defaultFont
+		or STANDARD_TEXT_FONT
 	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(configured, fallback) end
 	if configured == BLOODLUST_GLOBAL_FONT_KEY then return fallback end
 	return configured
@@ -1827,8 +1830,10 @@ end
 
 local function resolveBloodlustCooldownFontFace()
 	local configured = normalizeBloodlustCooldownFontFace(addon.db and addon.db["mythicPlusBloodlustTrackerCooldownFontFace"])
-	local localeFallback = addon.functions and addon.functions.GetLocaleDefaultFontFace and addon.functions.GetLocaleDefaultFontFace()
-	local fallback = localeFallback or addon.variables.defaultFont or STANDARD_TEXT_FONT
+	local fallback = (addon.functions and addon.functions.GetGlobalDefaultFontFace and addon.functions.GetGlobalDefaultFontFace())
+		or (addon.functions and addon.functions.GetLocaleDefaultFontFace and addon.functions.GetLocaleDefaultFontFace())
+		or addon.variables.defaultFont
+		or STANDARD_TEXT_FONT
 	if addon.functions and addon.functions.ResolveFontFace then return addon.functions.ResolveFontFace(configured, fallback) end
 	if configured == BLOODLUST_GLOBAL_FONT_KEY then return fallback end
 	return configured
@@ -2171,6 +2176,25 @@ local function ensureBloodlustAnchor()
 			end
 
 			settings = {
+				{
+					name = L["General"] or "General",
+					kind = settingType.Collapsible,
+					id = "mythicPlusBloodlustTrackerGeneral",
+					defaultCollapsed = false,
+				},
+				{
+					name = L["mythicPlusBloodlustTrackerOnlyInInstances"] or "Only show in instances",
+					kind = settingType.Checkbox,
+					parentId = "mythicPlusBloodlustTrackerGeneral",
+					get = function() return addon.db and addon.db["mythicPlusBloodlustTrackerOnlyInInstances"] == true end,
+					set = function(_, value)
+						if addon.db then addon.db["mythicPlusBloodlustTrackerOnlyInInstances"] = value == true end
+						if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.createBloodlustFrame then
+							addon.MythicPlus.functions.createBloodlustFrame()
+							if addon.MythicPlus.functions.refreshBloodlustTracker then addon.MythicPlus.functions.refreshBloodlustTracker(false) end
+						end
+					end,
+				},
 				{
 					name = L["Anchor"] or "Anchor",
 					kind = settingType.Collapsible,
@@ -2847,12 +2871,25 @@ end
 
 local function shouldShowBloodlustTracker()
 	if not addon.db["mythicPlusBloodlustTrackerEnabled"] then return false end
-	if not IsInGroup() then return false end
 	if not IsInInstance() then return false end
 	local _, _, diff = GetInstanceInfo()
+	if diff == BLOODLUST_DELVE_DIFFICULTY_ID then return true end
+	if not IsInGroup() then return false end
 	if diff == 8 then return true end
 	if isRaidDifficulty(diff) then return C_InstanceEncounter.IsEncounterInProgress() end
 	return false
+end
+
+local function shouldAllowBloodlustTrackerScope()
+	if not addon.db["mythicPlusBloodlustTrackerOnlyInInstances"] then return true end
+	local inInstance, instanceType = IsInInstance()
+	if not inInstance then return false end
+	local _, _, diff = GetInstanceInfo()
+	return instanceType == "party" or instanceType == "raid" or instanceType == "scenario" or diff == BLOODLUST_DELVE_DIFFICULTY_ID
+end
+
+local function shouldShowBloodlustFrame()
+	return shouldShowBloodlustTracker() or (bloodlustStateActive and shouldAllowBloodlustTrackerScope())
 end
 
 local function getBloodlustDefaultIcon()
@@ -2876,7 +2913,7 @@ local function createBloodlustFrame()
 
 	local layout = buildBloodlustLayoutSnapshot()
 	ensureBloodlustAnchor()
-	if shouldShowBloodlustTracker() or bloodlustStateActive then
+	if shouldShowBloodlustFrame() then
 		local point = layout.point or "CENTER"
 		local relativePoint = layout.relativePoint or point
 		local xOfs = layout.x or 0
@@ -3124,9 +3161,10 @@ local function refreshBloodlustTracker(playReadySound)
 
 	local isActive = aura ~= nil
 	local classToken = addon.variables.unitClass
+	local allowNotifications = shouldAllowBloodlustTrackerScope()
 	local shouldPlayDebuffActiveSound = false
 	local shouldPlayDebuffFadeSound = false
-	if bloodlustStateInitialized and not bloodlustStateActive and isActive and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffActive"] then
+	if allowNotifications and bloodlustStateInitialized and not bloodlustStateActive and isActive and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffActive"] then
 		local expiration = aura and aura.expirationTime
 		if expiration and not (issecretvalue and issecretvalue(expiration)) then
 			expiration = tonumber(expiration)
@@ -3136,14 +3174,14 @@ local function refreshBloodlustTracker(playReadySound)
 			end
 		end
 	end
-	if bloodlustStateInitialized and bloodlustStateActive and not isActive and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffFade"]
+	if allowNotifications and bloodlustStateInitialized and bloodlustStateActive and not isActive and addon.db["mythicPlusBloodlustTrackerSoundOnDebuffFade"]
 		and BLOODLUST_READY_CLASSES[classToken]
 	then
 		shouldPlayDebuffFadeSound = true
 	end
 	if shouldPlayDebuffActiveSound then playBloodlustSound("mythicPlusBloodlustTrackerUseCustomDebuffSound", "mythicPlusBloodlustTrackerDebuffSoundFile") end
 	if shouldPlayDebuffFadeSound then playBloodlustSound("mythicPlusBloodlustTrackerUseCustomFadeSound", "mythicPlusBloodlustTrackerFadeSoundFile") end
-	if playReadySound and not isActive and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] and BLOODLUST_READY_CLASSES[classToken] then
+	if allowNotifications and playReadySound and not isActive and addon.db["mythicPlusBloodlustTrackerReadySoundOnEncounterStart"] and BLOODLUST_READY_CLASSES[classToken] then
 		playBloodlustSound("mythicPlusBloodlustTrackerUseCustomReadySound", "mythicPlusBloodlustTrackerReadySoundFile")
 	end
 
@@ -3415,7 +3453,7 @@ local function eventHandler(self, event, arg1, arg2, arg3, arg4)
 
 		-- Refresh state first so visibility logic can react to newly applied/removed lockout auras.
 		refreshBloodlustTracker(false)
-		if not shouldShowBloodlustTracker() and not bloodlustStateActive then
+		if not shouldShowBloodlustFrame() then
 			removeBloodlustFrame()
 			return
 		end
@@ -3431,7 +3469,7 @@ local function eventHandler(self, event, arg1, arg2, arg3, arg4)
 		if addon.db["mythicPlusBloodlustTrackerEnabled"] then
 			-- Ready reminder sound should run on encounter start even when the frame is currently hidden.
 			refreshBloodlustTracker(true)
-			if shouldShowBloodlustTracker() or bloodlustStateActive then
+			if shouldShowBloodlustFrame() then
 				if not bloodlustButton or not bloodlustButton.cooldownFrame then createBloodlustFrame() end
 				refreshBloodlustTracker(false)
 			else
@@ -3441,7 +3479,17 @@ local function eventHandler(self, event, arg1, arg2, arg3, arg4)
 	elseif event == "ENCOUNTER_END" then
 		-- In raids we hide after encounter; in M+ we keep showing
 		if not shouldShowBRTracker() then removeBRFrame() end
-		if not shouldShowBloodlustTracker() and not bloodlustStateActive then removeBloodlustFrame() end
+		if not shouldShowBloodlustFrame() then removeBloodlustFrame() end
+	elseif event == "PLAYER_ENTERING_WORLD" then
+		if addon.db["mythicPlusBloodlustTrackerEnabled"] then
+			refreshBloodlustTracker(false)
+			if shouldShowBloodlustFrame() then
+				if not bloodlustButton or not bloodlustButton.cooldownFrame then createBloodlustFrame() end
+				refreshBloodlustTracker(false)
+			else
+				removeBloodlustFrame()
+			end
+		end
 	end
 end
 
@@ -3457,6 +3505,7 @@ function addon.MythicPlus.functions.InitMain()
 	frameLoad:RegisterEvent("SPELL_UPDATE_CHARGES")
 	frameLoad:RegisterEvent("ENCOUNTER_END")
 	frameLoad:RegisterEvent("ENCOUNTER_START")
+	frameLoad:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 	-- Setze den Event-Handler
 	frameLoad:SetScript("OnEvent", eventHandler)
