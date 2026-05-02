@@ -1370,13 +1370,24 @@ local function clearCooldownFrame(frame)
 	frame._eqolDurationKey = nil
 end
 
+Bars.GuardCooldownVisuals = Bars.GuardCooldownVisuals or function(cooldown)
+	if not cooldown then return end
+	if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(false) end
+	if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
+	if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
+	cooldown._eqolDrawSwipe = false
+	cooldown._eqolDrawEdge = false
+	cooldown._eqolDrawBling = false
+end
+
 local function ensureBarCooldownGate(frame)
-	if frame._eqolCooldownGate then return frame._eqolCooldownGate end
+	if frame._eqolCooldownGate then
+		Bars.GuardCooldownVisuals(frame._eqolCooldownGate)
+		return frame._eqolCooldownGate
+	end
 	local gate = CreateFrame("Cooldown", nil, frame.body or frame, "CooldownFrameTemplate")
 	gate:SetAllPoints(frame.body or frame)
-	if gate.SetDrawSwipe then gate:SetDrawSwipe(false) end
-	if gate.SetDrawEdge then gate:SetDrawEdge(false) end
-	if gate.SetDrawBling then gate:SetDrawBling(false) end
+	Bars.GuardCooldownVisuals(gate)
 	if gate.SetHideCountdownNumbers then gate:SetHideCountdownNumbers(true) end
 	if gate.SetAlpha then gate:SetAlpha(0) end
 	if gate.EnableMouse then gate:EnableMouse(false) end
@@ -1809,9 +1820,7 @@ Bars.EnsureChargeDurationCountdown = function(barFrame)
 	if barFrame._eqolChargeDurationCountdown then return barFrame._eqolChargeDurationCountdown end
 	local parent = barFrame.textOverlay or barFrame
 	local cooldown = CreateFrame("Cooldown", nil, parent, "CooldownFrameTemplate")
-	if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(false) end
-	if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
-	if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
+	Bars.GuardCooldownVisuals(cooldown)
 	if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(false) end
 	if cooldown.SetAlpha then cooldown:SetAlpha(1) end
 	if cooldown.EnableMouse then cooldown:EnableMouse(false) end
@@ -1862,9 +1871,7 @@ Bars.ApplyChargeDurationCountdown = function(
 	cooldown:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
 	cooldown:SetFrameStrata((barFrame.textOverlay and barFrame.textOverlay:GetFrameStrata()) or barFrame:GetFrameStrata())
 	cooldown:SetFrameLevel(((barFrame.textOverlay and barFrame.textOverlay:GetFrameLevel()) or barFrame:GetFrameLevel()) + 1)
-	if cooldown.SetDrawSwipe then cooldown:SetDrawSwipe(false) end
-	if cooldown.SetDrawEdge then cooldown:SetDrawEdge(false) end
-	if cooldown.SetDrawBling then cooldown:SetDrawBling(false) end
+	Bars.GuardCooldownVisuals(cooldown)
 	if cooldown.SetHideCountdownNumbers then cooldown:SetHideCountdownNumbers(false) end
 	if cooldown.SetAlpha then cooldown:SetAlpha(1) end
 
@@ -2112,12 +2119,25 @@ Bars.ClearSuppressedIconPresentation = Bars.ClearSuppressedIconPresentation
 	or function(icon)
 		if not icon then return end
 		if icon.border then icon.border:Hide() end
+		if icon.blizzardIconOverlay then icon.blizzardIconOverlay:Hide() end
 		if icon.rangeOverlay then icon.rangeOverlay:Hide() end
 		if icon.previewBling then icon.previewBling:Hide() end
 		if icon.previewSoundBorder then icon.previewSoundBorder:Hide() end
 		if icon.previewGlowBorder then icon.previewGlowBorder:Hide() end
 		if icon.editorGhostTexture then icon.editorGhostTexture:Hide() end
 		Bars.ClearAssistedHighlightPresentation(icon)
+	end
+
+Bars.SuppressNativeIconOverlay = Bars.SuppressNativeIconOverlay
+	or function(icon)
+		if not icon then return end
+		if icon.overlay then icon.overlay:Hide() end
+		if icon.blizzardIconOverlay then icon.blizzardIconOverlay:Hide() end
+	end
+
+Bars.RestoreNativeIconOverlay = Bars.RestoreNativeIconOverlay
+	or function(icon)
+		if icon and icon.overlay then icon.overlay:Show() end
 	end
 
 local function applyReservedGhost(icon, ownerEntry, slotColumn, slotRow)
@@ -2127,6 +2147,8 @@ local function applyReservedGhost(icon, ownerEntry, slotColumn, slotRow)
 		icon.texture:SetAlpha(0)
 	end
 	if icon.cooldown then icon.cooldown:Hide() end
+	Bars.GuardCooldownVisuals(icon.cooldown)
+	if icon.cooldown and icon.cooldown.SetHideCountdownNumbers then icon.cooldown:SetHideCountdownNumbers(true) end
 	if icon.count then
 		if icon.count.SetText then icon.count:SetText("") end
 		icon.count:Hide()
@@ -2139,6 +2161,7 @@ local function applyReservedGhost(icon, ownerEntry, slotColumn, slotRow)
 	if icon.stateTexture then icon.stateTexture:Hide() end
 	if icon.stateTextureSecond then icon.stateTextureSecond:Hide() end
 	Bars.ClearSuppressedIconPresentation(icon)
+	Bars.SuppressNativeIconOverlay(icon)
 	if icon.staticText then
 		icon.staticText:SetText("")
 		icon.staticText:Hide()
@@ -2155,6 +2178,8 @@ local function applyNativeSuppression(icon)
 		icon.texture:SetAlpha(0)
 	end
 	if icon.cooldown then
+		Bars.GuardCooldownVisuals(icon.cooldown)
+		if icon.cooldown.SetHideCountdownNumbers then icon.cooldown:SetHideCountdownNumbers(true) end
 		if icon.cooldown.SetAlpha then icon.cooldown:SetAlpha(0) end
 		if icon.cooldown.Show then icon.cooldown:Show() end
 	end
@@ -2167,6 +2192,7 @@ local function applyNativeSuppression(icon)
 	CooldownPanels.HidePreviewGlowBorder(icon)
 	CooldownPanels.StopAllIconGlows(icon)
 	Bars.ClearSuppressedIconPresentation(icon)
+	Bars.SuppressNativeIconOverlay(icon)
 end
 
 local function getStackSessionMax(entryKey, observedValue, preview)
@@ -4047,8 +4073,8 @@ local function applyBarsToPanel(panelId, preview)
 			if not barFrame then barFrame = ensureBarFrame(icon) end
 			local state = buildBarState(panelId, entryId, entry, icon, effectivePreview, icon._eqolRuntimeData)
 			local span = entryId and effectiveSpanByEntryId and effectiveSpanByEntryId[entryId] or 1
+			applyNativeSuppression(icon)
 			if state then
-				applyNativeSuppression(icon)
 				if state.visible == true then
 					layoutBarFrame(barFrame, icon, span, panel.layout, state)
 					stopBarAnimation(barFrame)
@@ -4062,6 +4088,7 @@ local function applyBarsToPanel(panelId, preview)
 			hideBarPresentation(icon)
 			applyReservedGhost(icon, reservedEntry, slotColumn, slotRow)
 		else
+			Bars.RestoreNativeIconOverlay(icon)
 			if barFrame and barFrame.IsShown and barFrame:IsShown() then
 				hideBarPresentation(icon)
 			elseif icon._eqolBarsReservedSlot or icon._eqolBarsReservedOwnerId then

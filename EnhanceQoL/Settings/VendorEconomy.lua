@@ -4,6 +4,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 local wipe = wipe
 local mailboxContactsOrder = {}
 local moneyTrackerOrder = {}
+local warbandRemoveOrder = {}
 local warbandTargetOrder = {}
 
 local function getPrivateDB() return addon.functions.GetPrivateDB and addon.functions.GetPrivateDB() or addon.privateDB or {} end
@@ -88,6 +89,31 @@ local function getSelectedWarbandTargetCharacter()
 	local playerGuid = UnitGUID("player")
 	if playerGuid then privateDB["autoWarbandGoldTargetCharacter"] = playerGuid end
 	return playerGuid or ""
+end
+
+local function notifySettingsUpdate(var)
+	if Settings and Settings.NotifyUpdate then Settings.NotifyUpdate("EQOL_" .. var) end
+end
+
+local function clearSettingsSelection(var)
+	local entry = addon.SettingsLayout and addon.SettingsLayout.elements and addon.SettingsLayout.elements[var]
+	if entry and entry.setting and entry.setting.SetValue then entry.setting:SetValue("") end
+end
+
+local function removeWarbandGoldCharacter(guid)
+	if not guid or guid == "" or guid == UnitGUID("player") then return end
+
+	local privateDB = getPrivateDB()
+	if type(privateDB["moneyTracker"]) == "table" then privateDB["moneyTracker"][guid] = nil end
+	if type(privateDB["autoWarbandGoldIgnoredCharacters"]) == "table" then privateDB["autoWarbandGoldIgnoredCharacters"][guid] = nil end
+	if type(privateDB["autoWarbandGoldPerCharacter"]) == "table" then privateDB["autoWarbandGoldPerCharacter"][guid] = nil end
+	if privateDB["autoWarbandGoldTargetCharacter"] == guid then privateDB["autoWarbandGoldTargetCharacter"] = UnitGUID("player") or "" end
+
+	notifySettingsUpdate("autoWarbandGoldRemoveCharacter")
+	notifySettingsUpdate("autoWarbandGoldTargetCharacter")
+	notifySettingsUpdate("autoWarbandGoldTargetGoldPerCharacter")
+	notifySettingsUpdate("autoWarbandGoldIgnoredCharacters")
+	clearSettingsSelection("autoWarbandGoldRemoveCharacter")
 end
 
 local cVendorEconomy = addon.SettingsLayout.rootECONOMY
@@ -255,6 +281,60 @@ data = {
 				db = getPrivateDB(),
 				customDefaultText = NONE,
 				sType = "multidropdown",
+				parent = true,
+				parentCheck = function()
+					return addon.SettingsLayout.elements["autoWarbandGold"]
+						and addon.SettingsLayout.elements["autoWarbandGold"].setting
+						and addon.SettingsLayout.elements["autoWarbandGold"].setting:GetValue() == true
+				end,
+			},
+			{
+				var = "autoWarbandGoldRemoveCharacter",
+				text = L["autoWarbandGoldRemoveCharacter"] or ((REMOVE or "Remove") .. " " .. (CHARACTER or "Character")),
+				desc = L["autoWarbandGoldRemoveCharacterDesc"],
+				listFunc = function()
+					local tList = { [""] = "" }
+					local playerGuid = UnitGUID("player")
+					wipe(warbandRemoveOrder)
+					table.insert(warbandRemoveOrder, "")
+
+					for _, entry in ipairs(listTrackedCharacters()) do
+						if entry.key ~= playerGuid then
+							tList[entry.key] = entry.label
+							table.insert(warbandRemoveOrder, entry.key)
+						end
+					end
+
+					return tList
+				end,
+				order = warbandRemoveOrder,
+				get = function() return "" end,
+				set = function(key)
+					if not key or key == "" or key == UnitGUID("player") then return end
+					local privateDB = getPrivateDB()
+					local contact = privateDB["moneyTracker"] and privateDB["moneyTracker"][key]
+					local displayName = getClassColoredCharacterLabel(contact)
+
+					local dialogKey = "EQOL_WARBAND_GOLD_CHARACTER_REMOVE"
+					StaticPopupDialogs[dialogKey] = StaticPopupDialogs[dialogKey]
+						or {
+							text = L["autoWarbandGoldRemoveCharacterConfirm"],
+							button1 = ACCEPT,
+							button2 = CANCEL,
+							timeout = 0,
+							whileDead = true,
+							hideOnEscape = true,
+							preferredIndex = 3,
+						}
+
+					StaticPopupDialogs[dialogKey].OnAccept = function(_, guid) removeWarbandGoldCharacter(guid) end
+
+					StaticPopup_Show(dialogKey, displayName or key, nil, key)
+					clearSettingsSelection("autoWarbandGoldRemoveCharacter")
+				end,
+				default = "",
+				type = Settings.VarType.String,
+				sType = "scrolldropdown",
 				parent = true,
 				parentCheck = function()
 					return addon.SettingsLayout.elements["autoWarbandGold"]

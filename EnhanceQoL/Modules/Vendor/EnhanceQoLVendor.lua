@@ -105,6 +105,8 @@ local destroyProtected = {
 local pendingSellMarksUpdate = false
 local pendingSellMarksReset = false
 local sellMarksDirty = true
+local autoSellInProgress = false
+local autoSellNeedsRefresh = false
 local pendingDestroyButtonUpdate = false
 
 local function scheduleDestroyButtonUpdate()
@@ -250,6 +252,7 @@ local function inventoryOpen()
 	for _, frame in ipairs(frames) do
 		if frame and frame:IsShown() then return true end
 	end
+	if addon.Bags and addon.Bags.functions and addon.Bags.functions.IsInventoryOpenForVendor and addon.Bags.functions.IsInventoryOpenForVendor() then return true end
 	if isBaganatorBackpackShown() then return true end
 	if baganatorVisibleBackpackButtonCount > 0 then
 		for itemButton in pairs(baganatorVisibleItemButtons) do
@@ -458,6 +461,13 @@ local function anchorDestroyButton(button)
 		requestBaganatorLayoutUpdate()
 		return
 	end
+	local customBagAnchor = addon.Bags and addon.Bags.functions and addon.Bags.functions.GetVendorDestroyButtonAnchor and addon.Bags.functions.GetVendorDestroyButtonAnchor() or nil
+	if customBagAnchor then
+		button:SetParent(customBagAnchor:GetParent() or UIParent)
+		button:ClearAllPoints()
+		button:SetPoint("RIGHT", customBagAnchor, "LEFT", -8, 0)
+		return
+	end
 	local searchBox = _G.BagItemSearchBox
 	if searchBox and searchBox.GetParent then
 		button:SetParent(searchBox:GetParent() or UIParent)
@@ -658,6 +668,20 @@ applySellDestroyOverlaysToBaganatorButtons = function()
 	local overlayDestroy = addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"]
 	for button in pairs(baganatorTrackedItemButtons) do
 		applySellDestroyOverlayToItemButton(button, overlaySell, overlayDestroy)
+	end
+end
+
+function addon.Vendor.functions.ApplySellDestroyOverlayToItemButton(itemButton, overlaySell, overlayDestroy)
+	applySellDestroyOverlayToItemButton(itemButton, overlaySell, overlayDestroy)
+end
+
+function addon.Vendor.functions.HideSellDestroyOverlays(itemButton)
+	hideSellDestroyOverlays(itemButton)
+end
+
+function addon.Vendor.functions.RefreshIntegratedBagsVendorMarks()
+	if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
+		addon.Bags.functions.ApplyVendorMarks()
 	end
 end
 
@@ -1058,17 +1082,37 @@ local function updateLegend(value, value2)
 end
 
 local function sellItems(items)
+	autoSellInProgress = true
+	autoSellNeedsRefresh = false
+	local index = 1
+
+	local function finishAutoSell()
+		autoSellInProgress = false
+		updateSellMoreButton()
+		if addon.functions and addon.functions.FlushDeferredItemInventoryAutoSellUpdates then addon.functions.FlushDeferredItemInventoryAutoSellUpdates() end
+		if autoSellNeedsRefresh and inventoryOpen() then
+			autoSellNeedsRefresh = false
+			updateSellMarks()
+			if addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
+		else
+			autoSellNeedsRefresh = false
+		end
+	end
+
 	local function sellNextItem()
 		if not MerchantFrame:IsShown() then
+			autoSellInProgress = false
+			autoSellNeedsRefresh = false
 			print(L["MerchantWindowClosed"])
 			return
 		end
-		if #items == 0 then
-			updateSellMoreButton()
+		if index > #items then
+			finishAutoSell()
 			return
 		end
 
-		local item = table.remove(items, 1)
+		local item = items[index]
+		index = index + 1
 		C_Container.UseContainerItem(item.bag, item.slot)
 		C_Timer.After(0.1, sellNextItem) -- 100ms Pause zwischen den Verkäufen
 	end
@@ -1377,12 +1421,19 @@ local eventHandlers = {
 		checkItem()
 	end,
 	["MERCHANT_CLOSED"] = function()
+		autoSellInProgress = false
+		autoSellNeedsRefresh = false
+		if addon.functions and addon.functions.FlushDeferredItemInventoryAutoSellUpdates then addon.functions.FlushDeferredItemInventoryAutoSellUpdates() end
 		hasMoreItems = false
 		updateSellMoreButton()
 		updateSellMarks()
 		if addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 	end,
 	["BAG_UPDATE_DELAYED"] = function()
+		if autoSellInProgress then
+			autoSellNeedsRefresh = true
+			return
+		end
 		updateSellMarks()
 		if addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 	end,
@@ -1420,6 +1471,9 @@ local eventHandlers = {
 		local frames = ContainerFrameContainer and ContainerFrameContainer.ContainerFrames or {}
 		for _, frame in ipairs(frames) do
 			applySellDestroyOverlaysToFrame(frame)
+		end
+		if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
+			addon.Bags.functions.ApplyVendorMarks()
 		end
 		applySellDestroyOverlaysToBaganatorButtons()
 	end,
@@ -1910,12 +1964,16 @@ local function addGeneralFrame(container)
 end
 
 -- Expose helpers for external settings UI
-function addon.Vendor.functions.refreshSellMarks()
-	if updateSellMarks then updateSellMarks(nil, true) end
+function addon.Vendor.functions.refreshSellMarks(resetCache)
+	if updateSellMarks then updateSellMarks(nil, resetCache ~= false) end
 end
 
 function addon.Vendor.functions.refreshDestroyButton()
 	if updateDestroyButtonState then updateDestroyButtonState() end
+end
+
+function addon.Vendor.functions.IsAutoSellInProgress()
+	return autoSellInProgress == true
 end
 
 -- Integrate Vendor into Items -> Vendors & Economy -> Selling (Auto‑Sell)
@@ -1959,6 +2017,9 @@ local function performUpdateSellMarks(resetCache)
 		for _, frame in ipairs(frames) do
 			clearFrame(frame)
 		end
+		if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
+			addon.Bags.functions.ApplyVendorMarks(false, false)
+		end
 		applySellDestroyOverlaysToBaganatorButtons()
 		requestBaganatorItemWidgetRefresh()
 		wipe(sellMarkLookup)
@@ -1984,6 +2045,9 @@ local function performUpdateSellMarks(resetCache)
 	applySellDestroyOverlaysToFrame(ContainerFrameCombinedBags)
 	for _, frame in ipairs(frames) do
 		applySellDestroyOverlaysToFrame(frame)
+	end
+	if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
+		addon.Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy)
 	end
 	applySellDestroyOverlaysToBaganatorButtons()
 	requestBaganatorItemWidgetRefresh()
@@ -2066,6 +2130,10 @@ AltClickHook = function(self, button)
 			end)
 		end
 	end
+end
+
+function addon.Vendor.functions.HandleItemButtonClick(self, button)
+	if AltClickHook then AltClickHook(self, button) end
 end
 
 local function hookBagFrame(frame)

@@ -208,7 +208,7 @@ end
 local function normalizeAlwaysShowMode(value, fallback)
 	if CooldownPanels and CooldownPanels.NormalizeCDMAuraAlwaysShowMode then return CooldownPanels:NormalizeCDMAuraAlwaysShowMode(value, fallback) end
 	local mode = type(value) == "string" and string.upper(value) or nil
-	if mode == "SHOW" or mode == "DESATURATE" or mode == "HIDE" then return mode end
+	if mode == "SHOW" or mode == "DESATURATE" or mode == "DESATURATE_ACTIVE" or mode == "HIDE" or mode == "HIDE_DESATURATE_ACTIVE" then return mode end
 	return fallback or "HIDE"
 end
 
@@ -418,6 +418,14 @@ local function getCooldownViewerInfo(cooldownID)
 	return info
 end
 
+local function getCooldownInfoIsKnown(cooldownID, frame)
+	local frameInfo = frame and frame.cooldownInfo or nil
+	if type(frameInfo) == "table" and type(frameInfo.isKnown) == "boolean" then return frameInfo.isKnown end
+	local apiInfo = getCooldownViewerInfo(cooldownID)
+	if type(apiInfo) == "table" and type(apiInfo.isKnown) == "boolean" then return apiInfo.isKnown end
+	return nil
+end
+
 local function frameTrackedSpellMatchesCandidate(candidateSpellID, source, trackedSpellID, sawAssociatedSpellID, sawSecretLinkedSpellID)
 	if not candidateSpellID then return false, sawAssociatedSpellID, sawSecretLinkedSpellID end
 	sawAssociatedSpellID = true
@@ -617,6 +625,7 @@ local function ensureScanInfo(scan, cooldownID)
 	info.buffName = nil
 	info.iconTextureID = nil
 	info.isActive = false
+	info.isKnown = nil
 	info.auraUnit = nil
 	info.sortName = nil
 	scan.byCooldownID[cooldownID] = info
@@ -631,6 +640,8 @@ end
 
 local function populateScanInfoDerivedFields(info, cooldownID, frame, overwrite)
 	if not (info and isValidCooldownID(cooldownID)) then return end
+	local isKnown = getCooldownInfoIsKnown(cooldownID, frame)
+	if isKnown ~= nil and (overwrite or info.isKnown == nil) then info.isKnown = isKnown end
 	if not overwrite and info.spellID and info.buffName and info.iconTextureID then return end
 	local spellID, buffName, iconTextureID = resolveSpellFromCooldownID(cooldownID, frame)
 	mergeResolvedScanInfo(info, spellID, buffName, iconTextureID, overwrite)
@@ -979,7 +990,13 @@ end
 
 function CDMAuras:SweepInvalidStates()
 	local runtime = getRuntime()
-	local valid = {}
+	local valid = runtime.validEntryScratch
+	if not valid then
+		valid = {}
+		runtime.validEntryScratch = valid
+	else
+		wipe(valid)
+	end
 	local root = CooldownPanels.GetRoot and CooldownPanels:GetRoot() or nil
 	if root and root.panels then
 		for panelId, panel in pairs(root.panels) do
@@ -1078,6 +1095,11 @@ function CDMAuras:UpdateEventRegistration()
 		frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 		frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 		frame:RegisterEvent("PLAYER_TOTEM_UPDATE")
+		frame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+		frame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+		frame:RegisterEvent("PLAYER_TALENT_UPDATE")
+		frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+		frame:RegisterEvent("TRAIT_CONFIG_LIST_UPDATED")
 		frame:RegisterUnitEvent("UNIT_AURA", "player", "target")
 		frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
 		self.eventsRegistered = true
@@ -1404,7 +1426,7 @@ function CDMAuras:NormalizeEntry(entry)
 	local hadExplicitMode = entry.cdmAuraAlwaysShowMode ~= nil
 	if type(entry.cdmAuraAlwaysShowUseGlobal) ~= "boolean" then entry.cdmAuraAlwaysShowUseGlobal = not (legacyAlwaysShow or hadExplicitMode) end
 	entry.cdmAuraAlwaysShowMode = normalizeAlwaysShowMode(entry.cdmAuraAlwaysShowMode, legacyAlwaysShow and "SHOW" or "HIDE")
-	entry.alwaysShow = entry.cdmAuraAlwaysShowMode ~= "HIDE"
+	entry.alwaysShow = entry.cdmAuraAlwaysShowMode ~= "HIDE" and entry.cdmAuraAlwaysShowMode ~= "HIDE_DESATURATE_ACTIVE"
 	entry.showCooldown = entry.showCooldown ~= false
 	entry.showCooldownText = entry.showCooldownText ~= false
 	if entry.showStacks == nil then
@@ -1991,10 +2013,15 @@ function CDMAuras:BuildRuntimeData(panelId, entryId, entry, entryLayout, alwaysS
 		alwaysShowMode = CooldownPanels.ResolveEntryCDMAuraAlwaysShowMode and CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(resolvedLayout, entry) or fallbackAlwaysShowMode
 	end
 	alwaysShowMode = normalizeAlwaysShowMode(alwaysShowMode, fallbackAlwaysShowMode)
-	local show = active or alwaysShowMode ~= "HIDE"
+	local isKnown = scanInfo and scanInfo.isKnown
+	if isKnown == nil then isKnown = getCooldownInfoIsKnown(resolvedCooldownID or entry.cooldownID, chosenFrame or fallbackFrame) end
+	local hideWhenInactive = alwaysShowMode == "HIDE" or alwaysShowMode == "HIDE_DESATURATE_ACTIVE"
+	local show = active or (isKnown ~= false and not hideWhenInactive)
 	data.show = show
 	data.active = active
+	data.isKnown = isKnown ~= false
 	data.inactiveDesaturate = alwaysShowMode == "DESATURATE" and not active
+	data.activeDesaturate = (alwaysShowMode == "DESATURATE_ACTIVE" or alwaysShowMode == "HIDE_DESATURATE_ACTIVE") and active
 	data.durationActive = durationActive
 	data.cooldownStart = cooldownStart
 	data.cooldownDuration = cooldownDuration
@@ -2180,6 +2207,11 @@ function CDMAuras:HandleResetEvent(event, ...)
 	if event == "PLAYER_SPECIALIZATION_CHANGED" then
 		local unit = ...
 		if unit and unit ~= "player" then return end
+	end
+	if event == "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" then
+		self:EnsureCooldownViewerHooks()
+		self:ScheduleTrackedPanelsRescan("HandleResetEvent:" .. tostring(event))
+		return
 	end
 	self:EnsureCooldownViewerHooks()
 	self:InvalidateScan(true, "HandleResetEvent:" .. tostring(event))

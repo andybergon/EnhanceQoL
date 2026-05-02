@@ -416,13 +416,13 @@ end
 
 function EditMode:GetLayoutData(id, layoutName) return self:EnsureLayoutData(id, layoutName) end
 
-function EditMode:SetFramePosition(id, point, x, y, layoutName, skipApply)
+function EditMode:SetFramePosition(id, point, x, y, layoutName, skipApply, relativePoint)
 	local data = self:EnsureLayoutData(id, layoutName)
 	if not data then return end
 	local entry = self.frames[id]
 
 	data.point = point
-	data.relativePoint = point
+	data.relativePoint = relativePoint or point
 	data.x = x
 	data.y = y
 	if usesStoredPosition(entry) then self:_writeStoredPosition(id, entry, data.point, data.relativePoint, data.x, data.y) end
@@ -694,6 +694,7 @@ function EditMode:RegisterFrame(id, opts)
 
 		local defaultPosition = {
 			point = self:GetValue(id, "point") or defaults.point,
+			relativePoint = self:GetValue(id, "relativePoint") or defaults.relativePoint,
 			x = self:GetValue(id, "x") or defaults.x,
 			y = self:GetValue(id, "y") or defaults.y,
 			enableOverlayToggle = opts.enableOverlayToggle or false,
@@ -711,7 +712,12 @@ function EditMode:RegisterFrame(id, opts)
 		}
 
 		self.lib:AddFrame(frame, function(_, layoutName, point, x, y)
-			self:SetFramePosition(id, point, x, y, layoutName, true)
+			local relativePoint = point
+			if frame.GetPoint then
+				local currentPoint, _, currentRelativePoint = frame:GetPoint(1)
+				if currentPoint == point and currentRelativePoint then relativePoint = currentRelativePoint end
+			end
+			self:SetFramePosition(id, point, x, y, layoutName, true, relativePoint)
 			if opts.onPositionChanged then opts.onPositionChanged(frame, layoutName, self:EnsureLayoutData(id, layoutName)) end
 			self:ApplyLayout(id, layoutName)
 		end, defaultPosition)

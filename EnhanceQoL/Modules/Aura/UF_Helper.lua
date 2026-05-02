@@ -42,6 +42,90 @@ local C_UnitAuras = C_UnitAuras
 local UIParent = UIParent
 local DispelOverlayOrientation = EnumUtil and EnumUtil.MakeEnum("VerticalTopToBottom", "VerticalBottomToTop", "HorizontalLeftToRight")
 
+function H.UnsecretBool(value)
+	if issecretvalue and issecretvalue(value) then return nil end
+	return value
+end
+
+do
+local FILTER_HELPFUL = "HELPFUL|INCLUDE_NAME_PLATE_ONLY"
+local FILTER_HELPFUL_GROUP_RAID = "HELPFUL|INCLUDE_NAME_PLATE_ONLY|RAID|PLAYER"
+local FILTER_HELPFUL_GROUP_RAID_IN_COMBAT = "HELPFUL|INCLUDE_NAME_PLATE_ONLY|RAID_IN_COMBAT|PLAYER"
+local FILTER_HARMFUL = "HARMFUL|INCLUDE_NAME_PLATE_ONLY"
+local FILTER_HARMFUL_PLAYER = "HARMFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
+local FILTER_HARMFUL_RAID = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|RAID"
+local FILTER_HARMFUL_RAID_IN_COMBAT = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|RAID_IN_COMBAT"
+local FILTER_HARMFUL_DISPELLABLE = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|RAID_PLAYER_DISPELLABLE"
+local FILTER_HARMFUL_IMPORTANT = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|IMPORTANT"
+local FILTER_HARMFUL_CROWD_CONTROL = "HARMFUL|INCLUDE_NAME_PLATE_ONLY|CROWD_CONTROL"
+local FILTER_BIG_DEFENSIVE = "HELPFUL|BIG_DEFENSIVE"
+
+local function allowNameplateOnly(aura, includeNameplateOnly)
+	return includeNameplateOnly == true or aura.isNameplateOnly ~= true
+end
+
+function H.IsHelpfulAura(aura, includeNameplateOnly)
+	return aura and aura.isHelpful == true and allowNameplateOnly(aura, includeNameplateOnly) or false
+end
+
+function H.IsHarmfulAura(aura, includeNameplateOnly)
+	return aura and aura.isHarmful == true and allowNameplateOnly(aura, includeNameplateOnly) or false
+end
+
+function H.IsRaidAura(aura)
+	return aura and aura.isRaid == true or false
+end
+
+function H.IsFromPlayerOrPlayerPetAura(aura)
+	return aura and aura.isFromPlayerOrPlayerPet == true or false
+end
+
+local function isApiMatch(unit, aura, specialFilter)
+	return unit
+		and aura
+		and aura.auraInstanceID
+		and C_UnitAuras
+		and C_UnitAuras.IsAuraFilteredOutByInstanceID
+		and not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, specialFilter)
+		or false
+end
+
+local function isGroupHelpfulAura(unit, aura, filter)
+	if not H.IsHelpfulAura(aura, true) then return false end
+	if aura.isRaid ~= true and aura.isFromPlayerOrPlayerPet ~= true then return false end
+	return isApiMatch(unit, aura, filter)
+end
+
+function H.IsAuraFilteredIn(unit, aura, filter)
+	if not (aura and aura.auraInstanceID) then return false end
+	if type(filter) == "table" then
+		if #filter > 0 then
+			for _, auraFilter in ipairs(filter) do
+				if type(auraFilter) == "string" and H.IsAuraFilteredIn(unit, aura, auraFilter) then return true end
+			end
+			return false
+		end
+		for _, auraFilter in pairs(filter) do
+			if type(auraFilter) == "string" and H.IsAuraFilteredIn(unit, aura, auraFilter) then return true end
+		end
+		return false
+	end
+	if type(filter) ~= "string" then return false end
+
+	if filter == FILTER_HELPFUL then return H.IsHelpfulAura(aura, true) end
+	if filter == FILTER_HARMFUL then return H.IsHarmfulAura(aura, true) end
+	if filter == FILTER_HARMFUL_PLAYER then return H.IsHarmfulAura(aura, true) and H.IsFromPlayerOrPlayerPetAura(aura) and isApiMatch(unit, aura, filter) end
+	if filter == FILTER_HELPFUL_GROUP_RAID or filter == FILTER_HELPFUL_GROUP_RAID_IN_COMBAT then return isGroupHelpfulAura(unit, aura, filter) end
+	if filter == FILTER_HARMFUL_RAID or filter == FILTER_HARMFUL_RAID_IN_COMBAT then return H.IsHarmfulAura(aura, true) and H.IsRaidAura(aura) and isApiMatch(unit, aura, filter) end
+	if filter == FILTER_HARMFUL_DISPELLABLE then return H.IsHarmfulAura(aura, true) and isApiMatch(unit, aura, filter) end
+	if filter == FILTER_HARMFUL_IMPORTANT then return H.IsHarmfulAura(aura, true) and isApiMatch(unit, aura, filter) end
+	if filter == FILTER_HARMFUL_CROWD_CONTROL then return H.IsHarmfulAura(aura, true) and isApiMatch(unit, aura, filter) end
+	if filter == FILTER_BIG_DEFENSIVE then return H.IsHelpfulAura(aura, false) and isApiMatch(unit, aura, filter) end
+
+	return isApiMatch(unit, aura, filter)
+end
+end
+
 local atlasByPower = {
 	LUNAR_POWER = "Unit_Druid_AstralPower_Fill",
 	MAELSTROM = "Unit_Shaman_Maelstrom_Fill",
@@ -209,7 +293,7 @@ local selectionKeyByType = {
 
 function H.getNPCSelectionKey(unit)
 	if not npcColorUnits[unit] then return nil end
-	if UnitIsPlayer and UnitIsPlayer(unit) then return nil end
+	if UnitIsPlayer and H.UnsecretBool(UnitIsPlayer(unit)) == true then return nil end
 	local t = UnitSelectionType and UnitSelectionType(unit)
 	if issecretvalue and issecretvalue(t) then t = nil end
 	local key = selectionKeyByType[t]
@@ -728,7 +812,7 @@ local function resolvePrivateAuraUnitToken(unit)
 	if type(unit) ~= "string" then return unit end
 	if unit ~= "player" and UnitIsUnit then
 		local ok, isPlayer = pcall(UnitIsUnit, unit, "player")
-		if ok and isPlayer then return "player" end
+		if ok and H.UnsecretBool(isPlayer) == true then return "player" end
 	end
 	return unit
 end
@@ -777,6 +861,28 @@ local privateAuraDuration = {
 local privateAuraShowDispelType = false
 local privateAuraShowDispelCount = 0
 H._privateAuraDeferred = H._privateAuraDeferred or { containers = {} }
+
+-- TODO: Remove this temporary 12.0.5 workaround once Blizzard fixes private aura anchors ignoring frame levels after reattaching.
+-- Original behavior matched the parent strata and used levelFrame + 10. The workaround bumps strata and uses levelFrame + 100.
+H._privateAuraStrataFix = H._privateAuraStrataFix or {
+	BACKGROUND = "LOW",
+	LOW = "MEDIUM",
+	MEDIUM = "HIGH",
+	HIGH = "DIALOG",
+	DIALOG = "FULLSCREEN",
+	FULLSCREEN = "FULLSCREEN_DIALOG",
+	FULLSCREEN_DIALOG = "TOOLTIP",
+}
+
+function H.ApplyPrivateAuraContainerFrameLevel(container, parent, levelFrame)
+	if not container then return end
+	local strataSource = (levelFrame and levelFrame.GetFrameStrata and levelFrame) or (parent and parent.GetFrameStrata and parent)
+	if container.SetFrameStrata and strataSource then
+		local strata = strataSource:GetFrameStrata()
+		container:SetFrameStrata(H._privateAuraStrataFix[strata] or "DIALOG")
+	end
+	if levelFrame and container.SetFrameLevel and levelFrame.GetFrameLevel then container:SetFrameLevel((levelFrame:GetFrameLevel() or 0) + 100) end
+end
 
 function H.UpdatePrivateAuraDeferredEvent()
 	local frame = H._privateAuraDeferred and H._privateAuraDeferred.frame
@@ -1105,11 +1211,7 @@ function H.ApplyBlizzardAuraContainer(container, unit, cfg, parent, levelFrame, 
 
 	local effectiveUnit = resolvePrivateAuraUnitToken(unit)
 	if parent and container.GetParent and container:GetParent() ~= parent then container:SetParent(parent) end
-	if container.SetFrameStrata then
-		local strataSource = (levelFrame and levelFrame.GetFrameStrata and levelFrame) or (parent and parent.GetFrameStrata and parent)
-		if strataSource then container:SetFrameStrata(strataSource:GetFrameStrata()) end
-	end
-	if levelFrame and container.SetFrameLevel and levelFrame.GetFrameLevel then container:SetFrameLevel((levelFrame:GetFrameLevel() or 0) + 10) end
+	H.ApplyPrivateAuraContainerFrameLevel(container, parent, levelFrame)
 	container:ClearAllPoints()
 	if parent then
 		container:SetAllPoints(parent)
@@ -1120,14 +1222,10 @@ function H.ApplyBlizzardAuraContainer(container, unit, cfg, parent, levelFrame, 
 	container:EnableMouse(false)
 	container:Show()
 
-	H.SetBlizzardAuraContainerAttributes(container, cfg)
 	local signature = H.BuildBlizzardAuraSignature(effectiveUnit, cfg)
-	if container._eqolBlizzardAuraAnchorID and container._eqolBlizzardAuraSignature == signature then
-		container._eqolBlizzardAuraUpdateSerial = (container._eqolBlizzardAuraUpdateSerial or 0) + 1
-		container:SetAttribute("update-settings", container._eqolBlizzardAuraUpdateSerial)
-		return
-	end
+	if container._eqolBlizzardAuraAnchorID and container._eqolBlizzardAuraSignature == signature then return end
 
+	H.SetBlizzardAuraContainerAttributes(container, cfg)
 	if not H.RemoveBlizzardAuraContainer(container) then return end
 	local iconSize = tonumber(cfg.iconSize) or 16
 	local borderScale = tonumber(cfg.borderScale) or (iconSize / 11)
@@ -1238,6 +1336,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 
 	local showFrame = cfg.countdownFrame ~= false
 	local showNumbers = cfg.countdownNumbers ~= false
+	local showTooltip = cfg.showTooltip == true
 	local durationEnabled = durationCfg.enable == true
 	local durationPoint = tostring(durationCfg.point or "CENTER"):upper()
 	local durationOffsetX = tonumber(durationCfg.offsetX) or 0
@@ -1250,11 +1349,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 	local anchorPoint = useInverse and inversePoint(parentPoint) or parentPoint
 
 	if parent and container.GetParent and container:GetParent() ~= parent then container:SetParent(parent) end
-	if container.SetFrameStrata then
-		local strataSource = (levelFrame and levelFrame.GetFrameStrata and levelFrame) or (parent and parent.GetFrameStrata and parent)
-		if strataSource then container:SetFrameStrata(strataSource:GetFrameStrata()) end
-	end
-	if levelFrame and container.SetFrameLevel and levelFrame.GetFrameLevel then container:SetFrameLevel((levelFrame:GetFrameLevel() or 0) + 10) end
+	H.ApplyPrivateAuraContainerFrameLevel(container, parent, levelFrame)
 	container:ClearAllPoints()
 	container:SetPoint(anchorPoint, parent or container:GetParent() or UIParent, parentPoint, parentOffsetX, parentOffsetY)
 	container:SetSize(size, size)
@@ -1268,6 +1363,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		or state.size ~= size
 		or state.countdownFrame ~= showFrame
 		or state.countdownNumbers ~= showNumbers
+		or state.showTooltip ~= showTooltip
 		or state.borderScale ~= borderScale
 		or state.textScale ~= textScale
 		or state.durationEnabled ~= durationEnabled
@@ -1282,6 +1378,7 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		state.size = size
 		state.countdownFrame = showFrame
 		state.countdownNumbers = showNumbers
+		state.showTooltip = showTooltip
 		state.borderScale = borderScale
 		state.textScale = textScale
 		state.durationEnabled = durationEnabled
@@ -1365,7 +1462,11 @@ function H.ApplyPrivateAuras(container, unit, cfg, parent, levelFrame, showSampl
 		layout:Show()
 		anchor:ClearAllPoints()
 		anchor:SetPoint("CENTER", layout, "CENTER", 0, 0)
-		anchor:SetSize(0.001, 0.001)
+		if showTooltip then
+			anchor:SetSize(logicalSize, logicalSize)
+		else
+			anchor:SetSize(0.001, 0.001)
+		end
 		anchor:Show()
 		if anchor._eqolPrivateAuraBlocker and anchor._eqolPrivateAuraBlocker.Hide then anchor._eqolPrivateAuraBlocker:Hide() end
 		if showSample then
@@ -1593,7 +1694,13 @@ function H.updateHighlight(st, unit, playerUnit)
 	if cfg.mouseover and st._hovered then
 		show = true
 		color = cfg.mouseoverColor or color
-	elseif cfg.target and UnitIsUnit and UnitExists and UnitExists("target") and UnitExists(unit) and UnitIsUnit(unit, "target") then
+	elseif cfg.target
+		and UnitIsUnit
+		and UnitExists
+		and H.UnsecretBool(UnitExists("target")) == true
+		and H.UnsecretBool(UnitExists(unit)) == true
+		and H.UnsecretBool(UnitIsUnit(unit, "target")) == true
+	then
 		show = true
 	elseif cfg.aggro and (unit == (playerUnit or "player") or unit == "pet") and hasAggro(unit) then
 		show = true
@@ -1655,6 +1762,8 @@ function H.resolveCastTexture(key)
 end
 
 function H.resolveCastInterruptTexture() return BLIZZARD_CAST_INTERRUPTED_TEX end
+
+function H.resolveCastUninterruptibleTexture() return "ui-castingbar-uninterruptable" end
 
 function H.resolveCastIconTexture(texture)
 	if issecretvalue and issecretvalue(texture) then return texture end
@@ -3124,6 +3233,7 @@ function H.shortValue(val)
 end
 
 function H.textModeUsesLevel(mode) return type(mode) == "string" and mode:find("LEVEL", 1, true) ~= nil end
+function H.textModeUsesPercent(mode) return type(mode) == "string" and mode:find("PERCENT", 1, true) ~= nil end
 function H.textModeUsesAbsorb(mode) return mode == "ABSORB" or mode == "CURABSORB" or mode == "CURABSORBPIPE" or mode == "CURABSORBPLUS" end
 function H.textModeUsesDeficit(mode) return mode == "DEFICIT" end
 

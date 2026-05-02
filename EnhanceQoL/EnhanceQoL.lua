@@ -231,6 +231,7 @@ addon.functions.RefreshAllActionBarAnchors = RefreshAllActionBarAnchors
 local hookedATT = false -- need to hook ATT because of the way the minimap button is created
 
 hooksecurefunc("LFGListSearchEntry_OnClick", function(s, button)
+	if addon.functions.isRestrictedContent(true) then return end
 	local panel = LFGListFrame.SearchPanel
 	if button ~= "RightButton" and LFGListSearchPanelUtil_CanSelectResult(s.resultID) then
 		if panel.selectedResult ~= s.resultID then LFGListSearchPanel_SelectResult(panel, s.resultID) end
@@ -1491,6 +1492,7 @@ end
 
 local function computeCooldownViewerTargetAlpha(cfg, state)
 	if not cfg or not next(cfg) then return 1 end
+	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN] then return 0 end
 
 	local mounted = IsPlayerMountedOrInVehicleUI()
 	local inCombat = (InCombatLockdown and InCombatLockdown()) or (UnitAffectingCombat and UnitAffectingCombat("player"))
@@ -1513,7 +1515,6 @@ local function computeCooldownViewerTargetAlpha(cfg, state)
 	local isSkyriding = addon.variables and addon.variables.isPlayerSkyriding
 	local isFlying = IsPlayerFlying()
 	local fadedAlpha = (addon.functions and addon.functions.GetCooldownViewerFadedAlpha and addon.functions.GetCooldownViewerFadedAlpha()) or 0
-	if cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.ALWAYS_HIDDEN] then return 0 end
 	local hideSkyriding = cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.SKYRIDING_INACTIVE] == true
 	local hideFlying = cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.FLYING_INACTIVE] == true
 	local hasShowRules = cfg[COOLDOWN_VIEWER_VISIBILITY_MODES.IN_COMBAT]
@@ -6763,6 +6764,7 @@ local function setAllHooks()
 				if panel and panel.ApplyTextStyle then panel:ApplyTextStyle() end
 			end
 		end
+		if addon.Bags and addon.Bags.functions and addon.Bags.functions.RefreshGlobalFont then addon.Bags.functions.RefreshGlobalFont() end
 		if addon.InstanceDifficulty and addon.InstanceDifficulty.Update then addon.InstanceDifficulty:Update() end
 		if addon.Aura then
 			local xpBar = addon.Aura.ExperienceBar

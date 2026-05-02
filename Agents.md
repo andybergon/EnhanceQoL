@@ -44,3 +44,22 @@
 - Before finishing locale work, verify that every `EnhanceQoL/Locales/*.lua` file has the same keys.
 - Before finishing locale work, verify that key order is still alphabetically sorted.
 - Before finishing locale work, verify that no module locale folders were reintroduced under `EnhanceQoL/Modules`.
+
+## Release and Beta Packaging
+
+- Releases use `BigWigsMods/packager@v2` through `.github/workflows/release.yml`.
+- BigWigs supports beta release types for tags such as `10.10.0-beta1`, but it does not support `@beta@` as a native content gate.
+- Do not use raw BigWigs-style `@beta@` markers for project gating.
+- EnhanceQoL uses its own pre-packager gate script: `scripts/prepare_packager_gates.sh`.
+- Use `eqol-beta` markers for content that should exist only in beta packages:
+  - TOC/TXT/Markdown: `#@eqol-beta@` through matching `#@end-eqol-beta@`.
+  - Markdown also supports `<!--@eqol-beta@-->` through `<!--@end-eqol-beta@-->`; prefer this HTML-comment form in `CHANGELOG.md`.
+  - Lua: `--@eqol-beta@` through `--@end-eqol-beta@`.
+  - XML: `<!--@eqol-beta@-->` through `<!--@end-eqol-beta@-->`.
+- Use `non-eqol-beta` markers only for content that should exist in non-beta packages.
+- For TOC, Markdown, and TXT files, non-matching gated blocks are removed by the script.
+- For Lua and XML files, non-matching gated blocks are commented out by the script to keep line numbers more stable for bug reports.
+- If the user asks to make or update a beta changelog, keep the beta section in `CHANGELOG.md` wrapped in `<!--@eqol-beta@-->` and `<!--@end-eqol-beta@-->`.
+- If the user asks to prepare a release changelog while a beta changelog should remain available, keep the beta-gated section separate and place the release section below it, outside the beta gate.
+- Do not merge beta-only changelog entries into a release section unless the user explicitly says those beta items are shipping in that release.
+- After changing packaging gates, verify `scripts/prepare_packager_gates.sh` with at least `bash -n`, and make sure the release workflow still runs Luacheck after the gate step.

@@ -148,6 +148,14 @@ UF.ui.healthTextOptions = {
 	{ value = "NONE", label = NONE },
 }
 
+UF.ui.dataBarTextOptions = {
+	{ value = "NAME", label = NAME or L["Name"] or "Name" },
+	{ value = "LEVEL", label = LEVEL or L["Level"] or "Level" },
+}
+for _, option in ipairs(UF.ui.healthTextOptions) do
+	UF.ui.dataBarTextOptions[#UF.ui.dataBarTextOptions + 1] = option
+end
+
 local delimiterOptions = {
 	{ value = " ", label = L["Space"] or "Space" },
 	{ value = "  ", label = L["Double Space"] or "Double space" },
@@ -572,14 +580,12 @@ local function ensureAuraSettingsConfig(unit, auraDef)
 	else
 		ac.buff = ac.buff or {}
 		ac.debuff = ac.debuff or {}
-		ac.combineLayout = ac.combineLayout == true
 	end
 	ac.buff = ac.buff or {}
 	ac.debuff = ac.debuff or {}
 	ac.enabled = (ac.buff.enabled ~= false) or (ac.debuff.enabled ~= false)
 	ac.showBuffs = ac.buff.enabled ~= false
 	ac.showDebuffs = ac.debuff.enabled ~= false
-	ac.separateDebuffAnchor = ac.combineLayout ~= true
 	return ac
 end
 
@@ -666,18 +672,6 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		{ value = "PLAYER", label = L["UFAuraEnemyDebuffFilterPlayer"] or "Only my debuffs" },
 		{ value = "ALL", label = L["UFAuraEnemyDebuffFilterAll"] or "All debuffs" },
 	}
-	local auraRendererOptions = {
-		{ value = "CUSTOM", label = L["UFAuraRendererCustom"] or "EnhanceQoL" },
-		{ value = "BLIZZARD", label = L["UFAuraRendererBlizzard"] or "Blizzard" },
-	}
-
-	local function getAuraRenderer()
-		local ac = ensureAuraSettingsConfig(unit, auraDef)
-		local renderer = tostring(ac.renderer or auraDef.renderer or "CUSTOM"):upper()
-		if renderer == "BLIZZARD" or renderer == "BLIZZARD_CONTAINER" then return "BLIZZARD" end
-		return "CUSTOM"
-	end
-
 	local function syncAuraState(ac)
 		if type(ac) ~= "table" then return end
 		ac.buff = ac.buff or {}
@@ -685,7 +679,6 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		ac.enabled = (ac.buff.enabled ~= false) or (ac.debuff.enabled ~= false)
 		ac.showBuffs = ac.buff.enabled ~= false
 		ac.showDebuffs = ac.debuff.enabled ~= false
-		ac.separateDebuffAnchor = ac.combineLayout ~= true
 	end
 
 	local function getAuraSection(sectionKey)
@@ -704,11 +697,9 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		return cur
 	end
 
-	local function setAuraSectionValue(sectionKey, path, value, opts)
+	local function setAuraSectionValue(sectionKey, path, value)
 		local ac, section = getAuraSection(sectionKey)
-		if opts and opts.separatesLayout and sectionKey == "debuff" then ac.combineLayout = false end
 		setTablePathValue(section, path, cloneSettingValue(value))
-		if opts and opts.mirrorWhileCombined and sectionKey == "buff" and ac.combineLayout == true then setTablePathValue(ac.debuff, path, cloneSettingValue(value)) end
 		syncAuraState(ac)
 	end
 
@@ -723,7 +714,6 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 
 	local function appendAuraSection(sectionKey, parentId, isDebuff)
 		local labelPrefix = isDebuff and (L["Debuff"] or "Debuff") or (L["Buff"] or "Buff")
-		local layoutOpts = isDebuff and { separatesLayout = true } or { mirrorWhileCombined = true }
 
 		local function isSectionEnabled() return getAuraSectionValue(sectionKey, { "enabled" }, auraDef.enabled ~= false) == true end
 		local function isEdgeBorderMode()
@@ -763,7 +753,7 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		list[#list].isEnabled = isSectionEnabled
 
 		list[#list + 1] = radioDropdown((labelPrefix .. " " .. (L["Anchor"] or "anchor")), anchorOpts, function() return getAuraAnchorValue(sectionKey) end, function(val)
-			setAuraSectionValue(sectionKey, { "anchor" }, val or "BOTTOM", layoutOpts)
+			setAuraSectionValue(sectionKey, { "anchor" }, val or "BOTTOM")
 			refreshSelf()
 		end, auraDef.anchor or "BOTTOM", parentId)
 		list[#list].isEnabled = isSectionEnabled
@@ -773,7 +763,7 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 			growthOptions,
 			function() return (getAuraSectionValue(sectionKey, { "growth" }, defaultAuraGrowth(sectionKey)) or defaultAuraGrowth(sectionKey)):upper() end,
 			function(val)
-				setAuraSectionValue(sectionKey, { "growth" }, (val or defaultAuraGrowth(sectionKey)):upper(), layoutOpts)
+				setAuraSectionValue(sectionKey, { "growth" }, (val or defaultAuraGrowth(sectionKey)):upper())
 				refreshSelf()
 			end,
 			defaultAuraGrowth(sectionKey),
@@ -785,7 +775,7 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 			local anchor = getAuraAnchorValue(sectionKey)
 			return getAuraSectionValue(sectionKey, { "offset", "x" }, defaultAuraOffsetX(anchor))
 		end, function(val)
-			setAuraSectionValue(sectionKey, { "offset", "x" }, val or 0, layoutOpts)
+			setAuraSectionValue(sectionKey, { "offset", "x" }, val or 0)
 			refreshSelf()
 		end, defaultAuraOffsetX(auraDef.anchor or "BOTTOM"), parentId, true)
 		list[#list].isEnabled = isSectionEnabled
@@ -794,7 +784,7 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 			local anchor = getAuraAnchorValue(sectionKey)
 			return getAuraSectionValue(sectionKey, { "offset", "y" }, defaultAuraOffsetY(anchor))
 		end, function(val)
-			setAuraSectionValue(sectionKey, { "offset", "y" }, val or 0, layoutOpts)
+			setAuraSectionValue(sectionKey, { "offset", "y" }, val or 0)
 			refreshSelf()
 		end, defaultAuraOffsetY(auraDef.anchor or "BOTTOM"), parentId, true)
 		list[#list].isEnabled = isSectionEnabled
@@ -846,7 +836,7 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 			function(val)
 				val = tonumber(val) or 0
 				if val < 0 then val = 0 end
-				setAuraSectionValue(sectionKey, { "perRow" }, math.floor(val + 0.5), layoutOpts)
+				setAuraSectionValue(sectionKey, { "perRow" }, math.floor(val + 0.5))
 				refreshSelf()
 			end,
 			auraDef.perRow or 0,
@@ -868,7 +858,7 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 			function() return getAuraSectionValue(sectionKey, { "max" }, auraDef.max or 16) end,
 			function(val)
 				val = clampNumber(val, 1, 40, auraDef.max or 16)
-				setAuraSectionValue(sectionKey, { "max" }, val or auraDef.max or 16, layoutOpts)
+				setAuraSectionValue(sectionKey, { "max" }, val or auraDef.max or 16)
 				refreshSelf()
 			end,
 			auraDef.max or 16,
@@ -884,7 +874,7 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 			1,
 			function() return getAuraSectionValue(sectionKey, { "spacing" }, auraDef.padding or 2) end,
 			function(val)
-				setAuraSectionValue(sectionKey, { "spacing" }, val or 0, layoutOpts)
+				setAuraSectionValue(sectionKey, { "spacing" }, val or 0)
 				refreshSelf()
 			end,
 			auraDef.padding or 2,
@@ -1120,20 +1110,6 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		)
 		list[#list].isEnabled = isSectionEnabled
 	end
-
-	list[#list + 1] = radioDropdown(
-		L["UFAuraRenderer"] or "Aura renderer",
-		auraRendererOptions,
-		getAuraRenderer,
-		function(val)
-			local ac = ensureAuraSettingsConfig(unit, auraDef)
-			ac.renderer = (val == "BLIZZARD") and "BLIZZARD" or "CUSTOM"
-			refreshSelf()
-			refreshAuras()
-		end,
-		"CUSTOM",
-		nil
-	)
 
 	list[#list + 1] = { name = L["Buffs"] or "Buffs", kind = UF.ui.settingType.Collapsible, id = "buffs", defaultCollapsed = true }
 	appendAuraSection("buff", "buffs", false)
@@ -3267,6 +3243,208 @@ local function appendUnitCombatFeedbackSettings(list, unit, def, refreshSelf)
 	list[#list + 1] = sampleAmountSetting
 end
 
+function UF.ui.appendDataBarSettings(list, unit, def, refresh, refreshSelf, addDivider)
+	local dataBarDef = def.dataBar or {}
+	list[#list + 1] = { name = L["UFDataBar"] or "Data bar", kind = UF.ui.settingType.Collapsible, id = "dataBar", defaultCollapsed = true }
+
+	local function isDataBarEnabled()
+		return getValue(unit, { "dataBar", "enabled" }, dataBarDef.enabled == true) == true
+	end
+
+	list[#list + 1] = checkbox(L["UFDataBarEnable"] or "Enable data bar", isDataBarEnabled, function(val)
+		setValue(unit, { "dataBar", "enabled" }, val and true or false)
+		refreshSelf()
+		refreshSettingsUI()
+	end, dataBarDef.enabled == true, "dataBar")
+
+	local dataBarPositionOptions = {
+		{ value = "ABOVE", label = L["UFDataBarAbove"] or "Above" },
+		{ value = "BELOW", label = L["UFDataBarBelow"] or "Below" },
+	}
+	local dataBarPosition = radioDropdown(L["UFDataBarPosition"] or "Data bar position", dataBarPositionOptions, function()
+		return tostring(getValue(unit, { "dataBar", "position" }, dataBarDef.position or "BELOW")):upper()
+	end, function(val)
+		setValue(unit, { "dataBar", "position" }, (val or "BELOW"):upper())
+		refreshSelf()
+	end, dataBarDef.position or "BELOW", "dataBar")
+	dataBarPosition.isEnabled = isDataBarEnabled
+	list[#list + 1] = dataBarPosition
+
+	local dataBarHeight = slider(L["UFDataBarHeight"] or "Data bar height", 4, 80, 1, function()
+		return getValue(unit, { "dataBar", "height" }, dataBarDef.height or 16)
+	end, function(val)
+		debounced(unit .. "_dataBarHeight", function()
+			setValue(unit, { "dataBar", "height" }, val or dataBarDef.height or 16)
+			refreshSelf()
+		end)
+	end, dataBarDef.height or 16, "dataBar", true)
+	dataBarHeight.isEnabled = isDataBarEnabled
+	list[#list + 1] = dataBarHeight
+
+	local dataBarGap = slider(L["UFDataBarGap"] or "Data bar gap", 0, 40, 1, function()
+		return getValue(unit, { "dataBar", "gap" }, dataBarDef.gap or 0)
+	end, function(val)
+		debounced(unit .. "_dataBarGap", function()
+			setValue(unit, { "dataBar", "gap" }, val or 0)
+			refreshSelf()
+		end)
+	end, dataBarDef.gap or 0, "dataBar", true)
+	dataBarGap.isEnabled = isDataBarEnabled
+	list[#list + 1] = dataBarGap
+
+	list[#list + 1] = checkbox(
+		L["Use class color (players)"] or "Use class color (players)",
+		function() return getValue(unit, { "dataBar", "useClassColor" }, dataBarDef.useClassColor == true) == true end,
+		function(val)
+			setValue(unit, { "dataBar", "useClassColor" }, val and true or false)
+			refreshSelf()
+			refreshSettingsUI()
+		end,
+		dataBarDef.useClassColor == true,
+		"dataBar",
+		isDataBarEnabled
+	)
+
+	list[#list + 1] = {
+		name = L["UFDataBarColor"] or "Data bar color",
+		kind = UF.ui.settingType.Color,
+		parentId = "dataBar",
+		hasOpacity = true,
+		default = dataBarDef.color or { 0.18, 0.18, 0.22, 1 },
+		get = function() return getValue(unit, { "dataBar", "color" }, dataBarDef.color or { 0.18, 0.18, 0.22, 1 }) end,
+		set = function(_, color)
+			setColor(unit, { "dataBar", "color" }, color.r, color.g, color.b, color.a)
+			refreshSelf()
+		end,
+		colorGet = function()
+			local r, g, b, a = toRGBA(getValue(unit, { "dataBar", "color" }, dataBarDef.color), dataBarDef.color or { 0.18, 0.18, 0.22, 1 })
+			return { r = r, g = g, b = b, a = a }
+		end,
+		colorSet = function(_, color)
+			setColor(unit, { "dataBar", "color" }, color.r, color.g, color.b, color.a)
+			refreshSelf()
+		end,
+		colorDefault = {
+			r = (dataBarDef.color and dataBarDef.color[1]) or 0.18,
+			g = (dataBarDef.color and dataBarDef.color[2]) or 0.18,
+			b = (dataBarDef.color and dataBarDef.color[3]) or 0.22,
+			a = (dataBarDef.color and dataBarDef.color[4]) or 1,
+		},
+		isEnabled = function()
+			return isDataBarEnabled() and getValue(unit, { "dataBar", "useClassColor" }, dataBarDef.useClassColor == true) ~= true
+		end,
+	}
+	addDivider("dataBar")
+
+	list[#list + 1] = radioDropdown(L["Left text"] or "Left text", UF.ui.dataBarTextOptions, function()
+		return normalizeTextMode(getValue(unit, { "dataBar", "textLeft" }, dataBarDef.textLeft or "NAME"))
+	end, function(val)
+		setValue(unit, { "dataBar", "textLeft" }, val)
+		refresh()
+		refreshSettingsUI()
+	end, dataBarDef.textLeft or "NAME", "dataBar")
+	list[#list].isEnabled = isDataBarEnabled
+
+	list[#list + 1] = radioDropdown(L["Center text"] or "Center text", UF.ui.dataBarTextOptions, function()
+		return normalizeTextMode(getValue(unit, { "dataBar", "textCenter" }, dataBarDef.textCenter or "CURMAX"))
+	end, function(val)
+		setValue(unit, { "dataBar", "textCenter" }, val)
+		refresh()
+		refreshSettingsUI()
+	end, dataBarDef.textCenter or "CURMAX", "dataBar")
+	list[#list].isEnabled = isDataBarEnabled
+
+	list[#list + 1] = radioDropdown(L["Right text"] or "Right text", UF.ui.dataBarTextOptions, function()
+		return normalizeTextMode(getValue(unit, { "dataBar", "textRight" }, dataBarDef.textRight or "PERCENT"))
+	end, function(val)
+		setValue(unit, { "dataBar", "textRight" }, val)
+		refresh()
+		refreshSettingsUI()
+	end, dataBarDef.textRight or "PERCENT", "dataBar")
+	list[#list].isEnabled = isDataBarEnabled
+
+	local function dataBarDelimiterCount()
+		local leftMode = getValue(unit, { "dataBar", "textLeft" }, dataBarDef.textLeft or "NAME")
+		local centerMode = getValue(unit, { "dataBar", "textCenter" }, dataBarDef.textCenter or "CURMAX")
+		local rightMode = getValue(unit, { "dataBar", "textRight" }, dataBarDef.textRight or "PERCENT")
+		return maxDelimiterCount(leftMode, centerMode, rightMode)
+	end
+
+	local dataBarDelimiter = radioDropdown(L["Delimiter"] or "Delimiter", delimiterOptions, function()
+		return getValue(unit, { "dataBar", "textDelimiter" }, dataBarDef.textDelimiter or " ")
+	end, function(val)
+		setValue(unit, { "dataBar", "textDelimiter" }, val)
+		refresh()
+	end, dataBarDef.textDelimiter or " ", "dataBar")
+	dataBarDelimiter.isEnabled = isDataBarEnabled
+	dataBarDelimiter.isShown = function() return dataBarDelimiterCount() >= 1 end
+	list[#list + 1] = dataBarDelimiter
+
+	local dataBarDelimiterSecondary = radioDropdown(L["Secondary Delimiter"] or "Secondary delimiter", delimiterOptions, function()
+		local primary = getValue(unit, { "dataBar", "textDelimiter" }, dataBarDef.textDelimiter or " ")
+		return getValue(unit, { "dataBar", "textDelimiterSecondary" }, primary)
+	end, function(val)
+		setValue(unit, { "dataBar", "textDelimiterSecondary" }, val)
+		refresh()
+	end, dataBarDef.textDelimiterSecondary or dataBarDef.textDelimiter or " ", "dataBar")
+	dataBarDelimiterSecondary.isEnabled = isDataBarEnabled
+	dataBarDelimiterSecondary.isShown = function() return dataBarDelimiterCount() >= 2 end
+	list[#list + 1] = dataBarDelimiterSecondary
+
+	local dataBarDelimiterTertiary = radioDropdown(L["Tertiary Delimiter"] or "Tertiary delimiter", delimiterOptions, function()
+		local primary = getValue(unit, { "dataBar", "textDelimiter" }, dataBarDef.textDelimiter or " ")
+		local secondary = getValue(unit, { "dataBar", "textDelimiterSecondary" }, primary)
+		return getValue(unit, { "dataBar", "textDelimiterTertiary" }, secondary)
+	end, function(val)
+		setValue(unit, { "dataBar", "textDelimiterTertiary" }, val)
+		refresh()
+	end, dataBarDef.textDelimiterTertiary or dataBarDef.textDelimiterSecondary or dataBarDef.textDelimiter or " ", "dataBar")
+	dataBarDelimiterTertiary.isEnabled = isDataBarEnabled
+	dataBarDelimiterTertiary.isShown = function() return dataBarDelimiterCount() >= 3 end
+	list[#list + 1] = dataBarDelimiterTertiary
+	addDivider("dataBar")
+
+	local dataBarFontSize = slider(FONT_SIZE_LABEL, 8, 30, 1, function()
+		return getValue(unit, { "dataBar", "fontSize" }, dataBarDef.fontSize or 12)
+	end, function(val)
+		debounced(unit .. "_dataBarFontSize", function()
+			setValue(unit, { "dataBar", "fontSize" }, val or dataBarDef.fontSize or 12)
+			refresh()
+		end)
+	end, dataBarDef.fontSize or 12, "dataBar", true)
+	dataBarFontSize.isEnabled = isDataBarEnabled
+	list[#list + 1] = dataBarFontSize
+
+	if #fontOptions() > 0 then
+		local dataBarFont = checkboxDropdown(L["Font"] or "Font", fontOptions, function()
+			return getValue(unit, { "dataBar", "font" }, dataBarDef.font or UF.ui.globalFontConfigKey())
+		end, function(val)
+			setValue(unit, { "dataBar", "font" }, val)
+			refresh()
+		end, dataBarDef.font or UF.ui.globalFontConfigKey(), "dataBar")
+		dataBarFont.isEnabled = isDataBarEnabled
+		list[#list + 1] = dataBarFont
+	end
+
+	local dataBarFontOutline = checkboxDropdown(L["Font outline"] or "Font outline", UF.ui.outlineOptions, function()
+		return UF.ui.normalizeFontStyleChoice(getValue(unit, { "dataBar", "fontOutline" }, dataBarDef.fontOutline or "OUTLINE"), dataBarDef.fontOutline or "OUTLINE")
+	end, function(val)
+		setValue(unit, { "dataBar", "fontOutline" }, UF.ui.normalizeFontStyleChoice(val, dataBarDef.fontOutline or "OUTLINE"))
+		refresh()
+	end, dataBarDef.fontOutline or "OUTLINE", "dataBar")
+	dataBarFontOutline.isEnabled = isDataBarEnabled
+	list[#list + 1] = dataBarFontOutline
+
+	local dataBarTexture = checkboxDropdown(L["Bar Texture"] or "Bar Texture", textureOptions, function()
+		return getValue(unit, { "dataBar", "texture" }, dataBarDef.texture or "DEFAULT")
+	end, function(val)
+		setValue(unit, { "dataBar", "texture" }, val or "DEFAULT")
+		refresh()
+	end, dataBarDef.texture or "DEFAULT", "dataBar")
+	dataBarTexture.isEnabled = isDataBarEnabled
+	list[#list + 1] = dataBarTexture
+end
+
 local function buildUnitSettings(unit)
 	local MIN_WIDTH = UF.ui.minWidth
 	local OFFSET_RANGE = UF.ui.offsetRange
@@ -3938,6 +4116,7 @@ local function buildUnitSettings(unit)
 		list[#list + 1] = createRangeFadeSpellPickerSetting(unit, isRangeFadeEnabled, refreshSelf, refreshRangeFadeRuntime)
 	end
 
+	UF.ui.appendDataBarSettings(list, unit, def, refresh, refreshSelf, addDivider)
 	list[#list + 1] = { name = L["Health"] or HEALTH or "Health", kind = UF.ui.settingType.Collapsible, id = "health", defaultCollapsed = true }
 
 	list[#list + 1] = slider(L["UFHealthHeight"] or "Health height", 8, 80, 1, function() return getValue(unit, { "healthHeight" }, def.healthHeight or 24) end, function(val)
@@ -4463,6 +4642,13 @@ local function buildUnitSettings(unit)
 		setValue(unit, { "health", "reverseFill" }, val and true or false)
 		refresh()
 	end, healthDef.reverseFill == true, "health")
+
+	list[#list + 1] = checkbox(L["Show temporary max health loss"] or "Show temporary max health loss", function()
+		return getValue(unit, { "health", "tempMaxHealthLossEnabled" }, healthDef.tempMaxHealthLossEnabled ~= false) ~= false
+	end, function(val)
+		setValue(unit, { "health", "tempMaxHealthLossEnabled" }, val and true or false)
+		refresh()
+	end, healthDef.tempMaxHealthLossEnabled ~= false, "health")
 	addDivider("health")
 
 	list[#list + 1] = checkboxColor({
@@ -7730,6 +7916,7 @@ local function buildUnitSettings(unit)
 				enabled = false,
 				countdownFrame = true,
 				countdownNumbers = false,
+				showTooltip = false,
 				showDispelType = false,
 				icon = { amount = 2, size = 24, point = "LEFT", offset = 3 },
 				parent = { point = "BOTTOM", offsetX = 0, offsetY = -4 },
@@ -7875,6 +8062,18 @@ local function buildUnitSettings(unit)
 		list[#list].isEnabled = isPrivateCountdownEnabled
 
 		list[#list + 1] = checkbox(
+			L["Show tooltip"] or "Show tooltip",
+			function() return getValue(unit, { "privateAuras", "showTooltip" }, paDef.showTooltip == true) == true end,
+			function(val)
+				setValue(unit, { "privateAuras", "showTooltip" }, val and true or false)
+				refresh()
+			end,
+			paDef.showTooltip == true,
+			"privateAuras"
+		)
+		list[#list].isEnabled = isPrivateAurasEnabled
+
+		list[#list + 1] = checkbox(
 			L["Show dispel type"] or "Show dispel type",
 			function() return getValue(unit, { "privateAuras", "showDispelType" }, paDef.showDispelType == true) == true end,
 			function(val)
@@ -7945,7 +8144,7 @@ local function buildUnitSettings(unit)
 	end
 
 	-- Keep section order stable across units while preserving each section's internal order.
-	local sectionOrder = {
+	local commonSectionOrder = {
 		"utility",
 		"frame",
 		"layout",
@@ -7957,23 +8156,26 @@ local function buildUnitSettings(unit)
 		"incomingHeal",
 		"absorb",
 		"healAbsorb",
+		"power",
 		"level",
 		"statusText",
 		"unitStatus",
+		"rangeFade",
+		"dispelTint",
 		"raidicon",
-		"power",
 		"buffs",
 		"debuffs",
 		"privateAuras",
+	}
+	local specificSectionOrder = {
 		"secondaryPower",
 		"secondaryPowerStaggerColors",
-		"mainPowerColors",
-		"rangeFade",
-		"npcColors",
 		"classResource",
 		"totemFrame",
 		"cast",
 		"combatFeedback",
+		"mainPowerColors",
+		"npcColors",
 	}
 
 	local sectionHeaderIndexById = {}
@@ -7988,9 +8190,18 @@ local function buildUnitSettings(unit)
 
 	local orderedSectionIds = {}
 	local seenSectionIds = {}
-	for i = 1, #sectionOrder do
-		local id = sectionOrder[i]
+	for i = 1, #commonSectionOrder do
+		local id = commonSectionOrder[i]
 		if sectionHeaderIndexById[id] then
+			orderedSectionIds[#orderedSectionIds + 1] = id
+			seenSectionIds[id] = true
+		end
+	end
+	local firstSpecificSectionIndex
+	for i = 1, #specificSectionOrder do
+		local id = specificSectionOrder[i]
+		if sectionHeaderIndexById[id] then
+			if not firstSpecificSectionIndex then firstSpecificSectionIndex = #orderedSectionIds + 1 end
 			orderedSectionIds[#orderedSectionIds + 1] = id
 			seenSectionIds[id] = true
 		end
@@ -8006,6 +8217,7 @@ local function buildUnitSettings(unit)
 	local orderedList = {}
 	local appended = {}
 	for i = 1, #orderedSectionIds do
+		if firstSpecificSectionIndex and i == firstSpecificSectionIndex and #orderedList > 0 then orderedList[#orderedList + 1] = { name = "", kind = UF.ui.settingType.Divider } end
 		local id = orderedSectionIds[i]
 		local headerIndex = sectionHeaderIndexById[id]
 		if headerIndex and not appended[headerIndex] then
@@ -8415,6 +8627,7 @@ local function registerSettingsUI()
 			func = function(val)
 				local cfg = ensureConfig(unit)
 				cfg.enabled = val and true or false
+				if UF.SetRuntimeConsumerActive then UF.SetRuntimeConsumerActive("unit", unit, cfg.enabled) end
 				if unit == "player" then
 					if cfg.enabled then
 						UF.Enable()

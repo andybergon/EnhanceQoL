@@ -1,5 +1,87 @@
 # Changelog
 
+<!--@eqol-beta@-->
+
+## [10.10.0-beta1] - 2026-04-30
+
+### ✨ Added
+
+- Bags: Added the integrated custom Bags and Warband Bank module as an opt-in feature.
+- Bags: Added a solid background color picker for the integrated Bags and Warband Bank frames.
+- Bags: Added Advanced text style controls for category headers, subcategory headers, item overlays, and stack counts, including per-element font, size, case, and outline options where applicable.
+- Bags: Added an Inventory-only bag slot flyout for viewing equipped bag containers and swapping them via drag and drop.
+- Bags: Added bank tab purchase support for the integrated Bank and Warband Bank views using Blizzard's bank tab purchase flow.
+- Bags: Added an optional close button to the integrated Bags, Bank, and Warband Bank windows, enabled by default for users who prefer closing bags via the top-corner X.
+- Bags: Added a Layout option to hide Free Slots from the integrated Bags, Bank, and Warband Bank grids entirely.
+- Profiles: Added a separate import/export section for Bags categories, independent from full profile import/export.
+
+### ⚡ Performance
+
+- Bags: Reduced custom bag skin refresh overhead during vendor auto-sell and bag refresh paths.
+
+### 🐛 Fixed
+
+- Bags: Improved text appearance handling so the integrated Bags and Warband Bank frames follow global font and font-style changes more reliably.
+- Bags: Fixed per-element font and outline changes sometimes requiring a UI reload by resolving text appearance caches per element instead of sharing one cache across all bag text styles.
+- Bags: Fixed Advanced Add Group/Add Category creating ID collisions with existing preset groups, which could mirror categories under the new group and remove too many entries when deleting.
+- Bags: Fixed Profession Group automatic rules using shifted Trade Goods subclass IDs, which could classify Cloth materials as Leatherworking / Skinning.
+- Bags: Fixed the Tracking settings page so its full content scrolls inside the settings panel instead of overflowing below the window at smaller heights.
+- Bags: Fixed collapsed compact-layout section headers such as Miscellaneous shrinking to `...` instead of keeping enough width for the label.
+- Bags: Fixed New Items moving into their normal category while the bag window is still open after mouseover clears Blizzard's new-item marker.
+
+---
+
+<!--@end-eqol-beta@-->
+
+## [10.9.0] - 2026-04-30
+
+### ✨ Added
+
+- Unit Frames: Added an optional data bar above or below normal unit frames with configurable height, gap, texture, color, and left/center/right text.
+- Unit Frames: Added temporary maximum health loss display for player, target, pet, boss, party, raid, and Resource Bars health frames using Blizzard's native max-health modifier API.
+- Resource Bars: Added damage absorb clamp and heal absorb overlay options backed by Blizzard's heal prediction calculator.
+- Economy / Bank: Added a remove option for tracked characters, clearing their gold tracking, ignore state, and per-character Warband bank target.
+- Private Auras: Added a dedicated tooltip toggle for standalone, unit-frame, and group-frame private auras, keeping private aura anchors clickthrough unless that tooltip is explicitly enabled.
+- Profiles: Added a separate import/export section for Group Frames Healer Buff Placement, independent from full profile import/export.
+- Data Panels / Combat Time: Added an option to show the boss timer above the combat timer when timers are stacked.
+- Group Frames / Party: Added detachable Power Bar controls with global party-frame positioning, custom width, height, offsets, growth-from-center, strata, frame level, and optional detached border settings.
+- Group Frames / Party: Added detachable Portrait controls with custom size and offsets, including smarter default placement based on party frame growth direction.
+- Group Frames / Hover Highlight: Added a frame level control alongside the existing strata control.
+- Cooldown Panels: Added tracked aura display modes for always showing entries desaturated when active and only showing entries when active.
+
+### 🔧 Changed
+
+- Unit Frames / Group Frames: Aligned Edit Mode settings order and visible labels so shared options appear consistently, with frame-specific options separated below.
+- Unit Frames / Auras: Removed Blizzard aura rendering from normal unit frames while keeping it available for party and raid frames.
+- Group Frames / Party: Detached portraits now support the existing Extend border over portrait behavior with a separate portrait border, while separator settings are disabled because detached portraits no longer use separators.
+
+### ⚡ Performance
+
+- Unit Frames: Reduced raid join/leave spikes by avoiding repeated deep profile dedupe work and by only registering profile/spec mapping events while Unit Frames or Group Frames are active.
+- Cooldown Panels: Reduced idle runtime work by ignoring empty panels for runtime refreshes and skipping disabled Cooldown Viewer visibility checks earlier.
+- Cooldown Panels: Reduced druid form-swap micro stutters by avoiding redundant Cooldown Viewer aura refresh work.
+- Group Finder: Reduced applicant update overhead by only registering applicant refresh events while Group Finder applicant text or Mythic+ Score sorting features are enabled, and by debouncing applicant refreshes.
+- Vendor: Reduced mass-sell CPU and allocation spikes by deferring vendor mark and merchant item refreshes during auto-sell, skipping character-frame durability recalculation while the PaperDoll frame is not visible, and caching merchant known-state tint updates.
+
+### 🐛 Fixed
+
+- Class Buff Reminder: Fixed missing flask, food, and weapon buff reminders not showing in current-season Mythic dungeons from older expansions, such as seasonal Mythic+ pool dungeons before the key is started.
+- Class Buff Reminder: Fixed aura update errors while augment rune candidates were unavailable and added secret-value guards to supplemental consumable aura matching.
+- Gear & Upgrades: Fixed Character Frame gem slot tooltips not opening, gem overlays staying visible after disabling the gem display option, and Indecipherable Eversong Diamonds missing from the gem tracker summary.
+- Cooldown Panels: Fixed tracked aura learned-state updates after talent changes and state texture icons sometimes staying invisible after loading screens.
+- Group Frames: Fixed Party and Raid frame anchors using stale Edit Mode position data after reloads.
+- Group Frames: Fixed click registration for secure group unit buttons so right-click unit menus and combat-created raid buttons keep working.
+- Group Frames / Healer Buff Placement: Fixed healer buff indicators disappearing on unrelated aura updates and limited re-filtering to the required player-owned helpful aura checks.
+- Group Frames / Hover Highlight: Fixed frame level layering and clamping issues that could place highlights, borders, or overlays at invalid or unintended frame levels.
+- Group Frames / Party: Fixed name TOPLEFT/TOPRIGHT style anchors being shifted by role-icon padding instead of using the selected corner literally.
+- Group Frames / Party: Fixed attached portraits expanding the layout anchor, which caused names, markers, and status icons anchored to TOPLEFT to use the portrait area instead of the original frame area.
+- Private Auras: Fixed private aura icons sometimes appearing behind unit frames after they were refreshed or moved by the game.
+- Unit Frames: Guarded restricted `UnitIsPlayer` and `UnitIsUnit` boolean results before using them in target/private-aura helper logic, preventing secret-value errors in raid encounters.
+- Unit Frames / Cast Bar: Fixed the default castbar style so uninterruptible casts use Blizzard's grey uninterruptible fill.
+- Unit Frames / Edit Mode: Fixed sample aura stack rendering treating preview auras as real unit aura instances, which could trigger `C_UnitAuras.GetAuraApplicationDisplayCount` errors.
+
+---
+
 ## [10.8.0] - 2026-04-26
 
 ### ✨ Added

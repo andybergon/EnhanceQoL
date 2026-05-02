@@ -1,3 +1,4 @@
+-- luacheck: globals EnhanceQoLBagsDB
 local addonName, addon = ...
 
 local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
@@ -5,6 +6,8 @@ local wipe = wipe
 local serializer = LibStub("AceSerializer-3.0")
 local deflate = LibStub("LibDeflate")
 local PROFILE_EXPORT_KIND = "EQOL_PROFILE"
+local BAGS_CATEGORIES_EXPORT_KIND = "EQOL_BAGS_CATEGORIES"
+local HBP_EXPORT_KIND = "EQOL_HBP"
 
 local cProfiles = addon.SettingsLayout.rootPROFILES
 
@@ -14,6 +17,13 @@ local expandable = addon.functions.SettingsCreateExpandableSection(cProfiles, {
 	colorizeTitle = false,
 	newTagID = "ProfilesAddOn",
 })
+
+local bagsCategoriesExpandable
+local hbpExpandable
+
+local function isBagsCategoriesSectionVisible()
+	return addon.db and addon.db.enableBagsModule == true and bagsCategoriesExpandable and bagsCategoriesExpandable:IsExpanded() ~= false
+end
 
 local profileOrderActive, profileOrderGlobal, profileOrderCopy, profileOrderDelete = {}, {}, {}, {}
 local globalFontOrder = {}
@@ -618,6 +628,137 @@ local function sanitizeProfileData(source)
 	return filtered
 end
 
+local function encodeExportPayload(payload)
+	if not serializer or not deflate then return nil, "NO_LIB" end
+	local ok, serialized = pcall(serializer.Serialize, serializer, payload)
+	if not ok or type(serialized) ~= "string" or serialized == "" then return nil, "SERIALIZE" end
+	local compressed = deflate:CompressDeflate(serialized)
+	if not compressed then return nil, "COMPRESS" end
+	return deflate:EncodeForPrint(compressed)
+end
+
+local function decodeExportPayload(encoded, expectedKind)
+	if not serializer or not deflate then return nil, "NO_LIB" end
+	encoded = tostring(encoded or "")
+	encoded = encoded:gsub("^%s+", ""):gsub("%s+$", "")
+	if encoded == "" then return nil, "NO_INPUT" end
+
+	local decoded = deflate:DecodeForPrint(encoded) or deflate:DecodeForWoWChatChannel(encoded) or deflate:DecodeForWoWAddonChannel(encoded)
+	if not decoded then return nil, "DECODE" end
+	local decompressed = deflate:DecompressDeflate(decoded)
+	if not decompressed then return nil, "DECOMPRESS" end
+	local ok, payload = serializer:Deserialize(decompressed)
+	if not ok or type(payload) ~= "table" then return nil, "DESERIALIZE" end
+
+	local meta = payload.meta
+	if type(meta) ~= "table" or meta.addon ~= addonName or meta.kind ~= expectedKind then return nil, "INVALID" end
+	return payload
+end
+
+local function exportPayloadWithData(kind, data, version)
+	if type(data) ~= "table" or not next(data) then return nil, "NO_DATA" end
+	return encodeExportPayload({
+		meta = {
+			addon = addonName,
+			kind = kind,
+			version = tostring(C_AddOns.GetAddOnMetadata(addonName, "Version") or ""),
+			profileVersion = version or 1,
+		},
+		data = data,
+	})
+end
+
+local function captureBagsCategoriesState()
+	if addon.InitializeSavedVariables then addon.InitializeSavedVariables() end
+	local settings = addon.GetSettings and addon.GetSettings() or type(EnhanceQoLBagsDB) == "table" and EnhanceQoLBagsDB.settings or nil
+	if type(settings) ~= "table" then return nil end
+	local categoryModes = sanitizeProfileData(settings.categoryModes)
+	local hasCategories = type(categoryModes) == "table" and next(categoryModes) ~= nil
+	if not hasCategories then return nil end
+	return {
+		categoryModes = categoryModes,
+	}
+end
+
+local function applyImportedBagsCategoriesState(data)
+	if type(data) ~= "table" or type(data.categoryModes) ~= "table" then return false, "NO_DATA" end
+	if addon.InitializeSavedVariables then addon.InitializeSavedVariables() end
+	local settings = addon.GetSettings and addon.GetSettings() or type(EnhanceQoLBagsDB) == "table" and EnhanceQoLBagsDB.settings or nil
+	if type(settings) ~= "table" then return false, "NO_DB" end
+
+	settings.categoryModes = sanitizeProfileData(data.categoryModes)
+
+	if addon.InitializeCategoryModeSettings then addon.InitializeCategoryModeSettings(false) end
+	if addon.MarkCategoryModeStateDirty then addon.MarkCategoryModeStateDirty() end
+	if addon.Bags and addon.Bags.functions then
+		if addon.Bags.functions.RequestLayoutUpdate then addon.Bags.functions.RequestLayoutUpdate(true, true) end
+		if addon.Bags.functions.RequestBankLayoutUpdate then addon.Bags.functions.RequestBankLayoutUpdate(true, true) end
+	end
+	if addon.RefreshSettingsFrame then addon.RefreshSettingsFrame("categories", true) end
+	return true
+end
+
+local function exportBagsCategories()
+	return exportPayloadWithData(BAGS_CATEGORIES_EXPORT_KIND, captureBagsCategoriesState(), 1)
+end
+
+local function importBagsCategories(encoded)
+	local payload, reason = decodeExportPayload(encoded, BAGS_CATEGORIES_EXPORT_KIND)
+	if not payload then return false, reason end
+	return applyImportedBagsCategoriesState(payload.data)
+end
+
+local function captureHBPState()
+	local GF = addon.Aura and addon.Aura.UF and addon.Aura.UF.GroupFrames
+	if GF and GF.EnsureDB then GF:EnsureDB() end
+	local groupFrames = addon.db and addon.db.ufGroupFrames
+	if type(groupFrames) ~= "table" then return nil end
+
+	local data = {}
+	for _, kind in ipairs({ "party", "raid" }) do
+		local cfg = type(groupFrames[kind]) == "table" and groupFrames[kind] or nil
+		local placement = cfg and cfg.healerBuffPlacement
+		if type(placement) == "table" then data[kind] = sanitizeProfileData(placement) end
+	end
+	return next(data) and data or nil
+end
+
+local function applyImportedHBPState(data)
+	if type(data) ~= "table" then return false, "NO_DATA" end
+	local GF = addon.Aura and addon.Aura.UF and addon.Aura.UF.GroupFrames
+	if GF and GF.EnsureDB then GF:EnsureDB() end
+	addon.db = addon.db or {}
+	addon.db.ufGroupFrames = addon.db.ufGroupFrames or {}
+	local groupFrames = addon.db.ufGroupFrames
+
+	local applied = false
+	for _, kind in ipairs({ "party", "raid" }) do
+		local incoming = data[kind]
+		if type(incoming) == "table" then
+			groupFrames[kind] = type(groupFrames[kind]) == "table" and groupFrames[kind] or {}
+			groupFrames[kind].healerBuffPlacement = sanitizeProfileData(incoming)
+			applied = true
+		end
+	end
+	if not applied then return false, "NO_DATA" end
+
+	if GF and GF.ResetDBCache then GF:ResetDBCache() end
+	if GF and GF.RefreshHealerBuffPlacement then GF:RefreshHealerBuffPlacement() end
+	local editor = addon.Aura and addon.Aura.UF and addon.Aura.UF.GroupFramesHealerBuffEditor
+	if editor and editor.IsShown and editor:IsShown() and editor.RefreshAll then editor:RefreshAll() end
+	return true
+end
+
+local function exportHBP()
+	return exportPayloadWithData(HBP_EXPORT_KIND, captureHBPState(), 1)
+end
+
+local function importHBP(encoded)
+	local payload, reason = decodeExportPayload(encoded, HBP_EXPORT_KIND)
+	if not payload then return false, reason end
+	return applyImportedHBPState(payload.data)
+end
+
 local function normalizeProfileStorage(profileData, meta)
 	if type(profileData) ~= "table" then return end
 	if addon and addon.EditMode and addon.EditMode.MigrateProfileData then addon.EditMode:MigrateProfileData(profileData) end
@@ -644,6 +785,11 @@ local function captureMoverExportState()
 	}
 end
 
+local function captureBagsExportState()
+	if type(EnhanceQoLBagsDB) ~= "table" or not next(EnhanceQoLBagsDB) then return nil end
+	return sanitizeProfileData(EnhanceQoLBagsDB)
+end
+
 local function applyImportedMoverState(meta)
 	local mover = type(meta) == "table" and meta.mover or nil
 	if type(mover) ~= "table" or type(mover.enabled) ~= "boolean" then return end
@@ -658,14 +804,26 @@ local function applyImportedMoverState(meta)
 	end
 end
 
+local function applyImportedBagsState(meta)
+	local bags = type(meta) == "table" and meta.bags or nil
+	if type(bags) ~= "table" then return end
+
+	EnhanceQoLBagsDB = sanitizeProfileData(bags)
+	if addon.Bags then
+		addon.DB = EnhanceQoLBagsDB
+		if addon.InitializeSavedVariables then addon.InitializeSavedVariables() end
+	end
+end
+
 local function exportActiveProfile(profileName)
 	if not serializer or not deflate then return nil, "NO_LIB" end
 	profileName = resolveExportProfileName(profileName)
 	if not profileName then return nil, "NO_ACTIVE" end
 	local source = EnhanceQoLDB and EnhanceQoLDB.profiles and EnhanceQoLDB.profiles[profileName]
 	local moverState = captureMoverExportState()
+	local bagsState = captureBagsExportState()
 	if type(source) ~= "table" then return nil, "NO_DATA" end
-	if not next(source) and not moverState then return nil, "NO_DATA" end
+	if not next(source) and not moverState and not bagsState then return nil, "NO_DATA" end
 	if next(source) then normalizeProfileStorage(source) end
 
 	local payload = {
@@ -673,38 +831,25 @@ local function exportActiveProfile(profileName)
 			addon = addonName,
 			kind = PROFILE_EXPORT_KIND,
 			version = tostring(C_AddOns.GetAddOnMetadata(addonName, "Version") or ""),
-			profileVersion = 3,
+			profileVersion = 4,
 			profile = profileName,
 			ufCharacter = captureUFCharacterImportState(source),
 			mover = moverState,
+			bags = bagsState,
 		},
 		data = sanitizeProfileData(source),
 	}
 
-	local ok, serialized = pcall(serializer.Serialize, serializer, payload)
-	if not ok or type(serialized) ~= "string" or serialized == "" then return nil, "SERIALIZE" end
-	local compressed = deflate:CompressDeflate(serialized)
-	if not compressed then return nil, "COMPRESS" end
-	return deflate:EncodeForPrint(compressed)
+	return encodeExportPayload(payload)
 end
 
 local function importProfile(encoded, options)
-	if not serializer or not deflate then return false, "NO_LIB" end
 	options = options or {}
-	encoded = tostring(encoded or "")
-	encoded = encoded:gsub("^%s+", ""):gsub("%s+$", "")
-	if encoded == "" then return false, "NO_INPUT" end
-
-	local decoded = deflate:DecodeForPrint(encoded) or deflate:DecodeForWoWChatChannel(encoded) or deflate:DecodeForWoWAddonChannel(encoded)
-	if not decoded then return false, "DECODE" end
-	local decompressed = deflate:DecompressDeflate(decoded)
-	if not decompressed then return false, "DECOMPRESS" end
-	local ok, payload = serializer:Deserialize(decompressed)
-	if not ok or type(payload) ~= "table" then return false, "DESERIALIZE" end
+	local payload, decodeReason = decodeExportPayload(encoded, PROFILE_EXPORT_KIND)
+	if not payload then return false, decodeReason end
 
 	local meta = payload.meta
 	local data = payload.data
-	if type(meta) ~= "table" or meta.addon ~= addonName or meta.kind ~= PROFILE_EXPORT_KIND then return false, "INVALID" end
 	if type(data) ~= "table" then return false, "NO_DATA" end
 
 	local activeTarget = getActiveProfileName()
@@ -719,6 +864,7 @@ local function importProfile(encoded, options)
 	normalizeProfileStorage(sanitized, meta)
 	EnhanceQoLDB.profiles[target] = sanitized
 	applyImportedMoverState(meta)
+	applyImportedBagsState(meta)
 
 	if useImportedTarget then
 		if options.setImportedProfileActive == true then
@@ -759,6 +905,79 @@ local function importErrorMessage(reason)
 	if reason == "INVALID" or reason == "DECODE" or reason == "DECOMPRESS" or reason == "DESERIALIZE" then return L["The code could not be read."] or "The code could not be read." end
 	if reason == "NO_ACTIVE" or reason == "NO_DB" then return L["ProfileExportNoActive"] or "No active profile found." end
 	return L["ProfileImportFailed"] or "Profile import failed."
+end
+
+local function dataExportErrorMessage(reason)
+	if reason == "NO_DATA" then return L["DataExportEmpty"] or "No saved data to export." end
+	return L["DataExportFailed"] or "Export failed."
+end
+
+local function dataImportErrorMessage(reason)
+	if reason == "NO_INPUT" then return L["ProfileImportEmpty"] or "Please paste a code to import." end
+	if reason == "INVALID" or reason == "DECODE" or reason == "DECOMPRESS" or reason == "DESERIALIZE" then return L["The code could not be read."] or "The code could not be read." end
+	return L["DataImportFailed"] or "Import failed."
+end
+
+local function showExportCodeDialog(dialogKey, title, code)
+	StaticPopupDialogs[dialogKey] = StaticPopupDialogs[dialogKey]
+		or {
+			text = title,
+			button1 = CLOSE,
+			hasEditBox = true,
+			editBoxWidth = 320,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+		}
+	StaticPopupDialogs[dialogKey].text = title
+	StaticPopupDialogs[dialogKey].OnShow = function(self)
+		self:SetFrameStrata("TOOLTIP")
+		local editBox = self.editBox or self:GetEditBox()
+		editBox:SetText(code)
+		editBox:HighlightText()
+		editBox:SetFocus()
+	end
+	StaticPopup_Show(dialogKey)
+end
+
+local function showImportCodeDialog(dialogKey, title, confirmText, importFunc, successText, reloadOnSuccess)
+	StaticPopupDialogs[dialogKey] = StaticPopupDialogs[dialogKey]
+		or {
+			text = confirmText,
+			button1 = OKAY,
+			button2 = CANCEL,
+			hasEditBox = true,
+			editBoxWidth = 320,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+		}
+	StaticPopupDialogs[dialogKey].text = confirmText
+	StaticPopupDialogs[dialogKey].OnShow = function(self)
+		self:SetFrameStrata("TOOLTIP")
+		local editBox = self.editBox or self:GetEditBox()
+		editBox:SetText("")
+		editBox:SetFocus()
+	end
+	StaticPopupDialogs[dialogKey].EditBoxOnEnterPressed = function(editBox)
+		local parent = editBox:GetParent()
+		if parent and parent.button1 then parent.button1:Click() end
+	end
+	StaticPopupDialogs[dialogKey].OnAccept = function(self)
+		local editBox = self.editBox or self:GetEditBox()
+		local input = editBox:GetText() or ""
+		local ok, reason = importFunc(input)
+		if not ok then
+			print("|cff00ff98Enhance QoL|r: " .. tostring(dataImportErrorMessage(reason)))
+			return
+		end
+		print("|cff00ff98Enhance QoL|r: " .. successText)
+		if reloadOnSuccess then C_UI.Reload() end
+	end
+	StaticPopupDialogs[dialogKey].text = title and (title .. "\n\n" .. confirmText) or confirmText
+	StaticPopup_Show(dialogKey)
 end
 
 local data = {
@@ -957,6 +1176,86 @@ addon.functions.SettingsCreateButton(cProfiles, {
 
 addon.functions.SettingsCreateHeadline(cProfiles, L["Font"] or "Font", { parentSection = expandable })
 createGlobalFontSettings(expandable)
+
+bagsCategoriesExpandable = addon.functions.SettingsCreateExpandableSection(cProfiles, {
+	name = L["Bags categories"] or "Bags categories",
+	expanded = false,
+	colorizeTitle = false,
+	newTagID = "ProfilesBagsCategories",
+})
+
+if bagsCategoriesExpandable and bagsCategoriesExpandable.AddShownPredicate then
+	bagsCategoriesExpandable:AddShownPredicate(function()
+		return addon.db and addon.db.enableBagsModule == true
+	end)
+end
+
+addon.functions.SettingsCreateButton(cProfiles, {
+	var = "bagsCategoriesExport",
+	text = L["Export Bags categories"] or "Export Bags categories",
+	func = function()
+		local code, reason = exportBagsCategories()
+		if not code then
+			print("|cff00ff98Enhance QoL|r: " .. tostring(dataExportErrorMessage(reason)))
+			return
+		end
+		showExportCodeDialog("EQOL_BAGS_CATEGORIES_EXPORT", L["Export Bags categories"] or "Export Bags categories", code)
+	end,
+	parentSection = isBagsCategoriesSectionVisible,
+})
+
+addon.functions.SettingsCreateButton(cProfiles, {
+	var = "bagsCategoriesImport",
+	text = L["Import Bags categories"] or "Import Bags categories",
+	func = function()
+		showImportCodeDialog(
+			"EQOL_BAGS_CATEGORIES_IMPORT",
+			L["Import Bags categories"] or "Import Bags categories",
+			L["BagsCategoriesImportConfirm"] or "Importing will overwrite your Bags categories.",
+			importBagsCategories,
+			L["BagsCategoriesImportSuccess"] or "Bags categories imported.",
+			false
+		)
+	end,
+	parentSection = isBagsCategoriesSectionVisible,
+})
+
+hbpExpandable = addon.functions.SettingsCreateExpandableSection(cProfiles, {
+	name = L["Healer Buff Placement"] or "Healer Buff Placement",
+	expanded = false,
+	colorizeTitle = false,
+	newTagID = "ProfilesHBP",
+})
+
+addon.functions.SettingsCreateButton(cProfiles, {
+	var = "hbpExport",
+	text = L["Export Healer Buff Placement"] or "Export Healer Buff Placement",
+	func = function()
+		local code, reason = exportHBP()
+		if not code then
+			print("|cff00ff98Enhance QoL|r: " .. tostring(dataExportErrorMessage(reason)))
+			return
+		end
+		showExportCodeDialog("EQOL_HBP_EXPORT", L["Export Healer Buff Placement"] or "Export Healer Buff Placement", code)
+	end,
+	parentSection = hbpExpandable,
+})
+
+addon.functions.SettingsCreateButton(cProfiles, {
+	var = "hbpImport",
+	text = L["Import Healer Buff Placement"] or "Import Healer Buff Placement",
+	func = function()
+		showImportCodeDialog(
+			"EQOL_HBP_IMPORT",
+			L["Import Healer Buff Placement"] or "Import Healer Buff Placement",
+			L["HBPImportConfirm"] or "Importing will overwrite your Healer Buff Placement settings.",
+			importHBP,
+			L["HBPImportSuccess"] or "Healer Buff Placement imported.",
+			false
+		)
+	end,
+	parentSection = hbpExpandable,
+})
 
 ----- REGION END
 function addon.functions.initProfile()

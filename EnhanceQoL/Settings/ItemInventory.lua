@@ -303,6 +303,20 @@ local function applyGemLayout(element, slot, displayCount, outsideWithIlvl)
 	end
 end
 
+local function clearGemFrame(gemFrame)
+	if not gemFrame then return end
+	if gemFrame.EnableMouse then gemFrame:EnableMouse(false) end
+	gemFrame:SetScript("OnEnter", nil)
+	gemFrame:SetScript("OnUpdate", nil)
+	gemFrame:UnregisterAllEvents()
+	gemFrame:Hide()
+end
+
+local function setGemFrameTooltip(gemFrame, enabled)
+	if not gemFrame then return end
+	if gemFrame.EnableMouse then gemFrame:EnableMouse(enabled == true) end
+end
+
 local function getMissingEnchantOverlayColor()
 	local c = addon.db and addon.db["missingEnchantOverlayColor"]
 	local r = (c and c.r) or 1
@@ -443,11 +457,17 @@ local function CheckItemGems(element, itemLink, emptySocketsCount, key, pdElemen
 	for i = 1, emptySocketsCount do
 		local gemName, gemLink = C_Item.GetItemGem(itemLink, i)
 		element.gems[i]:SetScript("OnEnter", nil)
+		setGemFrameTooltip(element.gems[i], false)
 
 		if gemName then
 			local icon = C_Item.GetItemIconByID(gemLink)
 			element.gems[i].icon:SetTexture(icon)
 			element.gems[i].icon:SetVertexColor(1, 1, 1)
+			if pdElement == InspectPaperDollFrame then
+				setGemFrameTooltip(element.gems[i], InspectOpt("gemtip"))
+			else
+				setGemFrameTooltip(element.gems[i], CharOpt("gemtip"))
+			end
 			element.gems[i]:SetScript("OnEnter", function(self)
 				local showTip
 				if pdElement == InspectPaperDollFrame then
@@ -613,9 +633,7 @@ local function removeInspectElements()
 			if element.borderGradient then element.borderGradient:Hide() end
 			if element.gems and #element.gems > 0 then
 				for i = 1, #element.gems do
-					element.gems[i]:UnregisterAllEvents()
-					element.gems[i]:SetScript("OnUpdate", nil)
-					element.gems[i]:Hide()
+					clearGemFrame(element.gems[i])
 				end
 			end
 		end
@@ -737,9 +755,7 @@ local function onInspect(arg1)
 								displayCount = math.max(socketCount, neededSockets)
 								if element.gems and #element.gems > displayCount then
 									for i = displayCount + 1, #element.gems do
-										element.gems[i]:UnregisterAllEvents()
-										element.gems[i]:SetScript("OnUpdate", nil)
-										element.gems[i]:Hide()
+										clearGemFrame(element.gems[i])
 									end
 								end
 								if not element.gems then element.gems = {} end
@@ -759,6 +775,7 @@ local function onInspect(arg1)
 									if i > socketCount then
 										element.gems[i].icon:SetVertexColor(1, 0, 0)
 										element.gems[i]:SetScript("OnEnter", nil)
+										setGemFrameTooltip(element.gems[i], false)
 									else
 										element.gems[i].icon:SetVertexColor(1, 1, 1)
 									end
@@ -767,9 +784,7 @@ local function onInspect(arg1)
 								if socketCount > 0 then CheckItemGems(element, itemLink, socketCount, key, pdElement) end
 							elseif element.gems and #element.gems > 0 then
 								for i = 1, #element.gems do
-									element.gems[i]:UnregisterAllEvents()
-									element.gems[i]:SetScript("OnUpdate", nil)
-									element.gems[i]:Hide()
+									clearGemFrame(element.gems[i])
 								end
 							end
 
@@ -920,9 +935,8 @@ local function setIlvlText(element, slot)
 		if element.gems then
 			for i = 1, 3 do
 				if element.gems[i] then
-					element.gems[i]:Hide()
+					clearGemFrame(element.gems[i])
 					element.gems[i].icon:SetTexture("Interface\\ItemSocketingFrame\\UI-EmptySocket-Prismatic")
-					element.gems[i]:SetScript("OnEnter", nil)
 					element.gems[i].icon:SetVertexColor(1, 1, 1)
 				end
 			end
@@ -970,19 +984,18 @@ local function setIlvlText(element, slot)
 							if i > socketCount then
 								element.gems[i].icon:SetVertexColor(1, 0, 0)
 								element.gems[i]:SetScript("OnEnter", nil)
+								setGemFrameTooltip(element.gems[i], false)
 							else
 								element.gems[i].icon:SetVertexColor(1, 1, 1)
 							end
 						else
-							element.gems[i]:Hide()
-							element.gems[i]:SetScript("OnEnter", nil)
+							clearGemFrame(element.gems[i])
 						end
 					end
 					if socketCount > 0 then CheckItemGems(element, link, socketCount, slot) end
 				else
 					for i = 1, #element.gems do
-						element.gems[i]:Hide()
-						element.gems[i]:SetScript("OnEnter", nil)
+						clearGemFrame(element.gems[i])
 					end
 				end
 
@@ -1156,6 +1169,8 @@ local function UpdateItemLevel()
 end
 hooksecurefunc("PaperDollFrame_SetItemLevel", function(statFrame, unit) UpdateItemLevel() end)
 
+local requestDurabilityUpdate
+
 local function setCharFrame()
 	if addon.functions and addon.functions.refreshCharacterFrameElementFonts then addon.functions.refreshCharacterFrameElementFonts() end
 	if InCombatLockdown and InCombatLockdown() then
@@ -1169,7 +1184,7 @@ local function setCharFrame()
 		local cataclystInfo = C_CurrencyInfo.GetCurrencyInfo(addon.variables.catalystID)
 		addon.general.iconFrame.count:SetText(cataclystInfo.quantity)
 	end
-	if addon.db["showDurabilityOnCharframe"] and not addon.functions.IsTimerunner() then calculateDurability() end
+	requestDurabilityUpdate()
 	for key, value in pairs(addon.variables.itemSlots) do
 		setIlvlText(value, key)
 	end
@@ -1442,7 +1457,16 @@ local function applyKnownTextureTint(texture, state)
 		end
 	end
 end
-local function applyKnownStateToFrame(frame, state, visited)
+local merchantKnownVisited = {}
+local applyKnownStateToFrame
+
+local function applyKnownStateToObjects(state, visited, object, ...)
+	if not object then return end
+	applyKnownStateToFrame(object, state, visited)
+	return applyKnownStateToObjects(state, visited, ...)
+end
+
+applyKnownStateToFrame = function(frame, state, visited)
 	if not frame or visited[frame] then return end
 	visited[frame] = true
 
@@ -1456,21 +1480,23 @@ local function applyKnownStateToFrame(frame, state, visited)
 	end
 
 	if frame.GetRegions then
-		local regions = { frame:GetRegions() }
-		for _, region in ipairs(regions) do
-			applyKnownStateToFrame(region, state, visited)
-		end
+		applyKnownStateToObjects(state, visited, frame:GetRegions())
 	end
 
 	if frame.GetChildren then
-		local children = { frame:GetChildren() }
-		for _, child in ipairs(children) do
-			applyKnownStateToFrame(child, state, visited)
-		end
+		applyKnownStateToObjects(state, visited, frame:GetChildren())
 	end
 end
+
+local function applyKnownStateToRoot(frame, state)
+	wipe(merchantKnownVisited)
+	applyKnownStateToFrame(frame, state, merchantKnownVisited)
+end
+
 local function setMerchantKnownIcon(itemButton, state)
 	if not itemButton then return end
+	if itemButton.__EnhanceQoLMerchantKnownState == state then return end
+	itemButton.__EnhanceQoLMerchantKnownState = state
 
 	if state then
 		if not itemButton.MerchantKnownIcon then
@@ -1501,10 +1527,10 @@ local function setMerchantKnownIcon(itemButton, state)
 			if nameRegion then applyKnownFontTint(nameRegion, true) end
 
 			local moneyFrame = parentFrame.MoneyFrame or (parentName and _G[parentName .. "MoneyFrame"])
-			if moneyFrame then applyKnownStateToFrame(moneyFrame, true, {}) end
+			if moneyFrame then applyKnownStateToRoot(moneyFrame, true) end
 
 			local altCurrencyFrame = parentFrame.AltCurrencyFrame or (parentName and _G[parentName .. "AltCurrencyFrame"])
-			if altCurrencyFrame then applyKnownStateToFrame(altCurrencyFrame, true, {}) end
+			if altCurrencyFrame then applyKnownStateToRoot(altCurrencyFrame, true) end
 		end
 	else
 		if itemButton.MerchantKnownIcon then itemButton.MerchantKnownIcon:Hide() end
@@ -1517,10 +1543,10 @@ local function setMerchantKnownIcon(itemButton, state)
 			if nameRegion then applyKnownFontTint(nameRegion, false) end
 
 			local moneyFrame = parentFrame.MoneyFrame or (parentName and _G[parentName .. "MoneyFrame"])
-			if moneyFrame then applyKnownStateToFrame(moneyFrame, false, {}) end
+			if moneyFrame then applyKnownStateToRoot(moneyFrame, false) end
 
 			local altCurrencyFrame = parentFrame.AltCurrencyFrame or (parentName and _G[parentName .. "AltCurrencyFrame"])
-			if altCurrencyFrame then applyKnownStateToFrame(altCurrencyFrame, false, {}) end
+			if altCurrencyFrame then applyKnownStateToRoot(altCurrencyFrame, false) end
 		end
 	end
 end
@@ -1790,7 +1816,34 @@ local function applyMerchantButtonInfo()
 end
 
 local merchantRefreshPending = false
+local merchantRefreshDeferredForAutoSell = false
+local durabilityUpdateDeferredForAutoSell = false
+local flushingDeferredAutoSellUpdates = false
+
+local function isVendorAutoSellInProgress()
+	local vendorFunctions = addon.Vendor and addon.Vendor.functions
+	return vendorFunctions and vendorFunctions.IsAutoSellInProgress and vendorFunctions.IsAutoSellInProgress() == true
+end
+
+local function isPaperDollFrameVisible()
+	return _G.PaperDollFrame and _G.PaperDollFrame:IsVisible()
+end
+
+requestDurabilityUpdate = function()
+	if not addon.db["showDurabilityOnCharframe"] then return end
+	if not isPaperDollFrameVisible() then return end
+	if not flushingDeferredAutoSellUpdates and isVendorAutoSellInProgress() then
+		durabilityUpdateDeferredForAutoSell = true
+		return
+	end
+	calculateDurability()
+end
+
 local function updateMerchantButtonInfo()
+	if not flushingDeferredAutoSellUpdates and isVendorAutoSellInProgress() then
+		merchantRefreshDeferredForAutoSell = true
+		return
+	end
 	if merchantRefreshPending then return end
 	merchantRefreshPending = true
 
@@ -1803,6 +1856,20 @@ local function updateMerchantButtonInfo()
 		merchantRefreshPending = false
 		applyMerchantButtonInfo()
 	end
+end
+
+function addon.functions.FlushDeferredItemInventoryAutoSellUpdates()
+	if flushingDeferredAutoSellUpdates then return end
+	if not merchantRefreshDeferredForAutoSell and not durabilityUpdateDeferredForAutoSell then return end
+
+	local refreshMerchant = merchantRefreshDeferredForAutoSell
+	local refreshDurability = durabilityUpdateDeferredForAutoSell
+	merchantRefreshDeferredForAutoSell = false
+	durabilityUpdateDeferredForAutoSell = false
+	flushingDeferredAutoSellUpdates = true
+	if refreshMerchant then updateMerchantButtonInfo() end
+	if refreshDurability then requestDurabilityUpdate() end
+	flushingDeferredAutoSellUpdates = false
 end
 
 local function updateBuybackButtonInfo()
@@ -2049,6 +2116,7 @@ function addon.functions.initItemInventory()
 
 			value.gems[i]:SetFrameStrata("DIALOG")
 			value.gems[i]:SetFrameLevel(value:GetFrameLevel() + 20)
+			value.gems[i]:EnableMouse(false)
 
 			value.gems[i]:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
 
@@ -2069,9 +2137,44 @@ local cInventory = addon.SettingsLayout.rootGENERAL
 
 local expandable = addon.functions.SettingsCreateExpandableSection(cInventory, {
 	name = L["ItemsInventory"],
+	newTagID = "BagsInventory",
 	expanded = false,
 	colorizeTitle = false,
 })
+addon.SettingsLayout.bagsInventorySection = expandable
+
+if addon.Bags then
+	addon.Bags.integrated = true
+	addon.functions.SettingsCreateCheckbox(cInventory, {
+		var = "enableBagsModule",
+		text = L["bagsModuleEnable"] or "Enable Bags module",
+		desc = L["bagsModuleEnableDesc"] or "Opt-in replacement for the default bag window. Disabling after it was enabled takes full effect after a UI reload.",
+		default = false,
+		parentSection = expandable,
+		get = function()
+			return addon.db and addon.db.enableBagsModule == true
+		end,
+		func = function(value)
+			addon.db = addon.db or {}
+			local wasEnabled = addon.db.enableBagsModule == true
+			local isEnabled = value == true
+			addon.db.enableBagsModule = isEnabled
+			if wasEnabled and not isEnabled then
+				addon.variables.requireReload = true
+				if addon.functions and addon.functions.checkReloadFrame then
+					addon.functions.checkReloadFrame()
+				end
+			end
+			if addon.Bags and addon.Bags.functions then
+				if isEnabled and addon.Bags.functions.Enable then
+					addon.Bags.functions.Enable()
+				elseif not isEnabled and addon.Bags.functions.Disable then
+					addon.Bags.functions.Disable()
+				end
+			end
+		end,
+	})
+end
 
 addon.functions.SettingsCreateHeadline(cInventory, BAGSLOT, { parentSection = expandable })
 
@@ -2454,12 +2557,12 @@ local eventHandlers = {
 		end
 	end,
 	["ENCHANT_SPELL_COMPLETED"] = function(arg1, arg2)
-		if PaperDollFrame:IsShown() and CharOpt("enchants") and arg1 == true and arg2 and arg2.equipmentSlotIndex then
+		if isPaperDollFrameVisible() and CharOpt("enchants") and arg1 == true and arg2 and arg2.equipmentSlotIndex then
 			C_Timer.After(1, function() setIlvlText(addon.variables.itemSlots[arg2.equipmentSlotIndex], arg2.equipmentSlotIndex) end)
 		end
 	end,
 	["GUILDBANK_UPDATE_MONEY"] = function()
-		if addon.db["showDurabilityOnCharframe"] then calculateDurability() end
+		requestDurabilityUpdate()
 	end,
 	["INSPECT_READY"] = function(arg1)
 		if AnyInspectEnabled() then onInspect(arg1) end
@@ -2470,33 +2573,33 @@ local eventHandlers = {
 		if itemButton then addon.functions.updateBank(itemButton, -1, arg1) end
 	end,
 	["PLAYER_DEAD"] = function()
-		if addon.db["showDurabilityOnCharframe"] then calculateDurability() end
+		requestDurabilityUpdate()
 	end,
 	["PLAYER_EQUIPMENT_CHANGED"] = function(arg1)
-		if addon.variables.itemSlots[arg1] and PaperDollFrame:IsShown() then
+		if addon.variables.itemSlots[arg1] and isPaperDollFrameVisible() then
 			if ItemInteractionFrame and ItemInteractionFrame:IsShown() then
 				C_Timer.After(0.4, function() setIlvlText(addon.variables.itemSlots[arg1], arg1) end)
 			else
 				setIlvlText(addon.variables.itemSlots[arg1], arg1)
 			end
 		end
-		if addon.db["showDurabilityOnCharframe"] then calculateDurability() end
+		requestDurabilityUpdate()
 	end,
 	["PLAYER_MONEY"] = function()
-		if addon.db["showDurabilityOnCharframe"] then calculateDurability() end
+		requestDurabilityUpdate()
 	end,
 	["PLAYER_REGEN_ENABLED"] = function()
-		if addon.db["showDurabilityOnCharframe"] then calculateDurability() end
-		if addon.variables and addon.variables.pendingCharFrameUpdate and _G.PaperDollFrame and _G.PaperDollFrame:IsShown() then
+		requestDurabilityUpdate()
+		if addon.variables and addon.variables.pendingCharFrameUpdate and isPaperDollFrameVisible() then
 			addon.variables.pendingCharFrameUpdate = nil
 			setCharFrame()
 		end
 	end,
 	["PLAYER_UNGHOST"] = function()
-		if addon.db["showDurabilityOnCharframe"] then calculateDurability() end
+		requestDurabilityUpdate()
 	end,
 	["SOCKET_INFO_UPDATE"] = function()
-		if PaperDollFrame:IsShown() and CharOpt("gems") then C_Timer.After(0.5, function() setCharFrame() end) end
+		if isPaperDollFrameVisible() and CharOpt("gems") then C_Timer.After(0.5, function() setCharFrame() end) end
 	end,
 }
 

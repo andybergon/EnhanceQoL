@@ -876,18 +876,6 @@ addon.variables.cvarOptions = {
 		description = addon.L["WholeChatWindowClickable"],
 		category = "cvarCategoryMovementInput",
 	},
-	["ShowClassColorInNameplate"] = {
-		trueValue = "1",
-		falseValue = "0",
-		description = addon.L["ShowClassColorInNameplate"],
-		category = "cvarCategoryDisplay",
-	},
-	["nameplateUseClassColorForFriendlyPlayerUnitNames"] = {
-		trueValue = "1",
-		falseValue = "0",
-		description = addon.L["ShowClassColorInNameplate"],
-		category = "cvarCategoryDisplay",
-	},
 	["raidFramesDisplayClassColor"] = {
 		trueValue = "1",
 		falseValue = "0",

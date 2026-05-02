@@ -1529,27 +1529,19 @@ local function shouldIgnoreFamilyForUnit(familyId, unit)
 	return isNpcUnit(unit)
 end
 
-local PLAYER_HELPFUL_FILTER = "HELPFUL|PLAYER"
-local PLAYER_HARMFUL_FILTER = "HARMFUL|PLAYER"
-local HELPFUL_FILTER = "HELPFUL"
-local HARMFUL_FILTER = "HARMFUL"
-local function isAuraFilteredByInstanceFilter(unit, aura, filter)
-	if unit == nil or unit == "" or aura == nil or aura.auraInstanceID == nil or filter == nil then return false end
-	return not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, filter)
-end
-
 local function isAuraFromPlayer(unit, aura, familyId, compiled)
 	if aura == nil then return false end
-	if not C_UnitAuras or not C_UnitAuras.IsAuraFilteredOutByInstanceID then return false end
+	local isHelpful = aura.isHelpful
+	if issecretvalue and issecretvalue(isHelpful) then return false end
+	if isHelpful ~= true then return false end
 	local familyKey = familyId and tostring(familyId) or nil
 	local family = familyKey and FAMILY_BY_ID[familyKey] or nil
 	if family and family.classToken ~= nil and not canPlayerProvideFamilyCached(familyKey) then return false end
-	local isHarmful = aura.isHarmful
-	if issecretvalue and issecretvalue(isHarmful) then return false end
 	if familyKey and compiled and compiled.familyScanAllCastersById and compiled.familyScanAllCastersById[familyKey] == true then
-		return isAuraFilteredByInstanceFilter(unit, aura, isHarmful and HARMFUL_FILTER or HELPFUL_FILTER)
+		return true
 	end
-	return isAuraFilteredByInstanceFilter(unit, aura, isHarmful and PLAYER_HARMFUL_FILTER or PLAYER_HELPFUL_FILTER)
+	if not (C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID and aura.auraInstanceID) then return false end
+	return not C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, aura.auraInstanceID, "HELPFUL|PLAYER")
 end
 
 local function getFamilyForAura(compiled, aura, unit)
@@ -2665,6 +2657,7 @@ function HB.UpdateFromAuras(btn, updateInfo, cache, changed, isFullUpdate, compi
 	end
 
 	local changedFamilies = applyDeltaToFamilyState(state, compiled, cache, updateInfo, unit)
+	if not next(changedFamilies) then return end
 	evaluateDeltaRulesAndGroups(state, compiled, changedFamilies, unit)
 	renderAll(btn, st, state, compiled, cfg, changedFamilies)
 end

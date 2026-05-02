@@ -1805,7 +1805,7 @@ function addon.MythicPlus.functions.InitDungeonPortal()
 				local resultID = self.resultID
 				if resultID then
 					local searchResultInfo = C_LFGList.GetSearchResultInfo(resultID)
-					if searchResultInfo and searchResultInfo.activityIDs and searchResultInfo.activityIDs[1] then
+					if searchResultInfo and searchResultInfo.activityIDs and not issecretvalue(searchResultInfo.activityIDs) and searchResultInfo.activityIDs[1] then
 						local mapData = C_LFGList.GetActivityInfoTable(searchResultInfo.activityIDs[1])
 						if mapData and mapIDInfo[mapData.mapID] then
 							selectedMapId = mapIDInfo[mapData.mapID]

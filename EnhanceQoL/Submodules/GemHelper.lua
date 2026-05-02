@@ -43,6 +43,10 @@ local trackedGemGroups = {
 	[240967] = "Diamond",
 	[240968] = "Diamond",
 	[240969] = "Diamond",
+	[240970] = "Diamond",
+	[240971] = "Diamond",
+	[240982] = "Diamond",
+	[240983] = "Diamond",
 
 	[240863] = "Amethyst",
 	[240864] = "Amethyst",

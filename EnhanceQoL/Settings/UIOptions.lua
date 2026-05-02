@@ -1580,11 +1580,6 @@ end
 local function createNameplatesCategory()
 	local category = addon.SettingsLayout.rootUI
 	local label = L["NameplatesAndNames"] or "Nameplates & Names"
-	local classColorCVar = "ShowClassColorInNameplate"
-	if GetBuildInfo then
-		local build = select(4, GetBuildInfo())
-		if build == 120001 then classColorCVar = "nameplateUseClassColorForFriendlyPlayerUnitNames" end
-	end
 
 	local expandable = addon.functions.SettingsCreateExpandableSection(category, {
 		name = label,
@@ -1595,14 +1590,6 @@ local function createNameplatesCategory()
 	addon.SettingsLayout.uiNameplatesExpandable = expandable
 
 	local nameplateData = {
-		{
-			var = "ShowClassColorInNameplate",
-			text = L["ShowClassColorInNameplate"],
-			get = function() return getCVarOptionState(classColorCVar) end,
-			func = function(value) setCVarOptionState(classColorCVar, value) end,
-			default = false,
-			parentSection = expandable,
-		},
 		{
 			var = "UnitNamePlayerGuild",
 			text = L["UnitNamePlayerGuild"],

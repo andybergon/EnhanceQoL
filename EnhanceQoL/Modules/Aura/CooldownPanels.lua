@@ -45,8 +45,10 @@ CooldownPanels.ENTRY_TYPE = {
 
 CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE = CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE or {
 	HIDE = "HIDE",
+	HIDE_DESATURATE_ACTIVE = "HIDE_DESATURATE_ACTIVE",
 	SHOW = "SHOW",
 	DESATURATE = "DESATURATE",
+	DESATURATE_ACTIVE = "DESATURATE_ACTIVE",
 }
 if CooldownPanels._eqolSpellCooldownIgnoreGCDSupported == nil then
 	-- TODO: Remove this pre-12.0.5 compatibility gate once 12.0.5+ is the minimum supported client.
@@ -332,8 +334,14 @@ curveAlpha:AddPoint(0.1, 0)
 function CooldownPanels:NormalizeCDMAuraAlwaysShowMode(value, fallback)
 	local mode = type(value) == "string" and string.upper(value) or nil
 	local values = self.CDM_AURA_ALWAYS_SHOW_MODE or {}
-	if mode == values.SHOW or mode == values.DESATURATE or mode == values.HIDE then return mode end
+	if mode == values.SHOW or mode == values.DESATURATE or mode == values.DESATURATE_ACTIVE or mode == values.HIDE or mode == values.HIDE_DESATURATE_ACTIVE then return mode end
 	return fallback or values.HIDE or "HIDE"
+end
+
+function CooldownPanels:IsCDMAuraAlwaysShowModeVisibleWhenInactive(value)
+	local values = self.CDM_AURA_ALWAYS_SHOW_MODE or {}
+	local mode = self:NormalizeCDMAuraAlwaysShowMode(value, values.HIDE or "HIDE")
+	return mode ~= (values.HIDE or "HIDE") and mode ~= (values.HIDE_DESATURATE_ACTIVE or "HIDE_DESATURATE_ACTIVE")
 end
 
 function CooldownPanels:GetCDMAuraAlwaysShowOptions()
@@ -344,12 +352,20 @@ function CooldownPanels:GetCDMAuraAlwaysShowOptions()
 			label = L["CooldownPanelCDMAuraAlwaysShowModeHide"] or "Only show when active",
 		},
 		{
+			value = values.HIDE_DESATURATE_ACTIVE or "HIDE_DESATURATE_ACTIVE",
+			label = L["CooldownPanelCDMAuraAlwaysShowModeHideDesaturateActive"] or "Only show when active (desaturated)",
+		},
+		{
 			value = values.SHOW or "SHOW",
 			label = L["Always show"] or (L["Always show"] or "Always show"),
 		},
 		{
 			value = values.DESATURATE or "DESATURATE",
 			label = L["CooldownPanelCDMAuraAlwaysShowModeDesaturate"] or "Always show (desaturate if inactive)",
+		},
+		{
+			value = values.DESATURATE_ACTIVE or "DESATURATE_ACTIVE",
+			label = L["CooldownPanelCDMAuraAlwaysShowModeDesaturateActive"] or "Always show (desaturate when active)",
 		},
 	}
 end
@@ -780,6 +796,7 @@ function CooldownPanels:InvalidateTalentChoiceSpellVariantGroups()
 	runtime.talentChoiceVariantGeneration = (runtime.talentChoiceVariantGeneration or 0) + 1
 	runtime.talentChoiceVariantContext = nil
 	runtime.talentChoiceSpellVariantGroupsLoadedByConfig = nil
+	runtime.activeTalentChoiceGroupsForSpellCache = nil
 	self.spellVariantGroupByID = self.staticSpellVariantGroupByID
 end
 
@@ -809,15 +826,32 @@ end
 function CooldownPanels:GetActiveTalentChoiceGroupsForSpell(spellId)
 	local numericID = tonumber(spellId)
 	if not numericID then return nil end
+	self.runtime = self.runtime or {}
+	local runtime = self.runtime
+	local generation = runtime.talentChoiceVariantGeneration or 0
+	local cache = runtime.activeTalentChoiceGroupsForSpellCache
+	if not cache or cache.generation ~= generation then
+		cache = { generation = generation }
+		runtime.activeTalentChoiceGroupsForSpellCache = cache
+	end
+	local cached = cache[numericID]
+	if cached ~= nil then return cached ~= false and cached or nil end
+
 	local ctx = self:GetActiveTalentChoiceVariantContext()
 	if not ctx then ctx = cdp.RUNTIME.EnsureTalentChoiceSpellVariantGroupsLoaded(self) end
-	if not (ctx and type(ctx.byID) == "table") then return nil end
+	if not (ctx and type(ctx.byID) == "table") then
+		cache[numericID] = false
+		return nil
+	end
 	local groups = ctx.byID[numericID]
 	local baseSpellID = getBaseSpellId(numericID)
 	local effectiveSpellID = getEffectiveSpellId(numericID)
 	if not groups and baseSpellID and baseSpellID ~= numericID then groups = ctx.byID[baseSpellID] end
 	if not groups and effectiveSpellID and effectiveSpellID ~= numericID and effectiveSpellID ~= baseSpellID then groups = ctx.byID[effectiveSpellID] end
-	if type(groups) ~= "table" then return nil end
+	if type(groups) ~= "table" then
+		cache[numericID] = false
+		return nil
+	end
 
 	local filtered = nil
 	for i = 1, #groups do
@@ -827,6 +861,7 @@ function CooldownPanels:GetActiveTalentChoiceGroupsForSpell(spellId)
 			filtered[#filtered + 1] = group
 		end
 	end
+	cache[numericID] = filtered or false
 	return filtered
 end
 
@@ -3244,6 +3279,14 @@ local function panelHasSpecFilter(panel)
 	return false
 end
 
+local function panelHasRuntimeEntries(panel)
+	if type(panel) ~= "table" or type(panel.entries) ~= "table" then return false end
+	for _, entry in pairs(panel.entries) do
+		if type(entry) == "table" then return true end
+	end
+	return false
+end
+
 panelAllowsSpec = function(panel)
 	if not panelHasSpecFilter(panel) then return true end
 	local specId = getPlayerSpecId()
@@ -4198,7 +4241,8 @@ function CooldownPanels:RebuildSpellIndex()
 		syncRootOrderIfDirty(root)
 		for _, panelId in ipairs(CooldownPanels.GetCachedPanelIds(root)) do
 			local panel = root.panels[panelId]
-			if panel and panel.enabled ~= false then
+			local hasRuntimeEntries = panelHasRuntimeEntries(panel)
+			if panel and panel.enabled ~= false and hasRuntimeEntries then
 				if panelHasSpecFilter(panel) then
 					local filter = panel.specFilter
 					for specId, bucket in pairs(enabledPanelsBySpec) do
@@ -4214,7 +4258,7 @@ function CooldownPanels:RebuildSpellIndex()
 					end
 				end
 			end
-			if panel and panel.enabled ~= false and panelAllowsSpec(panel) then
+			if panel and panel.enabled ~= false and hasRuntimeEntries and panelAllowsSpec(panel) then
 				enabledPanels[panelId] = true
 				enabledPanelIds[#enabledPanelIds + 1] = panelId
 				local layout = panel.layout
@@ -6279,9 +6323,14 @@ local function applyStateTexture(icon, data)
 	local texture = icon and icon.stateTexture or nil
 	local textureSecond = icon and icon.stateTextureSecond or nil
 	if not texture then return end
+	local desaturated = data and data.stateTextureDesaturated == true
 	if not (data and data.stateTextureShown == true and data.stateTextureType and data.stateTextureValue) then
+		if texture.SetDesaturated then texture:SetDesaturated(false) end
 		texture:Hide()
-		if textureSecond then textureSecond:Hide() end
+		if textureSecond then
+			if textureSecond.SetDesaturated then textureSecond:SetDesaturated(false) end
+			textureSecond:Hide()
+		end
 		return
 	end
 
@@ -6341,6 +6390,7 @@ local function applyStateTexture(icon, data)
 			region:SetTexture(fileID)
 			setRegionTexCoord(region, 0, 1, 0, 1, mirroredHorizontal, mirroredVertical)
 		end
+		if region.SetDesaturated then region:SetDesaturated(desaturated) end
 		if region.SetRotation then region:SetRotation(math.rad(angle)) end
 		region:Show()
 	end
@@ -6354,7 +6404,10 @@ local function applyStateTexture(icon, data)
 		applyRegion(textureSecond, halfX, halfY, secondMirrored, secondMirroredVertical)
 	else
 		applyRegion(texture, 0, 0, mirror, mirrorVertical)
-		if textureSecond then textureSecond:Hide() end
+		if textureSecond then
+			if textureSecond.SetDesaturated then textureSecond:SetDesaturated(false) end
+			textureSecond:Hide()
+		end
 	end
 end
 
@@ -6716,6 +6769,7 @@ function cdp.RUNTIME.HasStateTextureChange(snapshot, data)
 		or snapshot.stateTextureMirrorVerticalSecond ~= (data.stateTextureMirrorVerticalSecond == true)
 		or snapshot.stateTextureSpacingX ~= data.stateTextureSpacingX
 		or snapshot.stateTextureSpacingY ~= data.stateTextureSpacingY
+		or snapshot.stateTextureDesaturated ~= (data.stateTextureDesaturated == true)
 end
 
 function cdp.RUNTIME.WriteStateTextureSnapshot(snapshot, data)
@@ -6735,6 +6789,7 @@ function cdp.RUNTIME.WriteStateTextureSnapshot(snapshot, data)
 	snapshot.stateTextureMirrorVerticalSecond = data.stateTextureMirrorVerticalSecond == true
 	snapshot.stateTextureSpacingX = data.stateTextureSpacingX
 	snapshot.stateTextureSpacingY = data.stateTextureSpacingY
+	snapshot.stateTextureDesaturated = data.stateTextureDesaturated == true
 end
 
 local function createIconFrame(parent)
@@ -7219,8 +7274,27 @@ local function updateCooldownDoneContext(cooldown, panelId, entryId, data)
 	cooldown._eqolGlowDuration = data.glowDuration
 end
 
+local function clearCooldownDoneState(cooldown)
+	if not cooldown then return end
+	cooldown._eqolSoundReady = nil
+	cooldown._eqolSoundReadyIgnoreGCD = nil
+	cooldown._eqolGlowReady = nil
+	if cooldown.SetScript then cooldown:SetScript("OnCooldownDone", nil) end
+end
+
+local function isCooldownPanelRuntimeActive(panelId)
+	local runtime = CooldownPanels and CooldownPanels.runtime
+	local enabledPanels = runtime and runtime.enabledPanels
+	if enabledPanels then return panelId and enabledPanels[panelId] == true end
+	return true
+end
+
 local function onCooldownDone(self)
 	if not self then return end
+	if not isCooldownPanelRuntimeActive(self._eqolPanelId) then
+		clearCooldownDoneState(self)
+		return
+	end
 
 	-- Never trigger sound/glow for GCD-only cooldowns.
 	local isGCD = self._eqolCooldownIsGCD == true
@@ -9786,8 +9860,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		if currentEntry.cdmAuraAlwaysShowUseGlobal == useGlobal then return end
 		if not useGlobal then currentEntry.cdmAuraAlwaysShowMode = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, currentEntry) end
 		currentEntry.cdmAuraAlwaysShowUseGlobal = useGlobal
-		currentEntry.alwaysShow = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, currentEntry)
-			~= (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+		currentEntry.alwaysShow = CooldownPanels:IsCDMAuraAlwaysShowModeVisibleWhenInactive(CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(layout, currentEntry))
 		refreshEntryViews()
 	end
 
@@ -9797,7 +9870,7 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 		local normalized = CooldownPanels:NormalizeCDMAuraAlwaysShowMode(value, CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
 		if currentEntry.cdmAuraAlwaysShowMode == normalized then return end
 		currentEntry.cdmAuraAlwaysShowMode = normalized
-		currentEntry.alwaysShow = normalized ~= (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+		currentEntry.alwaysShow = CooldownPanels:IsCDMAuraAlwaysShowModeVisibleWhenInactive(normalized)
 		refreshEntryViews()
 	end
 
@@ -14652,8 +14725,7 @@ local function refreshInspector(editor, panel, entry)
 		else
 			local alwaysShowChecked = effectiveType == "ITEM" and entry.alwaysShow ~= false
 			if effectiveType == "CDM_AURA" then
-				alwaysShowChecked = CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(panel and panel.layout or nil, entry)
-					~= (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE or "HIDE")
+				alwaysShowChecked = CooldownPanels:IsCDMAuraAlwaysShowModeVisibleWhenInactive(CooldownPanels:ResolveEntryCDMAuraAlwaysShowMode(panel and panel.layout or nil, entry))
 			end
 			inspector.cbAlwaysShow:SetChecked(alwaysShowChecked)
 		end
@@ -15473,10 +15545,12 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 		end
 		if frame.icons then
 			for i = 1, #frame.icons do
-				CooldownPanels:HideEditorGhostIcon(frame.icons[i])
-				if frame.icons[i].stateTexture then frame.icons[i].stateTexture:Hide() end
-				if frame.icons[i].stateTextureSecond then frame.icons[i].stateTextureSecond:Hide() end
-				setAssistedHighlight(frame.icons[i], false)
+				local icon = frame.icons[i]
+				cdp.RUNTIME.ClearIconSnapshot(icon)
+				CooldownPanels:HideEditorGhostIcon(icon)
+				if icon.stateTexture then icon.stateTexture:Hide() end
+				if icon.stateTextureSecond then icon.stateTextureSecond:Hide() end
+				setAssistedHighlight(icon, false)
 			end
 		end
 		ensureIconCount(frame, 0)
@@ -16026,7 +16100,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 					elseif resolvedType == "SPELL" then
 						data.stateTextureShown = procActive == true
 					elseif resolvedType == "CDM_AURA" then
-						data.stateTextureShown = cdmAuraData and cdmAuraData.active == true or false
+						data.stateTextureShown = cdmAuraData and cdmAuraData.show == true or false
 					end
 				end
 				data.powerInsufficient = powerInsufficient
@@ -16073,6 +16147,9 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				data.cdmAuraActive = cdmAuraData and cdmAuraData.active == true
 				data.cdmAuraInactiveDesaturate = cdmAuraData and cdmAuraData.inactiveDesaturate == true
 					or cdmAuraAlwaysShowMode == (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.DESATURATE or "DESATURATE")
+				data.cdmAuraActiveDesaturate = cdmAuraData and cdmAuraData.activeDesaturate == true
+					or cdmAuraAlwaysShowMode == (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.DESATURATE_ACTIVE or "DESATURATE_ACTIVE")
+					or cdmAuraAlwaysShowMode == (CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE and CooldownPanels.CDM_AURA_ALWAYS_SHOW_MODE.HIDE_DESATURATE_ACTIVE or "HIDE_DESATURATE_ACTIVE")
 				data.cdmAuraDurationObject = cdmAuraData and cdmAuraData.cooldownDurationObject or nil
 				if fixedGroupCenterGrowth and fixedGroup then
 					local centerList = fixedCenterGroupVisibleData[fixedGroup.id]
@@ -16392,6 +16469,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 
 			if data.emptyItem then desaturate = true end
 			if data.resolvedType == "CDM_AURA" and data.cdmAuraInactiveDesaturate == true and not cdmAuraActive and not cdmAuraDurationActive then desaturate = true end
+			if data.resolvedType == "CDM_AURA" and data.cdmAuraActiveDesaturate == true and cdmAuraActive then desaturate = true end
 
 			if not isSafeNumber(cooldownRate) then cooldownRate = 1 end
 			CooldownPanels.SetIconDesaturatedRuntime(icon.texture, desaturate, entryNoDesaturation)
@@ -16546,6 +16624,10 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				setExampleCooldown(icon.cooldown)
 				icon:SetAlpha(1)
 			end
+			if data.resolvedType == "CDM_AURA" and data.cdmAuraActiveDesaturate == true and cdmAuraActive then
+				desaturate = true
+				CooldownPanels.SetIconDesaturatedRuntime(icon.texture, true, entryNoDesaturation)
+			end
 			local cooldownDefaultFontPath, cooldownDefaultFontSize, cooldownDefaultFontStyle = cdp.RUNTIME.EnsureCooldownTextDefaults(icon)
 			if
 				data._eqolRuntimePlacementDirty
@@ -16610,6 +16692,7 @@ function CooldownPanels:UpdateRuntimeIcons(panelId)
 				end
 			end
 
+			data.stateTextureDesaturated = data.stateTextureShown == true and desaturate == true and entryNoDesaturation ~= true
 			if data._eqolRuntimePlacementDirty or cdp.RUNTIME.HasStateTextureChange(icon._eqolRuntimeSnapshot, data) then
 				applyStateTexture(icon, data)
 				cdp.RUNTIME.WriteStateTextureSnapshot(icon._eqolRuntimeSnapshot, data)
@@ -17127,6 +17210,12 @@ function CooldownPanels:RefreshPanel(panelId)
 		local frame = runtime and runtime.frame
 		if runtime then runtime.visibleCount = 0 end
 		if frame then
+			if frame.icons then
+				for i = 1, #frame.icons do
+					local cooldown = frame.icons[i] and frame.icons[i].cooldown
+					if cooldown then clearCooldownDoneState(cooldown) end
+				end
+			end
 			self:ApplyVisibilityDriverToFrame(frame, nil)
 			if InCombatLockdown and InCombatLockdown() then
 				self:UpdatePanelOpacity(panelId, 0)
@@ -19979,6 +20068,7 @@ function cdp.ENTRY.TryRefreshVisibleSpellEntry(panelId, entryId, mode)
 
 	local entry = panel.entries and panel.entries[entryId] or nil
 	if not entry then return false end
+	if entry.displayMode == "BAR" then return false end
 	local macro = entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
 	local baseSpellId = entry.type == "SPELL" and tonumber(entry.spellID) or (macro and macro.kind == "SPELL" and tonumber(macro.spellID)) or nil
 	if not baseSpellId then return false end
@@ -20067,6 +20157,7 @@ function cdp.ENTRY.TryRefreshVisibleItemEntry(panelId, entryId)
 	local data = icon and icon._eqolRuntimeData or nil
 	local entry = panel.entries and panel.entries[entryId] or nil
 	if not entry then return false end
+	if entry.displayMode == "BAR" then return false end
 	local macro = entry.type == "MACRO" and CooldownPanels.ResolveMacroEntry(entry) or nil
 	local resolvedType = (macro and macro.kind) or entry.type
 	if resolvedType ~= "ITEM" then return false end
@@ -20176,6 +20267,7 @@ function cdp.ENTRY.TryRefreshVisibleSlotEntry(panelId, entryId)
 	local data = icon and icon._eqolRuntimeData or nil
 	local entry = panel.entries and panel.entries[entryId] or nil
 	if not (entry and entry.type == "SLOT") then return false end
+	if entry.displayMode == "BAR" then return false end
 
 	local slotId = tonumber(entry.slotID)
 	if not slotId then return false end
@@ -20999,7 +21091,22 @@ function CooldownPanels:RefreshAllOverlayGlowStates(suppressRefresh)
 	if not runtime then return false end
 	runtime.overlayGlowSpells = runtime.overlayGlowSpells or {}
 	local overlayGlowSpells = runtime.overlayGlowSpells
-	local candidateIds, candidateSeen = {}, {}
+	local candidateIds = runtime.overlayGlowCandidateIds
+	if not candidateIds then
+		candidateIds = {}
+		runtime.overlayGlowCandidateIds = candidateIds
+	else
+		for i = 1, #candidateIds do
+			candidateIds[i] = nil
+		end
+	end
+	local candidateSeen = runtime.overlayGlowCandidateSeen
+	if not candidateSeen then
+		candidateSeen = {}
+		runtime.overlayGlowCandidateSeen = candidateSeen
+	else
+		wipe(candidateSeen)
+	end
 	local spellIndex = runtime.spellIndex
 	if spellIndex then
 		for spellId in pairs(spellIndex) do
@@ -21154,6 +21261,18 @@ CooldownPanels.UPDATE_FRAME_EVENTS = {
 	"CLIENT_SCENE_CLOSED",
 }
 
+CooldownPanels.UPDATE_FRAME_PASSIVE_EVENTS = {
+	"PLAYER_ENTERING_WORLD",
+	"PLAYER_LOGIN",
+	"ADDON_LOADED",
+	"SPELLS_CHANGED",
+	"ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
+	"ACTIVE_TALENT_GROUP_CHANGED",
+	"PLAYER_TALENT_UPDATE",
+	"TRAIT_CONFIG_UPDATED",
+	"TRAIT_CONFIG_LIST_UPDATED",
+}
+
 local function hasEnabledPanels()
 	local runtime = CooldownPanels and CooldownPanels.runtime
 	local enabledPanels = runtime and runtime.enabledPanels
@@ -21163,14 +21282,17 @@ end
 local function hasConfiguredEnabledPanels()
 	local root = ensureRoot()
 	if not root or not root.panels then return false end
+	local classSpecs = getPlayerClassSpecMap()
 	for _, panel in pairs(root.panels) do
-		if panel and panel.enabled ~= false then return true end
+		if panel and panel.enabled ~= false and panelHasRuntimeEntries(panel) and panelMatchesPlayerClass(panel, classSpecs) then return true end
 	end
 	return false
 end
 
-local function shouldEnableUpdateFrame()
-	return hasEnabledPanels() or hasConfiguredEnabledPanels()
+local function getUpdateFrameRegistrationMode()
+	if hasEnabledPanels() then return "active" end
+	if hasConfiguredEnabledPanels() then return "passive" end
+	return nil
 end
 
 CooldownPanels.RequestEnabledPanelRefreshes = function()
@@ -21275,28 +21397,44 @@ end
 
 function CooldownPanels.SetUpdateFrameEnabled(frame, enabled)
 	if not frame then return end
-	if enabled then
-		if frame._eqolEventsRegistered then return end
-		for _, event in ipairs(CooldownPanels.UPDATE_FRAME_EVENTS or {}) do
-			frame:RegisterEvent(event)
-		end
-		frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
-		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_STOP", "player")
-		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
-		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
-		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
-		-- frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
-		frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
-		frame:RegisterUnitEvent("UNIT_ENTERED_VEHICLE", "player")
-		frame:RegisterUnitEvent("UNIT_EXITED_VEHICLE", "player")
-		frame._eqolEventsRegistered = true
-		if updatePowerEventRegistration then updatePowerEventRegistration() end
-	else
-		if not frame._eqolEventsRegistered then return end
+	local mode = enabled
+	if mode == true then
+		mode = "active"
+	elseif mode == false then
+		mode = nil
+	end
+	if mode ~= "active" and mode ~= "passive" then mode = nil end
+	if frame._eqolEventMode == mode then return end
+
+	if frame._eqolEventsRegistered then
 		frame:UnregisterAllEvents()
 		frame._eqolEventsRegistered = false
+		local runtime = CooldownPanels.runtime
+		if runtime then runtime.powerEventRegistered = nil end
 	end
+
+	if mode then
+		local events = mode == "active" and CooldownPanels.UPDATE_FRAME_EVENTS or CooldownPanels.UPDATE_FRAME_PASSIVE_EVENTS
+		for _, event in ipairs(events or {}) do
+			frame:RegisterEvent(event)
+		end
+		frame:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
+		if mode == "active" then
+			frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+			-- frame:RegisterUnitEvent("UNIT_SPELLCAST_START", "player")
+			-- frame:RegisterUnitEvent("UNIT_SPELLCAST_STOP", "player")
+			-- frame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
+			-- frame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
+			-- frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
+			-- frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
+			frame:RegisterUnitEvent("UNIT_ENTERED_VEHICLE", "player")
+			frame:RegisterUnitEvent("UNIT_EXITED_VEHICLE", "player")
+		end
+		frame._eqolEventsRegistered = true
+		frame._eqolEventMode = mode
+		if mode == "active" and updatePowerEventRegistration then updatePowerEventRegistration() end
+	end
+	frame._eqolEventMode = mode
 end
 
 function CooldownPanels.IsAssistedCombatActionSlot(slot)
@@ -21309,7 +21447,7 @@ end
 function CooldownPanels:UpdateEventRegistration()
 	local frame = self.runtime and self.runtime.updateFrame
 	if not frame then return end
-	CooldownPanels.SetUpdateFrameEnabled(frame, shouldEnableUpdateFrame())
+	CooldownPanels.SetUpdateFrameEnabled(frame, getUpdateFrameRegistrationMode())
 end
 
 function CooldownPanels.EnsureUpdateFrame()
@@ -21500,30 +21638,29 @@ function CooldownPanels.EnsureUpdateFrame()
 			end
 			return
 		end
-		if event == "ACTIONBAR_HIDEGRID" then
-			Keybinds.RequestRefresh("Event:ACTIONBAR_HIDEGRID")
-			return
-		end
-		if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_PAGE_CHANGED" then
-			Keybinds.RequestRefresh("Event:" .. event)
-			return
-		end
-		if event == "UPDATE_MACROS" then
-			Keybinds.InvalidateCache()
-			if CooldownPanels.runtime then CooldownPanels.runtime.iconCache = nil end
-			CooldownPanels:InvalidateSpellQueryCaches()
-			updateItemCountCache()
-			CooldownPanels:RebuildSpellIndex()
-			CooldownPanels:RequestUpdate("Event:" .. event)
-			return
-		end
-		if event == "SPELLS_CHANGED" then
-			CooldownPanels:InvalidateTalentChoiceSpellVariantGroups()
-			CooldownPanels:InvalidateSpellQueryCaches()
-			if CooldownPanels.RefreshAllOverlayGlowStates then CooldownPanels:RefreshAllOverlayGlowStates() end
-			scheduleSpecAwareRebuild(event, false)
-			return
-		end
+			if event == "ACTIONBAR_HIDEGRID" then
+				Keybinds.RequestRefresh("Event:ACTIONBAR_HIDEGRID")
+				return
+			end
+			if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_PAGE_CHANGED" then
+				Keybinds.RequestRefresh("Event:" .. event)
+				return
+			end
+			if event == "UPDATE_MACROS" then
+				Keybinds.InvalidateCache()
+				if CooldownPanels.runtime then CooldownPanels.runtime.iconCache = nil end
+				CooldownPanels:InvalidateSpellQueryCaches()
+				updateItemCountCache()
+				CooldownPanels:RebuildSpellIndex()
+				CooldownPanels:RequestUpdate("Event:" .. event)
+				return
+			end
+			if event == "SPELLS_CHANGED" then
+				CooldownPanels:InvalidateSpellQueryCaches()
+				if CooldownPanels.RefreshAllOverlayGlowStates then CooldownPanels:RefreshAllOverlayGlowStates() end
+				scheduleSpecAwareRebuild(event, false)
+				return
+			end
 		if event == "PLAYER_SPECIALIZATION_CHANGED" then
 			local unit = ...
 			if unit and unit ~= "player" then return end
@@ -21637,7 +21774,7 @@ function CooldownPanels:RequestUpdate(cause)
 	end
 	local enabledPanels = self.runtime.enabledPanels
 	if not enabledPanels or not next(enabledPanels) then
-		self:RefreshAllPanels()
+		self:HideAllRuntimePanels()
 		return
 	end
 	if runtime.updateDispatching then

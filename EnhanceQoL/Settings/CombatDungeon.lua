@@ -1474,6 +1474,7 @@ data = {
 		var = "groupfinderAppText",
 		func = function(value)
 			addon.db["groupfinderAppText"] = value
+			if addon.functions.UpdateGroupFinderApplicantEventRegistration then addon.functions.UpdateGroupFinderApplicantEventRegistration() end
 			toggleGroupApplication(value)
 		end,
 		parentSection = sectionGroupFinder,
@@ -1528,7 +1529,10 @@ data = {
 	{
 		var = "lfgSortByRio",
 		text = L["lfgSortByRio"],
-		func = function(value) addon.db["lfgSortByRio"] = value end,
+		func = function(value)
+			addon.db["lfgSortByRio"] = value
+			if addon.functions.UpdateGroupFinderApplicantEventRegistration then addon.functions.UpdateGroupFinderApplicantEventRegistration() end
+		end,
 		parentSection = sectionGroupFinder,
 	},
 	{
@@ -1924,10 +1928,53 @@ addon.functions.SettingsCreateCheckbox(cChar, {
 
 ---- REGION END
 
+local frameLoad
+local lfgApplicantRefreshPending = false
+
+local function shouldRegisterGroupFinderApplicantEvent()
+	return addon.db and (addon.db["lfgSortByRio"] == true or addon.db["groupfinderAppText"] == true)
+end
+
+local function shouldRefreshLFGApplicantsForRioSort()
+	return PVEFrame
+		and PVEFrame:IsShown()
+		and addon.db
+		and addon.db["lfgSortByRio"] == true
+		and addon.functions
+		and addon.functions.isRestrictedContent
+		and not addon.functions.isRestrictedContent()
+		and C_LFGList
+		and C_LFGList.RefreshApplicants
+end
+
+local function requestLFGApplicantRefresh()
+	if not shouldRefreshLFGApplicantsForRioSort() then return end
+	if lfgApplicantRefreshPending then return end
+	lfgApplicantRefreshPending = true
+	C_Timer.After(0.15, function()
+		lfgApplicantRefreshPending = false
+		if shouldRefreshLFGApplicantsForRioSort() then C_LFGList.RefreshApplicants() end
+	end)
+end
+
+function addon.functions.UpdateGroupFinderApplicantEventRegistration()
+	if not frameLoad then return end
+	if shouldRegisterGroupFinderApplicantEvent() then
+		if not frameLoad._eqolLFGApplicantEventRegistered then
+			frameLoad:RegisterEvent("LFG_LIST_APPLICANT_UPDATED")
+			frameLoad._eqolLFGApplicantEventRegistered = true
+		end
+	elseif frameLoad._eqolLFGApplicantEventRegistered then
+		frameLoad:UnregisterEvent("LFG_LIST_APPLICANT_UPDATED")
+		frameLoad._eqolLFGApplicantEventRegistered = nil
+		lfgApplicantRefreshPending = false
+	end
+end
+
 local eventHandlers = {
 
 	["LFG_LIST_APPLICANT_UPDATED"] = function()
-		if PVEFrame:IsShown() and addon.db["lfgSortByRio"] and not addon.functions.isRestrictedContent() then C_LFGList.RefreshApplicants() end
+		requestLFGApplicantRefresh()
 		if InCombatLockdown() then return end
 		if addon.db["groupfinderAppText"] then toggleGroupApplication(true) end
 	end,
@@ -1968,7 +2015,7 @@ local eventHandlers = {
 
 local function registerEvents(frame)
 	for event in pairs(eventHandlers) do
-		frame:RegisterEvent(event)
+		if event ~= "LFG_LIST_APPLICANT_UPDATED" then frame:RegisterEvent(event) end
 	end
 end
 
@@ -1976,7 +2023,8 @@ local function eventHandler(self, event, ...)
 	if eventHandlers[event] then eventHandlers[event](...) end
 end
 
-local frameLoad = CreateFrame("Frame")
+frameLoad = CreateFrame("Frame")
 
 registerEvents(frameLoad)
+addon.functions.UpdateGroupFinderApplicantEventRegistration()
 frameLoad:SetScript("OnEvent", eventHandler)
