@@ -232,9 +232,9 @@ local hookedATT = false -- need to hook ATT because of the way the minimap butto
 
 hooksecurefunc("LFGListSearchEntry_OnClick", function(s, button)
 	local panel = LFGListFrame.SearchPanel
-	if button ~= "RightButton" and LFGListSearchPanelUtil_CanSelectResult(s.resultID) and panel.SignUpButton:IsEnabled() then
+	if button ~= "RightButton" and LFGListSearchPanelUtil_CanSelectResult(s.resultID) then
 		if panel.selectedResult ~= s.resultID then LFGListSearchPanel_SelectResult(panel, s.resultID) end
-		LFGListSearchPanel_SignUp(panel)
+		if panel.SignUpButton:IsEnabled() then LFGListSearchPanel_SignUp(panel) end
 	end
 end)
 
