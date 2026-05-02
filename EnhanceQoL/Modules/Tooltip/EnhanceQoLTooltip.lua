@@ -1369,9 +1369,39 @@ local function registerTooltipHooks()
 	-- widget renders correctly — only the final size arithmetic is suppressed.
 	if UIWidgetTemplateItemDisplayMixin and UIWidgetTemplateItemDisplayMixin.Setup then
 		local origItemSetup = UIWidgetTemplateItemDisplayMixin.Setup
+		local function makeSafeFontDimensionGetter(fontString, methodName)
+			if not fontString or not fontString[methodName] then return nil end
+			local original = fontString[methodName]
+			return function(self, ...)
+				local ok, value = pcall(original, self, ...)
+				if not ok or (issecretvalue and issecretvalue(value)) then return 0 end
+				return value or 0
+			end
+		end
+
 		UIWidgetTemplateItemDisplayMixin.Setup = function(self, ...)
+			local itemNameGetStringHeight = self.ItemName and self.ItemName.GetStringHeight
+			local itemNameGetStringWidth = self.ItemName and self.ItemName.GetStringWidth
+			local infoTextGetStringHeight = self.InfoText and self.InfoText.GetStringHeight
+			local infoTextGetStringWidth = self.InfoText and self.InfoText.GetStringWidth
+			if self.ItemName then
+				self.ItemName.GetStringHeight = makeSafeFontDimensionGetter(self.ItemName, "GetStringHeight")
+				self.ItemName.GetStringWidth = makeSafeFontDimensionGetter(self.ItemName, "GetStringWidth")
+			end
+			if self.InfoText then
+				self.InfoText.GetStringHeight = makeSafeFontDimensionGetter(self.InfoText, "GetStringHeight")
+				self.InfoText.GetStringWidth = makeSafeFontDimensionGetter(self.InfoText, "GetStringWidth")
+			end
 			local ok, err = pcall(origItemSetup, self, ...)
-			if not ok and type(err) == "string" and err:find("secret") then return end
+			if self.ItemName then
+				self.ItemName.GetStringHeight = itemNameGetStringHeight
+				self.ItemName.GetStringWidth = itemNameGetStringWidth
+			end
+			if self.InfoText then
+				self.InfoText.GetStringHeight = infoTextGetStringHeight
+				self.InfoText.GetStringWidth = infoTextGetStringWidth
+			end
+			if not ok and tostring(err):find("secret") then return end
 			if not ok then error(err, 0) end
 		end
 	end

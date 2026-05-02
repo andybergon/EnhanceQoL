@@ -230,11 +230,48 @@ addon.functions.RefreshAllActionBarAnchors = RefreshAllActionBarAnchors
 -- localeadditions
 local hookedATT = false -- need to hook ATT because of the way the minimap button is created
 
+local function isLFGApplicationRequeueable(status)
+	return status == "declined" or status == "declined_full" or status == "timedout" or status == "cancelled"
+end
+
+local function retryLFGSignup(panel, resultID, attemptsLeft)
+	if not panel or not panel:IsShown() then return end
+	if LFGListSearchPanelUtil_CanSelectResult(resultID) then
+		if panel.selectedResult ~= resultID then LFGListSearchPanel_SelectResult(panel, resultID) end
+	end
+	if panel.selectedResult == resultID and panel.SignUpButton:IsEnabled() then
+		LFGListSearchPanel_SignUp(panel)
+	elseif attemptsLeft and attemptsLeft > 0 then
+		C_Timer.After(0.1, function() retryLFGSignup(panel, resultID, attemptsLeft - 1) end)
+	end
+end
+
+local function refreshLFGSearchPanel(panel)
+	if not panel or not panel:IsShown() then return end
+	if panel.SearchButton and panel.SearchButton.Click then
+		panel.SearchButton:Click()
+	elseif type(LFGListSearchPanel_DoSearch) == "function" then
+		LFGListSearchPanel_DoSearch(panel)
+	end
+end
+
 hooksecurefunc("LFGListSearchEntry_OnClick", function(s, button)
 	if addon.functions.isRestrictedContent(true) then return end
 	local panel = LFGListFrame.SearchPanel
-	if button ~= "RightButton" and LFGListSearchPanelUtil_CanSelectResult(s.resultID) then
-		if panel.selectedResult ~= s.resultID then LFGListSearchPanel_SelectResult(panel, s.resultID) end
+	if button == "RightButton" or not s.resultID then return end
+
+	local _, appStatus, pendingStatus = C_LFGList.GetApplicationInfo(s.resultID)
+	local requeueApplication = isLFGApplicationRequeueable(appStatus) and not pendingStatus
+	if not requeueApplication and not LFGListSearchPanelUtil_CanSelectResult(s.resultID) then return end
+
+	if panel.selectedResult ~= s.resultID then LFGListSearchPanel_SelectResult(panel, s.resultID) end
+	if requeueApplication then
+		local resultID = s.resultID
+		if C_LFGList.CancelApplication then C_LFGList.CancelApplication(resultID) end
+		refreshLFGSearchPanel(panel)
+		retryLFGSignup(panel, resultID, 0)
+		C_Timer.After(0.1, function() retryLFGSignup(panel, resultID, 20) end)
+	else
 		if panel.SignUpButton:IsEnabled() then LFGListSearchPanel_SignUp(panel) end
 	end
 end)
