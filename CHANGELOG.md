@@ -1,15 +1,5 @@
 # Changelog
 
-## [10.12.1] - 2026-05-04
-
-### 🐛 Fixed
-
-- Bags: Fixed search updates doing too much background work, making bag search and item overlays respond more smoothly.
-- Group Frames / Healer Buff Placement: Fixed Priest healer buff availability so Power Word: Shield, Prayer of Mending, and related Priest buffs are not restricted to a single healing specialization.
-- Group Frames / Blizzard Auras: Added a Dispel indicator mode option so Blizzard-rendered party and raid dispel indicators can show either only debuffs dispellable by the player or all dispel types.
-
----
-
 ## [10.12.0] - 2026-05-03
 
 ### ✨ Added
@@ -27,6 +17,9 @@
 - Bags: Fixed known-item highlights disappearing after search state changes.
 - Bags: Fixed manual item category assignment so moving an item to a new custom category now removes its old fixed assignment.
 - Mythic Plus / Talent Reminder: Delayed the zone-change talent check briefly so dungeon instance data can settle before showing missing talent loadout warnings.
+- Bags: Fixed search updates doing too much background work, making bag search and item overlays respond more smoothly.
+- Group Frames / Healer Buff Placement: Fixed Priest healer buff availability so Power Word: Shield, Prayer of Mending, and related Priest buffs are not restricted to a single healing specialization.
+- Group Frames / Blizzard Auras: Added a Dispel indicator mode option so Blizzard-rendered party and raid dispel indicators can show either only debuffs dispellable by the player or all dispel types.
 
 ---
 
