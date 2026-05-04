@@ -3063,6 +3063,24 @@ local function getFreeSlotRenderSignature(freeSlotGroup)
 	)
 end
 
+function Bags.functions.GetWarbandItemButtonSkinSignature()
+	return state.currentSkinSignature or (addon.GetSkinSignature and addon.GetSkinSignature()) or false
+end
+
+function Bags.functions.ApplyWarbandItemButtonSkinIfNeeded(button, quality, force)
+	if not button or not addon.ApplyItemButtonSkin then
+		return
+	end
+
+	local skinSignature = Bags.functions.GetWarbandItemButtonSkinSignature()
+	if not force and button._bagsAppliedSkinSignature == skinSignature then
+		return
+	end
+
+	addon.ApplyItemButtonSkin(button, quality)
+	button._bagsAppliedSkinSignature = skinSignature
+end
+
 local function updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate)
 	if not button then
 		return
@@ -3128,9 +3146,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		if not button:IsShown() then
 			button:Show()
 		end
-		if addon.ApplyItemButtonSkin then
-			addon.ApplyItemButtonSkin(button, quality)
-		end
+		Bags.functions.ApplyWarbandItemButtonSkinIfNeeded(button, quality)
 		applyConfiguredOverlayAnchors(button, overlayRuntime)
 		updateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
 		updateBindStatusOverlay(button, bagID, slotID, info, overlayRuntime)
@@ -3180,9 +3196,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 
 	button._bagsWarbandHasPendingRenderTexture = true
 	button._bagsWarbandPendingRenderTexture = texture
-	if addon.ApplyItemButtonSkin then
-		addon.ApplyItemButtonSkin(button, quality)
-	end
+	Bags.functions.ApplyWarbandItemButtonSkinIfNeeded(button, quality, true)
 	if Bags.functions.ApplyRecipeUsabilityVisual then
 		Bags.functions.ApplyRecipeUsabilityVisual(button, isUnusableRecipe)
 	end
@@ -4433,6 +4447,26 @@ end
 
 Bags.functions.RequestWarbandBankLayoutUpdate = Bags.functions.RequestBankLayoutUpdate
 
+function Bags.functions.RefreshWarbandBankSearchState()
+	if not state.frame or not state.frame:IsShown() then
+		return
+	end
+
+	local buttons = state.buttons or {}
+	for index = 1, state.currentLayoutCount or 0 do
+		local button = buttons[index]
+		if button and button:IsShown() then
+			local bagID = button:GetBagID()
+			local slotID = button:GetID()
+			local info = C_Container.GetContainerItemInfo(bagID, slotID)
+			local isFiltered = info and info.isFiltered
+			if button._bagsWarbandRenderFiltered ~= isFiltered then
+				updateButtonSearchState(button, isFiltered)
+			end
+		end
+	end
+end
+
 function Bags.functions.HideBankFrame()
 	if state.frame then
 		state.frame:Hide()
@@ -4500,7 +4534,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 			scheduleUpdate(true, false)
 		end
 	elseif event == "INVENTORY_SEARCH_UPDATE" then
-		scheduleUpdate(true, false)
+		if Bags.functions.RefreshWarbandBankSearchState then
+			Bags.functions.RefreshWarbandBankSearchState()
+		end
 	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
 		clearTooltipDerivedItemFlagsCache()
 		scheduleUpdate(true, false)

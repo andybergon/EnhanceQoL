@@ -146,6 +146,7 @@ end
 
 local function hideSellDestroyOverlays(itemButton)
 	if not itemButton then return end
+	itemButton._enhanceQoLVendorOverlayKind = nil
 	if itemButton.ItemMarkSell then itemButton.ItemMarkSell:Hide() end
 	if itemButton.SellOverlay then itemButton.SellOverlay:Hide() end
 	if itemButton.ItemMarkDestroy then itemButton.ItemMarkDestroy:Hide() end
@@ -611,9 +612,14 @@ applySellDestroyOverlayToItemButton = function(itemButton, overlaySell, overlayD
 	local isDestroy = destroyMarkLookup[key]
 	local showSell = overlaySell and sellMarkLookup[key] and not isDestroy
 	local showDestroy = overlayDestroy and isDestroy
+	local overlayKind = showDestroy and "destroy" or (showSell and "sell" or nil)
 	local matchesSearch = itemButtonMatchesSearch(itemButton)
 	local useBaganatorCornerIcons = itemButton.BGR ~= nil and isBaganatorCornerWidgetActive()
-	local hasDefaultJunkMark = itemButtonHasDefaultJunkMark(itemButton, bag, slot)
+	local hasDefaultJunkMark = false
+	if showSell and not useBaganatorCornerIcons then
+		hasDefaultJunkMark = itemButtonHasDefaultJunkMark(itemButton, bag, slot)
+	end
+	itemButton._enhanceQoLVendorOverlayKind = overlayKind
 
 	if showSell then
 		if not itemButton.SellOverlay then
@@ -692,6 +698,52 @@ applySellDestroyOverlayToItemButton = function(itemButton, overlaySell, overlayD
 	end
 end
 
+local function refreshSellDestroyOverlaySearchState(itemButton)
+	if not itemButton then return end
+	local overlayKind = itemButton._enhanceQoLVendorOverlayKind
+	if not overlayKind then
+		if itemButton.SellOverlay then itemButton.SellOverlay:Hide() end
+		if itemButton.DestroyOverlay then itemButton.DestroyOverlay:Hide() end
+		return
+	end
+
+	local matchesSearch = itemButtonMatchesSearch(itemButton)
+	local highContrast = addon.db and addon.db["vendorShowSellHighContrast"]
+
+	if overlayKind == "sell" then
+		if itemButton.ItemMarkSell then itemButton.ItemMarkSell:SetAlpha(matchesSearch and 1 or 0.1) end
+		if itemButton.SellOverlay then
+			if highContrast and matchesSearch then
+				itemButton.SellOverlay:Show()
+			else
+				itemButton.SellOverlay:Hide()
+			end
+		end
+		if itemButton.ItemMarkDestroy then itemButton.ItemMarkDestroy:Hide() end
+		if itemButton.DestroyOverlay then itemButton.DestroyOverlay:Hide() end
+	elseif overlayKind == "destroy" then
+		if itemButton.ItemMarkDestroy then itemButton.ItemMarkDestroy:SetAlpha(matchesSearch and 1 or 0.1) end
+		if itemButton.DestroyOverlay then
+			if highContrast and matchesSearch then
+				itemButton.DestroyOverlay:Show()
+			else
+				itemButton.DestroyOverlay:Hide()
+			end
+		end
+		if itemButton.ItemMarkSell then itemButton.ItemMarkSell:Hide() end
+		if itemButton.SellOverlay then itemButton.SellOverlay:Hide() end
+	else
+		hideSellDestroyOverlays(itemButton)
+	end
+end
+
+local function refreshSellDestroyOverlaySearchStateForFrame(frame)
+	if not frame or not frame:IsShown() then return end
+	for _, itemButton in frame:EnumerateValidItems() do
+		refreshSellDestroyOverlaySearchState(itemButton)
+	end
+end
+
 local function applySellDestroyOverlaysToFrame(frame)
 	if not frame or not frame:IsShown() then return end
 	local overlaySell = addon.db["vendorShowSellOverlay"]
@@ -710,17 +762,27 @@ applySellDestroyOverlaysToBaganatorButtons = function()
 	end
 end
 
+local function refreshSellDestroyOverlaySearchStateForBaganatorButtons()
+	for button in pairs(baganatorTrackedItemButtons) do
+		refreshSellDestroyOverlaySearchState(button)
+	end
+end
+
 function addon.Vendor.functions.ApplySellDestroyOverlayToItemButton(itemButton, overlaySell, overlayDestroy)
 	applySellDestroyOverlayToItemButton(itemButton, overlaySell, overlayDestroy)
+end
+
+function addon.Vendor.functions.RefreshSellDestroyOverlaySearchState(itemButton)
+	refreshSellDestroyOverlaySearchState(itemButton)
 end
 
 function addon.Vendor.functions.HideSellDestroyOverlays(itemButton)
 	hideSellDestroyOverlays(itemButton)
 end
 
-function addon.Vendor.functions.RefreshIntegratedBagsVendorMarks()
+function addon.Vendor.functions.RefreshIntegratedBagsVendorMarks(searchOnly)
 	if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
-		addon.Bags.functions.ApplyVendorMarks()
+		addon.Bags.functions.ApplyVendorMarks(nil, nil, searchOnly == true)
 	end
 end
 
@@ -758,7 +820,7 @@ local function hookBaganatorItemButton(itemButton)
 				applySellDestroyOverlayToItemButton(self)
 			end)
 		end
-		if itemButton.SetItemFiltered then hooksecurefunc(itemButton, "SetItemFiltered", function(self) applySellDestroyOverlayToItemButton(self) end) end
+		if itemButton.SetItemFiltered then hooksecurefunc(itemButton, "SetItemFiltered", function(self) refreshSellDestroyOverlaySearchState(self) end) end
 		if itemButton.HookScript then
 			if not itemButton.GetSlotAndBagID then itemButton:HookScript("OnClick", AltClickHook) end
 			itemButton:HookScript("OnShow", function(self)
@@ -1506,15 +1568,15 @@ local eventHandlers = {
 		end
 	end,
 	["INVENTORY_SEARCH_UPDATE"] = function()
-		applySellDestroyOverlaysToFrame(ContainerFrameCombinedBags)
+		refreshSellDestroyOverlaySearchStateForFrame(ContainerFrameCombinedBags)
 		local frames = ContainerFrameContainer and ContainerFrameContainer.ContainerFrames or {}
 		for _, frame in ipairs(frames) do
-			applySellDestroyOverlaysToFrame(frame)
+			refreshSellDestroyOverlaySearchStateForFrame(frame)
 		end
 		if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
-			addon.Bags.functions.ApplyVendorMarks()
+			addon.Bags.functions.ApplyVendorMarks(nil, nil, true)
 		end
-		applySellDestroyOverlaysToBaganatorButtons()
+		refreshSellDestroyOverlaySearchStateForBaganatorButtons()
 	end,
 	["PLAYER_REGEN_ENABLED"] = function()
 		if destroyState.pendingQueue then

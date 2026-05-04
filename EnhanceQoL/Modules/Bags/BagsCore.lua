@@ -3581,10 +3581,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		if not button:IsShown() then
 			button:Show()
 		end
-		if addon.ApplyItemButtonSkin then
-			addon.ApplyItemButtonSkin(button, quality)
-			button._bagsAppliedSkinSignature = getCurrentItemButtonSkinSignature()
-		end
+		applyItemButtonSkinIfNeeded(button, quality)
 		updateReagentBagVisuals(button)
 		applyConfiguredOverlayAnchors(button, overlayRuntime)
 		Core.UpdateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
@@ -6074,6 +6071,31 @@ local function refreshButtons()
 	return true
 end
 
+function Bags.functions.RefreshSearchState()
+	if not state.frame or not state.frame:IsShown() then
+		return
+	end
+
+	local vendorFunctions = addon.Vendor and addon.Vendor.functions or nil
+	local refreshVendorSearchState = vendorFunctions and vendorFunctions.RefreshSellDestroyOverlaySearchState or nil
+	local buttons = state.buttons or {}
+	for index = 1, state.currentLayoutCount or 0 do
+		local button = buttons[index]
+		if button and button:IsShown() then
+			local bagID = button:GetBagID()
+			local slotID = button:GetID()
+			local info = C_Container.GetContainerItemInfo(bagID, slotID)
+			local isFiltered = info and info.isFiltered
+			if button._bagsRenderFiltered ~= isFiltered then
+				updateButtonSearchState(button, isFiltered)
+			end
+			if refreshVendorSearchState then
+				refreshVendorSearchState(button)
+			end
+		end
+	end
+end
+
 function Bags.functions.PositionFrame()
 	if not state.frame or state.userMoved then
 		return
@@ -6248,20 +6270,23 @@ function Bags.functions.GetVendorDestroyButtonAnchor()
 	return footer or state.frame
 end
 
-function Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy)
+function Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy, searchOnly)
 	local vendorFunctions = addon.Vendor and addon.Vendor.functions or nil
 	if not vendorFunctions then
 		return
 	end
 
 	local applyMark = vendorFunctions.ApplySellDestroyOverlayToItemButton
+	local refreshSearchState = vendorFunctions.RefreshSellDestroyOverlaySearchState
 	local hideMark = vendorFunctions.HideSellDestroyOverlays
 	for index, button in ipairs(state.buttons or {}) do
 		if button and button:IsShown() and index <= (state.currentLayoutCount or 0) then
-			if applyMark then
+			if searchOnly and refreshSearchState then
+				refreshSearchState(button)
+			elseif applyMark then
 				applyMark(button, overlaySell, overlayDestroy)
 			end
-			if applyItemButtonSkinIfNeeded then
+			if not searchOnly and applyItemButtonSkinIfNeeded then
 				applyItemButtonSkinIfNeeded(button, button._bagsRenderQuality)
 			end
 		elseif button and hideMark then
@@ -6562,7 +6587,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 			scheduleUpdate(true, false)
 		end
 	elseif event == "INVENTORY_SEARCH_UPDATE" then
-		scheduleUpdate(true, false)
+		if Bags.functions.RefreshSearchState then
+			Bags.functions.RefreshSearchState()
+		end
 	elseif event == "MODIFIER_STATE_CHANGED" then
 		local key = ...
 		if key == "LALT" or key == "RALT" then
