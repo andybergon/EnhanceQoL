@@ -225,14 +225,13 @@ local FAMILY_DATA = {
 	{ id = "druid_lifebloom", classToken = "DRUID", spec = "Restoration", spellIds = { 33763 }, fallbackName = "Lifebloom" },
 	{ id = "druid_wild_growth", classToken = "DRUID", spec = "Restoration", spellIds = { 48438 }, fallbackName = "Wild Growth" },
 	{ id = "druid_germination", classToken = "DRUID", spec = "Restoration", spellIds = { 155777 }, fallbackName = "Germination" },
-	-- Discipline Priest
-	{ id = "priest_pw_shield", classToken = "PRIEST", spec = "Discipline", spellIds = { 17 }, fallbackName = "Power Word: Shield" },
-	{ id = "priest_atonement", classToken = "PRIEST", spec = "Discipline", spellIds = { 194384 }, fallbackName = "Atonement" },
-	{ id = "priest_void_shield", classToken = "PRIEST", spec = "Discipline", spellIds = { 1253593 }, fallbackName = "Void Shield" },
-	-- Holy Priest
-	{ id = "priest_renew", classToken = "PRIEST", spec = "Holy", spellIds = { 139 }, fallbackName = "Renew" },
-	{ id = "priest_prayer_of_mending", classToken = "PRIEST", spec = "Holy", spellIds = { 41635 }, fallbackName = "Prayer of Mending" },
-	{ id = "priest_echo_of_light", classToken = "PRIEST", spec = "Holy", spellIds = { 77489 }, fallbackName = "Echo of Light" },
+	-- Priest
+	{ id = "priest_pw_shield", classToken = "PRIEST", spellIds = { 17 }, fallbackName = "Power Word: Shield" },
+	{ id = "priest_atonement", classToken = "PRIEST", spellIds = { 194384 }, fallbackName = "Atonement" },
+	{ id = "priest_void_shield", classToken = "PRIEST", spellIds = { 1253593 }, fallbackName = "Void Shield" },
+	{ id = "priest_renew", classToken = "PRIEST", spellIds = { 139 }, fallbackName = "Renew" },
+	{ id = "priest_prayer_of_mending", classToken = "PRIEST", spellIds = { 41635 }, fallbackName = "Prayer of Mending" },
+	{ id = "priest_echo_of_light", classToken = "PRIEST", spellIds = { 77489 }, fallbackName = "Echo of Light" },
 	-- Mistweaver Monk
 	{ id = "monk_soothing_mist", classToken = "MONK", spec = "Mistweaver", spellIds = { 115175 }, fallbackName = "Soothing Mist" },
 	{ id = "monk_renewing_mist", classToken = "MONK", spec = "Mistweaver", spellIds = { 119611 }, fallbackName = "Renewing Mist" },
@@ -278,6 +277,10 @@ local PROVIDER_SPEC_IDS = {
 	PALADIN = { Holy = 65 },
 	PRIEST = { Discipline = 256, Holy = 257 },
 	SHAMAN = { Restoration = 264 },
+}
+
+local PROVIDER_CLASS_IGNORES_SPEC = {
+	PRIEST = true,
 }
 
 local function getPlayerClassToken()
@@ -328,7 +331,7 @@ local function canPlayerProvideFamily(familyId)
 	end
 
 	local familySpec = family.spec and tostring(family.spec) or nil
-	if familySpec and familySpec ~= "" then
+	if familySpec and familySpec ~= "" and not PROVIDER_CLASS_IGNORES_SPEC[familyClass] then
 		local classSpecMap = familyClass and PROVIDER_SPEC_IDS[familyClass] or nil
 		local requiredSpecId = classSpecMap and classSpecMap[familySpec] or nil
 		if requiredSpecId then
@@ -367,6 +370,8 @@ local function getPlayerFamilyProvisionMap()
 			local familyIdKey = tostring(familyId)
 			if tostring(family.classToken) ~= classToken then
 				map[familyIdKey] = false
+			elseif PROVIDER_CLASS_IGNORES_SPEC[classToken] then
+				map[familyIdKey] = true
 			else
 				local classSpec = family.spec and tostring(family.spec) or nil
 				if classSpec == nil or classSpec == "" then

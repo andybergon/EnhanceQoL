@@ -51,6 +51,8 @@ local GROUP_DEBUFF_FILTER_CROWD_CONTROL = "CROWD_CONTROL"
 local GROUP_DEBUFF_FILTER_IMPORTANT = "IMPORTANT"
 local GROUP_DEBUFF_FILTER_RAID = "RAID"
 local GROUP_DEBUFF_FILTER_RAID_IN_COMBAT = "RAID_IN_COMBAT"
+GF.BLIZZARD_DISPEL_MODE_BY_ME = "BY_ME"
+GF.BLIZZARD_DISPEL_MODE_ALL = "ALL"
 local groupDebuffFilterOptions = {
 	{ value = GROUP_DEBUFF_FILTER_ALL, label = L["UFGroupDebuffFilterAll"] or "All debuffs" },
 	{ value = GROUP_DEBUFF_FILTER_RAID, label = L["UFGroupDebuffFilterRaid"] or "Raid debuffs" },
@@ -58,6 +60,11 @@ local groupDebuffFilterOptions = {
 	{ value = GROUP_DEBUFF_FILTER_CROWD_CONTROL, label = L["UFGroupDebuffFilterCrowdControl"] or "Crowd control" },
 	{ value = "DISPEL", label = L["UFGroupDebuffFilterDispel"] or "Dispellable" },
 	{ value = GROUP_DEBUFF_FILTER_IMPORTANT, label = L["UFGroupDebuffFilterImportant"] or "Important spells" },
+}
+
+GF.blizzardDispelIndicatorModeOptions = {
+	{ value = GF.BLIZZARD_DISPEL_MODE_BY_ME, label = L["UFAuraRendererBlizzardDispelModeByMe"] or "Dispellable by me", text = L["UFAuraRendererBlizzardDispelModeByMe"] or "Dispellable by me" },
+	{ value = GF.BLIZZARD_DISPEL_MODE_ALL, label = L["UFAuraRendererBlizzardDispelModeAll"] or "All", text = L["UFAuraRendererBlizzardDispelModeAll"] or "All" },
 }
 
 GF.splitRoleViewerRoleOptions = {
@@ -8765,6 +8772,33 @@ function GF.IsBlizzardAuraCooldownTextEnabled(cfg, def)
 	return true
 end
 
+function GF.NormalizeBlizzardDispelIndicatorMode(value)
+	if value == nil then return nil end
+	local token = tostring(value):upper()
+	if token == GF.BLIZZARD_DISPEL_MODE_BY_ME or token == "BYME" or token == "ME" or token == "DISPELLABLE_BY_ME" or token == "DISPELLABLEBYME" or token == "1" then
+		return GF.BLIZZARD_DISPEL_MODE_BY_ME
+	end
+	if token == GF.BLIZZARD_DISPEL_MODE_ALL or token == "DISPLAY_ALL" or token == "DISPLAYALL" or token == "2" then return GF.BLIZZARD_DISPEL_MODE_ALL end
+	return nil
+end
+
+function GF.GetBlizzardDispelIndicatorMode(cfg, def)
+	local ac = cfg and cfg.auras
+	local mode = GF.NormalizeBlizzardDispelIndicatorMode(ac and ac.blizzardDispelIndicatorMode)
+	if mode then return mode end
+	local defAc = def and def.auras
+	mode = GF.NormalizeBlizzardDispelIndicatorMode(defAc and defAc.blizzardDispelIndicatorMode)
+	return mode or GF.BLIZZARD_DISPEL_MODE_ALL
+end
+
+function GF.GetBlizzardDispelIndicatorOption(cfg, def)
+	local mode = GF.GetBlizzardDispelIndicatorMode(cfg, def)
+	if mode == GF.BLIZZARD_DISPEL_MODE_BY_ME then
+		return (Enum and Enum.RaidDispelDisplayType and Enum.RaidDispelDisplayType.DispellableByMe) or 1
+	end
+	return (Enum and Enum.RaidDispelDisplayType and Enum.RaidDispelDisplayType.DisplayAll) or 2
+end
+
 function GF.IsBlizzardLargerRoleDebuffEnabled(cfg, def)
 	local debuff = cfg and cfg.auras and cfg.auras.debuff
 	if debuff and debuff.displayLargerRoleSpecificDebuffs ~= nil then return debuff.displayLargerRoleSpecificDebuffs == true end
@@ -8932,7 +8966,7 @@ function GF:UpdateBlizzardAuraContainer(self)
 		iconSize = iconSize,
 		bigDefensiveSize = (showBigDefensive and (externals.size or defExternals.size or iconSize)) or iconSize,
 		organizationType = ac.blizzardOrganizationType,
-		dispelIndicatorOption = 2,
+		dispelIndicatorOption = GF.GetBlizzardDispelIndicatorOption(cfg, def),
 		powerBarUsedHeight = cfg and cfg.powerHeight or 0,
 		groupType = (kind == "party") and 4 or 5,
 		displayLargerRoleSpecificDebuffs = GF.IsBlizzardLargerRoleDebuffEnabled(cfg, def),
@@ -16348,6 +16382,28 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 			isEnabled = isBlizzardRendererSelected,
 			isShown = isBlizzardRendererSelected,
+		},
+		{
+			name = L["UFAuraRendererBlizzardDispelMode"] or "Dispel indicator mode",
+			kind = SettingType.Dropdown,
+			field = "auraRendererBlizzardDispelMode",
+			parentId = "utility",
+			values = GF.blizzardDispelIndicatorModeOptions,
+			customDefaultText = GF.DropdownOptionLabel(GF.blizzardDispelIndicatorModeOptions, GF.GetBlizzardDispelIndicatorMode(getCfg(kind), DEFAULTS[kind] or EMPTY), L["UFAuraRendererBlizzardDispelModeAll"] or "All"),
+			get = function() return GF.GetBlizzardDispelIndicatorMode(getCfg(kind), DEFAULTS[kind] or EMPTY) end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.auras = cfg.auras or {}
+				cfg.auras.blizzardDispelIndicatorMode = GF.NormalizeBlizzardDispelIndicatorMode(value) or GF.BLIZZARD_DISPEL_MODE_ALL
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "auraRendererBlizzardDispelMode", cfg.auras.blizzardDispelIndicatorMode, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+				refreshAllAuras()
+				refreshAllPrivateAuras()
+			end,
+			generator = GF.DropdownRadioGenerator(GF.blizzardDispelIndicatorModeOptions),
+			isEnabled = function() return GF.IsBlizzardAuraRenderTypeEnabled(getCfg(kind), DEFAULTS[kind] or EMPTY, "dispels") end,
+			isShown = function() return GF.IsBlizzardAuraRenderTypeEnabled(getCfg(kind), DEFAULTS[kind] or EMPTY, "dispels") end,
 		},
 		{
 			name = L["Frame"] or "Frame",
@@ -28712,6 +28768,7 @@ local function applyEditModeData(kind, data)
 	if data.auraRendererBlizzardTypes ~= nil then ac.blizzardTypes = GF._sharedEdit.csm(data.auraRendererBlizzardTypes) end
 	if data.auraRendererBlizzardIconSize ~= nil then ac.blizzardIconSize = clampNumber(data.auraRendererBlizzardIconSize, 8, 120, ac.blizzardIconSize or 16) end
 	if data.auraRendererBlizzardCooldownText ~= nil then ac.blizzardShowCooldownText = data.auraRendererBlizzardCooldownText and true or false end
+	if data.auraRendererBlizzardDispelMode ~= nil then ac.blizzardDispelIndicatorMode = GF.NormalizeBlizzardDispelIndicatorMode(data.auraRendererBlizzardDispelMode) or GF.BLIZZARD_DISPEL_MODE_ALL end
 	if data.buffsEnabled ~= nil then ac.buff.enabled = data.buffsEnabled and true or false end
 	if data.buffAnchor ~= nil then ac.buff.anchorPoint = data.buffAnchor end
 	if data.buffAnchorOutside ~= nil then ac.buff.anchorOutside = data.buffAnchorOutside and true or false end
@@ -29531,6 +29588,7 @@ function GF:EnsureEditMode()
 				auraRendererBlizzardTypes = GF._sharedEdit.csm((ac and ac.blizzardTypes) or (defAuras and defAuras.blizzardTypes) or GF.BLIZZARD_AURA_RENDER_TYPES),
 				auraRendererBlizzardIconSize = GF.GetBlizzardAuraIconSize(cfg, def),
 				auraRendererBlizzardCooldownText = GF.IsBlizzardAuraCooldownTextEnabled(cfg, def),
+				auraRendererBlizzardDispelMode = GF.GetBlizzardDispelIndicatorMode(cfg, def),
 				privateAurasEnabled = (pa.enabled ~= nil) and (pa.enabled == true) or ((pa.enabled == nil) and defPrivate.enabled == true),
 				privateAurasAmount = paIcon.amount or defPrivateIcon.amount or 2,
 				privateAurasSize = paIcon.size or defPrivateIcon.size or 20,
