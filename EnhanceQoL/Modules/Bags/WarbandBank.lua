@@ -124,6 +124,8 @@ local ACTIVE_EVENTS = {
 	"BANK_TABS_CHANGED",
 	"BANK_TAB_SETTINGS_UPDATED",
 	"INVENTORY_SEARCH_UPDATE",
+	"TOYS_UPDATED",
+	"NEW_TOY_ADDED",
 	"PLAYER_LEVEL_UP",
 }
 
@@ -164,6 +166,7 @@ state.sectionHeaders = state.sectionHeaders or {}
 state.groupSpacers = state.groupSpacers or {}
 state.itemRuleDataCache = state.itemRuleDataCache or {}
 state.tooltipBindTypeCache = state.tooltipBindTypeCache or {}
+state.tooltipDerivedItemFlagsCache = state.tooltipDerivedItemFlagsCache or {}
 state.overlayBindStatusCache = state.overlayBindStatusCache or {}
 state.slotCategoryCache = state.slotCategoryCache or {}
 state.openSessionNewItems = state.openSessionNewItems or {}
@@ -190,6 +193,23 @@ local function getSettings()
 	addon.DB = addon.DB or {}
 	addon.DB.settings = addon.DB.settings or {}
 	return addon.DB.settings
+end
+
+local function wipeTable(tbl)
+	if not tbl then
+		return
+	end
+	if wipe then
+		wipe(tbl)
+		return
+	end
+	for key in pairs(tbl) do
+		tbl[key] = nil
+	end
+end
+
+local function clearTooltipDerivedItemFlagsCache()
+	wipeTable(state.tooltipDerivedItemFlagsCache)
 end
 
 local function refreshHeaderControls()
@@ -1635,9 +1655,9 @@ local function createRuleRuntimeContext(usage)
 		equippedItemLevels = {},
 		equippedItemEquipLocs = {},
 		tooltipBindTypes = {},
-		tooltipTransmogSets = {},
-		tooltipToys = {},
+		tooltipItemFlags = {},
 		persistentTooltipBindTypes = state.tooltipBindTypeCache,
+		persistentTooltipItemFlags = state.tooltipDerivedItemFlagsCache,
 		recommendationCache = {},
 		upgradeTrackCache = {},
 		categoryRulesRevision = getCurrentCategoryRulesRevision(),
@@ -1789,87 +1809,110 @@ local function getTooltipResolvedBindType(bagID, slotID, info, runtimeContext)
 	return resolvedBindType
 end
 
-local function isTooltipLearnTransmogSet(bagID, slotID, info, classID, subClassID, runtimeContext)
-	if tonumber(classID) ~= CONSUMABLE_CLASS_ID or tonumber(subClassID) ~= CONSUMABLE_OTHER_SUBCLASS_ID then
-		return false
-	end
-	if not runtimeContext or not GET_BAG_ITEM_TOOLTIP or bagID == nil or slotID == nil then
-		return false
+local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
+	if not GET_BAG_ITEM_TOOLTIP or bagID == nil or slotID == nil then
+		return nil
 	end
 
-	local runtimeBagCache = runtimeContext.tooltipTransmogSets[bagID]
-	local cachedValue = runtimeBagCache and runtimeBagCache[slotID]
-	if cachedValue ~= nil then
-		return cachedValue == true
+	local itemLink = info and info.hyperlink or false
+	local itemID = info and info.itemID or false
+	local stackCount = info and info.stackCount or false
+	local isBound = info and info.isBound or false
+	local quality = info and info.quality or false
+	local iconFileID = info and info.iconFileID or false
+	if not iconFileID and not itemLink and not itemID then
+		return nil
 	end
 
-	local isTransmogSet = false
-	local tooltipData = GET_BAG_ITEM_TOOLTIP(bagID, slotID)
-	for _, line in ipairs((tooltipData and tooltipData.lines) or {}) do
-		if line and line.type == LEARN_TRANSMOG_SET_TOOLTIP_LINE_TYPE then
-			isTransmogSet = true
-			break
+	local runtimeCache = runtimeContext and runtimeContext.tooltipItemFlags or nil
+	local runtimeBagCache = runtimeCache and runtimeCache[bagID] or nil
+	local cached = runtimeBagCache and runtimeBagCache[slotID] or nil
+	if cached
+		and cached.itemLink == itemLink
+		and cached.itemID == itemID
+		and cached.stackCount == stackCount
+		and cached.isBound == isBound
+		and cached.quality == quality
+		and cached.iconFileID == iconFileID
+	then
+		return cached
+	end
+
+	local persistentCache = (runtimeContext and runtimeContext.persistentTooltipItemFlags) or state.tooltipDerivedItemFlagsCache
+	local persistentBagCache = persistentCache and persistentCache[bagID] or nil
+	local persistentEntry = persistentBagCache and persistentBagCache[slotID] or nil
+	if persistentEntry
+		and persistentEntry.itemLink == itemLink
+		and persistentEntry.itemID == itemID
+		and persistentEntry.stackCount == stackCount
+		and persistentEntry.isBound == isBound
+		and persistentEntry.quality == quality
+		and persistentEntry.iconFileID == iconFileID
+	then
+		if runtimeCache then
+			if not runtimeBagCache then
+				runtimeBagCache = {}
+				runtimeCache[bagID] = runtimeBagCache
+			end
+			runtimeBagCache[slotID] = persistentEntry
 		end
+		return persistentEntry
 	end
 
-	if not runtimeBagCache then
-		runtimeBagCache = {}
-		runtimeContext.tooltipTransmogSets[bagID] = runtimeBagCache
-	end
-	runtimeBagCache[slotID] = isTransmogSet
-	return isTransmogSet
-end
-
-local function isTooltipToy(bagID, slotID, info, runtimeContext)
-	if not runtimeContext or not GET_BAG_ITEM_TOOLTIP or bagID == nil or slotID == nil or not _G.TOY then
-		return false
-	end
-
-	local runtimeBagCache = runtimeContext.tooltipToys[bagID]
-	local cachedValue = runtimeBagCache and runtimeBagCache[slotID]
-	if cachedValue ~= nil then
-		return cachedValue == true
-	end
-
-	local isToy = false
 	local tooltipData = GET_BAG_ITEM_TOOLTIP(bagID, slotID)
-	for _, line in ipairs((tooltipData and tooltipData.lines) or {}) do
-		if line and line.type == TOY_TOOLTIP_LINE_TYPE and line.leftText == _G.TOY then
-			isToy = true
-			break
-		end
+	local lines = tooltipData and tooltipData.lines
+	if not lines then
+		return nil
 	end
 
-	if not runtimeBagCache then
-		runtimeBagCache = {}
-		runtimeContext.tooltipToys[bagID] = runtimeBagCache
-	end
-	runtimeBagCache[slotID] = isToy
-	return isToy
-end
+	local flags = persistentEntry or {}
+	flags.itemLink = itemLink
+	flags.itemID = itemID
+	flags.stackCount = stackCount
+	flags.isBound = isBound
+	flags.quality = quality
+	flags.iconFileID = iconFileID
+	flags.isToy = false
+	flags.isKnownToy = false
+	flags.isTransmogSet = false
 
-local function isTooltipKnownToy(bagID, slotID, info)
-	if not GET_BAG_ITEM_TOOLTIP or bagID == nil or slotID == nil or not _G.TOY or not ITEM_SPELL_KNOWN then
-		return false
-	end
-
+	local toyText = _G.TOY
+	local knownText = ITEM_SPELL_KNOWN
 	local hasToyLine = false
 	local hasKnownLine = false
-	local tooltipData = GET_BAG_ITEM_TOOLTIP(bagID, slotID)
-	for _, line in ipairs((tooltipData and tooltipData.lines) or {}) do
+	for index = 1, #lines do
+		local line = lines[index]
 		if line then
-			if line.type == TOY_TOOLTIP_LINE_TYPE and line.leftText == _G.TOY then
+			local lineType = line.type
+			if lineType == LEARN_TRANSMOG_SET_TOOLTIP_LINE_TYPE then
+				flags.isTransmogSet = true
+			elseif toyText and lineType == TOY_TOOLTIP_LINE_TYPE and line.leftText == toyText then
 				hasToyLine = true
-			elseif line.type == KNOWN_SPELL_TOOLTIP_LINE_TYPE and line.leftText == ITEM_SPELL_KNOWN then
+			elseif knownText and lineType == KNOWN_SPELL_TOOLTIP_LINE_TYPE and line.leftText == knownText then
 				hasKnownLine = true
 			end
 		end
-		if hasToyLine and hasKnownLine then
-			return true
-		end
 	end
 
-	return false
+	flags.isToy = hasToyLine
+	flags.isKnownToy = hasToyLine and hasKnownLine or false
+
+	if persistentCache then
+		if not persistentBagCache then
+			persistentBagCache = {}
+			persistentCache[bagID] = persistentBagCache
+		end
+		persistentBagCache[slotID] = flags
+	end
+	if runtimeCache then
+		if not runtimeBagCache then
+			runtimeBagCache = {}
+			runtimeCache[bagID] = runtimeBagCache
+		end
+		runtimeBagCache[slotID] = flags
+	end
+
+	return flags
 end
 
 local function getUpgradeComparisonSlots(equipLoc, runtimeContext)
@@ -2475,14 +2518,22 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 					or false
 			end
 
+			local tooltipFlags
+			local needsTransmogTooltip = usage.isTransmogSet
+				and tonumber(classID) == CONSUMABLE_CLASS_ID
+				and tonumber(subClassID) == CONSUMABLE_OTHER_SUBCLASS_ID
+			if usage.isToy or needsTransmogTooltip then
+				tooltipFlags = getTooltipDerivedItemFlags(bagID, slotID, info, ruleRuntimeContext)
+			end
+
 			local isTransmogSet
-			if usage.isTransmogSet then
-				isTransmogSet = isTooltipLearnTransmogSet(bagID, slotID, info, classID, subClassID, ruleRuntimeContext)
+			if needsTransmogTooltip then
+				isTransmogSet = tooltipFlags and tooltipFlags.isTransmogSet or false
 			end
 
 			local isToy
 			if usage.isToy then
-				isToy = isTooltipToy(bagID, slotID, info, ruleRuntimeContext)
+				isToy = tooltipFlags and tooltipFlags.isToy or false
 			end
 
 			local resolvedBindType = ruleItemInfo and ruleItemInfo.bindType or nil
@@ -3043,7 +3094,8 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	local questID = questInfo and questInfo.questID or nil
 	local questIsActive = questInfo and questInfo.isActive or false
 	local isNewItem = isNewItemAtSlot(bagID, slotID)
-	local isKnownToy = texture and isTooltipKnownToy(bagID, slotID, info) or false
+	local tooltipFlags = texture and getTooltipDerivedItemFlags(bagID, slotID, info) or nil
+	local isKnownToy = tooltipFlags and tooltipFlags.isKnownToy or false
 	local isUnusableRecipe = (texture and Bags.functions.IsRecipeUnusableByPlayer and Bags.functions.IsRecipeUnusableByPlayer(itemID, itemLink) or false) or isKnownToy
 	local freeSlotGroup = mapping and mapping.freeSlotGroup or nil
 	local freeSlotSignature = getFreeSlotRenderSignature(freeSlotGroup)
@@ -4422,6 +4474,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 	if event == "PLAYER_REGEN_ENABLED" then
 		scheduleUpdate(state.pendingRefresh, state.pendingRebuild)
 	elseif event == "BANKFRAME_OPENED" then
+		clearTooltipDerivedItemFlagsCache()
 		detachDefaultBankFrames()
 		addon.UpdateWarbandGold()
 		local context = getVisibleContext()
@@ -4447,6 +4500,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 			scheduleUpdate(true, false)
 		end
 	elseif event == "INVENTORY_SEARCH_UPDATE" then
+		scheduleUpdate(true, false)
+	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
+		clearTooltipDerivedItemFlagsCache()
 		scheduleUpdate(true, false)
 	elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED" then
 		scheduleUpdate(true, false)
