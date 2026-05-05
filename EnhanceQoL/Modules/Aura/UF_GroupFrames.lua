@@ -972,7 +972,7 @@ local function applyBarBackdrop(bar, cfg, options)
 	bar._eqolBackdropR, bar._eqolBackdropG, bar._eqolBackdropB, bar._eqolBackdropA = r, g, b, a
 end
 
-function GF._applyOverlayHeight(bar, anchor, height, maxHeight)
+function GF._applyOverlayHeight(bar, anchor, height, maxHeight, anchorTop)
 	if not bar or not anchor then return end
 	bar:ClearAllPoints()
 	local desired = tonumber(height)
@@ -983,8 +983,13 @@ function GF._applyOverlayHeight(bar, anchor, height, maxHeight)
 	local limit = tonumber(maxHeight)
 	if not limit or limit <= 0 then limit = anchor.GetHeight and anchor:GetHeight() or 0 end
 	if limit and limit > 0 and desired > limit then desired = limit end
-	bar:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
-	bar:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
+	if anchorTop then
+		bar:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, 0)
+		bar:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", 0, 0)
+	else
+		bar:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
+		bar:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
+	end
 	if Pixel and Pixel.SetHeight then
 		Pixel.SetHeight(bar, desired)
 	else
@@ -6848,6 +6853,10 @@ function GF:LayoutButton(self)
 	local resolvedAbsorbHeight = GF._resolveRuntimeOverlayHeightSetting(hc.absorbOverlayHeight ~= nil and hc.absorbOverlayHeight or defH.absorbOverlayHeight, configuredOverlayFallback, healthHeight)
 	local resolvedHealAbsorbHeight =
 		GF._resolveRuntimeOverlayHeightSetting(hc.healAbsorbOverlayHeight ~= nil and hc.healAbsorbOverlayHeight or defH.healAbsorbOverlayHeight, configuredOverlayFallback, healthHeight)
+	local absorbAnchorTop = hc.absorbOverlayAnchorTop
+	if absorbAnchorTop == nil then absorbAnchorTop = defH.absorbOverlayAnchorTop == true end
+	local healAbsorbAnchorTop = hc.healAbsorbOverlayAnchorTop
+	if healAbsorbAnchorTop == nil then healAbsorbAnchorTop = defH.healAbsorbOverlayAnchorTop == true end
 	local overlayClip = GF._ensureOverlayClipFrame(st.health, "_eqolDirectOverlayClip")
 	if st.incomingHeal then
 		local incomingHealTextureKey = hc.incomingHealTexture or healthTexKey
@@ -6910,7 +6919,7 @@ function GF:LayoutButton(self)
 		local absorbClip = overlayClip
 		if absorbClip and st.absorb.GetParent and st.absorb:GetParent() ~= absorbClip then st.absorb:SetParent(absorbClip) end
 		local absorbHeight = resolvedAbsorbHeight
-		GF._applyOverlayHeight(st.absorb, absorbClip or st.health, absorbHeight, healthHeight)
+		GF._applyOverlayHeight(st.absorb, absorbClip or st.health, absorbHeight, healthHeight, absorbAnchorTop == true)
 		setFrameLevelAbove(st.absorb, st.health, 1)
 		if reverseAbsorb and st.absorb2 then
 			if st.absorb2.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -6928,10 +6937,10 @@ function GF:LayoutButton(self)
 					if UFHelper.setupAbsorbClampReverseAware then UFHelper.setupAbsorbClampReverseAware(st.health, st.absorb2) end
 				else
 					if UFHelper.setupAbsorbClamp then UFHelper.setupAbsorbClamp(st.health, st.absorb2) end
-					if not absorbDontOverflow and UFHelper.setupAbsorbOverShift then UFHelper.setupAbsorbOverShift(st.health, st.absorb, absorbHeight, healthHeight) end
+					if not absorbDontOverflow and UFHelper.setupAbsorbOverShift then UFHelper.setupAbsorbOverShift(st.health, st.absorb, absorbHeight, healthHeight, absorbAnchorTop == true) end
 				end
 				if overlayClip and st.absorb2.GetParent and st.absorb2:GetParent() ~= overlayClip then st.absorb2:SetParent(overlayClip) end
-				UFHelper.applyAbsorbClampLayout(st.absorb2, st.health, absorbHeight, healthHeight, reverseHealth)
+				UFHelper.applyAbsorbClampLayout(st.absorb2, st.health, absorbHeight, healthHeight, reverseHealth, absorbAnchorTop == true)
 				syncTextFrameLevels(st)
 			end
 			stabilizeStatusBarTexture(st.absorb2)
@@ -6973,7 +6982,7 @@ function GF:LayoutButton(self)
 		local healAbsorbClip = overlayClip
 		if healAbsorbClip and st.healAbsorb.GetParent and st.healAbsorb:GetParent() ~= healAbsorbClip then st.healAbsorb:SetParent(healAbsorbClip) end
 		local healAbsorbHeight = resolvedHealAbsorbHeight
-		GF._applyOverlayHeight(st.healAbsorb, healAbsorbClip or st.health, healAbsorbHeight, healthHeight)
+		GF._applyOverlayHeight(st.healAbsorb, healAbsorbClip or st.health, healAbsorbHeight, healthHeight, healAbsorbAnchorTop == true)
 		setFrameLevelAbove(st.healAbsorb, st.incomingHeal or st.absorb or st.health, 1)
 	end
 
@@ -14309,6 +14318,7 @@ GF._groupCopySectionRules = {
 		{ "health", "absorbReverseFill" },
 		{ "health", "absorbDontOverflowHealthBar" },
 		{ "health", "absorbOverlayHeight" },
+		{ "health", "absorbOverlayAnchorTop" },
 		{ "health", "absorbUseCustomColor" },
 		{ "health", "absorbColor" },
 		{ "health", "useAbsorbGlow" },
@@ -14320,6 +14330,7 @@ GF._groupCopySectionRules = {
 		{ "health", "healAbsorbReverseFill" },
 		{ "health", "healAbsorbDontOverflowHealthBar" },
 		{ "health", "healAbsorbOverlayHeight" },
+		{ "health", "healAbsorbOverlayAnchorTop" },
 		{ "health", "healAbsorbUseCustomColor" },
 		{ "health", "healAbsorbColor" },
 	},
@@ -15021,6 +15032,7 @@ function GF._copyUnitSourceSectionToGroup(sectionId, src, dest)
 			"absorbReverseFill",
 			"absorbDontOverflowHealthBar",
 			"absorbOverlayHeight",
+			"absorbOverlayAnchorTop",
 			"absorbUseCustomColor",
 			"absorbColor",
 			"useAbsorbGlow",
@@ -15043,6 +15055,7 @@ function GF._copyUnitSourceSectionToGroup(sectionId, src, dest)
 			"healAbsorbReverseFill",
 			"healAbsorbDontOverflowHealthBar",
 			"healAbsorbOverlayHeight",
+			"healAbsorbOverlayAnchorTop",
 			"healAbsorbUseCustomColor",
 			"healAbsorbColor",
 		}) do
@@ -20005,6 +20018,33 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 		},
 		{
+			name = L["Anchor overlay to top"] or "Anchor overlay to top",
+			kind = SettingType.Checkbox,
+			field = "absorbOverlayAnchorTop",
+			parentId = "absorb",
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
+				local value = hc.absorbOverlayAnchorTop
+				if value == nil then value = defH.absorbOverlayAnchorTop == true end
+				return value == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.absorbOverlayAnchorTop = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "absorbOverlayAnchorTop", cfg.health.absorbOverlayAnchorTop, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.absorbEnabled ~= false
+			end,
+		},
+		{
 			name = L["Custom absorb color"] or "Custom absorb color",
 			kind = SettingType.Checkbox,
 			field = "absorbUseCustomColor",
@@ -20273,6 +20313,33 @@ local function buildEditModeSettings(kind, editModeId)
 				v = GF._resolveOverlayHeightSetting(v, fallback)
 				cfg.health.healAbsorbOverlayHeight = v
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healAbsorbOverlayHeight", v, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.healAbsorbEnabled ~= false
+			end,
+		},
+		{
+			name = L["Anchor overlay to top"] or "Anchor overlay to top",
+			kind = SettingType.Checkbox,
+			field = "healAbsorbOverlayAnchorTop",
+			parentId = "healabsorb",
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
+				local value = hc.healAbsorbOverlayAnchorTop
+				if value == nil then value = defH.healAbsorbOverlayAnchorTop == true end
+				return value == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.healAbsorbOverlayAnchorTop = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healAbsorbOverlayAnchorTop", cfg.health.healAbsorbOverlayAnchorTop, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			isEnabled = function()
@@ -28250,6 +28317,10 @@ local function applyEditModeData(kind, data)
 		local fallback = GF._computeOverlayHeightFallback(cfg.height, cfg.powerHeight)
 		cfg.health.absorbOverlayHeight = GF._resolveOverlayHeightSetting(clampNumber(data.absorbOverlayHeight, 0, 300, 0), fallback)
 	end
+	if data.absorbOverlayAnchorTop ~= nil then
+		cfg.health = cfg.health or {}
+		cfg.health.absorbOverlayAnchorTop = data.absorbOverlayAnchorTop and true or false
+	end
 	if data.absorbUseCustomColor ~= nil then
 		cfg.health = cfg.health or {}
 		cfg.health.absorbUseCustomColor = data.absorbUseCustomColor and true or false
@@ -28290,6 +28361,10 @@ local function applyEditModeData(kind, data)
 		cfg.health = cfg.health or {}
 		local fallback = GF._computeOverlayHeightFallback(cfg.height, cfg.powerHeight)
 		cfg.health.healAbsorbOverlayHeight = GF._resolveOverlayHeightSetting(clampNumber(data.healAbsorbOverlayHeight, 0, 300, 0), fallback)
+	end
+	if data.healAbsorbOverlayAnchorTop ~= nil then
+		cfg.health = cfg.health or {}
+		cfg.health.healAbsorbOverlayAnchorTop = data.healAbsorbOverlayAnchorTop and true or false
 	end
 	if data.healAbsorbUseCustomColor ~= nil then
 		cfg.health = cfg.health or {}
@@ -29159,6 +29234,10 @@ function GF:EnsureEditMode()
 			local healAbsorbDontOverflowValue = hc.healAbsorbDontOverflowHealthBar
 			if healAbsorbDontOverflowValue == nil then healAbsorbDontOverflowValue = defH.healAbsorbDontOverflowHealthBar ~= false end
 			healAbsorbDontOverflowValue = healAbsorbDontOverflowValue == true and healAbsorbReverseValue ~= true
+			local absorbOverlayAnchorTopValue = hc.absorbOverlayAnchorTop
+			if absorbOverlayAnchorTopValue == nil then absorbOverlayAnchorTopValue = defH.absorbOverlayAnchorTop == true end
+			local healAbsorbOverlayAnchorTopValue = hc.healAbsorbOverlayAnchorTop
+			if healAbsorbOverlayAnchorTopValue == nil then healAbsorbOverlayAnchorTopValue = defH.healAbsorbOverlayAnchorTop == true end
 			local _, resolvedGrowth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
 			local defaults = {
 				point = cfg.point or "CENTER",
@@ -29331,6 +29410,7 @@ function GF:EnsureEditMode()
 				absorbReverse = absorbReverseValue == true,
 				absorbDontOverflow = absorbDontOverflowValue == true,
 				absorbOverlayHeight = absorbOverlayHeightValue,
+				absorbOverlayAnchorTop = absorbOverlayAnchorTopValue == true,
 				absorbUseCustomColor = (cfg.health and cfg.health.absorbUseCustomColor) == true,
 				absorbColor = (cfg.health and cfg.health.absorbColor) or { 0.85, 0.95, 1, 0.7 },
 				absorbGlow = absorbGlowValue == true,
@@ -29340,6 +29420,7 @@ function GF:EnsureEditMode()
 				healAbsorbReverse = healAbsorbReverseValue == true,
 				healAbsorbDontOverflow = healAbsorbDontOverflowValue == true,
 				healAbsorbOverlayHeight = healAbsorbOverlayHeightValue,
+				healAbsorbOverlayAnchorTop = healAbsorbOverlayAnchorTopValue == true,
 				healAbsorbUseCustomColor = (cfg.health and cfg.health.healAbsorbUseCustomColor) == true,
 				healAbsorbColor = (cfg.health and cfg.health.healAbsorbColor) or { 1, 0.3, 0.3, 0.7 },
 				nameColorMode = sc.nameColorMode or (((cfg.text and cfg.text.useClassColor) ~= false) and "CLASS" or "CUSTOM"),

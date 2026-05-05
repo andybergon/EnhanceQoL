@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.13.0] - 2026-05-05
+
+### ✨ Added
+
+- Unit Frames: Added top anchoring for reduced Absorb and Heal Absorb overlay heights so partial overlays can grow from either edge of the health bar.
+
+---
+
 ## [10.12.1] - 2026-05-05
 
 ### 🐛 Fixed

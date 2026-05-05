@@ -1621,6 +1621,7 @@ local defaults = {
 			showSampleAbsorb = false,
 			absorbTexture = "SOLID",
 			absorbReverseFill = false,
+			absorbOverlayAnchorTop = false,
 			incomingHealEnabled = false,
 			incomingHealColor = { 0.2, 0.85, 0.35, 0.45 },
 			showSampleIncomingHeal = false,
@@ -1631,6 +1632,7 @@ local defaults = {
 			showSampleHealAbsorb = false,
 			healAbsorbTexture = "SOLID",
 			healAbsorbReverseFill = true,
+			healAbsorbOverlayAnchorTop = false,
 			tempMaxHealthLossEnabled = true,
 			backdrop = { enabled = true, color = { 0, 0, 0, 0.6 }, texture = "DEFAULT", useClassColor = false, clampToFill = false },
 			textLeft = "PERCENT",
@@ -2732,6 +2734,7 @@ local function copySettings(fromUnit, toUnit, opts)
 			{ "health", "absorbReverseFill" },
 			{ "health", "absorbDontOverflowHealthBar" },
 			{ "health", "absorbOverlayHeight" },
+			{ "health", "absorbOverlayAnchorTop" },
 			{ "health", "absorbTexture" },
 		},
 		healAbsorb = {
@@ -2739,6 +2742,7 @@ local function copySettings(fromUnit, toUnit, opts)
 			{ "health", "healAbsorbUseCustomColor" },
 			{ "health", "healAbsorbReverseFill" },
 			{ "health", "healAbsorbOverlayHeight" },
+			{ "health", "healAbsorbOverlayAnchorTop" },
 			{ "health", "healAbsorbTexture" },
 		},
 		power = {
@@ -5817,7 +5821,7 @@ function UF._applyCastIconBorder(st, ccfg, defc)
 	end
 end
 
-local function applyOverlayHeight(bar, anchor, height, maxHeight)
+local function applyOverlayHeight(bar, anchor, height, maxHeight, anchorTop)
 	if not bar or not anchor then return end
 	bar:ClearAllPoints()
 	local desired = tonumber(height)
@@ -5828,8 +5832,13 @@ local function applyOverlayHeight(bar, anchor, height, maxHeight)
 	local limit = tonumber(maxHeight)
 	if not limit or limit <= 0 then limit = anchor.GetHeight and anchor:GetHeight() or 0 end
 	if limit and limit > 0 and desired > limit then desired = limit end
-	bar:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
-	bar:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
+	if anchorTop then
+		bar:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, 0)
+		bar:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", 0, 0)
+	else
+		bar:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
+		bar:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
+	end
 	bar:SetHeight(desired)
 end
 
@@ -9168,7 +9177,9 @@ local function applyBars(cfg, unit)
 		if overlayClip and st.absorb.GetParent and st.absorb:GetParent() ~= overlayClip then st.absorb:SetParent(overlayClip) end
 		local absorbHeight = hc.absorbOverlayHeight
 		if absorbHeight == nil then absorbHeight = defH.absorbOverlayHeight end
-		applyOverlayHeight(st.absorb, st.health, absorbHeight, healthHeight)
+		local absorbAnchorTop = hc.absorbOverlayAnchorTop
+		if absorbAnchorTop == nil then absorbAnchorTop = defH.absorbOverlayAnchorTop == true end
+		applyOverlayHeight(st.absorb, st.health, absorbHeight, healthHeight, absorbAnchorTop == true)
 		if reverseAbsorb and st.absorb2 then
 			st.absorb2:SetStatusBarTexture(UFHelper.resolveTexture(absorbTextureKey))
 			if st.absorb2.SetStatusBarDesaturated then st.absorb2:SetStatusBarDesaturated(false) end
@@ -9179,10 +9190,10 @@ local function applyBars(cfg, unit)
 					if UFHelper.setupAbsorbClampReverseAware then UFHelper.setupAbsorbClampReverseAware(st.health, st.absorb2) end
 				else
 					if UFHelper.setupAbsorbClamp then UFHelper.setupAbsorbClamp(st.health, st.absorb2) end
-					if not absorbDontOverflow and UFHelper.setupAbsorbOverShift then UFHelper.setupAbsorbOverShift(st.health, st.absorb, absorbHeight, healthHeight) end
+					if not absorbDontOverflow and UFHelper.setupAbsorbOverShift then UFHelper.setupAbsorbOverShift(st.health, st.absorb, absorbHeight, healthHeight, absorbAnchorTop == true) end
 				end
 				if overlayClip and st.absorb2.GetParent and st.absorb2:GetParent() ~= overlayClip then st.absorb2:SetParent(overlayClip) end
-				UFHelper.applyAbsorbClampLayout(st.absorb2, st.health, absorbHeight, healthHeight, reverseHealth)
+				UFHelper.applyAbsorbClampLayout(st.absorb2, st.health, absorbHeight, healthHeight, reverseHealth, absorbAnchorTop == true)
 				syncTextFrameLevels(st)
 			end
 			setFrameLevelAbove(st.absorb2, st.health, 1)
@@ -9222,7 +9233,9 @@ local function applyBars(cfg, unit)
 		if overlayClip and st.healAbsorb.GetParent and st.healAbsorb:GetParent() ~= overlayClip then st.healAbsorb:SetParent(overlayClip) end
 		local healAbsorbHeight = hc.healAbsorbOverlayHeight
 		if healAbsorbHeight == nil then healAbsorbHeight = defH.healAbsorbOverlayHeight end
-		applyOverlayHeight(st.healAbsorb, st.health, healAbsorbHeight, healthHeight)
+		local healAbsorbAnchorTop = hc.healAbsorbOverlayAnchorTop
+		if healAbsorbAnchorTop == nil then healAbsorbAnchorTop = defH.healAbsorbOverlayAnchorTop == true end
+		applyOverlayHeight(st.healAbsorb, st.health, healAbsorbHeight, healthHeight, healAbsorbAnchorTop == true)
 		local anchorBar = st.incomingHeal or st.absorb2 or st.absorb or st.health
 		setFrameLevelAbove(st.healAbsorb, anchorBar, 1)
 		st.healAbsorb:SetMinMaxValues(0, 1)

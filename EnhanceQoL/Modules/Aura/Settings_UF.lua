@@ -4940,6 +4940,13 @@ local function buildUnitSettings(unit)
 			refresh()
 		end, 0, "absorb", true, formatOverlayHeight)
 
+		list[#list + 1] = checkbox(L["Anchor overlay to top"] or "Anchor overlay to top", function()
+			return getValue(unit, { "health", "absorbOverlayAnchorTop" }, healthDef.absorbOverlayAnchorTop == true) == true
+		end, function(val)
+			setValue(unit, { "health", "absorbOverlayAnchorTop" }, val and true or false)
+			refresh()
+		end, healthDef.absorbOverlayAnchorTop == true, "absorb")
+
 		list[#list + 1] = checkbox(L["Show sample absorb"] or "Show sample absorb", function() return sampleAbsorb[unit] == true end, function(val)
 			sampleAbsorb[unit] = val and true or false
 			refresh()
@@ -5009,6 +5016,13 @@ local function buildUnitSettings(unit)
 			setValue(unit, { "health", "healAbsorbOverlayHeight" }, val > 0 and val or nil)
 			refresh()
 		end, 0, "healAbsorb", true, formatOverlayHeight)
+
+		list[#list + 1] = checkbox(L["Anchor overlay to top"] or "Anchor overlay to top", function()
+			return getValue(unit, { "health", "healAbsorbOverlayAnchorTop" }, healthDef.healAbsorbOverlayAnchorTop == true) == true
+		end, function(val)
+			setValue(unit, { "health", "healAbsorbOverlayAnchorTop" }, val and true or false)
+			refresh()
+		end, healthDef.healAbsorbOverlayAnchorTop == true, "healAbsorb")
 
 		list[#list + 1] = checkbox(L["Show sample heal absorb"] or "Show sample heal absorb", function() return sampleHealAbsorb[unit] == true end, function(val)
 			sampleHealAbsorb[unit] = val and true or false
