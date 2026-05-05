@@ -1811,6 +1811,18 @@ local function refreshOverlayCard(card)
 	if card.ColorModeLabel then
 		card.ColorModeLabel:SetAlpha(isEnabled and 1 or 0.45)
 	end
+	if card.DisplayModeButton then
+		local displayMode = addon.GetOverlayElementDisplayMode and addon.GetOverlayElementDisplayMode(card.Definition.id) or card.Definition.defaultDisplayMode or "icon"
+		card.DisplayModeButton:SetText(getOptionLabel(
+			addon.GetOverlayElementDisplayModeOptions and addon.GetOverlayElementDisplayModeOptions(card.Definition.id) or {},
+			displayMode,
+			L["settingsOverlayDisplayModeLabel"] or "Display"
+		))
+		setButtonEnabledState(card.DisplayModeButton, isEnabled)
+	end
+	if card.DisplayModeLabel then
+		card.DisplayModeLabel:SetAlpha(isEnabled and 1 or 0.45)
+	end
 	if card.ColorSwatch then
 		local customColor = addon.GetOverlayElementCustomColor and addon.GetOverlayElementCustomColor(card.Definition.id) or { 1, 1, 1 }
 		card.ColorSwatch:SetColorRGB(customColor[1] or 1, customColor[2] or 1, customColor[3] or 1)
@@ -1841,6 +1853,9 @@ local function updateOverlayCardLayout(card)
 	local descriptionHeight = math.max(14, math.ceil((card.Description and card.Description:GetStringHeight()) or 0))
 	local trackRowCount = math.ceil(#(card.TrackButtons or {}) / 2)
 	local cardHeight = 208 + descriptionHeight
+	if card.DisplayModeButton then
+		cardHeight = cardHeight + 34
+	end
 	if card.ColorModeButton then
 		cardHeight = cardHeight + 34
 	end
@@ -1894,9 +1909,39 @@ local function createOverlayAnchorCard(parent, definition)
 	local anchorTopOffsetX = 4
 	local anchorTopOffsetY = -12
 
+	if definition.supportsDisplayMode then
+		local displayModeLabel = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		displayModeLabel:SetPoint("TOPLEFT", anchorTopRegion, "BOTTOMLEFT", anchorTopOffsetX, anchorTopOffsetY)
+		displayModeLabel:SetText(L["settingsOverlayDisplayModeLabel"] or "Display")
+		card.DisplayModeLabel = displayModeLabel
+
+		local displayModeButton = CreateFrame("Button", nil, card, "UIPanelButtonTemplate")
+		displayModeButton:SetSize(112, 22)
+		displayModeButton:SetPoint("LEFT", displayModeLabel, "RIGHT", 8, 0)
+		setButtonFontObject(displayModeButton, GameFontNormalSmall)
+		displayModeButton:SetScript("OnClick", function(self)
+			openSimpleRadioMenu(
+				self,
+				addon.GetOverlayElementDisplayModeOptions and addon.GetOverlayElementDisplayModeOptions(definition.id) or {},
+				addon.GetOverlayElementDisplayMode and addon.GetOverlayElementDisplayMode(definition.id) or definition.defaultDisplayMode,
+				function(value)
+					if addon.SetOverlayElementDisplayMode and addon.SetOverlayElementDisplayMode(definition.id, value) then
+						addon.RefreshSettingsFrame("overlays")
+						requestBagRefresh(false, true)
+					end
+				end
+			)
+		end)
+		card.DisplayModeButton = displayModeButton
+
+		anchorTopRegion = displayModeLabel
+		anchorTopOffsetX = 0
+		anchorTopOffsetY = -12
+	end
+
 	if definition.supportsColorMode then
 		local colorModeLabel = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		colorModeLabel:SetPoint("TOPLEFT", enabledCheck, "BOTTOMLEFT", 4, -12)
+		colorModeLabel:SetPoint("TOPLEFT", anchorTopRegion, "BOTTOMLEFT", anchorTopOffsetX, anchorTopOffsetY)
 		colorModeLabel:SetText(L["settingsOverlayColorModeLabel"] or "Item level color")
 		card.ColorModeLabel = colorModeLabel
 

@@ -3157,21 +3157,39 @@ end
 
 function addon.RemoveCustomCategoryNode(categoryID, nodeID)
 	local category = findCategoryByID(categoryID)
-	if not category or category.ruleTree.id == nodeID then
+	if not category or not category.ruleTree then
 		return false
 	end
 
-	local _, parentNode = findNodeRecursive(category.ruleTree, nodeID)
-	if not parentNode or parentNode.nodeType ~= "group" then
+	nodeID = tostring(nodeID or "")
+	if nodeID == "" then
 		return false
 	end
 
-	for index, child in ipairs(parentNode.children or {}) do
-		if child.id == nodeID then
-			table.remove(parentNode.children, index)
-			markCustomCategoryStateDirty()
-			return true
+	local function removeChildNode(parentNode)
+		if not parentNode or parentNode.nodeType ~= "group" then
+			return false
 		end
+
+		for index, child in ipairs(parentNode.children or {}) do
+			if tostring(child.id or "") == nodeID then
+				table.remove(parentNode.children, index)
+				return true
+			end
+		end
+
+		for _, child in ipairs(parentNode.children or {}) do
+			if child.nodeType == "group" and removeChildNode(child) then
+				return true
+			end
+		end
+
+		return false
+	end
+
+	if removeChildNode(category.ruleTree) then
+		markCustomCategoryStateDirty()
+		return true
 	end
 
 	return false

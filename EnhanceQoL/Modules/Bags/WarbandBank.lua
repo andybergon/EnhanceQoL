@@ -1087,6 +1087,10 @@ local function applyConfiguredItemButtonFonts(button, appearance, signature)
 		applyConfiguredFont(button.BindStatusText, math.max(8, overlayBaseSize - 2), "overlays")
 		button.BindStatusText:SetJustifyH("RIGHT")
 	end
+	if button.EquipmentSetText then
+		applyConfiguredFont(button.EquipmentSetText, math.max(8, overlayBaseSize - 2), "overlays")
+		button.EquipmentSetText:SetJustifyH("LEFT")
+	end
 	if button.Count then
 		applyConfiguredFont(button.Count, stackBaseSize, "stackCount")
 	end
@@ -1107,6 +1111,17 @@ local function applyConfiguredOverlayAnchors(button, overlayRuntime)
 	for _, entry in ipairs((overlayRuntime and overlayRuntime.entries) or {}) do
 		local region = entry.frameKey and button[entry.frameKey]
 		local anchorInfo = entry.anchorInfo
+		if region and anchorInfo then
+			region:ClearAllPoints()
+			region:SetPoint(anchorInfo.point, button, anchorInfo.relativePoint, anchorInfo.x, anchorInfo.y)
+			if region.SetJustifyH and anchorInfo.justifyH then
+				region:SetJustifyH(anchorInfo.justifyH)
+			end
+			if region.SetJustifyV and anchorInfo.justifyV then
+				region:SetJustifyV(anchorInfo.justifyV)
+			end
+		end
+		region = entry.textFrameKey and button[entry.textFrameKey]
 		if region and anchorInfo then
 			region:ClearAllPoints()
 			region:SetPoint(anchorInfo.point, button, anchorInfo.relativePoint, anchorInfo.x, anchorInfo.y)
@@ -1442,30 +1457,38 @@ local function getEquipmentSetOverlayTexture(bagID, slotID)
 end
 
 local function updateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
-	if not button or not button.EquipmentSetIcon then
+	if not button or not button.EquipmentSetIcon or not button.EquipmentSetText then
 		return
 	end
 
 	local icon = button.EquipmentSetIcon
+	local text = button.EquipmentSetText
 	local overlayEntry = overlayRuntime and overlayRuntime.byID and overlayRuntime.byID.equipmentSet or nil
 	local overlayVersion = overlayRuntime and overlayRuntime.version or 0
+	local displayMode = overlayEntry and overlayEntry.displayMode or "icon"
 	local itemLink = info and info.hyperlink or nil
 	local itemID = info and info.itemID or nil
-	local evalKey = string.format("%s:%s:%s:%s", tostring(bagID), tostring(slotID), tostring(itemLink or itemID or 0), tostring(overlayVersion))
+	local evalKey = string.format("%s:%s:%s:%s:%s", tostring(bagID), tostring(slotID), tostring(itemLink or itemID or 0), tostring(overlayVersion), tostring(displayMode))
 
 	if not (overlayEntry and overlayEntry.enabled) then
 		hideButtonOverlayRegion(button, icon, "_bagsWarbandEquipmentSetEvalKey", "hidden:" .. evalKey)
+		text:SetText("")
+		text:Hide()
 		return
 	end
 
 	if not itemLink and not itemID then
 		hideButtonOverlayRegion(button, icon, "_bagsWarbandEquipmentSetEvalKey", "empty:" .. evalKey)
+		text:SetText("")
+		text:Hide()
 		return
 	end
 
 	local texture = getEquipmentSetOverlayTexture(bagID, slotID)
 	if not texture then
 		hideButtonOverlayRegion(button, icon, "_bagsWarbandEquipmentSetEvalKey", "none:" .. evalKey)
+		text:SetText("")
+		text:Hide()
 		return
 	end
 
@@ -1474,10 +1497,19 @@ local function updateEquipmentSetOverlay(button, bagID, slotID, info, overlayRun
 		return
 	end
 
-	icon:SetTexture(texture)
-	icon:SetSize(14, 14)
-	icon:SetVertexColor(1, 1, 1)
-	icon:Show()
+	if displayMode == "text" then
+		icon:Hide()
+		text:SetText(addon.FormatTextElement and addon.FormatTextElement("overlays", "SET") or "SET")
+		text:SetTextColor(0.36, 0.78, 1)
+		text:Show()
+	else
+		text:SetText("")
+		text:Hide()
+		icon:SetTexture(texture)
+		icon:SetSize(14, 14)
+		icon:SetVertexColor(1, 1, 1)
+		icon:Show()
+	end
 	button._bagsWarbandEquipmentSetEvalKey = setEvalKey
 end
 
@@ -1875,6 +1907,7 @@ local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 	flags.isToy = false
 	flags.isKnownToy = false
 	flags.isTransmogSet = false
+	flags.hasUsageRequirement = false
 
 	local toyText = _G.TOY
 	local knownText = ITEM_SPELL_KNOWN
@@ -1888,8 +1921,11 @@ local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 				flags.isTransmogSet = true
 			elseif toyText and lineType == TOY_TOOLTIP_LINE_TYPE and line.leftText == toyText then
 				hasToyLine = true
-			elseif knownText and lineType == KNOWN_SPELL_TOOLTIP_LINE_TYPE and line.leftText == knownText then
-				hasKnownLine = true
+			elseif lineType == KNOWN_SPELL_TOOLTIP_LINE_TYPE then
+				flags.hasUsageRequirement = true
+				if knownText and line.leftText == knownText then
+					hasKnownLine = true
+				end
 			end
 		end
 	end
@@ -3114,7 +3150,8 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	local isNewItem = isNewItemAtSlot(bagID, slotID)
 	local tooltipFlags = texture and getTooltipDerivedItemFlags(bagID, slotID, info) or nil
 	local isKnownToy = tooltipFlags and tooltipFlags.isKnownToy or false
-	local isUnusableRecipe = (texture and Bags.functions.IsRecipeUnusableByPlayer and Bags.functions.IsRecipeUnusableByPlayer(itemID, itemLink) or false) or isKnownToy
+	local hasUsageRequirement = tooltipFlags and tooltipFlags.hasUsageRequirement or false
+	local isUnusableRecipe = (texture and Bags.functions.IsRecipeUnusableByPlayer and Bags.functions.IsRecipeUnusableByPlayer(itemID, itemLink) or false) or isKnownToy or hasUsageRequirement
 	local freeSlotGroup = mapping and mapping.freeSlotGroup or nil
 	local freeSlotSignature = getFreeSlotRenderSignature(freeSlotGroup)
 	overlayRuntime = overlayRuntime or getOverlayRuntimeConfig()
@@ -3263,6 +3300,10 @@ local function ensureButtonCapacity(requiredCount)
 		end
 		if button.EquipmentSetIcon then
 			button.EquipmentSetIcon:Hide()
+		end
+		if button.EquipmentSetText then
+			button.EquipmentSetText:SetText("")
+			button.EquipmentSetText:Hide()
 		end
 		if button.BindStatusText then
 			button.BindStatusText:SetText("")

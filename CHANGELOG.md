@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.12.1] - 2026-05-05
+
+### 🐛 Fixed
+
+- Bags: Added the missing text display option for equipment set overlays so they can show SET instead of the icon for better visibility.
+- Bags: Fixed removing automatic category rules when an older category had duplicate internal rule IDs.
+
+---
+
 ## [10.12.0] - 2026-05-03
 
 ### ✨ Added
