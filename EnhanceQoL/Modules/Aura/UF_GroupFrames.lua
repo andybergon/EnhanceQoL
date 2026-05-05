@@ -53,6 +53,9 @@ local GROUP_DEBUFF_FILTER_RAID = "RAID"
 local GROUP_DEBUFF_FILTER_RAID_IN_COMBAT = "RAID_IN_COMBAT"
 GF.BLIZZARD_DISPEL_MODE_BY_ME = "BY_ME"
 GF.BLIZZARD_DISPEL_MODE_ALL = "ALL"
+GF.BLIZZARD_AURA_ORGANIZATION_LEGACY = "LEGACY"
+GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM = "BUFFS_TOP_DEBUFFS_BOTTOM"
+GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT = "BUFFS_RIGHT_DEBUFFS_LEFT"
 local groupDebuffFilterOptions = {
 	{ value = GROUP_DEBUFF_FILTER_ALL, label = L["UFGroupDebuffFilterAll"] or "All debuffs" },
 	{ value = GROUP_DEBUFF_FILTER_RAID, label = L["UFGroupDebuffFilterRaid"] or "Raid debuffs" },
@@ -65,6 +68,12 @@ local groupDebuffFilterOptions = {
 GF.blizzardDispelIndicatorModeOptions = {
 	{ value = GF.BLIZZARD_DISPEL_MODE_BY_ME, label = L["UFAuraRendererBlizzardDispelModeByMe"] or "Dispellable by me", text = L["UFAuraRendererBlizzardDispelModeByMe"] or "Dispellable by me" },
 	{ value = GF.BLIZZARD_DISPEL_MODE_ALL, label = L["UFAuraRendererBlizzardDispelModeAll"] or "All", text = L["UFAuraRendererBlizzardDispelModeAll"] or "All" },
+}
+
+GF.blizzardAuraOrganizationOptions = {
+	{ value = GF.BLIZZARD_AURA_ORGANIZATION_LEGACY, label = L["UFAuraRendererBlizzardOrganizationLegacy"] or "Legacy", text = L["UFAuraRendererBlizzardOrganizationLegacy"] or "Legacy" },
+	{ value = GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM, label = L["UFAuraRendererBlizzardOrganizationBuffsTopDebuffsBottom"] or "Buffs top, debuffs bottom", text = L["UFAuraRendererBlizzardOrganizationBuffsTopDebuffsBottom"] or "Buffs top, debuffs bottom" },
+	{ value = GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT, label = L["UFAuraRendererBlizzardOrganizationBuffsRightDebuffsLeft"] or "Buffs right, debuffs left", text = L["UFAuraRendererBlizzardOrganizationBuffsRightDebuffsLeft"] or "Buffs right, debuffs left" },
 }
 
 GF.splitRoleViewerRoleOptions = {
@@ -8808,6 +8817,34 @@ function GF.GetBlizzardDispelIndicatorOption(cfg, def)
 	return (Enum and Enum.RaidDispelDisplayType and Enum.RaidDispelDisplayType.DisplayAll) or 2
 end
 
+function GF.NormalizeBlizzardAuraOrganization(value)
+	if value == nil then return nil end
+	if type(value) == "number" then
+		if Enum and Enum.RaidAuraOrganizationType then
+			if value == Enum.RaidAuraOrganizationType.BuffsTopDebuffsBottom then return GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM end
+			if value == Enum.RaidAuraOrganizationType.BuffsRightDebuffsLeft then return GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT end
+			if value == Enum.RaidAuraOrganizationType.Legacy then return GF.BLIZZARD_AURA_ORGANIZATION_LEGACY end
+		end
+		if value == 1 then return GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM end
+		if value == 2 then return GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT end
+		return GF.BLIZZARD_AURA_ORGANIZATION_LEGACY
+	end
+	local token = tostring(value):upper()
+	if token == GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM or token == "TOP_BOTTOM" or token == "BUFFS_TOP" or token == "1" then return GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM end
+	if token == GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT or token == "RIGHT_LEFT" or token == "BUFFS_RIGHT" or token == "2" then return GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT end
+	if token == GF.BLIZZARD_AURA_ORGANIZATION_LEGACY or token == "0" then return GF.BLIZZARD_AURA_ORGANIZATION_LEGACY end
+	return nil
+end
+
+function GF.GetBlizzardAuraOrganization(cfg, def)
+	local ac = cfg and cfg.auras
+	local organization = GF.NormalizeBlizzardAuraOrganization(ac and ac.blizzardOrganizationType)
+	if organization then return organization end
+	local defAc = def and def.auras
+	organization = GF.NormalizeBlizzardAuraOrganization(defAc and defAc.blizzardOrganizationType)
+	return organization or GF.BLIZZARD_AURA_ORGANIZATION_LEGACY
+end
+
 function GF.IsBlizzardLargerRoleDebuffEnabled(cfg, def)
 	local debuff = cfg and cfg.auras and cfg.auras.debuff
 	if debuff and debuff.displayLargerRoleSpecificDebuffs ~= nil then return debuff.displayLargerRoleSpecificDebuffs == true end
@@ -8974,7 +9011,7 @@ function GF:UpdateBlizzardAuraContainer(self)
 		maxDispelDebuffs = 3,
 		iconSize = iconSize,
 		bigDefensiveSize = (showBigDefensive and (externals.size or defExternals.size or iconSize)) or iconSize,
-		organizationType = ac.blizzardOrganizationType,
+		organizationType = GF.GetBlizzardAuraOrganization(cfg, def),
 		dispelIndicatorOption = GF.GetBlizzardDispelIndicatorOption(cfg, def),
 		powerBarUsedHeight = cfg and cfg.powerHeight or 0,
 		groupType = (kind == "party") and 4 or 5,
@@ -16393,6 +16430,28 @@ local function buildEditModeSettings(kind, editModeId)
 				refreshAllAuras()
 				refreshAllPrivateAuras()
 			end,
+			isEnabled = isBlizzardRendererSelected,
+			isShown = isBlizzardRendererSelected,
+		},
+		{
+			name = L["UFAuraRendererBlizzardOrganization"] or "Aura organization",
+			kind = SettingType.Dropdown,
+			field = "auraRendererBlizzardOrganization",
+			parentId = "utility",
+			values = GF.blizzardAuraOrganizationOptions,
+			customDefaultText = GF.DropdownOptionLabel(GF.blizzardAuraOrganizationOptions, GF.GetBlizzardAuraOrganization(getCfg(kind), DEFAULTS[kind] or EMPTY), L["UFAuraRendererBlizzardOrganizationLegacy"] or "Legacy"),
+			get = function() return GF.GetBlizzardAuraOrganization(getCfg(kind), DEFAULTS[kind] or EMPTY) end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.auras = cfg.auras or {}
+				cfg.auras.blizzardOrganizationType = GF.NormalizeBlizzardAuraOrganization(value) or GF.BLIZZARD_AURA_ORGANIZATION_LEGACY
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "auraRendererBlizzardOrganization", cfg.auras.blizzardOrganizationType, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+				refreshAllAuras()
+				refreshAllPrivateAuras()
+			end,
+			generator = GF.DropdownRadioGenerator(GF.blizzardAuraOrganizationOptions),
 			isEnabled = isBlizzardRendererSelected,
 			isShown = isBlizzardRendererSelected,
 		},
@@ -28843,6 +28902,7 @@ local function applyEditModeData(kind, data)
 	if data.auraRendererBlizzardTypes ~= nil then ac.blizzardTypes = GF._sharedEdit.csm(data.auraRendererBlizzardTypes) end
 	if data.auraRendererBlizzardIconSize ~= nil then ac.blizzardIconSize = clampNumber(data.auraRendererBlizzardIconSize, 8, 120, ac.blizzardIconSize or 16) end
 	if data.auraRendererBlizzardCooldownText ~= nil then ac.blizzardShowCooldownText = data.auraRendererBlizzardCooldownText and true or false end
+	if data.auraRendererBlizzardOrganization ~= nil then ac.blizzardOrganizationType = GF.NormalizeBlizzardAuraOrganization(data.auraRendererBlizzardOrganization) or GF.BLIZZARD_AURA_ORGANIZATION_LEGACY end
 	if data.auraRendererBlizzardDispelMode ~= nil then ac.blizzardDispelIndicatorMode = GF.NormalizeBlizzardDispelIndicatorMode(data.auraRendererBlizzardDispelMode) or GF.BLIZZARD_DISPEL_MODE_ALL end
 	if data.buffsEnabled ~= nil then ac.buff.enabled = data.buffsEnabled and true or false end
 	if data.buffAnchor ~= nil then ac.buff.anchorPoint = data.buffAnchor end
@@ -29669,6 +29729,7 @@ function GF:EnsureEditMode()
 				auraRendererBlizzardTypes = GF._sharedEdit.csm((ac and ac.blizzardTypes) or (defAuras and defAuras.blizzardTypes) or GF.BLIZZARD_AURA_RENDER_TYPES),
 				auraRendererBlizzardIconSize = GF.GetBlizzardAuraIconSize(cfg, def),
 				auraRendererBlizzardCooldownText = GF.IsBlizzardAuraCooldownTextEnabled(cfg, def),
+				auraRendererBlizzardOrganization = GF.GetBlizzardAuraOrganization(cfg, def),
 				auraRendererBlizzardDispelMode = GF.GetBlizzardDispelIndicatorMode(cfg, def),
 				privateAurasEnabled = (pa.enabled ~= nil) and (pa.enabled == true) or ((pa.enabled == nil) and defPrivate.enabled == true),
 				privateAurasAmount = paIcon.amount or defPrivateIcon.amount or 2,

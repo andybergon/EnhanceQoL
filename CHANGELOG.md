@@ -9,6 +9,7 @@
 ### ✨ Added
 
 - Cooldown Panels: Added panel and group export strings from the editor context menus, plus a dedicated Import Panel button for importing exported panels or panel groups.
+- Group Frames / Blizzard Auras: Added Blizzard-rendered aura options for Dispel indicator mode and aura organization layouts.
 - Profiles: Added a Protected import sections multidropdown for full profile imports and external installer imports, allowing users to keep large areas such as Unit Frames, Resource Bars, Cooldown Panels, Mover, Bags, Castbars, Data Panels, Instance Difficulty, Dungeon & Combat Tools, Action Bars, and Healer Buff Placement unchanged.
 - Unit Frames: Added top anchoring for reduced Absorb and Heal Absorb overlay heights so partial overlays can grow from either edge of the health bar.
 
@@ -47,7 +48,6 @@
 - Mythic Plus / Talent Reminder: Delayed the zone-change talent check briefly so dungeon instance data can settle before showing missing talent loadout warnings.
 - Bags: Fixed search updates doing too much background work, making bag search and item overlays respond more smoothly.
 - Group Frames / Healer Buff Placement: Fixed Priest healer buff availability so Power Word: Shield, Prayer of Mending, and related Priest buffs are not restricted to a single healing specialization.
-- Group Frames / Blizzard Auras: Added a Dispel indicator mode option so Blizzard-rendered party and raid dispel indicators can show either only debuffs dispellable by the player or all dispel types.
 
 ---
 

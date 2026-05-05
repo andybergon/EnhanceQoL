@@ -1003,11 +1003,11 @@ function H.ResolveBlizzardAuraOrganization(value)
 	local token = tostring(value or ""):upper()
 	local org = Enum and Enum.RaidAuraOrganizationType
 	if token == "BUFFS_TOP_DEBUFFS_BOTTOM" or token == "TOP_BOTTOM" then
-		return (org and org.BuffsTopDebuffsBottom) or 2
+		return (org and org.BuffsTopDebuffsBottom) or 1
 	elseif token == "BUFFS_RIGHT_DEBUFFS_LEFT" or token == "RIGHT_LEFT" then
-		return (org and org.BuffsRightDebuffsLeft) or 3
+		return (org and org.BuffsRightDebuffsLeft) or 2
 	end
-	return (org and org.Legacy) or 1
+	return (org and org.Legacy) or 0
 end
 
 function H.SetBlizzardAuraContainerAttributes(container, cfg)
