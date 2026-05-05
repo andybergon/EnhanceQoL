@@ -2,9 +2,19 @@
 
 ## [10.13.0] - 2026-05-05
 
+### ⚠️ Important
+
+- Profiles: Added protected import sections. These selections are stored outside normal profiles, so imported profile strings and external installers cannot overwrite the user's import-protection choices.
+
 ### ✨ Added
 
+- Cooldown Panels: Added panel and group export strings from the editor context menus, plus a dedicated Import Panel button for importing exported panels or panel groups.
+- Profiles: Added a Protected import sections multidropdown for full profile imports and external installer imports, allowing users to keep large areas such as Unit Frames, Resource Bars, Cooldown Panels, Mover, Bags, Castbars, Data Panels, Instance Difficulty, Dungeon & Combat Tools, Action Bars, and Healer Buff Placement unchanged.
 - Unit Frames: Added top anchoring for reduced Absorb and Heal Absorb overlay heights so partial overlays can grow from either edge of the health bar.
+
+### 🐛 Fixed
+
+- Bags: Fixed Bank and Warband Bank layouts ignoring the Max columns setting, so the bank window width can be adjusted from the Bags layout settings.
 
 ---
 

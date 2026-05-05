@@ -16,7 +16,7 @@ local ITEM_QUALITY_POOR = Enum and Enum.ItemQuality and Enum.ItemQuality.Poor or
 
 local BUTTON_SIZE = 37
 local BUTTON_SPACING = 4
-local COLUMN_COUNT = 18
+local DEFAULT_COLUMN_COUNT = 18
 local FRAME_PADDING = 10
 local HEADER_HEIGHT = 124
 local ACTION_BAR_TOP_OFFSET = 64
@@ -3318,11 +3318,17 @@ end
 local function layoutFrame(layoutData, context)
 	local buttonSize = getButtonSize()
 	local buttonSpacing = getButtonSpacing()
+	local columnCount = math.floor((tonumber(addon.GetMaxColumns and addon.GetMaxColumns() or context and context.columnCount) or DEFAULT_COLUMN_COUNT) + 0.5)
+	if columnCount < 4 then
+		columnCount = 4
+	elseif columnCount > 24 then
+		columnCount = 24
+	end
 	local settings = getSettings()
 	local currentHeaderCount = 0
 	local contentWidth = 1
 	local yOffset = 0
-	local maxContentWidth = (COLUMN_COUNT * buttonSize) + (math.max(0, COLUMN_COUNT - 1) * buttonSpacing)
+	local maxContentWidth = (columnCount * buttonSize) + (math.max(0, columnCount - 1) * buttonSpacing)
 	local compactSectionGap = addon.GetCompactCategoryGap and addon.GetCompactCategoryGap() or SECTION_HORIZONTAL_GAP
 
 	applyConfiguredFrameFonts()
@@ -3334,8 +3340,8 @@ local function layoutFrame(layoutData, context)
 
 	local function getSectionMetrics(section, showSectionHeader, sectionCollapsed)
 		local itemCount = #section.slotIndices
-		local visibleColumns = math.max(1, math.min(COLUMN_COUNT, itemCount))
-		local rows = (itemCount > 0 and not sectionCollapsed) and math.max(1, math.ceil(itemCount / COLUMN_COUNT)) or 0
+		local visibleColumns = math.max(1, math.min(columnCount, itemCount))
+		local rows = (itemCount > 0 and not sectionCollapsed) and math.max(1, math.ceil(itemCount / columnCount)) or 0
 		local sectionWidth = (visibleColumns * buttonSize) + (math.max(0, visibleColumns - 1) * buttonSpacing)
 		local blockHeight = 0
 		local textElementID = section and section.groupID and "subcategoryHeader" or "categoryHeader"
@@ -3532,15 +3538,15 @@ local function layoutFrame(layoutData, context)
 
 				local itemCount = #combinedSlotIndices
 				if itemCount > 0 then
-					local visibleColumns = math.max(1, math.min(COLUMN_COUNT, itemCount))
-					local rows = math.max(1, math.ceil(itemCount / COLUMN_COUNT))
+					local visibleColumns = math.max(1, math.min(columnCount, itemCount))
+					local rows = math.max(1, math.ceil(itemCount / columnCount))
 					local sectionWidth = (visibleColumns * buttonSize) + (math.max(0, visibleColumns - 1) * buttonSpacing)
 					contentWidth = math.max(contentWidth, sectionWidth)
 
 					for visualIndex, mappingIndex in ipairs(combinedSlotIndices) do
 						local button = state.buttons[mappingIndex]
-						local row = math.floor((visualIndex - 1) / COLUMN_COUNT)
-						local column = (visualIndex - 1) % COLUMN_COUNT
+						local row = math.floor((visualIndex - 1) / columnCount)
+						local column = (visualIndex - 1) % columnCount
 						button:SetSize(buttonSize, buttonSize)
 						button:ClearAllPoints()
 						button:SetPoint(
@@ -3642,8 +3648,8 @@ local function layoutFrame(layoutData, context)
 						local buttonYOffset = yOffset + SECTION_HEADER_HEIGHT + SECTION_CONTENT_TOP_PADDING
 						for visualIndex, mappingIndex in ipairs(rowSection.slotIndices) do
 							local button = state.buttons[mappingIndex]
-							local row = math.floor((visualIndex - 1) / COLUMN_COUNT)
-							local column = (visualIndex - 1) % COLUMN_COUNT
+							local row = math.floor((visualIndex - 1) / columnCount)
+							local column = (visualIndex - 1) % columnCount
 							button:SetSize(buttonSize, buttonSize)
 							button:ClearAllPoints()
 							button:SetPoint(
@@ -3692,8 +3698,8 @@ local function layoutFrame(layoutData, context)
 
 						for visualIndex, mappingIndex in ipairs(section.slotIndices) do
 							local button = state.buttons[mappingIndex]
-							local row = math.floor((visualIndex - 1) / COLUMN_COUNT)
-							local column = (visualIndex - 1) % COLUMN_COUNT
+							local row = math.floor((visualIndex - 1) / columnCount)
+							local column = (visualIndex - 1) % columnCount
 							button:SetSize(buttonSize, buttonSize)
 							button:ClearAllPoints()
 							button:SetPoint(
