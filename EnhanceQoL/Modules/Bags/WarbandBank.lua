@@ -1913,6 +1913,14 @@ local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 	local knownText = ITEM_SPELL_KNOWN
 	local hasToyLine = false
 	local hasKnownLine = false
+	local function isUnusableLineColor(line)
+		local color = line and line.leftColor
+		if type(color) ~= "table" then return false end
+		local r = color and (color.r or color[1])
+		local g = color and (color.g or color[2])
+		local b = color and (color.b or color[3])
+		return r and g and b and r >= 0.9 and g <= 0.25 and b <= 0.25
+	end
 	for index = 1, #lines do
 		local line = lines[index]
 		if line then
@@ -1922,9 +1930,10 @@ local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 			elseif toyText and lineType == TOY_TOOLTIP_LINE_TYPE and line.leftText == toyText then
 				hasToyLine = true
 			elseif lineType == KNOWN_SPELL_TOOLTIP_LINE_TYPE then
-				flags.hasUsageRequirement = true
 				if knownText and line.leftText == knownText then
 					hasKnownLine = true
+				elseif isUnusableLineColor(line) then
+					flags.hasUsageRequirement = true
 				end
 			end
 		end
@@ -2081,7 +2090,7 @@ local function getRecommendationFlags(itemRef, itemID, runtimeContext)
 	return recommendedForClass, recommendedForSpec
 end
 
-local function isRuleUpgradeItem(equipLoc, itemLevel, recommendedForSpec, runtimeContext)
+local function isRuleUpgradeItem(equipLoc, itemLevel, recommendedForSpec, runtimeContext, classID, subClassID)
 	if not recommendedForSpec or not equipLoc then
 		return false
 	end
@@ -2089,6 +2098,30 @@ local function isRuleUpgradeItem(equipLoc, itemLevel, recommendedForSpec, runtim
 	itemLevel = tonumber(itemLevel)
 	if not itemLevel or itemLevel <= 0 then
 		return false
+	end
+
+	local itemClass = Enum and Enum.ItemClass or {}
+	if tonumber(classID) == (itemClass.Armor or 4)
+		and equipLoc ~= "INVTYPE_CLOAK"
+		and equipLoc ~= "INVTYPE_NECK"
+		and equipLoc ~= "INVTYPE_FINGER"
+		and equipLoc ~= "INVTYPE_TRINKET"
+		and equipLoc ~= "INVTYPE_SHIELD"
+	then
+		local playerClassID = runtimeContext and runtimeContext.playerClassID
+		local expectedArmorSubclass = nil
+		if playerClassID == 1 or playerClassID == 2 or playerClassID == 6 then
+			expectedArmorSubclass = 4
+		elseif playerClassID == 3 or playerClassID == 7 or playerClassID == 13 then
+			expectedArmorSubclass = 3
+		elseif playerClassID == 4 or playerClassID == 10 or playerClassID == 11 or playerClassID == 12 then
+			expectedArmorSubclass = 2
+		elseif playerClassID == 5 or playerClassID == 8 or playerClassID == 9 then
+			expectedArmorSubclass = 1
+		end
+		if expectedArmorSubclass and tonumber(subClassID) ~= expectedArmorSubclass then
+			return false
+		end
 	end
 
 	local comparisonSlots, comparisonMode = getUpgradeComparisonSlots(equipLoc, runtimeContext)
@@ -2611,7 +2644,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.isBound = info and info.isBound
 			itemContext.recommendedForSpec = not not recommendedForSpec
 			itemContext.recommendedForClass = not not recommendedForClass
-			itemContext.isUpgrade = usage.isUpgrade and isRuleUpgradeItem(equipLoc, resolvedItemLevel, recommendedForSpec, ruleRuntimeContext) or false
+			itemContext.isUpgrade = usage.isUpgrade and isRuleUpgradeItem(equipLoc, resolvedItemLevel, recommendedForSpec, ruleRuntimeContext, classID, subClassID) or false
 			itemContext.upgradeTrackKey = upgradeTrackKey
 			itemContext.canVendor = ((ruleItemInfo and ruleItemInfo.sellPrice) or 0) > 0
 			itemContext.canAuctionHouseSell = not not canAuctionHouseSell

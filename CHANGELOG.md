@@ -1,5 +1,15 @@
 # Changelog
 
+## [10.13.1] - 2026-05-05
+
+### 🐛 Fixed
+
+- Bags: Fixed Bank and Warband Bank layouts ignoring the Max columns setting, so the bank window width can be adjusted from the Bags layout settings.
+- Bags: Fixed cosmetic and equipment overlays treating white tooltip requirement lines as unusable, so only red requirement lines mark an item as unusable.
+- Bags: Fixed the Upgrade category treating armor types outside the player's primary armor proficiency as upgrades.
+
+---
+
 ## [10.13.0] - 2026-05-05
 
 ### ⚠️ Important
@@ -12,12 +22,6 @@
 - Group Frames / Blizzard Auras: Added Blizzard-rendered aura options for Dispel indicator mode and aura organization layouts.
 - Profiles: Added a Protected import sections multidropdown for full profile imports and external installer imports, allowing users to keep large areas such as Unit Frames, Resource Bars, Cooldown Panels, Mover, Bags, Castbars, Data Panels, Instance Difficulty, Dungeon & Combat Tools, Action Bars, and Healer Buff Placement unchanged.
 - Unit Frames: Added top anchoring for reduced Absorb and Heal Absorb overlay heights so partial overlays can grow from either edge of the health bar.
-
-### 🐛 Fixed
-
-- Bags: Fixed Bank and Warband Bank layouts ignoring the Max columns setting, so the bank window width can be adjusted from the Bags layout settings.
-
----
 
 ## [10.12.1] - 2026-05-05
 
