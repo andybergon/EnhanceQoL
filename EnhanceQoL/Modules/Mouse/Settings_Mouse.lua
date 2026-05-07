@@ -643,18 +643,18 @@ data = {
 table.sort(data[1].children, function(a, b) return a.text < b.text end)
 addon.functions.SettingsCreateCheckboxes(cMouse, data)
 
-addon.functions.SettingsCreateHeadline(cMouse, LMain["RightClickTargeting"], { parentSection = expandable })
+addon.functions.SettingsCreateHeadline(cMouse, L["RightClickTargeting"], { parentSection = expandable })
 
 local rctData = {
 	{
 		var = "disableRightClickTargetingInCombat",
-		text = LMain["disableRightClickTargetingInCombat"],
+		text = L["disableRightClickTargetingInCombat"],
 		func = function(v) addon.db["disableRightClickTargetingInCombat"] = v end,
 		parentSection = expandable,
 		children = {
 			{
 				var = "disableDoubleClickTargetingInCombat",
-				text = LMain["disableDoubleClickTargetingInCombat"],
+				text = L["disableDoubleClickTargetingInCombat"],
 				func = function(v) addon.db["disableDoubleClickTargetingInCombat"] = v end,
 				parentCheck = function()
 					return addon.SettingsLayout.elements["disableRightClickTargetingInCombat"]
@@ -671,13 +671,13 @@ local rctData = {
 	},
 	{
 		var = "disableRightClickTargetingOutOfCombat",
-		text = LMain["disableRightClickTargetingOutOfCombat"],
+		text = L["disableRightClickTargetingOutOfCombat"],
 		func = function(v) addon.db["disableRightClickTargetingOutOfCombat"] = v end,
 		parentSection = expandable,
 		children = {
 			{
 				var = "disableDoubleClickTargetingOutOfCombat",
-				text = LMain["disableDoubleClickTargetingOutOfCombat"],
+				text = L["disableDoubleClickTargetingOutOfCombat"],
 				func = function(v) addon.db["disableDoubleClickTargetingOutOfCombat"] = v end,
 				parentCheck = function()
 					return addon.SettingsLayout.elements["disableRightClickTargetingOutOfCombat"]
@@ -697,7 +697,7 @@ addon.functions.SettingsCreateCheckboxes(cMouse, rctData)
 
 addon.functions.SettingsCreateSlider(cMouse, {
 	var = "doubleClickTimeFrame",
-	text = LMain["doubleClickTimeFrame"],
+	text = L["doubleClickTimeFrame"],
 	min = 0.1,
 	max = 0.5,
 	step = 0.1,

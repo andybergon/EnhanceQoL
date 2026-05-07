@@ -8,36 +8,19 @@
 -- luacheck: globals ChatFrame1Tab ChatFrame2 ChatFrame2Tab FCF_SetWindowName FCFDock_UpdateTabs GENERAL_CHAT_DOCK EventUtil ClassTrainerFrame ClassTrainerTrainButton ClassTrainerFrameMoneyBg
 local addonName, addon = ...
 
-local LDB = LibStub("LibDataBroker-1.1")
-local LDBIcon = LibStub("LibDBIcon-1.0")
-local LSM = LibStub("LibSharedMedia-3.0", true)
-local AceGUI = LibStub("AceGUI-3.0")
+addon.LDB = LibStub("LibDataBroker-1.1")
+addon.LDBIcon = LibStub("LibDBIcon-1.0")
+addon.LSM = LibStub("LibSharedMedia-3.0", true)
 
-addon.AceGUI = AceGUI
+addon.AceGUI = LibStub("AceGUI-3.0")
 local L = LibStub("AceLocale-3.0"):GetLocale("EnhanceQoL")
 
 addon.functions = addon.functions or {}
 addon.ActionBarLabels = addon.ActionBarLabels or {}
-local ActionBarLabels = addon.ActionBarLabels
 
 addon.constants = addon.constants or {}
 
-local function getPrivateDB() return addon.functions.GetPrivateDB and addon.functions.GetPrivateDB() or addon.privateDB or {} end
-
-local LFGListFrame = _G.LFGListFrame
-local GetContainerItemInfo = C_Container.GetContainerItemInfo
-local StaticPopup_Visible = StaticPopup_Visible
-local IsShiftKeyDown = IsShiftKeyDown
-local IsControlKeyDown = IsControlKeyDown
-local IsAltKeyDown = IsAltKeyDown
-local IsInGroup = IsInGroup
-local math = math
-local TooltipUtil = _G.TooltipUtil
-local GetTime = GetTime
-local GetActiveQuestID = _G.GetActiveQuestID
-
-local EQOL = select(2, ...)
-EQOL.C = {}
+addon.C = {}
 
 local ACTION_BAR_FRAME_NAMES = {
 	"MultiBarBottomLeft",
@@ -101,8 +84,6 @@ local SPELL_ACTIVATION_OVERLAY_VISIBILITY_KEYS = {
 	[COOLDOWN_VIEWER_VISIBILITY_MODES.PLAYER_HAS_TARGET] = true,
 }
 addon.constants.SPELL_ACTIVATION_OVERLAY_VISIBILITY_KEYS = SPELL_ACTIVATION_OVERLAY_VISIBILITY_KEYS
-
-local DEFAULT_BUTTON_SINK_COLUMNS = 4
 
 local ACTION_BUTTON_COUNTS = {
 	default = _G.NUM_ACTIONBAR_BUTTONS or 12,
@@ -257,7 +238,8 @@ end
 
 hooksecurefunc("LFGListSearchEntry_OnClick", function(s, button)
 	if addon.functions.isRestrictedContent(true) then return end
-	local panel = LFGListFrame.SearchPanel
+	local panel = _G.LFGListFrame and _G.LFGListFrame.SearchPanel
+	if not panel then return end
 	if button == "RightButton" or not s.resultID then return end
 
 	local _, appStatus, pendingStatus = C_LFGList.GetApplicationInfo(s.resultID)
@@ -397,7 +379,7 @@ local function ensurePersistSignUpNoteHooks()
 	end)
 end
 
-function EQOL.PersistSignUpNote()
+function addon.PersistSignUpNote()
 	-- Hook is idempotent and gates on addon.db.persistSignUpNote at call time,
 	-- so toggling the setting at runtime works without re-installing anything.
 	ensurePersistSignUpNoteHooks()
@@ -3317,7 +3299,7 @@ local function initActionBars()
 	addon.functions.InitDBValue("actionBarShortHotkeys", false)
 	addon.functions.InitDBValue("actionBarHiddenHotkeys", {})
 	if type(addon.db.actionBarHiddenHotkeys) ~= "table" then addon.db.actionBarHiddenHotkeys = {} end
-	local normalizeFontSize = ActionBarLabels and ActionBarLabels.NormalizeFontSize
+	local normalizeFontSize = addon.ActionBarLabels and addon.ActionBarLabels.NormalizeFontSize
 	local function clampFontSize(value)
 		if normalizeFontSize then return normalizeFontSize(value, 6, 32) end
 		local num = tonumber(value) or 6
@@ -3337,7 +3319,7 @@ local function initActionBars()
 	end
 	RefreshAllActionBarVisibilityAlpha()
 	EnsureActionBarVisibilityWatcher()
-	if ActionBarLabels and ActionBarLabels.RefreshAllMacroNameVisibility then ActionBarLabels.RefreshAllMacroNameVisibility() end
+	if addon.ActionBarLabels and addon.ActionBarLabels.RefreshAllMacroNameVisibility then addon.ActionBarLabels.RefreshAllMacroNameVisibility() end
 	addon.variables.actionBarAnchorDefaults = addon.variables.actionBarAnchorDefaults or {}
 	for index = 1, #ACTION_BAR_FRAME_NAMES do
 		local dbKey = "actionBarAnchor" .. index
@@ -3353,10 +3335,10 @@ local function initActionBars()
 		end
 	end
 	RefreshAllActionBarAnchors()
-	if ActionBarLabels and ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
-	if ActionBarLabels and ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
+	if addon.ActionBarLabels and addon.ActionBarLabels.RefreshAllHotkeyStyles then addon.ActionBarLabels.RefreshAllHotkeyStyles() end
+	if addon.ActionBarLabels and addon.ActionBarLabels.RefreshAllCountStyles then addon.ActionBarLabels.RefreshAllCountStyles() end
 	UpdateAssistedCombatFrameHiding()
-	if ActionBarLabels and ActionBarLabels.RefreshActionButtonBorders then ActionBarLabels.RefreshActionButtonBorders() end
+	if addon.ActionBarLabels and addon.ActionBarLabels.RefreshActionButtonBorders then addon.ActionBarLabels.RefreshActionButtonBorders() end
 	ApplyExtraActionArtworkSetting()
 end
 
@@ -4008,7 +3990,7 @@ local function initUnitFrame()
 end
 
 local function initBagsFrame()
-	local privateDB = getPrivateDB()
+	local privateDB = (addon.functions.GetPrivateDB and addon.functions.GetPrivateDB() or addon.privateDB or {})
 	addon.functions.InitPrivateDBValue("moneyTracker", {})
 	addon.functions.InitPrivateDBValue("enableMoneyTracker", false)
 	addon.functions.InitPrivateDBValue("showOnlyGoldOnMoney", false)
@@ -4483,7 +4465,7 @@ local function initUI()
 	addon.functions.InitDBValue("detachedButtonSinkMoveModifier", "ALT")
 	addon.functions.InitDBValue("buttonSinkAnchorPreference", "AUTO")
 	addon.functions.InitDBValue("minimapButtonBinIconClickToggle", false)
-	addon.functions.InitDBValue("minimapButtonBinColumns", DEFAULT_BUTTON_SINK_COLUMNS)
+	addon.functions.InitDBValue("minimapButtonBinColumns", 4)
 	addon.functions.InitDBValue("minimapButtonBinHideBackground", false)
 	addon.functions.InitDBValue("minimapButtonBinHideBorder", false)
 	addon.functions.InitDBValue("enableLootspecQuickswitch", false)
@@ -4683,8 +4665,8 @@ local function initUI()
 	local function resolveSquareMinimapBorderTexture(value)
 		local key = normalizeSquareMinimapBorderTexture(value)
 		if key == "DEFAULT" or key == "SOLID" then return SQUARE_MINIMAP_BORDER_DEFAULT_TEXTURE end
-		if LSM and LSM.Fetch then
-			local texture = LSM:Fetch("border", key, true)
+		if addon.LSM and addon.LSM.Fetch then
+			local texture = addon.LSM:Fetch("border", key, true)
 			if texture then return texture end
 		end
 		if isLikelyMinimapBorderPath(key) then return key end
@@ -4923,9 +4905,9 @@ local function initUI()
 
 	function addon.functions.toggleMinimapButton(value)
 		if value == false then
-			LDBIcon:Show(addonName)
+			addon.LDBIcon:Show(addonName)
 		else
-			LDBIcon:Hide(addonName)
+			addon.LDBIcon:Hide(addonName)
 		end
 	end
 	function addon.functions.toggleZoneText(value, ignore)
@@ -5226,7 +5208,7 @@ local function initUI()
 
 	local function getButtonSinkAnchorButton()
 		if addon.variables and addon.variables.buttonSinkDetachedToggle then return addon.variables.buttonSinkDetachedToggle end
-		if LDBIcon and LDBIcon.objects then return LDBIcon.objects[addonName .. "_ButtonSinkMap"] end
+		if addon.LDBIcon and addon.LDBIcon.objects then return addon.LDBIcon.objects[addonName .. "_ButtonSinkMap"] end
 	end
 
 	local function saveSimpleFramePoint(frame, dbKey)
@@ -5442,10 +5424,10 @@ local function initUI()
 			_G[addonName .. "_ButtonSinkMap"]:Hide()
 			_G[addonName .. "_ButtonSinkMap"] = nil
 		end
-		if LDBIcon:IsRegistered(addonName .. "_ButtonSinkMap") then
-			local button = LDBIcon.objects[addonName .. "_ButtonSinkMap"]
+		if addon.LDBIcon:IsRegistered(addonName .. "_ButtonSinkMap") then
+			local button = addon.LDBIcon.objects[addonName .. "_ButtonSinkMap"]
 			if button then button:Hide() end
-			LDBIcon.objects[addonName .. "_ButtonSinkMap"] = nil
+			addon.LDBIcon.objects[addonName .. "_ButtonSinkMap"] = nil
 		end
 	end
 
@@ -5631,7 +5613,7 @@ local function initUI()
 					label = addonName .. "_ButtonSinkMap",
 					OnEnter = function(self)
 						if addon.db["minimapButtonBinIconClickToggle"] then return end
-						local anchorButton = LDBIcon.objects[addonName .. "_ButtonSinkMap"] or self
+						local anchorButton = addon.LDBIcon.objects[addonName .. "_ButtonSinkMap"] or self
 						if not anchorButton then return end
 						positionBagFrame(addon.variables.buttonSink, anchorButton)
 						addon.variables.buttonSink:Show()
@@ -5643,7 +5625,7 @@ local function initUI()
 						if addon.variables.buttonSink:IsShown() then
 							addon.variables.buttonSink:Hide()
 						else
-							local anchorButton = LDBIcon.objects[addonName .. "_ButtonSinkMap"] or self
+							local anchorButton = addon.LDBIcon.objects[addonName .. "_ButtonSinkMap"] or self
 							if anchorButton then positionBagFrame(addon.variables.buttonSink, anchorButton) end
 							addon.variables.buttonSink:Show()
 						end
@@ -5653,8 +5635,8 @@ local function initUI()
 					end,
 				}
 				-- Registriere das Icon bei LibDBIcon
-				LDB:NewDataObject(addonName .. "_ButtonSinkMap", iconData)
-				LDBIcon:Register(addonName .. "_ButtonSinkMap", iconData, addon.db["buttonsink"])
+				addon.LDB:NewDataObject(addonName .. "_ButtonSinkMap", iconData)
+				addon.LDBIcon:Register(addonName .. "_ButtonSinkMap", iconData, addon.db["buttonsink"])
 				buttonBag:Hide()
 			elseif useDetachedToggle then
 				addon.variables.buttonSinkDetachedToggle = createDetachedButtonSinkToggle()
@@ -5752,10 +5734,10 @@ local function initUI()
 			ensureManualMouseoverHooks()
 		end
 
-		if LDBIcon and LDBIcon.ShowOnEnter then
-			local ldbButton = LDBIcon.GetMinimapButton and LDBIcon:GetMinimapButton(name)
+		if addon.LDBIcon and addon.LDBIcon.ShowOnEnter then
+			local ldbButton = addon.LDBIcon.GetMinimapButton and addon.LDBIcon:GetMinimapButton(name)
 			if ldbButton then
-				LDBIcon:ShowOnEnter(name, enable)
+				addon.LDBIcon:ShowOnEnter(name, enable)
 			else
 				setManualMinimapMouseover(button, enable)
 			end
@@ -5773,7 +5755,7 @@ local function initUI()
 	end
 	function addon.functions.LayoutButtons()
 		if addon.db["enableMinimapButtonBin"] then
-			local columns = tonumber(addon.db["minimapButtonBinColumns"]) or DEFAULT_BUTTON_SINK_COLUMNS
+			local columns = tonumber(addon.db["minimapButtonBinColumns"]) or 4
 			columns = math.floor(columns + 0.5)
 			if columns < 1 then
 				columns = 1
@@ -5845,7 +5827,7 @@ local function initUI()
 					if pData.point and pData.relativePoint and pData.relativeTo and pData.xOfs and pData.yOfs then
 						button:SetPoint(pData.point, pData.relativeTo, pData.relativePoint, pData.xOfs, pData.yOfs)
 					else
-						LDBIcon:Show(name)
+						addon.LDBIcon:Show(name)
 					end
 					button:SetFrameStrata(pData.strata or "MEDIUM")
 					if pData.level then button:SetFrameLevel(pData.level) end
@@ -5887,7 +5869,7 @@ local function initUI()
 
 	local function shouldEnableMinimapButtonMouseover() return addon.db and addon.db.minimapButtonsMouseover end
 	function addon.functions.applyMinimapButtonMouseover()
-		if not LDBIcon then return end
+		if not addon.LDBIcon then return end
 
 		addon.functions.gatherMinimapButtons()
 
@@ -5899,12 +5881,12 @@ local function initUI()
 			setLibDBIconMouseover(name, enableit, button)
 		end
 		if not addon.variables.minimapButtonMouseoverHooked then
-			if LDBIcon.RegisterCallback then
-				LDBIcon.RegisterCallback(addon, "LibDBIcon_IconCreated", function(_, button, name)
+			if addon.LDBIcon.RegisterCallback then
+				addon.LDBIcon.RegisterCallback(addon, "LibDBIcon_IconCreated", function(_, button, name)
 					if shouldEnableMinimapButtonMouseover() then setLibDBIconMouseover(name, true) end
 				end)
 			else
-				hooksecurefunc(LDBIcon, "Register", function(self, name)
+				hooksecurefunc(addon.LDBIcon, "Register", function(self, name)
 					if shouldEnableMinimapButtonMouseover() then setLibDBIconMouseover(name, true) end
 				end)
 			end
@@ -5913,7 +5895,7 @@ local function initUI()
 	end
 	if addon.functions.applyMinimapButtonMouseover then addon.functions.applyMinimapButtonMouseover() end
 
-	hooksecurefunc(LDBIcon, "Show", function(self, name)
+	hooksecurefunc(addon.LDBIcon, "Show", function(self, name)
 		if addon.db["enableMinimapButtonBin"] then
 			if nil ~= addon.variables.bagButtonState[name] then addon.variables.bagButtonState[name] = true end
 			addon.functions.gatherMinimapButtons()
@@ -5921,7 +5903,7 @@ local function initUI()
 		end
 	end)
 
-	hooksecurefunc(LDBIcon, "Hide", function(self, name)
+	hooksecurefunc(addon.LDBIcon, "Hide", function(self, name)
 		if addon.db["enableMinimapButtonBin"] then
 			addon.variables.bagButtonState[name] = false
 			addon.functions.gatherMinimapButtons()
@@ -5935,7 +5917,7 @@ local function initUI()
 	local totalRows = 0
 
 	function addon.functions.updateLootspecIcon()
-		if not LDBIcon or not LDBIcon:IsRegistered(addonName .. "_LootSpec") then return end
+		if not addon.LDBIcon or not addon.LDBIcon:IsRegistered(addonName .. "_LootSpec") then return end
 
 		local _, specIcon
 
@@ -5947,7 +5929,7 @@ local function initUI()
 			_, _, _, specIcon = GetSpecializationInfoByID(GetLootSpecialization())
 		end
 
-		local button = LDBIcon.objects[addonName .. "_LootSpec"]
+		local button = addon.LDBIcon.objects[addonName .. "_LootSpec"]
 		if button and button.icon and specIcon then button.icon:SetTexture(specIcon) end
 	end
 
@@ -6005,10 +5987,10 @@ local function initUI()
 	end
 
 	function addon.functions.removeLootspecframe()
-		if LDBIcon:IsRegistered(addonName .. "_LootSpec") then
-			local button = LDBIcon.objects[addonName .. "_LootSpec"]
+		if addon.LDBIcon:IsRegistered(addonName .. "_LootSpec") then
+			local button = addon.LDBIcon.objects[addonName .. "_LootSpec"]
 			if button then button:Hide() end
-			LDBIcon.objects[addonName .. "_LootSpec"] = nil
+			addon.LDBIcon.objects[addonName .. "_LootSpec"] = nil
 		end
 		if addon.variables.lootSpec then
 			addon.variables.lootSpec:SetParent(nil)
@@ -6083,7 +6065,7 @@ local function initUI()
 			label = addonName .. "_LootSpec",
 			OnEnter = function(self)
 				if addon.variables.lootSpec then
-					positionBagFrame(addon.variables.lootSpec, LDBIcon.objects[addonName .. "_LootSpec"])
+					positionBagFrame(addon.variables.lootSpec, addon.LDBIcon.objects[addonName .. "_LootSpec"])
 					addon.variables.lootSpec:Show()
 				end
 			end,
@@ -6092,8 +6074,8 @@ local function initUI()
 			end,
 		}
 
-		LDB:NewDataObject(addonName .. "_LootSpec", iconData)
-		LDBIcon:Register(addonName .. "_LootSpec", iconData, addon.db["lootspec_quickswitch"])
+		addon.LDB:NewDataObject(addonName .. "_LootSpec", iconData)
+		addon.LDBIcon:Register(addonName .. "_LootSpec", iconData, addon.db["lootspec_quickswitch"])
 
 		UpdateRadioSelection()
 		lootSpec:Hide()
@@ -6311,7 +6293,7 @@ local function CreateUI()
 	end
 
 	-- Datenobjekt fr den Minimap-Button
-	local EnhanceQoLLDB = LDB:NewDataObject("EnhanceQoL", {
+	local EnhanceQoLLDB = addon.LDB:NewDataObject("EnhanceQoL", {
 		type = "launcher",
 		text = addonName,
 		icon = "Interface\\AddOns\\" .. addonName .. "\\Icons\\Icon.tga", -- Hier kannst du dein eigenes Icon verwenden
@@ -6328,7 +6310,7 @@ local function CreateUI()
 		end,
 	})
 	-- Toggle Minimap Button based on settings
-	LDBIcon:Register(addonName, EnhanceQoLLDB, EnhanceQoLDB)
+	addon.LDBIcon:Register(addonName, EnhanceQoLLDB, EnhanceQoLDB)
 
 	-- Register to addon compartment
 	AddonCompartmentFrame:RegisterAddon({
@@ -6831,10 +6813,10 @@ local function setAllHooks()
 
 	local function refreshGlobalFontConsumers()
 		if addon.functions and addon.functions.BumpGlobalFontStateVersion then addon.functions.BumpGlobalFontStateVersion() end
-		if ActionBarLabels then
-			if ActionBarLabels.RefreshAllMacroNameVisibility then ActionBarLabels.RefreshAllMacroNameVisibility() end
-			if ActionBarLabels.RefreshAllHotkeyStyles then ActionBarLabels.RefreshAllHotkeyStyles() end
-			if ActionBarLabels.RefreshAllCountStyles then ActionBarLabels.RefreshAllCountStyles() end
+		if addon.ActionBarLabels then
+			if addon.ActionBarLabels.RefreshAllMacroNameVisibility then addon.ActionBarLabels.RefreshAllMacroNameVisibility() end
+			if addon.ActionBarLabels.RefreshAllHotkeyStyles then addon.ActionBarLabels.RefreshAllHotkeyStyles() end
+			if addon.ActionBarLabels.RefreshAllCountStyles then addon.ActionBarLabels.RefreshAllCountStyles() end
 		end
 		if addon.functions and addon.functions.refreshItemLevelDisplays then addon.functions.refreshItemLevelDisplays() end
 		if addon.functions and addon.functions.refreshCharacterFrameElementFonts then addon.functions.refreshCharacterFrameElementFonts() end
@@ -6913,7 +6895,7 @@ local function setAllHooks()
 			refreshGCDBarForMedia(mediaType, mediaKey)
 			refreshCooldownPanelsForMedia(mediaType)
 		elseif mediaType == "border" then
-			if ActionBarLabels and ActionBarLabels.ResetBorderCache then ActionBarLabels.ResetBorderCache() end
+			if addon.ActionBarLabels and addon.ActionBarLabels.ResetBorderCache then addon.ActionBarLabels.ResetBorderCache() end
 			refreshExperienceBarForMedia(mediaType, mediaKey)
 			refreshTotalAbsorbTrackerForMedia(mediaType, mediaKey)
 			refreshGCDBarForMedia(mediaType, mediaKey)
@@ -7105,7 +7087,7 @@ end
 local COPPER_PER_GOLD = 10000
 
 function addon.functions.AutoSyncWarbandGold()
-	local privateDB = getPrivateDB()
+	local privateDB = (addon.functions.GetPrivateDB and addon.functions.GetPrivateDB() or addon.privateDB or {})
 	if not privateDB["autoWarbandGold"] then return end
 	if not C_Bank or not Enum or not Enum.BankType or not Enum.BankType.Account then return end
 
@@ -7274,7 +7256,7 @@ local eventHandlers = {
 			if addon.functions.initializePersistentCVars then addon.functions.initializePersistentCVars() end
 
 			loadMain()
-			EQOL.PersistSignUpNote()
+			addon.PersistSignUpNote()
 
 			--@debug@
 			loadSubAddon("EnhanceQoLQuery")
@@ -7542,7 +7524,7 @@ local eventHandlers = {
 		addon.variables.isMaxLevel = {}
 		addon.variables.isMaxLevel[addon.variables.maxLevel] = true
 
-		local privateDB = getPrivateDB()
+		local privateDB = (addon.functions.GetPrivateDB and addon.functions.GetPrivateDB() or addon.privateDB or {})
 		if privateDB["moneyTracker"] then
 			privateDB["moneyTracker"][UnitGUID("player")] = {
 				name = UnitName("player"),
@@ -7575,13 +7557,13 @@ local eventHandlers = {
 		if addon.CombatText and addon.CombatText.RefreshAnchor then addon.CombatText:RefreshAnchor() end
 	end,
 	["PLAYER_MONEY"] = function()
-		local privateDB = getPrivateDB()
+		local privateDB = (addon.functions.GetPrivateDB and addon.functions.GetPrivateDB() or addon.privateDB or {})
 		if privateDB["moneyTracker"] and privateDB["moneyTracker"][UnitGUID("player")] and privateDB["moneyTracker"][UnitGUID("player")]["money"] then
 			privateDB["moneyTracker"][UnitGUID("player")]["money"] = GetMoney()
 		end
 	end,
 	["ACCOUNT_MONEY"] = function()
-		local privateDB = getPrivateDB()
+		local privateDB = (addon.functions.GetPrivateDB and addon.functions.GetPrivateDB() or addon.privateDB or {})
 		privateDB["warbandGold"] = C_Bank.FetchDepositedMoney(Enum.BankType.Account)
 	end,
 	["PLAYER_REGEN_ENABLED"] = function()

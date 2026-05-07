@@ -13,7 +13,7 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | Lightfused Mana Potion rank group | Brought upstream | [`8f8daa3c`](https://github.com/R41z0r/EnhanceQoL/commit/8f8daa3c) (2026-03-17) | [`ee3c3921`](https://github.com/andybergon/EnhanceQoL/commit/ee3c3921) (2026-03-20) | 241300/241301 grouped for "use highest rank" |
 | Cooldown panel item init fix | Brought upstream | [`478b62ac`](https://github.com/R41z0r/EnhanceQoL/commit/478b62ac) (2026-03-17) | [`42c82243`](https://github.com/andybergon/EnhanceQoL/commit/42c82243) (2026-03-20) | Upstream added `GetItemUseSpellID` with proper caching + `RebuildSpellIndex` in Init |
 | Out-of-combat-only class buff reminder | Brought upstream | [`f2fbdcaf`](https://github.com/R41z0r/EnhanceQoL/commit/f2fbdcaf) (2026-03-20) | [`ef73fb86`](https://github.com/andybergon/EnhanceQoL/commit/ef73fb86) (2026-03-20) | Implemented independently upstream as `DB_ONLY_OUT_OF_COMBAT` with `IsRuntimeEvaluationBlockedByCombat()`; fork commit skipped during rebase |
-| [Right-click targeting blocker](#right-click-targeting-blocker) | Pending upstream | PR [#982](https://github.com/R41z0r/EnhanceQoL/pull/982) (open) | [`1b83d28d`](https://github.com/andybergon/EnhanceQoL/commit/1b83d28d) (2026-03-07) | Includes double-click support |
+| [Right-click targeting blocker](#right-click-targeting-blocker) | Pending upstream | PR [#982](https://github.com/R41z0r/EnhanceQoL/pull/982) (open) | [`1b83d28d`](https://github.com/andybergon/EnhanceQoL/commit/1b83d28d) (2026-03-07) | Includes double-click support; fixed post-merge `LMain` settings reference |
 | [Absorb fill dropdown](#absorb-fill-dropdown) | Pending upstream | PR [#984](https://github.com/R41z0r/EnhanceQoL/pull/984) (open) | [`fb01a164`](https://github.com/andybergon/EnhanceQoL/commit/fb01a164) (2026-03-07) | Replaces mutually-exclusive checkboxes with a dropdown |
 | `/vault`, `/greatvault`, `/weeklyvault` slash commands | Fork-only | — | [`2cb733fa`](https://github.com/andybergon/EnhanceQoL/commit/2cb733fa) (2026-03-08) | Blocked on collaborator access to open PR upstream |
 | [Gossip skip behavior setting](#gossip-skip-behavior-setting) | Fork-only | — | [`a12bf33f`](https://github.com/andybergon/EnhanceQoL/commit/a12bf33f) (2026-03-20) | Dropdown for gossip "Skip" options: pause / auto-skip / accept normally |
@@ -45,6 +45,8 @@ This file and `CLAUDE.md` are also fork-only (project docs for Claude Code).
 **Fix:** Hooks `WorldFrame:OnMouseUp` and calls `MouselookStop()` on right-click. This cancels the targeting action without affecting camera rotation — the same technique used by the Zevade addon. Separate in-combat and out-of-combat toggles let players configure behavior per context.
 
 **Double-click support:** Two modes: (1) block all right-clicks entirely, or (2) block only single clicks while allowing double-click targeting. The second mode tracks `lastStopTime` and compares against a configurable threshold (default 0.2s, range 0.1–0.5s) — if a second click arrives within the threshold, it's allowed through.
+
+**Post-merge load fix:** `Settings_Mouse.lua` must use the local AceLocale handle `L`, not `LMain`, for the right-click targeting labels. The same cleanup also moved several `EnhanceQoL.lua` library aliases/state handles onto `addon` to stay below WoW Lua's 200-local main-chunk limit.
 
 **Files changed:** `Submodules/RightClickTargeting.lua` (new), `Modules/Mouse/Settings_Mouse.lua`, `EnhanceQoL.lua`, `EnhanceQoL.toc`, `Locales/enUS.lua`.
 

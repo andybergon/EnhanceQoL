@@ -115,7 +115,7 @@ Blizzard's taint system marks certain API return values as "secret" when addon c
 
 ## Lua Local Variable Limit
 
-`ResourceBars.lua` and `ClassBuffReminder.lua` are at the 200 local variable limit for Lua's main chunk. **Do NOT add new `local` forward declarations at the top level.** Instead, put new functions on the module table (e.g. `ResourceBars.myFunction = function(...)` or `Reminder.myFunction = function(...)` instead of `local myFunction`). Use inline string literals for DB key constants in closures (e.g. `"classBuffReminderNearbyOnly"` instead of `DB_NEARBY_ONLY`) to avoid adding locals. This applies to any large file that's near the limit.
+`EnhanceQoL.lua`, `ResourceBars.lua`, and `ClassBuffReminder.lua` are at or near the 200 local variable limit for Lua's main chunk. **Do NOT add new `local` forward declarations at the top level.** Instead, put new functions/state on the module/addon table (e.g. `ResourceBars.myFunction = function(...)`, `Reminder.myFunction`, or `addon.SomeHelper`) instead of `local myFunction`. Use inline string literals for DB key constants in closures (e.g. `"classBuffReminderNearbyOnly"` instead of `DB_NEARBY_ONLY`) to avoid adding locals. This applies to any large file that's near the limit.
 
 Resource bar overlays should anchor to `bar._rbInner or bar`, not directly to `bar`, so they respect upstream's inner wrapper/backdrop layout. Use `ResourceBars.SetStatusBarReverseFill()` instead of calling `SetReverseFill()` directly.
 
