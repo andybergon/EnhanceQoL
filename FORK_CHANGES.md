@@ -27,10 +27,10 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | Cooldown panel passive trinket glow fix | Fork-only | — | `main` | `GetItemUseSpellID` checked `C_Item.GetItemSpell` which returns spells for "Equip:" effects too; now verifies "Use:" via tooltip |
 | Class buff reminder "nearby only" filter | Fork-only | — | `main` | Only count group members in buff cast range (`IsSpellInRange`) for missing buff counts; falls back to visibility (~100yd) for AoE buffs like Battle Shout |
 | Absorb text on health bar | Likely overlaps upstream | Upstream added `absorbText` (2026-04) | `main` | Shows absorb/heal-absorb amounts as text suffix on health bar; dropdown with None/Absorb/Heal Absorb/Both; taint-safe via `issecretvalue` guard. **Post-2026-04-22 merge:** upstream independently added `absorbText` setting — both implementations coexist in the merged tree; needs in-game audit to decide whether to keep fork or adopt upstream's. |
-| [Tooltip widget taint fixes](#tooltip-widget-taint-fixes) | Fork-only | — | `main` | Replaced GameTooltip OnShow hooks + conditional SetDefaultAnchor to reduce AreaPOI widget taint from 1382→~100 |
+| [Tooltip widget taint fixes](#tooltip-widget-taint-fixes) | Fork-only | — | `main` | Replaced broad GameTooltip hooks; added widget-instance guards for AreaPOI/UIWidget secret-number layout errors |
 | [LFG persistSignUpNote taint fix](#lfg-persistsignupnote-taint-fix) | Fork-only | — | `main` | Replaced `LFGListApplicationDialog_Show` global function replacement with `hooksecurefunc` + `OnTextChanged` HookScript; eliminates `LFGList.lua:1614` (and 1571/3187/4002) cascade |
 | LFG one-click apply after decline | Fork-only | — | `main` | Selects clicked listings before checking Sign Up state; for declined/timed-out rows, cancels the stale application, refreshes the search, then retries signup for the same result |
-| UIWidget Setup taint fixes | Fork-only | — | `main` | pcall wrappers on TextWithState/Currencies setup plus ItemDisplay font-dimension guards for Blizzard's internal xpcall path (`Blizzard_UIWidgetTemplateBase.lua` secret-value arithmetic). Suppresses only secret-number errors and re-raises everything else. |
+| UIWidget Setup taint fixes | Fork-only | — | `main` | pcall wrappers on TextWithState/Currencies setup, ItemDisplay font-dimension guards, and StatusBar `GetRect` guard for `DefaultWidgetLayout` secret-value arithmetic. Suppresses only secret-number errors and re-raises everything else. |
 | LFG search auto-refresh | Fork-only | — | `main` | Auto-refresh toggle + interval selector (5–60s) in filter dropdown; only runs while search panel is open |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
@@ -181,12 +181,13 @@ Settings include enable toggle, custom color with opacity, texture selection, fi
 
 **Problem:** `GameTooltip:HookScript("OnShow")` runs addon code for ALL tooltip types — including AreaPOI, world map pins, and event tooltips. This taints the execution context, causing `DefaultWidgetLayout`, `GetUnscaledFrameRect`, and `GetStringHeight` to error on secret number values during widget set processing. Observed 1382 errors per session.
 
-**Fix:** Three changes:
+**Fix:** Four changes:
 1. **DungeonPortal.lua:** Replaced `GameTooltip:HookScript("OnShow/OnHide")` with per-entry `OnEnter/OnLeave` hooks via `hooksecurefunc("LFGListSearchEntry_Update")`. The RIO score frame positioning now only fires when hovering LFG search entries, never for unrelated tooltips.
 2. **Ignore.lua:** Replaced `GameTooltip:HookScript("OnShow")` with `TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit)`. The ignore note only fires for unit tooltips.
 3. **EnhanceQoLTooltip.lua:** Made `hooksecurefunc("GameTooltip_SetDefaultAnchor")` conditional — only registered when custom tooltip anchoring is active (`TooltipAnchorType ~= 1`). Changing the setting requires `/reload`.
+4. **EnhanceQoLTooltip.lua:** Added an instance-level `GetRect` guard for `UIWidgetTemplateStatusBarMixin` frames. AreaPOI status-bar widgets can finish `Setup()` cleanly, then fail later in `DefaultWidgetLayout -> GetUnscaledFrameRect` because `frame:GetRect()` returns secret values in the tainted tooltip context. The guard returns plain numeric fallback geometry without wrapping Blizzard's global tooltip/widget functions.
 
-**Result:** 1382 → ~100 errors per session. Remaining errors are from `TooltipDataProcessor` internal table taint (unavoidable without removing tooltip features).
+**Result:** Broad AreaPOI tooltip taint reduced substantially; follow-up fixed status-bar widget layout spam (`FrameUtil.lua:211`, widgetType 2, widget set 2042) without re-tainting `GameTooltip_AddWidgetSet`.
 
 **Files changed:** `Modules/MythicPlus/DungeonPortal.lua`, `Submodules/Ignore/Ignore.lua`, `Modules/Tooltip/EnhanceQoLTooltip.lua`.
 

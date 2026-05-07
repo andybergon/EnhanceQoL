@@ -1361,6 +1361,51 @@ local function registerTooltipHooks()
 		end
 	end
 
+	local function isSecretError(err) return type(err) == "string" and err:find("secret") end
+
+	local function safeFrameNumber(frame, methodName, fallback)
+		if not frame or not frame[methodName] then return fallback or 0 end
+		local ok, value = pcall(frame[methodName], frame)
+		if not ok or value == nil or (issecretvalue and issecretvalue(value)) then return fallback or 0 end
+		return value
+	end
+
+	local function installSafeWidgetGetRect(frame)
+		if not frame or frame._eqolSafeWidgetGetRect then return end
+		local originalGetRect = frame.GetRect
+		if not originalGetRect then return end
+		frame._eqolSafeWidgetGetRect = true
+		frame._eqolOriginalGetRect = originalGetRect
+		frame.GetRect = function(self, ...)
+			local ok, left, bottom, width, height = pcall(originalGetRect, self, ...)
+			if
+				ok
+				and left ~= nil
+				and bottom ~= nil
+				and width ~= nil
+				and height ~= nil
+				and not (issecretvalue and (issecretvalue(left) or issecretvalue(bottom) or issecretvalue(width) or issecretvalue(height)))
+			then
+				return left, bottom, width, height
+			end
+			return 0, 0, safeFrameNumber(self, "GetWidth", 0), safeFrameNumber(self, "GetHeight", 0)
+		end
+	end
+
+	-- StatusBar widgets in AreaPOI/event tooltips can finish Setup successfully, then fail
+	-- later in DefaultWidgetLayout -> GetUnscaledFrameRect because frame:GetRect() returns
+	-- secret values in the tainted tooltip execution context. Keep the guard on the widget
+	-- instance so Blizzard's global layout functions stay untouched.
+	if UIWidgetTemplateStatusBarMixin and UIWidgetTemplateStatusBarMixin.Setup then
+		local origStatusBarSetup = UIWidgetTemplateStatusBarMixin.Setup
+		UIWidgetTemplateStatusBarMixin.Setup = function(self, ...)
+			local ok, err = pcall(origStatusBarSetup, self, ...)
+			installSafeWidgetGetRect(self)
+			if not ok and isSecretError(err) then return end
+			if not ok then error(err, 0) end
+		end
+	end
+
 	-- Same pattern for UIWidgetTemplateItemDisplayMixin:Setup.
 	-- Item display widgets (e.g. tooltips with item rewards like Angler Pearls,
 	-- itemID 267278) resume from an async ContinuableContainer callback into
@@ -1402,7 +1447,7 @@ local function registerTooltipHooks()
 				self.InfoText.GetStringHeight = infoTextGetStringHeight
 				self.InfoText.GetStringWidth = infoTextGetStringWidth
 			end
-			if not ok and tostring(err):find("secret") then return end
+			if not ok and isSecretError(err) then return end
 			if not ok then error(err, 0) end
 		end
 	end
