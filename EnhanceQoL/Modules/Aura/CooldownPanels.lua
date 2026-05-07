@@ -1254,7 +1254,6 @@ end
 
 local fakeCursorFrame
 local fakeCursorResetOnShow = true
-local fakeCursorMode
 local cursorFollowRunner
 local cursorSpecRetryPending
 
@@ -1295,7 +1294,12 @@ local function showFakeCursorFrame()
 end
 
 local function hideFakeCursorFrame()
-	if fakeCursorFrame then fakeCursorFrame:Hide() end
+	if fakeCursorFrame then
+		fakeCursorFrame:SetAlpha(0)
+		if fakeCursorFrame.texture then fakeCursorFrame.texture:Hide() end
+		fakeCursorFrame:EnableMouse(false)
+		fakeCursorFrame:Hide()
+	end
 end
 
 local function resetFakeCursorFrame()
@@ -1304,8 +1308,9 @@ local function resetFakeCursorFrame()
 end
 
 local function setFakeCursorMode(mode)
-	if fakeCursorMode == mode then return end
-	fakeCursorMode = mode
+	-- Always re-apply the visual state because layout edit paths can manipulate
+	-- the fake cursor frame directly between mode transitions.
+	if mode ~= "edit" and mode ~= "follow" then mode = "hidden" end
 	if mode == "hidden" then
 		hideFakeCursorFrame()
 		return
@@ -5313,20 +5318,24 @@ function CooldownPanels:SelectPanel(panelId)
 	if not root then return end
 	panelId = normalizeId(panelId)
 	if not root.panels or not root.panels[panelId] then return end
-	local previousPanelId = root.selectedPanel
+	local previousPanelId = normalizeId(root.selectedPanel)
+	local editor = getEditor()
+	local layoutEditActive = editor and editor.layoutEditActive == true
+	local previousLayoutPanelId = layoutEditActive and normalizeId(editor._eqolLayoutPanelId or previousPanelId) or nil
 	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutEntryStandaloneMenu(previousPanelId) end
 	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutPanelStandaloneMenu(previousPanelId) end
 	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutFixedGroupStandaloneMenu(previousPanelId) end
 	root.selectedPanel = panelId
-	local editor = getEditor()
 	if editor then
 		editor.selectedPanelId = panelId
 		editor.selectedEntryId = nil
+		if layoutEditActive then editor._eqolLayoutPanelId = panelId end
 	end
-	local openLayoutPanelDialog = editor and editor.layoutEditActive == true and previousPanelId ~= panelId
+	local openLayoutPanelDialog = layoutEditActive and previousPanelId ~= panelId
 	local needsLiveRefresh = self:IsAnyPanelLayoutEditActive()
 	if needsLiveRefresh then
-		if previousPanelId and previousPanelId ~= panelId and self:GetPanel(previousPanelId) then self:RefreshPanel(previousPanelId) end
+		if previousLayoutPanelId and previousLayoutPanelId ~= panelId and self:GetPanel(previousLayoutPanelId) then self:RefreshPanel(previousLayoutPanelId) end
+		if previousPanelId and previousPanelId ~= panelId and previousPanelId ~= previousLayoutPanelId and self:GetPanel(previousPanelId) then self:RefreshPanel(previousPanelId) end
 		self:RefreshPanel(panelId)
 	end
 	self:UpdateCursorAnchorState()
@@ -5387,6 +5396,10 @@ function CooldownPanels:SetEditorLayoutEditEnabled(enabled)
 	editor.layoutEditActive = enabled
 	local nextPanelId = enabled and normalizeId(editor.selectedPanelId) or nil
 	editor._eqolLayoutPanelId = nextPanelId
+	if not enabled then
+		stopCursorFollow()
+		setFakeCursorMode("hidden")
+	end
 	if not enabled then self:HideLayoutEntryStandaloneMenu(previousPanelId or editor.selectedPanelId) end
 	if not enabled then self:HideLayoutPanelStandaloneMenu(previousPanelId or editor.selectedPanelId) end
 	if not enabled then self:HideLayoutFixedGroupStandaloneMenu(previousPanelId or editor.selectedPanelId) end

@@ -8,6 +8,7 @@
 
 ### 🐛 Fixed
 
+- Cooldown Panels / Layout Edit: Fixed cursor-anchored panels leaving a visible fake cursor behind after switching between cursor panels during Layout Edit and pressing Done.
 - Group Frames / Healer Buff Placement: Fixed Priest healer-buff availability so Discipline and Holy buffs are not offered while playing Shadow.
 
 ---
