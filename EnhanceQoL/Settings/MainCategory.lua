@@ -101,12 +101,10 @@ local function createRootSlashCommandHints(category)
 				{
 					commands = { "/click EQOLRandomHearthstoneButton LeftButton 1" },
 					desc = L["rootSlashCommandRandomHearthstoneDesc"] or "Use random hearthstone.",
-					note = L["rootSlashCommandNoteUseInMacro"] or "Use this in a macro.",
 				},
 				{
 					commands = { "/click EQOLRandomMountButton LeftButton 1" },
 					desc = L["rootSlashCommandRandomMountDesc"] or "Use random mount.",
-					note = L["rootSlashCommandNoteUseInMacro"] or "Use this in a macro.",
 				},
 				{
 					commands = { "/click EQOLRepairMountButton LeftButton 1" },

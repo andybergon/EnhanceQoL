@@ -726,7 +726,7 @@ local function FixPlayerChoiceAnchor()
 		if not self._eqol_needsReapply then return end
 		self._eqol_needsReapply = nil
 
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			if self and self:IsShown() then
 				local entry = addon.Mover.functions.GetEntryForFrameName("PlayerChoiceFrame")
 				if entry then addon.Mover.functions.applyFrameSettings(self, entry) end
@@ -765,13 +765,7 @@ local function FixHeroTalentsAnchor()
 					if nodeInfo and nodeInfo.subTreeID and talentButton.ClearAllPoints then talentButton:ClearAllPoints() end
 				end
 			end
-			if RunNextFrame then
-				RunNextFrame(function() skipHook = false end)
-			elseif C_Timer and C_Timer.After then
-				C_Timer.After(0, function() skipHook = false end)
-			else
-				skipHook = false
-			end
+			RunNextFrame(function() skipHook = false end)
 		end
 	end)
 	return true
@@ -959,13 +953,7 @@ function addon.Mover.functions.createHooks(frame, entry)
 					addon.Mover.functions.CheckScaleWheelCapture()
 				end
 			end
-			if RunNextFrame then
-				RunNextFrame(markHover)
-			elseif C_Timer and C_Timer.After then
-				C_Timer.After(0, markHover)
-			else
-				markHover()
-			end
+			RunNextFrame(markHover)
 		end
 	end
 

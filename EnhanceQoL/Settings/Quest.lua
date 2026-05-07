@@ -231,11 +231,7 @@ local function EnsureObjectiveTrackerMinimizeWatcher()
 	objectiveTrackerMinimizeWatcher:RegisterEvent("ADDON_LOADED")
 	objectiveTrackerMinimizeWatcher:SetScript("OnEvent", function(_, event, name)
 		if event == "ADDON_LOADED" and name ~= "Blizzard_ObjectiveTracker" then return end
-		if C_Timer and C_Timer.After then
-			C_Timer.After(0, EnsureObjectiveTrackerMinimizeHook)
-		else
-			EnsureObjectiveTrackerMinimizeHook()
-		end
+		RunNextFrame(EnsureObjectiveTrackerMinimizeHook)
 	end)
 end
 

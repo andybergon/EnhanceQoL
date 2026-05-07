@@ -503,12 +503,8 @@ local function onGCDBarEvent(_, event, ...) GCDBar:OnEvent(event, ...) end
 
 function GCDBar:ScheduleMatchedWidthSync()
 	if widthSyncQueued then return end
-	if not (C_Timer and C_Timer.After) then
-		self:ApplySize()
-		return
-	end
 	widthSyncQueued = true
-	C_Timer.After(0, runDelayedMatchedWidthSync)
+	RunNextFrame(runDelayedMatchedWidthSync)
 end
 
 function GCDBar:EnsureWidthSyncHook(frameName)

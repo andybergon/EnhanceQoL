@@ -3529,7 +3529,7 @@ function ChannelHistory:CreateDebugFrame(showImmediately)
 
 		local text = sanitizeCopyText(buildCopyTextFromData())
 		popup.editBox:SetText(text or "")
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			if not popup or not popup:IsShown() then return end
 			if popup.RefreshScrollHeight then popup:RefreshScrollHeight() end
 			if popup.scroll then popup.scroll:SetVerticalScroll(0) end

@@ -61,6 +61,7 @@ function addon.functions.SettingsCreateCheckbox(cat, cbData)
 		set = cbData.func or cbData.set or function(_, v) addon.db[cbData.var] = v end,
 		desc = cbData.desc,
 		searchtags = cbData.searchtags,
+		isEnabled = cbData.isEnabled,
 		parent = cbData.element,
 		parentCheck = cbData.parentCheck,
 		parentSection = cbData.parentSection,

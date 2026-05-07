@@ -225,13 +225,12 @@ local FAMILY_DATA = {
 	{ id = "druid_lifebloom", classToken = "DRUID", spec = "Restoration", spellIds = { 33763 }, fallbackName = "Lifebloom" },
 	{ id = "druid_wild_growth", classToken = "DRUID", spec = "Restoration", spellIds = { 48438 }, fallbackName = "Wild Growth" },
 	{ id = "druid_germination", classToken = "DRUID", spec = "Restoration", spellIds = { 155777 }, fallbackName = "Germination" },
-	-- Discipline Priest
-	{ id = "priest_pw_shield", classToken = "PRIEST", spec = "Discipline", spellIds = { 17 }, fallbackName = "Power Word: Shield" },
+	-- Priest
+	{ id = "priest_pw_shield", classToken = "PRIEST", specs = { "Discipline", "Holy" }, spellIds = { 17 }, fallbackName = "Power Word: Shield" },
 	{ id = "priest_atonement", classToken = "PRIEST", spec = "Discipline", spellIds = { 194384 }, fallbackName = "Atonement" },
 	{ id = "priest_void_shield", classToken = "PRIEST", spec = "Discipline", spellIds = { 1253593 }, fallbackName = "Void Shield" },
-	-- Holy Priest
-	{ id = "priest_renew", classToken = "PRIEST", spec = "Holy", spellIds = { 139 }, fallbackName = "Renew" },
-	{ id = "priest_prayer_of_mending", classToken = "PRIEST", spec = "Holy", spellIds = { 41635 }, fallbackName = "Prayer of Mending" },
+	{ id = "priest_renew", classToken = "PRIEST", specs = { "Discipline", "Holy" }, spellIds = { 139 }, fallbackName = "Renew" },
+	{ id = "priest_prayer_of_mending", classToken = "PRIEST", specs = { "Discipline", "Holy" }, spellIds = { 41635 }, fallbackName = "Prayer of Mending" },
 	{ id = "priest_echo_of_light", classToken = "PRIEST", spec = "Holy", spellIds = { 77489 }, fallbackName = "Echo of Light" },
 	-- Mistweaver Monk
 	{ id = "monk_soothing_mist", classToken = "MONK", spec = "Mistweaver", spellIds = { 115175 }, fallbackName = "Soothing Mist" },
@@ -280,6 +279,8 @@ local PROVIDER_SPEC_IDS = {
 	SHAMAN = { Restoration = 264 },
 }
 
+local PROVIDER_CLASS_IGNORES_SPEC = {}
+
 local function getPlayerClassToken()
 	local classToken = addon.variables and addon.variables.unitClass
 	if type(classToken) == "string" and classToken ~= "" then return classToken end
@@ -317,6 +318,26 @@ local function getPlayerSpecId()
 	return nil
 end
 
+local function familyMatchesPlayerSpec(family, classSpecMap, playerSpecId)
+	local familySpec = family and family.spec and tostring(family.spec) or nil
+	if familySpec and familySpec ~= "" then
+		local requiredSpecId = classSpecMap and classSpecMap[familySpec] or nil
+		return requiredSpecId == nil or playerSpecId == requiredSpecId
+	end
+
+	local familySpecs = family and family.specs
+	if type(familySpecs) == "table" then
+		for i = 1, #familySpecs do
+			local requiredSpecName = tostring(familySpecs[i] or "")
+			local requiredSpecId = classSpecMap and classSpecMap[requiredSpecName] or nil
+			if requiredSpecId and playerSpecId == requiredSpecId then return true end
+		end
+		return false
+	end
+
+	return true
+end
+
 local function canPlayerProvideFamily(familyId)
 	local family = familyId and FAMILY_BY_ID[tostring(familyId)] or nil
 	if not family then return false end
@@ -327,14 +348,10 @@ local function canPlayerProvideFamily(familyId)
 		if not playerClass or tostring(playerClass) ~= familyClass then return false end
 	end
 
-	local familySpec = family.spec and tostring(family.spec) or nil
-	if familySpec and familySpec ~= "" then
+	if not PROVIDER_CLASS_IGNORES_SPEC[familyClass] then
 		local classSpecMap = familyClass and PROVIDER_SPEC_IDS[familyClass] or nil
-		local requiredSpecId = classSpecMap and classSpecMap[familySpec] or nil
-		if requiredSpecId then
-			local playerSpecId = getPlayerSpecId()
-			if playerSpecId ~= requiredSpecId then return false end
-		end
+		local playerSpecId = getPlayerSpecId()
+		if not familyMatchesPlayerSpec(family, classSpecMap, playerSpecId) then return false end
 	end
 
 	return true
@@ -367,14 +384,10 @@ local function getPlayerFamilyProvisionMap()
 			local familyIdKey = tostring(familyId)
 			if tostring(family.classToken) ~= classToken then
 				map[familyIdKey] = false
+			elseif PROVIDER_CLASS_IGNORES_SPEC[classToken] then
+				map[familyIdKey] = true
 			else
-				local classSpec = family.spec and tostring(family.spec) or nil
-				if classSpec == nil or classSpec == "" then
-					map[familyIdKey] = true
-				else
-					local requiredSpec = specMap and specMap[classSpec] or nil
-					map[familyIdKey] = requiredSpec ~= nil and requiredSpec == specId or false
-				end
+				map[familyIdKey] = familyMatchesPlayerSpec(family, specMap, specId)
 			end
 		end
 	end

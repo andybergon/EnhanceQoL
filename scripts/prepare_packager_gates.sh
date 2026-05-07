@@ -82,16 +82,4 @@ while IFS= read -r -d '' file; do
 	process_file "$file"
 done < <(git -C "$ROOT_DIR" ls-files -z '*.toc' '*.md' '*.txt' '*.lua' '*.xml')
 
-if [ "$EQOL_PACKAGER_BETA" = "1" ]; then
-	if ! grep -qx 'Modules\\Bags\\Bags.xml' "$ROOT_DIR/EnhanceQoL/EnhanceQoL.toc"; then
-		echo "Expected Bags module to be enabled for beta ref '$REF_NAME'." >&2
-		exit 1
-	fi
-else
-	if grep -qx 'Modules\\Bags\\Bags.xml' "$ROOT_DIR/EnhanceQoL/EnhanceQoL.toc"; then
-		echo "Expected Bags module to be disabled for non-beta ref '$REF_NAME'." >&2
-		exit 1
-	fi
-fi
-
 echo "Prepared ${build_label} packager gates for ref '${REF_NAME:-unknown}'."

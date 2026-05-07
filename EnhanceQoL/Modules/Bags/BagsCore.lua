@@ -1,4 +1,4 @@
--- luacheck: globals BagsItemButton_OnLoad ItemButtonUtil ContainerFrameItemButtonMixin ScrollFrameTemplate_OnMouseWheel IsAnyStandardHeldBagOpen BackpackTokenFrame BagItemAutoSortButton ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar UIPanelScrollFrame_OnLoad ClearItemButtonOverlay SetItemButtonQuality SetItemButtonCount SetItemButtonDesaturated ContainerFrame_AllowedToOpenBags C_Cursor COPPER_PER_GOLD COPPER_PER_SILVER NUM_BAG_SLOTS NUM_REAGENTBAG_SLOTS GetInventoryItemTexture GetInventoryItemID GetInventoryItemQuality GetInventorySlotInfo PickupBagFromSlot PutItemInBag CloseAllBags BAGS EQUIP_CONTAINER EQUIP_CONTAINER_REAGENT
+-- luacheck: globals BagsItemButton_OnLoad ItemButtonUtil ContainerFrameItemButtonMixin ScrollFrameTemplate_OnMouseWheel IsAnyStandardHeldBagOpen BackpackTokenFrame BagItemAutoSortButton ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar UIPanelScrollFrame_OnLoad ClearItemButtonOverlay SetItemButtonQuality SetItemButtonCount SetItemButtonDesaturated SetItemButtonTextureVertexColor ContainerFrame_AllowedToOpenBags C_Cursor COPPER_PER_GOLD COPPER_PER_SILVER NUM_BAG_SLOTS NUM_REAGENTBAG_SLOTS GetInventoryItemTexture GetInventoryItemID GetInventoryItemQuality GetInventorySlotInfo PickupBagFromSlot PutItemInBackpack PutItemInBag CloseAllBags BAGS EQUIP_CONTAINER EQUIP_CONTAINER_REAGENT
 local addonName, addon = ...
 addon = addon or {}
 _G[addonName] = addon
@@ -6,6 +6,7 @@ _G[addonName] = addon
 addon.Bags = addon.Bags or {}
 addon.Bags.functions = addon.Bags.functions or {}
 addon.Bags.variables = addon.Bags.variables or {}
+addon.Bags.API = addon.Bags.API or {}
 
 local Bags = addon.Bags
 local L = addon.L or {}
@@ -17,6 +18,11 @@ Core.LAST_CHARACTER_BAG_ID = NUM_TOTAL_EQUIPPED_BAG_SLOTS or 5
 Core.REAGENT_BAG_ID = Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag or 5
 Core.ITEM_CLASS = Enum and Enum.ItemClass or {}
 Core.ITEM_QUALITY_POOR = Enum and Enum.ItemQuality and Enum.ItemQuality.Poor or 0
+Core.CONSUMABLE_CLASS_ID = 0
+Core.CONSUMABLE_OTHER_SUBCLASS_ID = 8
+Core.LEARN_TRANSMOG_SET_TOOLTIP_LINE_TYPE = 39
+Core.TOY_TOOLTIP_LINE_TYPE = 0
+Core.KNOWN_SPELL_TOOLTIP_LINE_TYPE = 43
 
 Core.BUTTON_SIZE = 37
 Core.BUTTON_SPACING = 4
@@ -28,12 +34,15 @@ Core.FOOTER_ROW_HEIGHT = 18
 Core.FOOTER_ROW_SPACING = 4
 Core.FOOTER_SECTION_SPACING = 6
 Core.FOOTER_DIVIDER_OFFSET = 6
+Core.FOOTER_EXTERNAL_REGION_Y_OFFSET = 2
 Core.SECTION_HEADER_HEIGHT = 18
 Core.GROUP_HEADER_HEIGHT = Core.SECTION_HEADER_HEIGHT
 Core.GROUP_HEADER_GAP = 4
 Core.SECTION_CONTENT_TOP_PADDING = 6
 Core.SECTION_GAP = 10
 Core.SECTION_HORIZONTAL_GAP = 8
+Core.GROUP_SPACER_TOP_GAP = 6
+Core.GROUP_SPACER_BOTTOM_GAP = 8
 Core.CLUSTER_GAP = 12
 Core.MIN_FRAME_WIDTH = 240
 Core.MIN_SCROLL_CONTENT_HEIGHT = 160
@@ -54,6 +63,7 @@ Core.SECTION_TOGGLE_RIGHT_WIDTH = Core.SECTION_HEADER_HEIGHT
 Core.SECTION_TOGGLE_WIDTH = Core.SECTION_TOGGLE_LEFT_WIDTH + Core.SECTION_TOGGLE_RIGHT_WIDTH
 Core.REAGENT_SLOT_ICON_ATLAS = "bags-icon-reagents"
 Core.GET_BAG_ITEM_TOOLTIP = C_TooltipInfo and C_TooltipInfo.GetBagItem
+Core.EQUIPMENT_SET_OVERLAY_FALLBACK_TEXTURE = "Interface\\PaperDollInfoFrame\\UI-EquipmentManager-Toggle"
 Core.ACTIVE_BAG_EVENTS = {
 	"ITEM_LOCK_CHANGED",
 	"BAG_UPDATE_COOLDOWN",
@@ -70,6 +80,8 @@ Core.PASSIVE_BAG_EVENTS = {
 	"BAG_UPDATE_DELAYED",
 	"BAG_NEW_ITEMS_UPDATED",
 	"ITEM_DATA_LOAD_RESULT",
+	"TOYS_UPDATED",
+	"NEW_TOY_ADDED",
 }
 Core.ACTIVE_BAG_UNIT_EVENTS = {
 	{
@@ -139,11 +151,19 @@ Bags.variables.state = state
 state.buttons = state.buttons or {}
 state.slotMappings = state.slotMappings or {}
 state.sectionHeaders = state.sectionHeaders or {}
+state.groupSpacers = state.groupSpacers or {}
 state.currencyButtons = state.currencyButtons or {}
 state.itemRuleDataCache = state.itemRuleDataCache or {}
 state.tooltipBindTypeCache = state.tooltipBindTypeCache or {}
+state.tooltipDerivedItemFlagsCache = state.tooltipDerivedItemFlagsCache or {}
+state.overlayBindStatusCache = state.overlayBindStatusCache or {}
 state.slotCategoryCache = state.slotCategoryCache or {}
 state.openSessionNewItems = state.openSessionNewItems or {}
+state.acknowledgedOpenSessionNewItems = state.acknowledgedOpenSessionNewItems or {}
+state.staleBags = state.staleBags or {}
+state.staleBagCount = state.staleBagCount or 0
+state.slotContentState = state.slotContentState or {}
+state.bagSlotCounts = state.bagSlotCounts or {}
 state.forceDynamicRefresh = false
 if state.playerRuleRevision == nil then
 	state.playerRuleRevision = 0
@@ -159,6 +179,7 @@ if state.awaitingRuleItemData == nil then
 end
 state.pendingRuleItemDataIDs = state.pendingRuleItemDataIDs or {}
 state.bagSlotPanels = state.bagSlotPanels or {}
+state.footerRegions = state.footerRegions or {}
 
 local applyConfiguredOverlayAnchors
 local applyConfiguredItemButtonFonts
@@ -170,8 +191,61 @@ local installVisibilityHooks
 local installTokenWatcherHooks
 local cachedOverlayRuntimeConfig
 local updateReagentBagVisuals
+local markOpenSessionNewItemAcknowledged
+local installFrameDropReceiver
+local receiveCursorItemIntoBags
 local itemLevelEligibilityCache = {}
 local BagSlotPanel = {}
+
+function Core.GetFooterRegions(side)
+	local regions = {}
+	local requestedSide = side or "left"
+
+	for id, entry in pairs(state.footerRegions) do
+		local region = entry and entry.region
+		if entry.side == requestedSide and region and region.GetObjectType and (not region.IsForbidden or not region:IsForbidden()) then
+			regions[#regions + 1] = entry
+			entry.id = id
+		end
+	end
+
+	table.sort(regions, function(left, right)
+		local leftPriority = tonumber(left.priority) or 100
+		local rightPriority = tonumber(right.priority) or 100
+		if leftPriority ~= rightPriority then
+			return leftPriority < rightPriority
+		end
+		return tostring(left.id or "") < tostring(right.id or "")
+	end)
+
+	return regions
+end
+
+function Core.GetFooterRegionSize(region)
+	if not region then
+		return 0, 0
+	end
+	local width = region.GetWidth and region:GetWidth() or 0
+	local height = region.GetHeight and region:GetHeight() or 0
+	return math.max(0, math.ceil(width or 0)), math.max(0, math.ceil(height or 0))
+end
+
+local function wipeTable(tbl)
+	if not tbl then
+		return
+	end
+	if wipe then
+		wipe(tbl)
+		return
+	end
+	for key in pairs(tbl) do
+		tbl[key] = nil
+	end
+end
+
+function Core.ClearTooltipDerivedItemFlagsCache()
+	wipeTable(state.tooltipDerivedItemFlagsCache)
+end
 
 function BagsItemButton_OnLoad(self)
 	if not self or not self.ItemLevelText then
@@ -198,11 +272,28 @@ function BagsItemButton_OnLoad(self)
 		end)
 		self._bagsVendorClickHookInstalled = true
 	end
-
+	if not self._bagsNewItemAcknowledgementHookInstalled and self.HookScript then
+		self:HookScript("OnEnter", function(button)
+			if markOpenSessionNewItemAcknowledged then
+				markOpenSessionNewItemAcknowledged(button)
+			end
+		end)
+		self._bagsNewItemAcknowledgementHookInstalled = true
+	end
 	applyConfiguredItemButtonFonts(self)
 	self.ItemLevelText:Hide()
 	if self.ItemUpgradeText then
 		self.ItemUpgradeText:Hide()
+	end
+	if self.EquipmentSetIcon then
+		self.EquipmentSetIcon:Hide()
+	end
+	if self.EquipmentSetText then
+		self.EquipmentSetText:SetText("")
+		self.EquipmentSetText:Hide()
+	end
+	if self.BindStatusText then
+		self.BindStatusText:Hide()
 	end
 	if self.ReagentTint then
 		self.ReagentTint:Hide()
@@ -237,11 +328,119 @@ local function isNewItemAtSlot(bagID, slotID)
 end
 
 local function resetOpenSessionNewItems()
+	local hadSessionItems = false
+	for _, bucket in pairs(state.openSessionNewItems or {}) do
+		if next(bucket) ~= nil then
+			hadSessionItems = true
+			break
+		end
+	end
+
 	if wipe then
 		wipe(state.openSessionNewItems)
 	else
 		state.openSessionNewItems = {}
 	end
+	return hadSessionItems
+end
+
+local function clearOpenSessionNewItemSlot(bagID, slotID)
+	if bagID == nil or slotID == nil then
+		return false
+	end
+
+	local cleared = false
+	if C_NewItems and C_NewItems.RemoveNewItem then
+		if not C_NewItems.IsNewItem or C_NewItems.IsNewItem(bagID, slotID) then
+			C_NewItems.RemoveNewItem(bagID, slotID)
+			cleared = true
+		end
+	end
+
+	local bucket = state.openSessionNewItems and state.openSessionNewItems[bagID]
+	if bucket and bucket[slotID] ~= nil then
+		bucket[slotID] = nil
+		cleared = true
+	end
+
+	local categoryBucket = state.slotCategoryCache and state.slotCategoryCache[bagID]
+	if categoryBucket then
+		categoryBucket[slotID] = nil
+	end
+
+	return cleared
+end
+
+local function addNewItemClearSlot(slots, seen, bagID, slotID)
+	if bagID == nil or slotID == nil then
+		return
+	end
+
+	local seenBag = seen[bagID]
+	if not seenBag then
+		seenBag = {}
+		seen[bagID] = seenBag
+	end
+	if seenBag[slotID] then
+		return
+	end
+
+	seenBag[slotID] = true
+	slots[#slots + 1] = {
+		bagID = bagID,
+		slotID = slotID,
+	}
+end
+
+local function clearNewItemsSection()
+	local slotsToClear = {}
+	local seen = {}
+	local hasNativeNewItems = false
+
+	for bagID = Core.BACKPACK_ID, Core.LAST_CHARACTER_BAG_ID do
+		local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
+		local sessionBucket = state.openSessionNewItems and state.openSessionNewItems[bagID] or nil
+		for slotID = 1, slotCount do
+			local nativeNew = isNewItemAtSlot(bagID, slotID)
+			if nativeNew then
+				hasNativeNewItems = true
+			end
+			if nativeNew or (sessionBucket and sessionBucket[slotID] ~= nil) then
+				addNewItemClearSlot(slotsToClear, seen, bagID, slotID)
+			end
+		end
+	end
+
+	for bagID, bucket in pairs(state.openSessionNewItems or {}) do
+		for slotID in pairs(bucket) do
+			if isNewItemAtSlot(bagID, slotID) then
+				hasNativeNewItems = true
+			end
+			addNewItemClearSlot(slotsToClear, seen, bagID, slotID)
+		end
+	end
+
+	if hasNativeNewItems then
+		state.rebuildAfterNewItemsHeaderClear = true
+	end
+
+	local cleared = false
+	for _, slot in ipairs(slotsToClear) do
+		if clearOpenSessionNewItemSlot(slot.bagID, slot.slotID) then
+			cleared = true
+		end
+	end
+
+	if resetOpenSessionNewItems() then
+		cleared = true
+	end
+
+	wipeTable(state.slotCategoryCache)
+	state.pendingRebuild = true
+	state.pendingRefresh = true
+	state.newItemsVisualDirty = true
+
+	return cleared or #slotsToClear > 0
 end
 
 local function getOpenSessionNewItemIdentity(bagID, slotID, info)
@@ -269,6 +468,68 @@ local function getOpenSessionNewItemsBucket(bagID, create)
 		state.openSessionNewItems[bagID] = bucket
 	end
 	return bucket
+end
+
+local function getAcknowledgedOpenSessionNewItemsBucket(bagID, create)
+	local bucket = state.acknowledgedOpenSessionNewItems[bagID]
+	if not bucket and create then
+		bucket = {}
+		state.acknowledgedOpenSessionNewItems[bagID] = bucket
+	end
+	return bucket
+end
+
+markOpenSessionNewItemAcknowledged = function(button)
+	if addon.GetClearNewItemsOnHeaderClick and addon.GetClearNewItemsOnHeaderClick() then
+		return
+	end
+
+	if not button then
+		return
+	end
+
+	local bagID = button.GetBagID and button:GetBagID() or nil
+	local slotID = button.GetID and button:GetID() or nil
+	if bagID == nil or slotID == nil then
+		return
+	end
+
+	local sessionBucket = getOpenSessionNewItemsBucket(bagID, false)
+	local sessionIdentity = sessionBucket and sessionBucket[slotID] or nil
+	if sessionIdentity == nil and not isNewItemAtSlot(bagID, slotID) then
+		return
+	end
+
+	local info = C_Container.GetContainerItemInfo(bagID, slotID)
+	local identity = sessionIdentity or getOpenSessionNewItemIdentity(bagID, slotID, info)
+	if not identity then
+		return
+	end
+
+	getAcknowledgedOpenSessionNewItemsBucket(bagID, true)[slotID] = identity
+end
+
+local function clearAcknowledgedOpenSessionNewItems()
+	local cleared = false
+	for bagID, bucket in pairs(state.acknowledgedOpenSessionNewItems or {}) do
+		local sessionBucket = getOpenSessionNewItemsBucket(bagID, false)
+		for slotID, acknowledgedIdentity in pairs(bucket) do
+			if sessionBucket and sessionBucket[slotID] ~= nil then
+				if acknowledgedIdentity == true or sessionBucket[slotID] == acknowledgedIdentity then
+					sessionBucket[slotID] = nil
+					cleared = true
+				end
+			end
+
+			local categoryBucket = state.slotCategoryCache and state.slotCategoryCache[bagID]
+			if categoryBucket then
+				categoryBucket[slotID] = nil
+			end
+		end
+	end
+
+	wipeTable(state.acknowledgedOpenSessionNewItems)
+	return cleared
 end
 
 local function isOpenSessionNewItem(bagID, slotID, info)
@@ -561,6 +822,9 @@ local function getMinimumFrameWidth(settings)
 	if state.frame and state.frame.BagSlotsButton and state.frame.BagSlotsButton.GetWidth then
 		settingsButtonWidth = settingsButtonWidth + math.ceil((state.frame.BagSlotsButton:GetWidth() or 0) + 8.5)
 	end
+	if state.frame and state.frame.SortButton and state.frame.SortButton.GetWidth then
+		settingsButtonWidth = settingsButtonWidth + math.ceil((state.frame.SortButton:GetWidth() or 0) + 6.5)
+	end
 
 	local minimumWidth = math.max(
 		Core.MIN_FRAME_WIDTH,
@@ -583,9 +847,80 @@ local function getButtonSpacing(settings)
 	return math.max(2, math.floor((Core.BUTTON_SPACING * scale) + 0.5))
 end
 
+local function isOneBagMode(settings)
+	if addon.GetOneBagMode then
+		return addon.GetOneBagMode()
+	end
+	return settings and settings.oneBagMode == true or false
+end
+
+local function shouldMoveOneBagFreeSlotsToEnd(settings)
+	if not isOneBagMode(settings) then
+		return false
+	end
+	if addon.GetOneBagFreeSlotsAtEnd then
+		return addon.GetOneBagFreeSlotsAtEnd()
+	end
+	return settings and settings.oneBagFreeSlotsAtEnd == true or false
+end
+
+local ONE_BAG_RESET_BAG_SLOT_FLAGS = {
+	Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.ClassEquipment,
+	Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.ClassConsumables,
+	Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.ClassProfessionGoods,
+	Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.ClassJunk,
+	Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.ClassQuestItems,
+	Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.ClassReagents,
+}
+
+local function resetNativeBagFiltersForOneBagMode(settings, forceReset)
+	if not isOneBagMode(settings) then
+		state.nativeBagFiltersResetForOneBag = false
+		return false
+	end
+	if state.nativeBagFiltersResetForOneBag and not forceReset then
+		return false
+	end
+
+	state.nativeBagFiltersResetForOneBag = true
+
+	if not C_Container then
+		return false
+	end
+
+	for bagID = Core.BACKPACK_ID, Core.LAST_CHARACTER_BAG_ID do
+		if C_Container.SetBagSlotFlag then
+			for _, flag in ipairs(ONE_BAG_RESET_BAG_SLOT_FLAGS) do
+				if flag then
+					C_Container.SetBagSlotFlag(bagID, flag, false)
+				end
+			end
+		end
+
+		if bagID == Core.BACKPACK_ID then
+			if C_Container.SetBackpackAutosortDisabled then
+				C_Container.SetBackpackAutosortDisabled(false)
+			end
+			if C_Container.SetBackpackSellJunkDisabled then
+				C_Container.SetBackpackSellJunkDisabled(false)
+			end
+		elseif C_Container.SetBagSlotFlag and Enum and Enum.BagSlotFlags then
+			C_Container.SetBagSlotFlag(bagID, Enum.BagSlotFlags.DisableAutoSort, false)
+			C_Container.SetBagSlotFlag(bagID, Enum.BagSlotFlags.ExcludeJunkSell, false)
+		end
+
+		local settingsManager = _G.ContainerFrameSettingsManager
+		if settingsManager and settingsManager.ClearFilterFlag then
+			settingsManager:ClearFilterFlag(bagID)
+		end
+	end
+
+	return true
+end
+
 local function getFramePaddingSignature(settings)
 	return string.format(
-		"%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
+		"%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d",
 		getOutsideHeaderPadding(settings),
 		getOutsideFooterPadding(settings),
 		getInsideHorizontalPadding(settings),
@@ -595,7 +930,11 @@ local function getFramePaddingSignature(settings)
 		getMaxColumns(settings),
 		(addon.GetCompactCategoryLayout and addon.GetCompactCategoryLayout()) and 1 or 0,
 		addon.GetCompactCategoryGap and addon.GetCompactCategoryGap() or Core.SECTION_HORIZONTAL_GAP,
-		(addon.GetShowCloseButton and addon.GetShowCloseButton()) and 1 or 0
+		(addon.GetCategoryTreeView and addon.GetCategoryTreeView()) and 1 or 0,
+		addon.GetCategoryTreeIndent and addon.GetCategoryTreeIndent() or 0,
+		(addon.GetShowCloseButton and addon.GetShowCloseButton()) and 1 or 0,
+		isOneBagMode(settings) and 1 or 0,
+		shouldMoveOneBagFreeSlotsToEnd(settings) and 1 or 0
 	)
 end
 
@@ -628,9 +967,13 @@ local function applyFramePadding(settings)
 			frame.SettingsButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insideHorizontalPadding, -8)
 		end
 	end
+	if frame.SortButton then
+		frame.SortButton:ClearAllPoints()
+		frame.SortButton:SetPoint("RIGHT", frame.SettingsButton or frame, frame.SettingsButton and "LEFT" or "RIGHT", frame.SettingsButton and -6 or -insideHorizontalPadding, frame.SettingsButton and 0 or -8)
+	end
 	if frame.BagSlotsButton then
 		frame.BagSlotsButton:ClearAllPoints()
-		frame.BagSlotsButton:SetPoint("RIGHT", frame.SettingsButton or frame, frame.SettingsButton and "LEFT" or "RIGHT", frame.SettingsButton and -8 or -insideHorizontalPadding, frame.SettingsButton and 0 or -8)
+		frame.BagSlotsButton:SetPoint("RIGHT", frame.SortButton or frame.SettingsButton or frame, (frame.SortButton or frame.SettingsButton) and "LEFT" or "RIGHT", (frame.SortButton or frame.SettingsButton) and -8 or -insideHorizontalPadding, (frame.SortButton or frame.SettingsButton) and 0 or -8)
 	end
 	if frame.SearchBox then
 		frame.SearchBox:ClearAllPoints()
@@ -699,7 +1042,11 @@ applyActiveSkin = function()
 		else
 			frame:SetBackdropColor(unpackSkinColor(skin.backdropColor, 0.05, 0.06, 0.08, 0.94))
 		end
-		frame:SetBackdropBorderColor(unpackSkinColor(skin.borderColor, 0.35, 0.35, 0.42, 1))
+		if not frame.CustomBorderFrame then
+			frame:SetBackdropBorderColor(unpackSkinColor(skin.borderColor, 0.35, 0.35, 0.42, 1))
+		else
+			frame:SetBackdropBorderColor(0, 0, 0, 0)
+		end
 
 		if frame.Divider then
 			frame.Divider:SetColorTexture(unpackSkinColor(skin.dividerColor, 1, 1, 1, 0.08))
@@ -713,6 +1060,10 @@ applyActiveSkin = function()
 		if frame.SettingsButton and frame.SettingsButton.HighlightTexture then
 			frame.SettingsButton.HighlightTexture:SetVertexColor(unpackSkinColor(skin.accentColor, 1, 1, 1, 1))
 			frame.SettingsButton.HighlightTexture:SetAlpha(0.4)
+		end
+		if frame.SortButton and frame.SortButton.HighlightTexture then
+			frame.SortButton.HighlightTexture:SetVertexColor(unpackSkinColor(skin.accentColor, 1, 1, 1, 1))
+			frame.SortButton.HighlightTexture:SetAlpha(0.4)
 		end
 		if frame.BagSlotsButton and frame.BagSlotsButton.HighlightTexture then
 			frame.BagSlotsButton.HighlightTexture:SetVertexColor(unpackSkinColor(skin.accentColor, 1, 1, 1, 1))
@@ -733,6 +1084,12 @@ applyActiveSkin = function()
 
 	for _, header in ipairs(state.sectionHeaders or {}) do
 		applySectionHeaderSkin(header, skin)
+	end
+
+	for _, spacer in ipairs(state.groupSpacers or {}) do
+		if spacer and spacer.Line then
+			spacer.Line:SetColorTexture(unpackSkinColor(skin and skin.dividerColor, 1, 1, 1, 0.08))
+		end
 	end
 
 	for _, button in ipairs(state.currencyButtons or {}) do
@@ -873,6 +1230,14 @@ applyConfiguredItemButtonFonts = function(button, appearance, signature)
 		applyConfiguredFont(button.ItemUpgradeText, math.max(8, overlayBaseSize - 2), "overlays")
 		button.ItemUpgradeText:SetJustifyH("RIGHT")
 	end
+	if button.BindStatusText then
+		applyConfiguredFont(button.BindStatusText, math.max(8, overlayBaseSize - 2), "overlays")
+		button.BindStatusText:SetJustifyH("RIGHT")
+	end
+	if button.EquipmentSetText then
+		applyConfiguredFont(button.EquipmentSetText, math.max(8, overlayBaseSize - 2), "overlays")
+		button.EquipmentSetText:SetJustifyH("LEFT")
+	end
 	if button.Count then
 		applyConfiguredFont(button.Count, stackBaseSize, "stackCount")
 	end
@@ -970,6 +1335,17 @@ applyConfiguredOverlayAnchors = function(button, overlayRuntime)
 	for _, entry in ipairs((overlayRuntime and overlayRuntime.entries) or {}) do
 		local region = entry.frameKey and button[entry.frameKey]
 		local anchorInfo = entry.anchorInfo
+		if region and anchorInfo then
+			region:ClearAllPoints()
+			region:SetPoint(anchorInfo.point, button, anchorInfo.relativePoint, anchorInfo.x, anchorInfo.y)
+			if region.SetJustifyH and anchorInfo.justifyH then
+				region:SetJustifyH(anchorInfo.justifyH)
+			end
+			if region.SetJustifyV and anchorInfo.justifyV then
+				region:SetJustifyV(anchorInfo.justifyV)
+			end
+		end
+		region = entry.textFrameKey and button[entry.textFrameKey]
 		if region and anchorInfo then
 			region:ClearAllPoints()
 			region:SetPoint(anchorInfo.point, button, anchorInfo.relativePoint, anchorInfo.x, anchorInfo.y)
@@ -1129,37 +1505,6 @@ local function registerPassiveBagEvents()
 	end
 end
 
-local function getAnchorTargetFrame()
-	if ContainerFrameCombinedBags and ContainerFrameCombinedBags:IsShown() then
-		return ContainerFrameCombinedBags
-	end
-
-	local frames = ContainerFrameContainer and ContainerFrameContainer.ContainerFrames or {}
-	local fallbackFrame
-	local bestFrame
-	local bestLeft
-
-	for _, frame in ipairs(frames) do
-		if frame and frame:IsShown() and frame.GetBagID then
-			local bagID = frame:GetBagID()
-			if type(bagID) == "number" and bagID >= Core.BACKPACK_ID and bagID <= Core.LAST_CHARACTER_BAG_ID then
-				fallbackFrame = fallbackFrame or frame
-				local left = frame:GetLeft()
-				if left and (not bestLeft or left < bestLeft) then
-					bestLeft = left
-					bestFrame = frame
-				end
-			end
-		end
-	end
-
-	if bestFrame or fallbackFrame then
-		return bestFrame or fallbackFrame
-	end
-
-	return nil
-end
-
 local function getTotalSlotCount()
 	local total = 0
 	for bagID = Core.BACKPACK_ID, Core.LAST_CHARACTER_BAG_ID do
@@ -1173,72 +1518,147 @@ local function getTotalSlotCount()
 	return total
 end
 
-local function getManagedBagContentSignature(bagID)
-	local parts = state.bagContentSignatureParts or {}
-	state.bagContentSignatureParts = parts
-	if wipe then
-		wipe(parts)
-	else
-		parts = {}
-		state.bagContentSignatureParts = parts
+local function getSlotContentStateBucket(bagID, create)
+	if bagID == nil then
+		return nil
 	end
 
-	local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
-	parts[#parts + 1] = slotCount
-	for slotID = 1, slotCount do
-		local info = C_Container.GetContainerItemInfo(bagID, slotID)
-		parts[#parts + 1] = "|"
-		parts[#parts + 1] = slotID
-		parts[#parts + 1] = ":"
-		if info then
-			local questInfo = C_Container.GetContainerItemQuestInfo and C_Container.GetContainerItemQuestInfo(bagID, slotID) or nil
-			parts[#parts + 1] = info.hyperlink or ""
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = info.itemID or ""
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = info.stackCount or ""
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = info.quality or ""
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = info.isBound and 1 or 0
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = info.hasNoValue and 1 or 0
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = isNewItemAtSlot(bagID, slotID) and 1 or 0
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = questInfo and questInfo.questID or ""
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = questInfo and questInfo.isQuestItem and 1 or 0
-			parts[#parts + 1] = ":"
-			parts[#parts + 1] = questInfo and questInfo.isActive and 1 or 0
+	local bucket = state.slotContentState[bagID]
+	if not bucket and create then
+		bucket = {}
+		state.slotContentState[bagID] = bucket
+	end
+	return bucket
+end
+
+local function captureSlotContentState(target, bagID, slotID, info)
+	target = target or {}
+	info = info or C_Container.GetContainerItemInfo(bagID, slotID)
+	local hasItem = info and info.iconFileID and true or false
+
+	target.hasItem = hasItem
+	target.itemRef = hasItem and (info.hyperlink or info.itemID) or false
+	target.itemID = hasItem and (info.itemID or false) or false
+	target.stackCount = hasItem and (tonumber(info.stackCount) or 0) or 0
+	target.quality = hasItem and (info.quality or false) or false
+	target.isBound = hasItem and (info.isBound and true or false) or false
+	target.hasNoValue = hasItem and (info.hasNoValue and true or false) or false
+
+	return target
+end
+
+local function storeSlotContentState(bagID, slotID, info)
+	local bucket = getSlotContentStateBucket(bagID, true)
+	local entry = bucket[slotID] or {}
+	captureSlotContentState(entry, bagID, slotID, info)
+	bucket[slotID] = entry
+	return entry
+end
+
+local function getSlotContentState(bagID, slotID)
+	local bucket = getSlotContentStateBucket(bagID, false)
+	return bucket and bucket[slotID] or nil
+end
+
+local function clearSlotContentStateRange(bagID, firstSlotID, lastSlotID)
+	local bucket = getSlotContentStateBucket(bagID, false)
+	if not bucket then
+		return
+	end
+	for slotID = firstSlotID, lastSlotID do
+		bucket[slotID] = nil
+	end
+end
+
+local function slotContentStatesEqual(left, right)
+	if left == right then
+		return true
+	end
+	if not left or not right then
+		return false
+	end
+	return left.hasItem == right.hasItem
+		and left.itemRef == right.itemRef
+		and left.itemID == right.itemID
+		and left.stackCount == right.stackCount
+		and left.quality == right.quality
+		and left.isBound == right.isBound
+		and left.hasNoValue == right.hasNoValue
+end
+
+local function markBagStale(bagID)
+	if not isManagedBagUpdateID(bagID) then
+		return
+	end
+	if state.staleBags[bagID] then
+		return
+	end
+	state.staleBags[bagID] = true
+	state.staleBagCount = (state.staleBagCount or 0) + 1
+end
+
+local function clearStaleBags()
+	wipeTable(state.staleBags)
+	state.staleBagCount = 0
+end
+
+local function flushStaleBagsForContentDecision()
+	if (state.staleBagCount or 0) <= 0 then
+		return false
+	end
+
+	if not state.layoutData then
+		clearStaleBags()
+		state.pendingRebuild = true
+		return true
+	end
+
+	local contentDirty = false
+	local footerDirty = false
+	local scratch = state.slotContentScratch or {}
+	state.slotContentScratch = scratch
+
+	for bagID in pairs(state.staleBags) do
+		if isManagedBagUpdateID(bagID) then
+			local previousSlotCount = state.bagSlotCounts[bagID]
+			local currentSlotCount = C_Container.GetContainerNumSlots(bagID) or 0
+			if previousSlotCount ~= nil and previousSlotCount ~= currentSlotCount then
+				contentDirty = true
+				footerDirty = true
+				if previousSlotCount and previousSlotCount > currentSlotCount then
+					clearSlotContentStateRange(bagID, currentSlotCount + 1, previousSlotCount)
+				end
+			end
+
+			local maxSlot = math.max(previousSlotCount or 0, currentSlotCount)
+			for slotID = 1, maxSlot do
+				wipeTable(scratch)
+				local current = captureSlotContentState(scratch, bagID, slotID)
+				local previous = getSlotContentState(bagID, slotID)
+				if not slotContentStatesEqual(previous, current) then
+					contentDirty = true
+					if not previous or previous.hasItem ~= current.hasItem then
+						footerDirty = true
+					end
+					break
+				end
+			end
+
+			state.bagSlotCounts[bagID] = currentSlotCount
 		end
 	end
 
-	local signature = table.concat(parts)
-	if wipe then
-		wipe(parts)
-	end
-	return signature
-end
+	clearStaleBags()
 
-local function refreshManagedBagContentSignature(bagID)
-	state.bagContentSignatures = state.bagContentSignatures or {}
-	local signature = getManagedBagContentSignature(bagID)
-	local previousSignature = state.bagContentSignatures[bagID]
-	state.bagContentSignatures[bagID] = signature
-	return previousSignature ~= nil and previousSignature ~= signature
-end
+	if footerDirty then
+		state.footerDirty = true
+	end
+	if contentDirty then
+		state.pendingRebuild = true
+		return true
+	end
 
-local function refreshAllManagedBagContentSignatures()
-	state.bagContentSignatures = state.bagContentSignatures or {}
-	for bagID = Core.BACKPACK_ID, Core.LAST_CHARACTER_BAG_ID do
-		state.bagContentSignatures[bagID] = getManagedBagContentSignature(bagID)
-	end
-	for _, context in ipairs(getVisibleFlatBankContexts()) do
-		for _, bagID in ipairs(context.bagIDs or {}) do
-			state.bagContentSignatures[bagID] = getManagedBagContentSignature(bagID)
-		end
-	end
+	return false
 end
 
 local function saveFramePosition(frame)
@@ -1309,6 +1729,9 @@ local function configureSectionHeader(header, options)
 	header.categoryColor = color
 	header.isCustomCategory = not not options.isCustom
 	header.canCollapse = isCollapsible
+	header.canClearNewItems = options.sectionID == "newItems"
+		and addon.GetClearNewItemsOnHeaderClick
+		and addon.GetClearNewItemsOnHeaderClick()
 	header._bagsTextElementID = options.textElementID or "subcategoryHeader"
 	if isCollapsible then
 		header.Icon.Left:SetAtlas(Core.SECTION_TOGGLE_LEFT_ATLAS, false)
@@ -1351,6 +1774,9 @@ local function acquireSectionHeader(index)
 	header:SetScript("OnMouseWheel", function(_, delta)
 		handleScrollWheel(delta)
 	end)
+	if installFrameDropReceiver then
+		installFrameDropReceiver(header)
+	end
 
 	local highlight = header:CreateTexture(nil, "HIGHLIGHT")
 	highlight:SetPoint("TOPLEFT", header, "TOPLEFT", -2, 0)
@@ -1423,6 +1849,17 @@ local function acquireSectionHeader(index)
 	header.AssignButton = assignButton
 
 	header:SetScript("OnClick", function(self)
+		if receiveCursorItemIntoBags() then
+			return
+		end
+
+		if self.canClearNewItems then
+			clearNewItemsSection()
+			state.newItemsVisualDirty = true
+			scheduleUpdate(true, true, true)
+			return
+		end
+
 		if self.canCollapse then
 			toggleSectionCollapsed(self.sectionID)
 		end
@@ -1435,6 +1872,9 @@ local function acquireSectionHeader(index)
 		local color = self.categoryColor or { 1, 1, 1 }
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText(self.categoryLabel, color[1] or 1, color[2] or 1, color[3] or 1)
+		if self.canClearNewItems then
+			GameTooltip:AddLine(GREEN_FONT_COLOR:WrapTextInColorCode(L["categoryNewItemsClearTooltip"] or "Click to clear New Items."))
+		end
 		GameTooltip:Show()
 	end)
 	header:SetScript("OnLeave", function()
@@ -1445,6 +1885,21 @@ local function acquireSectionHeader(index)
 	applySectionHeaderSkin(header, getActiveFrameSkin())
 	state.sectionHeaders[index] = header
 	return header
+end
+
+local function acquireGroupSpacer(index)
+	local spacer = state.groupSpacers[index]
+	if spacer then
+		return spacer
+	end
+
+	spacer = CreateFrame("Frame", nil, state.content)
+	spacer:SetHeight(1)
+	spacer.Line = spacer:CreateTexture(nil, "BORDER")
+	spacer.Line:SetAllPoints()
+	spacer.Line:SetColorTexture(1, 1, 1, 0.08)
+	state.groupSpacers[index] = spacer
+	return spacer
 end
 
 local function formatTrackedCurrencyQuantity(quantity)
@@ -1810,7 +2265,7 @@ function BagSlotPanel.ApplyCursorToBagSlot(bagID)
 			end
 			completed = true
 			swapFrame:UnregisterAllEvents()
-			C_Timer.After(0, function()
+			RunNextFrame(function()
 				C_Container.PickupContainerItem(0, 1)
 				PutItemInBag(inventorySlot)
 				BagSlotPanel.Refresh()
@@ -1820,8 +2275,95 @@ function BagSlotPanel.ApplyCursorToBagSlot(bagID)
 		C_Timer.After(0.2, finishSwap)
 	else
 		PutItemInBag(inventorySlot)
-		C_Timer.After(0, BagSlotPanel.Refresh)
+		RunNextFrame(BagSlotPanel.Refresh)
 	end
+end
+
+local function getCursorItemLocation()
+	if not C_Cursor or not C_Cursor.GetCursorItem or not C_Item or not C_Item.DoesItemExist then
+		return nil
+	end
+
+	local itemLocation = C_Cursor.GetCursorItem()
+	if not itemLocation or not itemLocation.HasAnyLocation or not itemLocation:HasAnyLocation() then
+		return nil
+	end
+	if not C_Item.DoesItemExist(itemLocation) then
+		return nil
+	end
+
+	return itemLocation
+end
+
+local function pickupCursorItemIntoFirstEmptyBagSlot()
+	if not C_Container or not C_Container.GetContainerNumSlots or not C_Container.GetContainerItemInfo then
+		return false
+	end
+
+	for bagID = Core.BACKPACK_ID, Core.LAST_CHARACTER_BAG_ID do
+		local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
+		for slotID = 1, slotCount do
+			local info = C_Container.GetContainerItemInfo(bagID, slotID)
+			if not (info and info.iconFileID) then
+				C_Container.PickupContainerItem(bagID, slotID)
+				if not getCursorItemLocation() then
+					return true
+				end
+			end
+		end
+	end
+
+	return false
+end
+
+receiveCursorItemIntoBags = function()
+	if not getCursorItemLocation() then
+		return false
+	end
+
+	local received = false
+	if type(PutItemInBackpack) == "function" and PutItemInBackpack() then
+		received = true
+	elseif type(PutItemInBag) == "function" then
+		for bagID = 1, Core.LAST_CHARACTER_BAG_ID do
+			local inventorySlot = BagSlotPanel.GetInventorySlot(bagID)
+			if inventorySlot and PutItemInBag(inventorySlot) then
+				received = true
+				break
+			end
+		end
+	end
+
+	if not received and C_Container and C_Container.PickupContainerItem then
+		received = pickupCursorItemIntoFirstEmptyBagSlot()
+	end
+	if not received then
+		return false
+	end
+
+	scheduleUpdate(true, true, true)
+	if Bags.functions and Bags.functions.RequestBankLayoutUpdate then
+		Bags.functions.RequestBankLayoutUpdate(true, true)
+	end
+	return true
+end
+
+installFrameDropReceiver = function(frame, receiveMouseUp)
+	if not frame or frame._bagsFrameDropReceiverInstalled then
+		return
+	end
+	frame:EnableMouse(true)
+	frame:SetScript("OnReceiveDrag", function()
+		receiveCursorItemIntoBags()
+	end)
+	if receiveMouseUp and frame.HookScript then
+		frame:HookScript("OnMouseUp", function(_, mouseButton)
+			if mouseButton == "LeftButton" then
+				receiveCursorItemIntoBags()
+			end
+		end)
+	end
+	frame._bagsFrameDropReceiverInstalled = true
 end
 
 function BagSlotPanel.RefreshButton(button)
@@ -2063,6 +2605,66 @@ function Bags.functions.RefreshEquippedBagSlotPanels()
 	BagSlotPanel.Refresh()
 end
 
+local function createNativeBagSortButton(parent)
+	local button = CreateFrame("Button", nil, parent)
+	button:SetSize(24, 24)
+	button:SetHitRectInsets(-4, -4, -4, -4)
+	button:RegisterForClicks("LeftButtonUp")
+	button.Icon = button:CreateTexture(nil, "ARTWORK")
+	button.Icon:SetPoint("CENTER")
+	button.Icon:SetSize(24, 24)
+	if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("bags-button-autosort-up") then
+		button.Icon:SetAtlas("bags-button-autosort-up")
+	else
+		button.Icon:SetTexture("Interface\\Icons\\INV_Misc_EngGizmos_17")
+		button.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	end
+
+	local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+	highlight:SetPoint("CENTER")
+	highlight:SetSize(24, 24)
+	highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+	highlight:SetBlendMode("ADD")
+	highlight:SetAlpha(0.4)
+	button.HighlightTexture = highlight
+
+	button:SetScript("OnMouseDown", function(self)
+		if self.Icon and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("bags-button-autosort-down") then
+			self.Icon:SetAtlas("bags-button-autosort-down")
+		elseif self.Icon then
+			self.Icon:AdjustPointsOffset(1, -1)
+		end
+	end)
+	button:SetScript("OnMouseUp", function(self)
+		if self.Icon and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("bags-button-autosort-up") then
+			self.Icon:SetAtlas("bags-button-autosort-up")
+		elseif self.Icon then
+			self.Icon:AdjustPointsOffset(-1, 1)
+		end
+	end)
+	button:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText(_G.BAG_CLEANUP_BAGS or "Clean Up Bags", 1, 0.82, 0)
+		GameTooltip:Show()
+	end)
+	button:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+	button:SetScript("OnClick", function()
+		if PlaySound and SOUNDKIT and SOUNDKIT.UI_BAG_SORTING_01 then
+			PlaySound(SOUNDKIT.UI_BAG_SORTING_01)
+		end
+		resetNativeBagFiltersForOneBagMode(getSettings(), true)
+		if C_Container and C_Container.SortBags then
+			C_Container.SortBags()
+		end
+		if scheduleUpdate then
+			scheduleUpdate(true, true, true)
+		end
+	end)
+	return button
+end
+
 local function closeNativeBagsFromCustomHide()
 	if state.suppressNativeBagClose then
 		return
@@ -2115,6 +2717,12 @@ local function createMainFrame()
 	backgroundShade:SetAllPoints(backgroundTexture)
 	backgroundShade:Hide()
 	frame.BackgroundShade = backgroundShade
+
+	local customBorderFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+	customBorderFrame:SetFrameLevel(frame:GetFrameLevel() + 2)
+	customBorderFrame:EnableMouse(false)
+	customBorderFrame:Hide()
+	frame.CustomBorderFrame = customBorderFrame
 	tinsert(UISpecialFrames, "BagsMainFrame")
 	frame:SetScript("OnHide", function(self)
 		state.manualVisible = false
@@ -2197,8 +2805,12 @@ local function createMainFrame()
 
 	frame.BagSlotsPanel = BagSlotPanel.Create(frame)
 
+	local sortButton = createNativeBagSortButton(frame)
+	sortButton:SetPoint("RIGHT", settingsButton, "LEFT", -6, 0)
+	frame.SortButton = sortButton
+
 	local bagSlotsButton = BagSlotPanel.CreateToggleButton(frame, frame.BagSlotsPanel)
-	bagSlotsButton:SetPoint("RIGHT", settingsButton, "LEFT", -8, 0)
+	bagSlotsButton:SetPoint("RIGHT", sortButton, "LEFT", -8, 0)
 	frame.BagSlotsButton = bagSlotsButton
 
 	local searchBox = CreateFrame("EditBox", "BagsItemSearchBox", frame, "BagSearchBoxTemplate")
@@ -2253,11 +2865,15 @@ local function createMainFrame()
 	end
 	scrollFrame:SetScrollChild(content)
 	frame.Content = content
+	installFrameDropReceiver(frame, true)
+	installFrameDropReceiver(scrollFrame, true)
+	installFrameDropReceiver(content, true)
 
 	local footer = CreateFrame("Frame", nil, frame)
 	footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", Core.FRAME_PADDING, 0)
 	footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Core.FRAME_PADDING, 0)
 	footer:SetHeight(getFooterHeight(getSettings()))
+	installFrameDropReceiver(footer, true)
 	frame.Footer = footer
 
 	local footerDivider = frame:CreateTexture(nil, "BORDER")
@@ -2278,6 +2894,10 @@ local function createMainFrame()
 	footer.CurrencyContainer = CreateFrame("Frame", nil, footer)
 	footer.CurrencyContainer:SetPoint("BOTTOMLEFT", footer, "BOTTOMLEFT", 0, 0)
 	footer.CurrencyContainer:SetHeight(Core.FOOTER_ROW_HEIGHT)
+
+	footer.ExternalLeftContainer = CreateFrame("Frame", nil, footer)
+	footer.ExternalLeftContainer:SetPoint("BOTTOMLEFT", footer, "BOTTOMLEFT", 0, 0)
+	footer.ExternalLeftContainer:SetHeight(Core.FOOTER_ROW_HEIGHT)
 
 	footer.MoneyButton = CreateFrame("Button", nil, footer)
 	footer.MoneyButton:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 0, 0)
@@ -2565,6 +3185,185 @@ local function updateItemUpgradeText(button, itemLink, itemID, overlayRuntime)
 	button._bagsItemUpgradeEvalKey = evalKey
 end
 
+Core.GetTooltipOverlayBindStatus = function(bagID, slotID, info)
+	if not Core.GET_BAG_ITEM_TOOLTIP or bagID == nil or slotID == nil then
+		return nil
+	end
+
+	local cacheKey = tostring(bagID) .. ":" .. tostring(slotID)
+	local itemLink = info and info.hyperlink or nil
+	local itemID = info and info.itemID or nil
+	local isBound = info and info.isBound or false
+	local cached = state.overlayBindStatusCache and state.overlayBindStatusCache[cacheKey] or nil
+	if cached
+		and cached.itemLink == itemLink
+		and cached.itemID == itemID
+		and cached.isBound == isBound
+	then
+		return cached.status or nil
+	end
+
+	local status
+	local tooltipData = Core.GET_BAG_ITEM_TOOLTIP(bagID, slotID)
+	for _, line in ipairs((tooltipData and tooltipData.lines) or {}) do
+		local text = line and line.leftText or nil
+		if line and line.type == 20 and text then
+			if text == ITEM_BIND_ON_EQUIP then
+				status = "BoE"
+				break
+			elseif text == ITEM_ACCOUNTBOUND_UNTIL_EQUIP or text == ITEM_BIND_TO_ACCOUNT_UNTIL_EQUIP then
+				status = "WuE"
+				break
+			elseif text == ITEM_ACCOUNTBOUND or text == ITEM_BIND_TO_ACCOUNT or text == ITEM_BIND_TO_BNETACCOUNT then
+				status = "WB"
+				break
+			end
+		end
+	end
+
+	state.overlayBindStatusCache[cacheKey] = {
+		itemLink = itemLink,
+		itemID = itemID,
+		isBound = isBound,
+		status = status or false,
+	}
+
+	return status
+end
+
+Core.GetBindStatusOverlayColor = function(status)
+	if status == "BoE" then
+		return 0.38, 0.82, 1
+	elseif status == "WB" then
+		return 0.4, 1, 0.72
+	elseif status == "WuE" then
+		return 0.8, 1, 0.45
+	end
+	return 1, 1, 1
+end
+
+Core.UpdateBindStatusOverlay = function(button, bagID, slotID, info, overlayRuntime)
+	if not button or not button.BindStatusText then
+		return
+	end
+
+	local text = button.BindStatusText
+	local overlayEntry = overlayRuntime and overlayRuntime.byID and overlayRuntime.byID.bindStatus or nil
+	local overlayVersion = overlayRuntime and overlayRuntime.version or 0
+	local itemLink = info and info.hyperlink or nil
+	local itemID = info and info.itemID or nil
+	local evalKey = string.format("%s:%s:%s:%s", tostring(bagID), tostring(slotID), tostring(itemLink or itemID or 0), tostring(overlayVersion))
+
+	if not (overlayEntry and overlayEntry.enabled) then
+		hideButtonOverlayText(button, text, "_bagsBindStatusEvalKey", "hidden:" .. evalKey)
+		return
+	end
+
+	if not itemLink and not itemID then
+		hideButtonOverlayText(button, text, "_bagsBindStatusEvalKey", "empty:" .. evalKey)
+		return
+	end
+
+	local status = Core.GetTooltipOverlayBindStatus(bagID, slotID, info)
+	if not status then
+		hideButtonOverlayText(button, text, "_bagsBindStatusEvalKey", "none:" .. evalKey)
+		return
+	end
+
+	local statusEvalKey = status .. ":" .. evalKey
+	if button._bagsBindStatusEvalKey == statusEvalKey then
+		return
+	end
+
+	text:SetText(addon.FormatTextElement and addon.FormatTextElement("overlays", status) or status)
+	text:SetTextColor(Core.GetBindStatusOverlayColor(status))
+	text:Show()
+	button._bagsBindStatusEvalKey = statusEvalKey
+end
+
+Core.HideButtonOverlayRegion = function(button, region, cacheField, hiddenKey)
+	if button[cacheField] == hiddenKey then
+		return
+	end
+
+	region:Hide()
+	button[cacheField] = hiddenKey
+end
+
+Core.GetEquipmentSetOverlayTexture = function(bagID, slotID)
+	if not (C_Container and C_Container.GetContainerItemEquipmentSetInfo) then
+		return nil
+	end
+
+	local inEquipmentSet, setList = C_Container.GetContainerItemEquipmentSetInfo(bagID, slotID)
+	if not inEquipmentSet then
+		return nil
+	end
+
+	local firstSetName = type(setList) == "string" and setList:match("^%s*([^,]+)") or nil
+	firstSetName = firstSetName and firstSetName:match("^%s*(.-)%s*$") or nil
+	local setID = firstSetName and C_EquipmentSet and C_EquipmentSet.GetEquipmentSetID and C_EquipmentSet.GetEquipmentSetID(firstSetName) or nil
+	local texture = setID and C_EquipmentSet.GetEquipmentSetInfo and select(2, C_EquipmentSet.GetEquipmentSetInfo(setID)) or nil
+	return texture or Core.EQUIPMENT_SET_OVERLAY_FALLBACK_TEXTURE
+end
+
+Core.UpdateEquipmentSetOverlay = function(button, bagID, slotID, info, overlayRuntime)
+	if not button or not button.EquipmentSetIcon or not button.EquipmentSetText then
+		return
+	end
+
+	local icon = button.EquipmentSetIcon
+	local text = button.EquipmentSetText
+	local overlayEntry = overlayRuntime and overlayRuntime.byID and overlayRuntime.byID.equipmentSet or nil
+	local overlayVersion = overlayRuntime and overlayRuntime.version or 0
+	local displayMode = overlayEntry and overlayEntry.displayMode or "icon"
+	local itemLink = info and info.hyperlink or nil
+	local itemID = info and info.itemID or nil
+	local evalKey = string.format("%s:%s:%s:%s:%s", tostring(bagID), tostring(slotID), tostring(itemLink or itemID or 0), tostring(overlayVersion), tostring(displayMode))
+
+	if not (overlayEntry and overlayEntry.enabled) then
+		Core.HideButtonOverlayRegion(button, icon, "_bagsEquipmentSetEvalKey", "hidden:" .. evalKey)
+		text:SetText("")
+		text:Hide()
+		return
+	end
+
+	if not itemLink and not itemID then
+		Core.HideButtonOverlayRegion(button, icon, "_bagsEquipmentSetEvalKey", "empty:" .. evalKey)
+		text:SetText("")
+		text:Hide()
+		return
+	end
+
+	local texture = Core.GetEquipmentSetOverlayTexture(bagID, slotID)
+	if not texture then
+		Core.HideButtonOverlayRegion(button, icon, "_bagsEquipmentSetEvalKey", "none:" .. evalKey)
+		text:SetText("")
+		text:Hide()
+		return
+	end
+
+	local setEvalKey = tostring(texture) .. ":" .. evalKey
+	if button._bagsEquipmentSetEvalKey == setEvalKey then
+		return
+	end
+
+	if displayMode == "text" then
+		icon:Hide()
+		text:SetText(addon.FormatTextElement and addon.FormatTextElement("overlays", "SET") or "SET")
+		text:SetTextColor(0.36, 0.78, 1)
+		text:Show()
+	else
+		text:SetText("")
+		text:Hide()
+		icon:SetTexture(texture)
+		icon:SetSize(14, 14)
+		icon:SetVertexColor(1, 1, 1)
+		icon:Show()
+	end
+	button._bagsEquipmentSetEvalKey = setEvalKey
+end
+
 updateReagentBagVisuals = function(button)
 	if not button then
 		return
@@ -2659,6 +3458,7 @@ local function hasMatchingButtonRenderState(
 	questID,
 	questIsActive,
 	isNewItem,
+	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
 	freeSlotSignature
@@ -2678,6 +3478,7 @@ local function hasMatchingButtonRenderState(
 		and button._bagsRenderQuestID == questID
 		and button._bagsRenderQuestActive == questIsActive
 		and button._bagsRenderNewItem == isNewItem
+		and button._bagsRenderUnusableRecipe == isUnusableRecipe
 		and button._bagsRenderOverlayVersion == overlayVersion
 		and button._bagsRenderFontSignature == fontSignature
 		and button._bagsRenderFreeSlotSignature == freeSlotSignature
@@ -2706,6 +3507,7 @@ local function storeButtonRenderState(
 	questID,
 	questIsActive,
 	isNewItem,
+	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
 	freeSlotSignature
@@ -2726,6 +3528,7 @@ local function storeButtonRenderState(
 	button._bagsRenderQuestID = questID
 	button._bagsRenderQuestActive = questIsActive
 	button._bagsRenderNewItem = isNewItem
+	button._bagsRenderUnusableRecipe = isUnusableRecipe
 	button._bagsRenderOverlayVersion = overlayVersion
 	button._bagsRenderFontSignature = fontSignature
 	button._bagsRenderFreeSlotSignature = freeSlotSignature
@@ -2781,6 +3584,10 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	local questIsActive = questInfo and questInfo.isActive or false
 	local isNewItem = isNewItemAtSlot(bagID, slotID)
 	local freeSlotGroup = mapping and mapping.freeSlotGroup or nil
+	local tooltipFlags = texture and Core.GetTooltipDerivedItemFlags(bagID, slotID, info) or nil
+	local isKnownToy = tooltipFlags and tooltipFlags.isKnownToy or false
+	local hasUsageRequirement = tooltipFlags and tooltipFlags.hasUsageRequirement or false
+	local isUnusableRecipe = (texture and Bags.functions.IsRecipeUnusableByPlayer and Bags.functions.IsRecipeUnusableByPlayer(itemID, itemLink) or false) or isKnownToy or hasUsageRequirement
 	local freeSlotSignature = getFreeSlotRenderSignature(freeSlotGroup)
 	overlayRuntime = overlayRuntime or getOverlayRuntimeConfig()
 	fontSignature = fontSignature or getTextAppearanceSignature(textAppearance)
@@ -2803,6 +3610,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		questID,
 		questIsActive,
 		isNewItem,
+		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
 		freeSlotSignature
@@ -2810,8 +3618,11 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		if not button:IsShown() then
 			button:Show()
 		end
-		applyItemButtonSkinIfNeeded(button, quality, false)
+		applyItemButtonSkinIfNeeded(button, quality)
 		updateReagentBagVisuals(button)
+		applyConfiguredOverlayAnchors(button, overlayRuntime)
+		Core.UpdateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
+		Core.UpdateBindStatusOverlay(button, bagID, slotID, info, overlayRuntime)
 		if button._bagsRenderFiltered ~= isFiltered then
 			updateButtonSearchState(button, isFiltered)
 		end
@@ -2823,6 +3634,9 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 			if tooltipOwner then
 				button:CheckUpdateTooltip(tooltipOwner)
 			end
+		end
+		if Bags.functions.ApplyRecipeUsabilityVisual then
+			Bags.functions.ApplyRecipeUsabilityVisual(button, isUnusableRecipe)
 		end
 		return
 	end
@@ -2856,6 +3670,9 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	button._bagsHasPendingRenderTexture = true
 	button._bagsPendingRenderTexture = texture
 	applyItemButtonSkinIfNeeded(button, quality, true)
+	if Bags.functions.ApplyRecipeUsabilityVisual then
+		Bags.functions.ApplyRecipeUsabilityVisual(button, isUnusableRecipe)
+	end
 	if addon.RefreshItemButtonCooldownMask then
 		addon.RefreshItemButtonCooldownMask(button)
 	end
@@ -2864,6 +3681,8 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	applyConfiguredOverlayAnchors(button, overlayRuntime)
 	updateItemLevelText(button, itemLink, itemID, quality, overlayRuntime)
 	updateItemUpgradeText(button, itemLink, itemID, overlayRuntime)
+	Core.UpdateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
+	Core.UpdateBindStatusOverlay(button, bagID, slotID, info, overlayRuntime)
 	storeButtonRenderState(
 		button,
 		bagID,
@@ -2882,6 +3701,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		questID,
 		questIsActive,
 		isNewItem,
+		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
 		freeSlotSignature
@@ -2962,6 +3782,8 @@ local function buildSectionDefinitions()
 			groupLabel = definition.groupLabel,
 			groupColor = definition.groupColor,
 			groupCollapseID = definition.groupCollapseID,
+			groupSpacerBefore = definition.groupSpacerBefore == true,
+			groupCombineSubcategories = definition.groupCombineSubcategories == true,
 			collapsible = definition.collapsible ~= false,
 			forceHeader = definition.forceHeader == true,
 		}
@@ -3325,7 +4147,9 @@ local function createRuleRuntimeContext(usage)
 		equippedItemExists = {},
 		equippedItemEquipLocs = {},
 		tooltipBindTypes = {},
+		tooltipItemFlags = {},
 		persistentTooltipBindTypes = state.tooltipBindTypeCache,
+		persistentTooltipItemFlags = state.tooltipDerivedItemFlagsCache,
 		recommendationCache = {},
 		upgradeTrackCache = {},
 		categoryRulesRevision = getCurrentCategoryRulesRevision(),
@@ -3476,6 +4300,152 @@ local function getTooltipResolvedBindType(bagID, slotID, info, runtimeContext)
 	return resolvedBindType
 end
 
+function Core.GetTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
+	if not Core.GET_BAG_ITEM_TOOLTIP or bagID == nil or slotID == nil then
+		return nil
+	end
+
+	local itemLink = info and info.hyperlink or false
+	local itemID = info and info.itemID or false
+	local stackCount = info and info.stackCount or false
+	local isBound = info and info.isBound or false
+	local quality = info and info.quality or false
+	local iconFileID = info and info.iconFileID or false
+	if not iconFileID and not itemLink and not itemID then
+		return nil
+	end
+
+	local runtimeCache = runtimeContext and runtimeContext.tooltipItemFlags or nil
+	local runtimeBagCache = runtimeCache and runtimeCache[bagID] or nil
+	local cached = runtimeBagCache and runtimeBagCache[slotID] or nil
+	if cached
+		and cached.itemLink == itemLink
+		and cached.itemID == itemID
+		and cached.stackCount == stackCount
+		and cached.isBound == isBound
+		and cached.quality == quality
+		and cached.iconFileID == iconFileID
+	then
+		return cached
+	end
+
+	local persistentCache = (runtimeContext and runtimeContext.persistentTooltipItemFlags) or state.tooltipDerivedItemFlagsCache
+	local persistentBagCache = persistentCache and persistentCache[bagID] or nil
+	local persistentEntry = persistentBagCache and persistentBagCache[slotID] or nil
+	if persistentEntry
+		and persistentEntry.itemLink == itemLink
+		and persistentEntry.itemID == itemID
+		and persistentEntry.stackCount == stackCount
+		and persistentEntry.isBound == isBound
+		and persistentEntry.quality == quality
+		and persistentEntry.iconFileID == iconFileID
+	then
+		if runtimeCache then
+			if not runtimeBagCache then
+				runtimeBagCache = {}
+				runtimeCache[bagID] = runtimeBagCache
+			end
+			runtimeBagCache[slotID] = persistentEntry
+		end
+		return persistentEntry
+	end
+
+	local tooltipData = Core.GET_BAG_ITEM_TOOLTIP(bagID, slotID)
+	local lines = tooltipData and tooltipData.lines
+	if not lines then
+		return nil
+	end
+
+	local flags = persistentEntry or {}
+	flags.itemLink = itemLink
+	flags.itemID = itemID
+	flags.stackCount = stackCount
+	flags.isBound = isBound
+	flags.quality = quality
+	flags.iconFileID = iconFileID
+	flags.isToy = false
+	flags.isKnownToy = false
+	flags.isTransmogSet = false
+	flags.hasUsageRequirement = false
+
+	local toyText = _G.TOY
+	local knownText = ITEM_SPELL_KNOWN
+	local hasToyLine = false
+	local hasKnownLine = false
+	local function isUnusableLineColor(line)
+		local color = line and line.leftColor
+		if type(color) ~= "table" then return false end
+		local r = color and (color.r or color[1])
+		local g = color and (color.g or color[2])
+		local b = color and (color.b or color[3])
+		return r and g and b and r >= 0.9 and g <= 0.25 and b <= 0.25
+	end
+	for index = 1, #lines do
+		local line = lines[index]
+		if line then
+			local lineType = line.type
+			if lineType == Core.LEARN_TRANSMOG_SET_TOOLTIP_LINE_TYPE then
+				flags.isTransmogSet = true
+			elseif toyText and lineType == Core.TOY_TOOLTIP_LINE_TYPE and line.leftText == toyText then
+				hasToyLine = true
+			elseif lineType == Core.KNOWN_SPELL_TOOLTIP_LINE_TYPE then
+				if knownText and line.leftText == knownText then
+					hasKnownLine = true
+				elseif isUnusableLineColor(line) then
+					flags.hasUsageRequirement = true
+				end
+			end
+		end
+	end
+
+	flags.isToy = hasToyLine
+	flags.isKnownToy = hasToyLine and hasKnownLine or false
+
+	if persistentCache then
+		if not persistentBagCache then
+			persistentBagCache = {}
+			persistentCache[bagID] = persistentBagCache
+		end
+		persistentBagCache[slotID] = flags
+	end
+	if runtimeCache then
+		if not runtimeBagCache then
+			runtimeBagCache = {}
+			runtimeCache[bagID] = runtimeBagCache
+		end
+		runtimeBagCache[slotID] = flags
+	end
+
+	return flags
+end
+
+function Core.IsTooltipLearnTransmogSet(bagID, slotID, info, classID, subClassID, runtimeContext)
+	if tonumber(classID) ~= Core.CONSUMABLE_CLASS_ID or tonumber(subClassID) ~= Core.CONSUMABLE_OTHER_SUBCLASS_ID then
+		return false
+	end
+
+	local flags = Core.GetTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
+	return flags and flags.isTransmogSet or false
+end
+
+function Core.IsTooltipToy(bagID, slotID, info, runtimeContext)
+	if not _G.TOY then
+		return false
+	end
+
+	local flags = Core.GetTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
+	return flags and flags.isToy or false
+end
+
+function Core.IsTooltipKnownToy(bagID, slotID, info, runtimeContext)
+	if not _G.TOY or not ITEM_SPELL_KNOWN then
+		return false
+	end
+
+	local flags = Core.GetTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
+	return flags and flags.isKnownToy or false
+end
+
 local function getUpgradeComparisonSlots(equipLoc, runtimeContext)
 	if not equipLoc then
 		return nil, nil
@@ -3606,7 +4576,7 @@ local function getRecommendationFlags(itemRef, itemID, runtimeContext)
 	return recommendedForClass, recommendedForSpec
 end
 
-local function isRuleUpgradeItem(equipLoc, itemLevel, recommendedForSpec, runtimeContext)
+local function isRuleUpgradeItem(equipLoc, itemLevel, recommendedForSpec, runtimeContext, classID, subClassID)
 	if not recommendedForSpec or not equipLoc then
 		return false, true
 	end
@@ -3614,6 +4584,30 @@ local function isRuleUpgradeItem(equipLoc, itemLevel, recommendedForSpec, runtim
 	itemLevel = tonumber(itemLevel)
 	if not itemLevel or itemLevel <= 0 then
 		return false, true
+	end
+
+	local armorClass = Core.ITEM_CLASS and Core.ITEM_CLASS.Armor or 4
+	if tonumber(classID) == armorClass
+		and equipLoc ~= "INVTYPE_CLOAK"
+		and equipLoc ~= "INVTYPE_NECK"
+		and equipLoc ~= "INVTYPE_FINGER"
+		and equipLoc ~= "INVTYPE_TRINKET"
+		and equipLoc ~= "INVTYPE_SHIELD"
+	then
+		local playerClassID = runtimeContext and runtimeContext.playerClassID
+		local expectedArmorSubclass = nil
+		if playerClassID == 1 or playerClassID == 2 or playerClassID == 6 then
+			expectedArmorSubclass = 4
+		elseif playerClassID == 3 or playerClassID == 7 or playerClassID == 13 then
+			expectedArmorSubclass = 3
+		elseif playerClassID == 4 or playerClassID == 10 or playerClassID == 11 or playerClassID == 12 then
+			expectedArmorSubclass = 2
+		elseif playerClassID == 5 or playerClassID == 8 or playerClassID == 9 then
+			expectedArmorSubclass = 1
+		end
+		if expectedArmorSubclass and tonumber(subClassID) ~= expectedArmorSubclass then
+			return false, true
+		end
 	end
 
 	local comparisonSlots, comparisonMode = getUpgradeComparisonSlots(equipLoc, runtimeContext)
@@ -3729,6 +4723,8 @@ local function ensureSection(layoutData, sectionID)
 		groupLabel = definition.groupLabel,
 		groupColor = definition.groupColor,
 		groupCollapseID = definition.groupCollapseID,
+		groupSpacerBefore = definition.groupSpacerBefore == true,
+		groupCombineSubcategories = definition.groupCombineSubcategories == true,
 		collapsible = definition.collapsible ~= false,
 		columnCount = tonumber(definition.columnCount) or nil,
 		forceHeader = definition.forceHeader == true,
@@ -3827,6 +4823,32 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 				canAuctionHouseSell = itemLocation and itemLocation:IsValid() and C_AuctionHouse and C_AuctionHouse.IsSellItemValid and C_AuctionHouse.IsSellItemValid(itemLocation, false) or false
 			end
 
+			local isEquipmentSet
+			if usage.isEquipmentSet then
+				isEquipmentSet = C_Container
+					and C_Container.GetContainerItemEquipmentSetInfo
+					and C_Container.GetContainerItemEquipmentSetInfo(bagID, slotID)
+					or false
+			end
+
+			local tooltipFlags
+			local needsTransmogTooltip = usage.isTransmogSet
+				and tonumber(classID) == Core.CONSUMABLE_CLASS_ID
+				and tonumber(subClassID) == Core.CONSUMABLE_OTHER_SUBCLASS_ID
+			if usage.isToy or needsTransmogTooltip then
+				tooltipFlags = Core.GetTooltipDerivedItemFlags(bagID, slotID, info, ruleRuntimeContext)
+			end
+
+			local isTransmogSet
+			if needsTransmogTooltip then
+				isTransmogSet = tooltipFlags and tooltipFlags.isTransmogSet or false
+			end
+
+			local isToy
+			if usage.isToy then
+				isToy = tooltipFlags and tooltipFlags.isToy or false
+			end
+
 			local resolvedBindType = ruleItemInfo and ruleItemInfo.bindType or nil
 			if usage.bindType then
 				local tooltipBindType = getTooltipResolvedBindType(bagID, slotID, info, ruleRuntimeContext)
@@ -3856,7 +4878,9 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.classID = classID
 			itemContext.subClassID = subClassID
 			itemContext.subClassKey = classID and subClassID and string.format("%d:%d", classID, subClassID) or nil
-			itemContext.professionGroupKey = addon.GetProfessionGroupKeyForItem and addon.GetProfessionGroupKeyForItem(classID, subClassID) or nil
+			itemContext.professionGroupKey = addon.GetProfessionGroupKeyForItem
+				and addon.GetProfessionGroupKeyForItem(classID, subClassID, info and info.itemID)
+				or nil
 			itemContext.bindType = resolvedBindType
 			itemContext.expansionID = ruleItemInfo and ruleItemInfo.expansionID or nil
 			itemContext.setID = ruleItemInfo and ruleItemInfo.setID or nil
@@ -3865,7 +4889,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.recommendedForSpec = not not recommendedForSpec
 			itemContext.recommendedForClass = not not recommendedForClass
 			if usage.isUpgrade then
-				local isUpgrade, upgradeEvaluationStable = isRuleUpgradeItem(equipLoc, resolvedItemLevel, recommendedForSpec, ruleRuntimeContext)
+				local isUpgrade, upgradeEvaluationStable = isRuleUpgradeItem(equipLoc, resolvedItemLevel, recommendedForSpec, ruleRuntimeContext, classID, subClassID)
 				itemContext.isUpgrade = isUpgrade
 				itemContext.upgradeEvaluationStable = upgradeEvaluationStable
 				if not upgradeEvaluationStable then
@@ -3878,6 +4902,14 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.upgradeTrackKey = upgradeTrackKey
 			itemContext.canVendor = ((ruleItemInfo and ruleItemInfo.sellPrice) or 0) > 0
 			itemContext.canAuctionHouseSell = not not canAuctionHouseSell
+			itemContext.isEquipmentSet = not not isEquipmentSet
+			itemContext.isTransmogSet = not not isTransmogSet
+			itemContext.isToy = not not isToy
+			itemContext.isTeleportItem = addon.MythicPlus
+				and addon.MythicPlus.functions
+				and addon.MythicPlus.functions.IsTeleportItem
+				and addon.MythicPlus.functions.IsTeleportItem(info and info.itemID)
+				or false
 			itemContext.isHearthstone = usage.isHearthstone and isRuleHearthstoneItem(info and info.itemID) or false
 			itemContext.isKeystone = usage.isKeystone and isKeystoneItem(info and info.itemID) or false
 			itemContext.equipLoc = equipLoc
@@ -3962,9 +4994,11 @@ local function addFlatStorageContext(layoutData, context)
 	local hasSlots = false
 	for _, bagID in ipairs(context.bagIDs or {}) do
 		local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
+		state.bagSlotCounts[bagID] = slotCount
 		layoutData.totalSlotCount = layoutData.totalSlotCount + slotCount
 
 		for slotID = 1, slotCount do
+			storeSlotContentState(bagID, slotID)
 			addSlotMapping(layoutData, sectionID, bagID, slotID)
 			hasSlots = true
 		end
@@ -3977,7 +5011,9 @@ end
 
 local function buildLayoutData()
 	local settings = getSettings()
-	local hasCustomCategories = settings.showCategories and addon.HasCustomCategories and addon.HasCustomCategories() or false
+	local oneBagMode = isOneBagMode(settings)
+	local oneBagFreeSlotsAtEnd = shouldMoveOneBagFreeSlotsToEnd(settings)
+	local hasCustomCategories = not oneBagMode and settings.showCategories and addon.HasCustomCategories and addon.HasCustomCategories() or false
 	local ruleUsage = hasCustomCategories and addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
 	local ruleRuntimeContext = hasCustomCategories and createRuleRuntimeContext(ruleUsage) or nil
 	local layoutData = {
@@ -4001,12 +5037,27 @@ local function buildLayoutData()
 		},
 		collapsedItems = {},
 		flatStorageSectionIDs = {},
+		oneBagFreeSlots = {},
 	}
-	layoutData.sectionDefinitions, layoutData.sectionDefinitionsByID = buildSectionDefinitions()
+	if oneBagMode then
+		layoutData.sectionDefinitions = {}
+		layoutData.sectionDefinitionsByID = {}
+		layoutData.sectionDefinitionsByID.oneBagNormal = {
+			id = "oneBagNormal",
+			collapsible = false,
+		}
+		layoutData.sectionDefinitionsByID.oneBagReagent = {
+			id = "oneBagReagent",
+			collapsible = false,
+		}
+	else
+		layoutData.sectionDefinitions, layoutData.sectionDefinitionsByID = buildSectionDefinitions()
+	end
 
 	for bagID = Core.BACKPACK_ID, Core.LAST_CHARACTER_BAG_ID do
 		local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
 		local isReagentBag = bagID == Core.REAGENT_BAG_ID
+		state.bagSlotCounts[bagID] = slotCount
 
 		layoutData.totalSlotCount = layoutData.totalSlotCount + slotCount
 
@@ -4019,12 +5070,13 @@ local function buildLayoutData()
 		for slotID = 1, slotCount do
 			local info = C_Container.GetContainerItemInfo(bagID, slotID)
 			local hasItem = info and info.iconFileID
+			storeSlotContentState(bagID, slotID, info)
 
 			if hasItem then
 				local questInfo
-				local sectionID = "misc"
+				local sectionID = oneBagMode and (isReagentBag and "oneBagReagent" or "oneBagNormal") or "misc"
 				local collapseRef = nil
-				if settings.showCategories or settings.combineUnstackableItems or isOpenSessionNewItem(bagID, slotID, info) then
+				if not oneBagMode and (settings.showCategories or settings.combineUnstackableItems or isOpenSessionNewItem(bagID, slotID, info)) then
 					questInfo = settings.showCategories and C_Container.GetContainerItemQuestInfo(bagID, slotID) or nil
 					sectionID, collapseRef = resolveCategoryForItem(
 						bagID,
@@ -4036,8 +5088,11 @@ local function buildLayoutData()
 						hasCustomCategories
 					)
 				end
+				local hideItem = not oneBagMode and addon.IsCategorySectionHidden and addon.IsCategorySectionHidden(sectionID)
 				local itemRef = info and (info.hyperlink or info.itemID)
-				if shouldCombineDuplicateItem(itemRef, settings) then
+				if hideItem then
+					clearSlotCategoryCacheEntry(bagID, slotID)
+				elseif not oneBagMode and shouldCombineDuplicateItem(itemRef, settings) then
 					local collapsedSection = layoutData.collapsedItems[sectionID]
 					if not collapsedSection then
 						collapsedSection = {}
@@ -4084,15 +5139,38 @@ local function buildLayoutData()
 					end
 				end
 
-				if settings.showFreeSlots ~= false and not settings.combineFreeSlots then
+				if oneBagMode then
+					if settings.showFreeSlots ~= false and oneBagFreeSlotsAtEnd then
+						layoutData.oneBagFreeSlots[#layoutData.oneBagFreeSlots + 1] = {
+							bagID = bagID,
+							slotID = slotID,
+							sectionID = isReagentBag and "oneBagReagent" or "oneBagNormal",
+							freeSlotGroup = isReagentBag and "reagent" or "normal",
+						}
+					elseif settings.showFreeSlots ~= false then
+						addSlotMapping(layoutData, isReagentBag and "oneBagReagent" or "oneBagNormal", bagID, slotID, {
+							freeSlotGroup = isReagentBag and "reagent" or "normal",
+						})
+					end
+				elseif settings.showFreeSlots ~= false and not settings.combineFreeSlots then
 					local sectionID = settings.showCategories and Core.FREE_SLOTS_SECTION_ID or "misc"
-					addSlotMapping(layoutData, sectionID, bagID, slotID)
+					addSlotMapping(layoutData, sectionID, bagID, slotID, {
+						freeSlotGroup = isReagentBag and "reagent" or "normal",
+					})
 				end
 			end
 		end
 	end
 
-	if settings.showFreeSlots ~= false and settings.combineFreeSlots then
+	if oneBagMode and oneBagFreeSlotsAtEnd and settings.showFreeSlots ~= false then
+		for _, freeSlot in ipairs(layoutData.oneBagFreeSlots) do
+			addSlotMapping(layoutData, freeSlot.sectionID or "oneBagNormal", freeSlot.bagID, freeSlot.slotID, {
+				freeSlotGroup = freeSlot.freeSlotGroup or "normal",
+			})
+		end
+	end
+
+	if not oneBagMode and settings.showFreeSlots ~= false and settings.combineFreeSlots then
 		local sectionID = settings.showCategories and Core.FREE_SLOTS_SECTION_ID or "misc"
 
 		if layoutData.footer.normalFree > 0 and layoutData.combinedFreeSlots.normal.bagID then
@@ -4122,13 +5200,24 @@ local function buildLayoutData()
 		end
 	end
 
-	sortLayoutSections(layoutData)
+	if not oneBagMode then
+		sortLayoutSections(layoutData)
+	end
 
 	for _, context in ipairs(getVisibleFlatBankContexts()) do
 		addFlatStorageContext(layoutData, context)
 	end
 
-	if settings.showCategories then
+	if oneBagMode then
+		for _, sectionID in ipairs({ "oneBagNormal", "oneBagReagent" }) do
+			local flatSection = layoutData.sectionMap[sectionID]
+			if flatSection and #flatSection.slotIndices > 0 then
+				flatSection.label = nil
+				flatSection.collapsible = false
+				layoutData.sections[#layoutData.sections + 1] = flatSection
+			end
+		end
+	elseif settings.showCategories then
 		for _, definition in ipairs(layoutData.sectionDefinitions) do
 			local section = layoutData.sectionMap[definition.id]
 			if section and #section.slotIndices > 0 then
@@ -4188,6 +5277,17 @@ local function ensureButtonCapacity(requiredCount)
 			button.ItemUpgradeText:SetText("")
 			button.ItemUpgradeText:Hide()
 		end
+		if button.EquipmentSetIcon then
+			button.EquipmentSetIcon:Hide()
+		end
+		if button.EquipmentSetText then
+			button.EquipmentSetText:SetText("")
+			button.EquipmentSetText:Hide()
+		end
+		if button.BindStatusText then
+			button.BindStatusText:SetText("")
+			button.BindStatusText:Hide()
+		end
 		state.buttons[index] = button
 	end
 
@@ -4203,12 +5303,13 @@ local function layoutFooter(layoutData, frameWidth)
 	local minimumFooterHeight = getMinimumFooterHeight(settings)
 	local footerWidth = math.max(1, (footer and footer.GetWidth and footer:GetWidth()) or frameWidth or 1)
 	local visibleCurrencyCount = 0
-	local currencyButtons = {}
 	local totalCurrencyWidth = 0
 	local maxCurrencyButtonWidth = 0
 	local currencyRowCount = 0
 	local currencyRowsHeight = 0
 	local moneyOnSeparateRow = false
+	local externalLeftRegions = Core.GetFooterRegions("left")
+	local leftFooterItems = {}
 
 	applyConfiguredFrameFonts()
 	applyFramePadding(settings)
@@ -4216,6 +5317,7 @@ local function layoutFooter(layoutData, frameWidth)
 	footer.NormalSlotsText:ClearAllPoints()
 	footer.ReagentSlotsText:ClearAllPoints()
 	footer.CurrencyContainer:ClearAllPoints()
+	footer.ExternalLeftContainer:ClearAllPoints()
 	footer.MoneyButton:ClearAllPoints()
 
 	if showFooterSlotSummary then
@@ -4251,6 +5353,21 @@ local function layoutFooter(layoutData, frameWidth)
 	end
 
 	local reservedMoneyWidth = settings.showGold and math.max(120, footer.MoneyButton:GetWidth()) or 0
+	for _, entry in ipairs(externalLeftRegions) do
+		local region = entry.region
+		local width, height = Core.GetFooterRegionSize(region)
+		if width > 0 and height > 0 then
+			region:SetParent(footer.ExternalLeftContainer)
+			region:ClearAllPoints()
+			leftFooterItems[#leftFooterItems + 1] = {
+				type = "external",
+				region = region,
+				width = width,
+				height = math.max(Core.FOOTER_ROW_HEIGHT, height),
+			}
+		end
+	end
+
 	for index, currencyInfo in ipairs(footerData.currencies or {}) do
 		local button = acquireCurrencyButton(index)
 		local quantityText = formatFooterCurrencyQuantity(currencyInfo.quantity or 0)
@@ -4259,7 +5376,13 @@ local function layoutFooter(layoutData, frameWidth)
 		button.Icon:SetTexture(currencyInfo.iconFileID)
 		button.Count:SetText(quantityText)
 		button:SetWidth(button.Count:GetStringWidth() + 24)
-		currencyButtons[index] = button
+		leftFooterItems[#leftFooterItems + 1] = {
+			type = "currency",
+			button = button,
+			index = index,
+			width = button:GetWidth(),
+			height = Core.FOOTER_ROW_HEIGHT,
+		}
 
 		maxCurrencyButtonWidth = math.max(maxCurrencyButtonWidth, button:GetWidth())
 		totalCurrencyWidth = totalCurrencyWidth + button:GetWidth()
@@ -4279,14 +5402,25 @@ local function layoutFooter(layoutData, frameWidth)
 	if settings.showGold then
 		minimumFooterContentWidth = math.max(minimumFooterContentWidth, math.ceil(footer.MoneyButton:GetWidth() or 0))
 	end
+	for _, item in ipairs(leftFooterItems) do
+		minimumFooterContentWidth = math.max(minimumFooterContentWidth, math.ceil(item.width or 0))
+	end
 	if maxCurrencyButtonWidth > 0 then
 		minimumFooterContentWidth = math.max(minimumFooterContentWidth, math.ceil(maxCurrencyButtonWidth))
 	end
 	state.minimumFooterContentWidth = minimumFooterContentWidth
 
+	local totalLeftFooterWidth = 0
+	for index, item in ipairs(leftFooterItems) do
+		totalLeftFooterWidth = totalLeftFooterWidth + (item.width or 0)
+		if index > 1 then
+			totalLeftFooterWidth = totalLeftFooterWidth + 10
+		end
+	end
+
 	moneyOnSeparateRow = settings.showGold
-		and visibleCurrencyCount > 0
-		and totalCurrencyWidth > math.max(1, footerWidth - reservedMoneyWidth)
+		and #leftFooterItems > 0
+		and totalLeftFooterWidth > math.max(1, footerWidth - reservedMoneyWidth)
 
 	local currencyRowWidth = footerWidth
 	if not moneyOnSeparateRow and settings.showGold then
@@ -4296,10 +5430,9 @@ local function layoutFooter(layoutData, frameWidth)
 	local rowAssignments = {}
 	local currentRowIndex = 1
 	local currentRowWidth = 0
-	for index = 1, visibleCurrencyCount do
-		local button = currencyButtons[index]
-		local buttonWidth = button:GetWidth()
-		local requiredWidth = buttonWidth
+	for index, item in ipairs(leftFooterItems) do
+		local itemWidth = item.width or 0
+		local requiredWidth = itemWidth
 		if currentRowWidth > 0 then
 			requiredWidth = requiredWidth + 10
 		end
@@ -4307,7 +5440,7 @@ local function layoutFooter(layoutData, frameWidth)
 		if currentRowWidth > 0 and (currentRowWidth + requiredWidth) > currencyRowWidth then
 			currentRowIndex = currentRowIndex + 1
 			currentRowWidth = 0
-			requiredWidth = buttonWidth
+			requiredWidth = itemWidth
 		end
 
 		if currentRowWidth > 0 then
@@ -4318,7 +5451,7 @@ local function layoutFooter(layoutData, frameWidth)
 			row = currentRowIndex,
 			x = currentRowWidth,
 		}
-		currentRowWidth = currentRowWidth + buttonWidth
+		currentRowWidth = currentRowWidth + itemWidth
 		currencyRowCount = currentRowIndex
 	end
 
@@ -4378,22 +5511,51 @@ local function layoutFooter(layoutData, frameWidth)
 	footer.CurrencyContainer:SetHeight(math.max(0, currencyRowsHeight))
 	footer.CurrencyContainer:SetPoint("BOTTOMLEFT", footer, "BOTTOMLEFT", 0, currencyBottomOffset)
 	footer.CurrencyContainer:SetShown(currencyRowCount > 0)
+	footer.ExternalLeftContainer:SetWidth(math.max(1, currencyRowWidth))
+	footer.ExternalLeftContainer:SetHeight(math.max(0, currencyRowsHeight))
+	footer.ExternalLeftContainer:SetPoint("BOTTOMLEFT", footer, "BOTTOMLEFT", 0, currencyBottomOffset)
+	footer.ExternalLeftContainer:SetShown(#externalLeftRegions > 0 and currencyRowCount > 0)
 
 	if settings.showGold then
 		footer.MoneyButton:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 0, footerPadding)
 	end
 
-	for index = 1, visibleCurrencyCount do
-		local button = currencyButtons[index]
+	for index, item in ipairs(leftFooterItems) do
 		local assignment = rowAssignments[index]
 		local rowBottomOffset = currencyRowsHeight - Core.FOOTER_ROW_HEIGHT - ((assignment.row - 1) * (Core.FOOTER_ROW_HEIGHT + Core.FOOTER_ROW_SPACING))
-		button:ClearAllPoints()
-		button:SetPoint("BOTTOMLEFT", footer.CurrencyContainer, "BOTTOMLEFT", assignment.x, rowBottomOffset)
-		button:Show()
+		if item.type == "external" then
+			item.region:ClearAllPoints()
+			item.region:SetPoint(
+				"LEFT",
+				footer.ExternalLeftContainer,
+				"BOTTOMLEFT",
+				assignment.x,
+				rowBottomOffset + (Core.FOOTER_ROW_HEIGHT / 2) + Core.FOOTER_EXTERNAL_REGION_Y_OFFSET
+			)
+			item.region:Show()
+		elseif item.button then
+			item.button:ClearAllPoints()
+			item.button:SetPoint("BOTTOMLEFT", footer.CurrencyContainer, "BOTTOMLEFT", assignment.x, rowBottomOffset)
+			item.button:Show()
+		end
 	end
 
 	for index = visibleCurrencyCount + 1, #state.currencyButtons do
 		state.currencyButtons[index]:Hide()
+	end
+	for _, entry in pairs(state.footerRegions) do
+		if entry.side == "left" and entry.region then
+			local isActive = false
+			for _, activeEntry in ipairs(externalLeftRegions) do
+				if activeEntry == entry then
+					isActive = true
+					break
+				end
+			end
+			if not isActive then
+				entry.region:Hide()
+			end
+		end
 	end
 
 	state.footerLayoutSignature = getFooterLayoutSignature(settings, footerWidth)
@@ -4418,6 +5580,9 @@ end
 
 local function getMeasuredSectionHeaderWidth(label, isCustom, textElementID)
 	if not label or label == "" then
+		return Core.BUTTON_SIZE
+	end
+	if textElementID == "subcategoryHeader" and addon.GetSubcategoryFullLabels and not addon.GetSubcategoryFullLabels() then
 		return Core.BUTTON_SIZE
 	end
 
@@ -4530,9 +5695,24 @@ local function getSectionCollapsedState(section, showSectionHeader)
 	return isSectionCollapsed(collapseID)
 end
 
-local function renderSectionGroupHeader(section, currentHeaderCount, yOffset, isCollapsed)
+local function renderSectionGroupHeader(section, currentHeaderCount, currentSpacerCount, yOffset, isCollapsed)
 	if not section or not section.groupID or not section.groupLabel or section.groupLabel == "" then
-		return currentHeaderCount, yOffset
+		return currentHeaderCount, currentSpacerCount, yOffset
+	end
+
+	if section.groupSpacerBefore and yOffset > 0 then
+		yOffset = yOffset + Core.GROUP_SPACER_TOP_GAP
+		currentSpacerCount = currentSpacerCount + 1
+		local spacer = acquireGroupSpacer(currentSpacerCount)
+		spacer:ClearAllPoints()
+		spacer:SetPoint("TOPLEFT", state.content, "TOPLEFT", 0, -yOffset)
+		spacer:SetPoint("RIGHT", state.content, "RIGHT", 0, 0)
+		if spacer.Line then
+			local skin = getActiveFrameSkin()
+			spacer.Line:SetColorTexture(unpackSkinColor(skin and skin.dividerColor, 1, 1, 1, 0.08))
+		end
+		spacer:Show()
+		yOffset = yOffset + 1 + Core.GROUP_SPACER_BOTTOM_GAP
 	end
 
 	currentHeaderCount = currentHeaderCount + 1
@@ -4550,7 +5730,41 @@ local function renderSectionGroupHeader(section, currentHeaderCount, yOffset, is
 	header:SetPoint("RIGHT", state.content, "RIGHT", 0, 0)
 	header:Show()
 
-	return currentHeaderCount, yOffset + Core.GROUP_HEADER_HEIGHT + Core.GROUP_HEADER_GAP
+	return currentHeaderCount, currentSpacerCount, yOffset + Core.GROUP_HEADER_HEIGHT + Core.GROUP_HEADER_GAP
+end
+
+local function getGroupedCategoryIndent(section)
+	if not (section and section.groupID) then
+		return 0
+	end
+	if not (addon.GetCategoryTreeView and addon.GetCategoryTreeView()) then
+		return 0
+	end
+	return addon.GetCategoryTreeIndent and addon.GetCategoryTreeIndent() or 0
+end
+
+local function getCategoryContentIndent(section)
+	if not (section and section.label) then
+		return 0
+	end
+	if not (addon.GetCategoryTreeView and addon.GetCategoryTreeView()) then
+		return 0
+	end
+	return addon.GetCategoryTreeIndent and addon.GetCategoryTreeIndent() or 0
+end
+
+local function getCompactSectionContentOffset(section)
+	if section and section.groupID then
+		return 0
+	end
+	return getCategoryContentIndent(section)
+end
+
+local function getCompactSectionBlockWidth(section, metrics)
+	if not metrics then
+		return Core.BUTTON_SIZE
+	end
+	return (metrics.blockWidth or metrics.sectionWidth or Core.BUTTON_SIZE) + getCompactSectionContentOffset(section)
 end
 
 local function layoutFrame(layoutData)
@@ -4558,6 +5772,7 @@ local function layoutFrame(layoutData)
 	local buttonSize = getButtonSize(settings)
 	local buttonSpacing = getButtonSpacing(settings)
 	local currentHeaderCount = 0
+	local currentSpacerCount = 0
 	local contentWidth = 1
 	local yOffset = 0
 	local activeGroupID = nil
@@ -4581,7 +5796,7 @@ local function layoutFrame(layoutData)
 
 		if section.groupID then
 			if activeGroupID ~= section.groupID then
-				currentHeaderCount, yOffset = renderSectionGroupHeader(section, currentHeaderCount, yOffset, groupCollapsed)
+				currentHeaderCount, currentSpacerCount, yOffset = renderSectionGroupHeader(section, currentHeaderCount, currentSpacerCount, yOffset, groupCollapsed)
 				activeGroupID = section.groupID
 			end
 		else
@@ -4601,6 +5816,49 @@ local function layoutFrame(layoutData)
 			if sectionIndex <= #layoutData.sections then
 				yOffset = yOffset + Core.SECTION_GAP
 			end
+		elseif section.groupID and section.groupCombineSubcategories then
+			local combinedSlotIndices = {}
+			local combinedGroupID = section.groupID
+			while sectionIndex <= #layoutData.sections do
+				local groupedSection = layoutData.sections[sectionIndex]
+				if groupedSection.groupID ~= combinedGroupID or not groupedSection.groupCombineSubcategories then
+					break
+				end
+				setSectionMappingsCollapsed(groupedSection, false)
+				for _, mappingIndex in ipairs(groupedSection.slotIndices or {}) do
+					combinedSlotIndices[#combinedSlotIndices + 1] = mappingIndex
+				end
+				sectionIndex = sectionIndex + 1
+			end
+
+			local itemCount = #combinedSlotIndices
+			if itemCount > 0 then
+				local visibleColumns = math.max(1, math.min(effectiveMaxColumns, itemCount))
+				local rows = math.max(1, math.ceil(itemCount / effectiveMaxColumns))
+				local sectionWidth = (visibleColumns * buttonSize) + (math.max(0, visibleColumns - 1) * buttonSpacing)
+				contentWidth = math.max(contentWidth, sectionWidth)
+
+				for visualIndex, mappingIndex in ipairs(combinedSlotIndices) do
+					local button = state.buttons[mappingIndex]
+					local row = math.floor((visualIndex - 1) / effectiveMaxColumns)
+					local column = (visualIndex - 1) % effectiveMaxColumns
+					button:SetSize(buttonSize, buttonSize)
+					button:ClearAllPoints()
+					button:SetPoint(
+						"TOPLEFT",
+						state.content,
+						"TOPLEFT",
+						column * (buttonSize + buttonSpacing),
+						-(yOffset + (row * (buttonSize + buttonSpacing)))
+					)
+				end
+
+				yOffset = yOffset + (rows * buttonSize) + (math.max(0, rows - 1) * buttonSpacing)
+			end
+
+			if sectionIndex <= #layoutData.sections then
+				yOffset = yOffset + Core.SECTION_GAP
+			end
 		else
 			local sectionCollapsed = getSectionCollapsedState(section, showSectionHeader)
 			local metrics = getSectionLayoutMetrics(section, showSectionHeader, sectionCollapsed, buttonSize, buttonSpacing, maxColumns, effectiveMaxColumns)
@@ -4611,6 +5869,8 @@ local function layoutFrame(layoutData)
 				local rowWidth = 0
 				local rowHeight = 0
 				local rowGroupID = section.groupID
+				local rowIndent = getGroupedCategoryIndent(section)
+				local rowMaxContentWidth = math.max(buttonSize, maxContentWidth - rowIndent)
 
 				while sectionIndex <= #layoutData.sections do
 					local candidate = layoutData.sections[sectionIndex]
@@ -4628,12 +5888,12 @@ local function layoutFrame(layoutData)
 						break
 					end
 
-					local nextWidth = candidateMetrics.blockWidth
+					local nextWidth = getCompactSectionBlockWidth(candidate, candidateMetrics)
 					if #rowSections > 0 then
 						nextWidth = nextWidth + compactSectionGap
 					end
 
-					if #rowSections > 0 and (rowWidth + nextWidth) > maxContentWidth then
+					if #rowSections > 0 and (rowWidth + nextWidth) > rowMaxContentWidth then
 						break
 					end
 
@@ -4647,10 +5907,12 @@ local function layoutFrame(layoutData)
 					sectionIndex = sectionIndex + 1
 				end
 
-				local blockX = 0
+				local blockX = rowIndent
 				for _, entry in ipairs(rowSections) do
 					local rowSection = entry.section
 					local rowMetrics = entry.metrics
+					local rowContentOffset = getCompactSectionContentOffset(rowSection)
+					local rowBlockWidth = getCompactSectionBlockWidth(rowSection, rowMetrics)
 
 					currentHeaderCount = currentHeaderCount + 1
 					local header = acquireSectionHeader(currentHeaderCount)
@@ -4665,7 +5927,7 @@ local function layoutFrame(layoutData)
 					})
 					header:ClearAllPoints()
 					header:SetPoint("TOPLEFT", state.content, "TOPLEFT", blockX, -yOffset)
-					header:SetWidth(rowMetrics.blockWidth)
+					header:SetWidth(rowBlockWidth)
 					header:Show()
 
 					local buttonYOffset = yOffset + Core.SECTION_HEADER_HEIGHT + Core.SECTION_CONTENT_TOP_PADDING
@@ -4679,13 +5941,13 @@ local function layoutFrame(layoutData)
 							"TOPLEFT",
 							state.content,
 							"TOPLEFT",
-							blockX + (column * (buttonSize + buttonSpacing)),
+							blockX + rowContentOffset + (column * (buttonSize + buttonSpacing)),
 							-(buttonYOffset + (row * (buttonSize + buttonSpacing)))
 						)
 					end
 
-					contentWidth = math.max(contentWidth, blockX + rowMetrics.blockWidth)
-					blockX = blockX + rowMetrics.blockWidth + compactSectionGap
+					contentWidth = math.max(contentWidth, blockX + rowBlockWidth)
+					blockX = blockX + rowBlockWidth + compactSectionGap
 				end
 
 				yOffset = yOffset + rowHeight
@@ -4696,6 +5958,7 @@ local function layoutFrame(layoutData)
 				if showSectionHeader then
 					currentHeaderCount = currentHeaderCount + 1
 					local header = acquireSectionHeader(currentHeaderCount)
+					local categoryIndent = getGroupedCategoryIndent(section)
 					configureSectionHeader(header, {
 						sectionID = section.id,
 						label = section.label,
@@ -4706,17 +5969,18 @@ local function layoutFrame(layoutData)
 						textElementID = section.groupID and "subcategoryHeader" or "categoryHeader",
 					})
 					header:ClearAllPoints()
-					header:SetPoint("TOPLEFT", state.content, "TOPLEFT", 0, -yOffset)
-					header:SetPoint("RIGHT", state.content, "RIGHT", 0, 0)
+					header:SetPoint("TOPLEFT", state.content, "TOPLEFT", categoryIndent, -yOffset)
+					header:SetPoint("RIGHT", state.content, "RIGHT", -categoryIndent, 0)
 					header:Show()
 					yOffset = yOffset + Core.SECTION_HEADER_HEIGHT
 				end
 
 				if metrics.itemCount > 0 and not sectionCollapsed then
+					local categoryIndent = getCategoryContentIndent(section)
 					if showSectionHeader then
 						yOffset = yOffset + Core.SECTION_CONTENT_TOP_PADDING
 					end
-					contentWidth = math.max(contentWidth, metrics.sectionWidth)
+					contentWidth = math.max(contentWidth, categoryIndent + metrics.sectionWidth)
 
 					for visualIndex, mappingIndex in ipairs(section.slotIndices) do
 						local button = state.buttons[mappingIndex]
@@ -4728,7 +5992,7 @@ local function layoutFrame(layoutData)
 							"TOPLEFT",
 							state.content,
 							"TOPLEFT",
-							column * (buttonSize + buttonSpacing),
+							categoryIndent + (column * (buttonSize + buttonSpacing)),
 							-(yOffset + (row * (buttonSize + buttonSpacing)))
 						)
 					end
@@ -4746,6 +6010,9 @@ local function layoutFrame(layoutData)
 
 	for index = currentHeaderCount + 1, #state.sectionHeaders do
 		state.sectionHeaders[index]:Hide()
+	end
+	for index = currentSpacerCount + 1, #state.groupSpacers do
+		state.groupSpacers[index]:Hide()
 	end
 
 	local contentHeight = getLayoutContentHeight(settings, yOffset)
@@ -4770,12 +6037,12 @@ local function layoutFrame(layoutData)
 end
 
 local function rebuildLayout()
-	if not state.frame then
-		createMainFrame()
-	end
 	if InCombatLockdown and InCombatLockdown() then
 		state.pendingRebuild = true
 		return false
+	end
+	if not state.frame then
+		createMainFrame()
 	end
 
 	state.awaitingRuleItemData = false
@@ -4811,10 +6078,7 @@ local function rebuildLayout()
 
 	state.currentLayoutCount = layoutData.requiredButtonCount
 	state.currentTotalSlotCount = layoutData.totalSlotCount
-	if not state.bagContentSnapshotsInitialized then
-		refreshAllManagedBagContentSignatures()
-		state.bagContentSnapshotsInitialized = true
-	end
+	clearStaleBags()
 	state.pendingRebuild = false
 	state.pendingRefresh = false
 	state.forceDynamicRefresh = false
@@ -4885,24 +6149,44 @@ local function refreshButtons()
 	return true
 end
 
+function Bags.functions.RefreshSearchState()
+	if not state.frame or not state.frame:IsShown() then
+		return
+	end
+
+	local vendorFunctions = addon.Vendor and addon.Vendor.functions or nil
+	local refreshVendorSearchState = vendorFunctions and vendorFunctions.RefreshSellDestroyOverlaySearchState or nil
+	local buttons = state.buttons or {}
+	for index = 1, state.currentLayoutCount or 0 do
+		local button = buttons[index]
+		if button and button:IsShown() then
+			local bagID = button:GetBagID()
+			local slotID = button:GetID()
+			local info = C_Container.GetContainerItemInfo(bagID, slotID)
+			local isFiltered = info and info.isFiltered
+			if button._bagsRenderFiltered ~= isFiltered then
+				updateButtonSearchState(button, isFiltered)
+			end
+			if refreshVendorSearchState then
+				refreshVendorSearchState(button)
+			end
+		end
+	end
+end
+
 function Bags.functions.PositionFrame()
 	if not state.frame or state.userMoved then
 		return
 	end
 
-	local anchor = getAnchorTargetFrame()
 	state.frame:ClearAllPoints()
-	if anchor then
-		state.frame:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -Core.CLUSTER_GAP, 0)
-	else
-		state.frame:SetPoint(
-			Core.DEFAULT_FRAME_POINT.point,
-			UIParent,
-			Core.DEFAULT_FRAME_POINT.relativePoint,
-			Core.DEFAULT_FRAME_POINT.x,
-			Core.DEFAULT_FRAME_POINT.y
-		)
-	end
+	state.frame:SetPoint(
+		Core.DEFAULT_FRAME_POINT.point,
+		UIParent,
+		Core.DEFAULT_FRAME_POINT.relativePoint,
+		Core.DEFAULT_FRAME_POINT.x,
+		Core.DEFAULT_FRAME_POINT.y
+	)
 end
 
 function addon.GetCustomBagsAnchorTargetFrame()
@@ -4926,21 +6210,34 @@ local function processUpdate()
 	setActiveBagEventRegistration(shouldBeVisible)
 	if openingFrame then
 		state.footerDirty = true
-		resetOpenSessionNewItems()
+		if clearAcknowledgedOpenSessionNewItems() then
+			state.pendingRebuild = true
+		end
 	end
 	local settings = getSettings()
+	if shouldBeVisible then
+		resetNativeBagFiltersForOneBagMode(settings)
+	else
+		state.nativeBagFiltersResetForOneBag = false
+	end
+	if shouldBeVisible then
+		flushStaleBagsForContentDecision()
+	end
 	local needsRebuild = state.pendingRebuild
 		or state.layoutData == nil
 		or state.currentTotalSlotCount ~= getTotalSlotCount()
 		or state.currentFooterHeight ~= getFooterHeight(settings)
 		or state.currentPaddingSignature ~= getFramePaddingSignature(settings)
-	local needsRefresh = openingFrame or state.pendingRefresh or state.forceDynamicRefresh or state.footerDirty
+	local needsRefresh = openingFrame or state.pendingRefresh or state.forceDynamicRefresh or state.footerDirty or state.newItemsVisualDirty
 
-	local updateApplied = true
+	local updateApplied = false
 	if needsRebuild then
 		updateApplied = rebuildLayout()
 	elseif needsRefresh then
 		updateApplied = refreshButtons()
+	end
+	if updateApplied then
+		state.newItemsVisualDirty = false
 	end
 
 	if shouldBeVisible then
@@ -4951,17 +6248,13 @@ local function processUpdate()
 		if updateApplied and Bags.functions.ApplyVendorMarks then
 			Bags.functions.ApplyVendorMarks()
 		end
-		BagSlotPanel.Refresh()
-		if openingFrame and addon.Vendor and addon.Vendor.functions and addon.Vendor.functions.refreshSellMarks then
-			addon.Vendor.functions.refreshSellMarks(false)
+		if openingFrame or updateApplied then
+			BagSlotPanel.Refresh()
 		end
 	else
 		state.suppressNativeBagClose = true
 		state.frame:Hide()
 		state.suppressNativeBagClose = false
-		if wasVisible and addon.Vendor and addon.Vendor.functions and addon.Vendor.functions.refreshSellMarks then
-			addon.Vendor.functions.refreshSellMarks(false)
-		end
 	end
 end
 
@@ -4981,7 +6274,7 @@ scheduleUpdate = function(requestRefresh, requestRebuild, forceWhenHidden)
 		return
 	end
 	state.updateScheduled = true
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		state.updateScheduled = false
 		processUpdate()
 	end)
@@ -4989,6 +6282,55 @@ end
 
 function Bags.functions.RequestLayoutUpdate(requestRebuild, forceWhenHidden)
 	scheduleUpdate(true, requestRebuild, forceWhenHidden)
+end
+
+Bags.API.IsAvailable = function()
+	return Bags.IsEnabled and Bags.IsEnabled() == true
+end
+
+Bags.API.RequestLayoutRefresh = function()
+	if not Bags.API.IsAvailable() then
+		return false
+	end
+
+	state.footerDirty = true
+	scheduleUpdate(true, false, true)
+	return true
+end
+
+Bags.API.RegisterFooterRegion = function(id, region, options)
+	if not Bags.API.IsAvailable() or not id or not region or not region.GetObjectType then
+		return false
+	end
+
+	options = options or {}
+	state.footerRegions[tostring(id)] = {
+		region = region,
+		side = "left",
+		priority = tonumber(options.priority) or 100,
+	}
+
+	if state.frame and state.frame.Footer and state.frame.Footer.ExternalLeftContainer then
+		region:SetParent(state.frame.Footer.ExternalLeftContainer)
+	end
+
+	Bags.API.RequestLayoutRefresh()
+	return true
+end
+
+Bags.API.UnregisterFooterRegion = function(id)
+	id = id and tostring(id) or nil
+	local entry = id and state.footerRegions[id] or nil
+	if not entry then
+		return false
+	end
+
+	if entry.region and entry.region.Hide then
+		entry.region:Hide()
+	end
+	state.footerRegions[id] = nil
+	Bags.API.RequestLayoutRefresh()
+	return true
 end
 
 function Bags.functions.IsInventoryOpenForVendor()
@@ -5006,20 +6348,23 @@ function Bags.functions.GetVendorDestroyButtonAnchor()
 	return footer or state.frame
 end
 
-function Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy)
+function Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy, searchOnly)
 	local vendorFunctions = addon.Vendor and addon.Vendor.functions or nil
 	if not vendorFunctions then
 		return
 	end
 
 	local applyMark = vendorFunctions.ApplySellDestroyOverlayToItemButton
+	local refreshSearchState = vendorFunctions.RefreshSellDestroyOverlaySearchState
 	local hideMark = vendorFunctions.HideSellDestroyOverlays
 	for index, button in ipairs(state.buttons or {}) do
 		if button and button:IsShown() and index <= (state.currentLayoutCount or 0) then
-			if applyMark then
+			if searchOnly and refreshSearchState then
+				refreshSearchState(button)
+			elseif applyMark then
 				applyMark(button, overlaySell, overlayDestroy)
 			end
-			if applyItemButtonSkinIfNeeded then
+			if not searchOnly and applyItemButtonSkinIfNeeded then
 				applyItemButtonSkinIfNeeded(button, button._bagsRenderQuality)
 			end
 		elseif button and hideMark then
@@ -5135,7 +6480,7 @@ local function scheduleNativeBagStateSync(requestRefresh, requestRebuild)
 	end
 
 	state.nativeBagStateSyncScheduled = true
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		syncFromNativeBagState(requestRefresh, requestRebuild)
 	end)
 end
@@ -5288,27 +6633,29 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 		scheduleUpdate(true, true, true)
 	elseif event == "BAG_UPDATE" then
 		local bagID = ...
-		if isManagedBagUpdateID(bagID) and refreshManagedBagContentSignature(bagID) then
-			state.bagContentsDirty = true
-			state.footerDirty = true
-		end
+		markBagStale(bagID)
 	elseif event == "BAG_UPDATE_DELAYED" then
-		state.footerDirty = true
-		if state.bagContentsDirty then
-			state.bagContentsDirty = false
-			scheduleUpdate(true, true)
-		else
-			scheduleUpdate(true, false)
+		if (state.staleBagCount or 0) > 0 then
+			scheduleUpdate(false, false)
 		end
 	elseif event == "BAG_NEW_ITEMS_UPDATED" then
-		state.bagContentsDirty = false
-		scheduleUpdate(true, true)
+		state.newItemsVisualDirty = true
+		local requestRebuild = state.rebuildAfterNewItemsHeaderClear == true
+		if requestRebuild then
+			state.rebuildAfterNewItemsHeaderClear = nil
+		end
+		scheduleUpdate(true, requestRebuild)
 	elseif event == "ITEM_DATA_LOAD_RESULT" then
 		local itemID, success = ...
 		if success and (state.pendingRuleItemDataIDs[itemID] or state.awaitingRuleItemData) then
 			state.pendingRuleItemDataIDs[itemID] = nil
 			scheduleUpdate(true, true)
+		elseif success then
+			scheduleUpdate(true, false)
 		end
+	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
+		Core.ClearTooltipDerivedItemFlagsCache()
+		scheduleUpdate(true, false)
 	elseif event == "UNIT_INVENTORY_CHANGED" or event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
 		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
 		if doesRuleUsageDependOnPlayerState(usage) then
@@ -5318,7 +6665,9 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 			scheduleUpdate(true, false)
 		end
 	elseif event == "INVENTORY_SEARCH_UPDATE" then
-		scheduleUpdate(true, false)
+		if Bags.functions.RefreshSearchState then
+			Bags.functions.RefreshSearchState()
+		end
 	elseif event == "MODIFIER_STATE_CHANGED" then
 		local key = ...
 		if key == "LALT" or key == "RALT" then

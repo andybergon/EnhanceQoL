@@ -29,6 +29,22 @@
 						<Anchor point="TOPLEFT" x="2" y="-2" />
 					</Anchors>
 				</FontString>
+				<Texture parentKey="EquipmentSetIcon" hidden="true">
+					<Size x="14" y="14" />
+					<Anchors>
+						<Anchor point="BOTTOMLEFT" x="2" y="2" />
+					</Anchors>
+				</Texture>
+				<FontString parentKey="EquipmentSetText" inherits="NumberFontNormalSmall" hidden="true">
+					<Anchors>
+						<Anchor point="BOTTOMLEFT" x="2" y="2" />
+					</Anchors>
+				</FontString>
+				<FontString parentKey="BindStatusText" inherits="NumberFontNormalSmall">
+					<Anchors>
+						<Anchor point="BOTTOMRIGHT" x="-2" y="2" />
+					</Anchors>
+				</FontString>
 			</Layer>
 		</Layers>
 		<Scripts>

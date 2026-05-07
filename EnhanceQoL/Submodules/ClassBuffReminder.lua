@@ -6631,7 +6631,7 @@ function Reminder:RegisterEditMode()
 				Reminder.frame:Hide()
 			end
 			Reminder:RequestUpdate(true)
-			if C_Timer and C_Timer.After then C_Timer.After(0, function() Reminder:RequestUpdate(true) end) end
+			RunNextFrame(function() Reminder:RequestUpdate(true) end)
 		end,
 		isEnabled = function() return addon.db and addon.db[DB_ENABLED] == true end,
 		settings = settings,

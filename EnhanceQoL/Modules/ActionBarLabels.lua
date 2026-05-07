@@ -1172,7 +1172,7 @@ do
 		if refreshPending then return end
 		if not addon.db or not addon.db.actionBarFullRangeColoring then return end
 		refreshPending = true
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			refreshPending = false
 			if Labels.RefreshAllRangeOverlays then Labels.RefreshAllRangeOverlays() end
 		end)

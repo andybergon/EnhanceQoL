@@ -26,6 +26,7 @@ def webhook_for(kind):
 
 def extract_notes(changelog, tag):
     heading = re.compile(r"^## \[(?P<tag>[^\]]+)\].*$")
+    html_comment = re.compile(r"^\s*<!--.*-->\s*$")
     lines = changelog.splitlines()
     start = None
     end = None
@@ -44,7 +45,7 @@ def extract_notes(changelog, tag):
     if start is None:
         return ""
 
-    section = lines[start:end]
+    section = [line for line in lines[start:end] if not html_comment.match(line)]
     while section and section[0].strip() == "":
         section.pop(0)
     while section and section[-1].strip() in ("", "---"):

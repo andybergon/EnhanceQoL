@@ -82,10 +82,16 @@ local TEXT_ELEMENT_DEFINITIONS = {
 
 local defaultSettings = {
 	manualVisible = false,
+	oneBagMode = false,
+	oneBagFreeSlotsAtEnd = false,
 	showCategories = true,
 	compactCategoryLayout = true,
 	compactCategoryGap = 8,
+	categoryTreeView = false,
+	categoryTreeIndent = 14,
 	showCloseButton = true,
+	clearNewItemsOnHeaderClick = false,
+	rememberLastBankTab = true,
 	combineFreeSlots = true,
 	showFreeSlots = true,
 	combineUnstackableItems = true,
@@ -109,6 +115,9 @@ local defaultSettings = {
 	skinPreset = "default",
 	iconShape = "default",
 	frameBackground = "parchment",
+	frameBorderOffset = 0,
+	frameBorderSize = 1,
+	frameBorderTexture = "__skin__",
 	frameBackgroundColor = { 0.03, 0.03, 0.04 },
 	frameBackgroundOpacity = 100,
 	showWatchedCurrencies = true,
@@ -241,6 +250,24 @@ local resolvedTextAppearanceCache = {
 
 local function invalidateResolvedTextAppearanceCache()
 	resolvedTextAppearanceCache.byElement = {}
+end
+
+local function clampTextAppearanceSize(size)
+	size = math.floor((tonumber(size) or defaultSettings.textAppearance.size) + 0.5)
+	if size < 8 then
+		return 8
+	elseif size > 24 then
+		return 24
+	end
+	return size
+end
+
+local function setResolvedElementSize(appearance, elementID, size)
+	local element = appearance and appearance.elements and appearance.elements[elementID] or nil
+	if not element then
+		return
+	end
+	element.size = clampTextAppearanceSize(size)
 end
 
 local TRACKED_CURRENCY_DATA_REQUEST_THROTTLE = 5
@@ -957,6 +984,17 @@ local function clampPaddingValue(padding, defaultValue)
 	return padding
 end
 
+local function clampCategorySpacingValue(spacing, defaultValue)
+	spacing = math.floor((tonumber(spacing) or defaultValue or 0) + 0.5)
+	if spacing < 0 then
+		spacing = 0
+	elseif spacing > 40 then
+		spacing = 40
+	end
+
+	return spacing
+end
+
 local function clampItemScaleValue(scale, defaultValue)
 	scale = tonumber(scale) or defaultValue or 100
 	scale = math.floor(((scale / 5) + 0.5)) * 5
@@ -1214,6 +1252,40 @@ function addon.SetMaxColumns(value)
 	return true
 end
 
+function addon.GetOneBagMode()
+	local settings = addon.GetSettings()
+	settings.oneBagMode = normalizeBooleanSetting(settings.oneBagMode, defaultSettings.oneBagMode)
+	return settings.oneBagMode
+end
+
+function addon.SetOneBagMode(enabled)
+	local settings = addon.GetSettings()
+	enabled = normalizeBooleanSetting(enabled, defaultSettings.oneBagMode)
+	if settings.oneBagMode == enabled then
+		return false
+	end
+
+	settings.oneBagMode = enabled
+	return true
+end
+
+function addon.GetOneBagFreeSlotsAtEnd()
+	local settings = addon.GetSettings()
+	settings.oneBagFreeSlotsAtEnd = normalizeBooleanSetting(settings.oneBagFreeSlotsAtEnd, defaultSettings.oneBagFreeSlotsAtEnd)
+	return settings.oneBagFreeSlotsAtEnd
+end
+
+function addon.SetOneBagFreeSlotsAtEnd(enabled)
+	local settings = addon.GetSettings()
+	enabled = normalizeBooleanSetting(enabled, defaultSettings.oneBagFreeSlotsAtEnd)
+	if settings.oneBagFreeSlotsAtEnd == enabled then
+		return false
+	end
+
+	settings.oneBagFreeSlotsAtEnd = enabled
+	return true
+end
+
 function addon.GetCompactCategoryLayout()
 	local settings = addon.GetSettings()
 	settings.compactCategoryLayout = normalizeBooleanSetting(settings.compactCategoryLayout, defaultSettings.compactCategoryLayout)
@@ -1233,18 +1305,52 @@ end
 
 function addon.GetCompactCategoryGap()
 	local settings = addon.GetSettings()
-	settings.compactCategoryGap = clampPaddingValue(settings.compactCategoryGap, defaultSettings.compactCategoryGap)
+	settings.compactCategoryGap = clampCategorySpacingValue(settings.compactCategoryGap, defaultSettings.compactCategoryGap)
 	return settings.compactCategoryGap
 end
 
 function addon.SetCompactCategoryGap(value)
 	local settings = addon.GetSettings()
-	local clampedValue = clampPaddingValue(value, defaultSettings.compactCategoryGap)
+	local clampedValue = clampCategorySpacingValue(value, defaultSettings.compactCategoryGap)
 	if settings.compactCategoryGap == clampedValue then
 		return false
 	end
 
 	settings.compactCategoryGap = clampedValue
+	return true
+end
+
+function addon.GetCategoryTreeView()
+	local settings = addon.GetSettings()
+	settings.categoryTreeView = normalizeBooleanSetting(settings.categoryTreeView, defaultSettings.categoryTreeView)
+	return settings.categoryTreeView
+end
+
+function addon.SetCategoryTreeView(enabled)
+	local settings = addon.GetSettings()
+	enabled = normalizeBooleanSetting(enabled, defaultSettings.categoryTreeView)
+	if settings.categoryTreeView == enabled then
+		return false
+	end
+
+	settings.categoryTreeView = enabled
+	return true
+end
+
+function addon.GetCategoryTreeIndent()
+	local settings = addon.GetSettings()
+	settings.categoryTreeIndent = clampCategorySpacingValue(settings.categoryTreeIndent, defaultSettings.categoryTreeIndent)
+	return settings.categoryTreeIndent
+end
+
+function addon.SetCategoryTreeIndent(value)
+	local settings = addon.GetSettings()
+	local clampedValue = clampCategorySpacingValue(value, defaultSettings.categoryTreeIndent)
+	if settings.categoryTreeIndent == clampedValue then
+		return false
+	end
+
+	settings.categoryTreeIndent = clampedValue
 	return true
 end
 
@@ -1262,6 +1368,40 @@ function addon.SetShowCloseButton(enabled)
 	end
 
 	settings.showCloseButton = enabled
+	return true
+end
+
+function addon.GetClearNewItemsOnHeaderClick()
+	local settings = addon.GetSettings()
+	settings.clearNewItemsOnHeaderClick = normalizeBooleanSetting(settings.clearNewItemsOnHeaderClick, defaultSettings.clearNewItemsOnHeaderClick)
+	return settings.clearNewItemsOnHeaderClick
+end
+
+function addon.SetClearNewItemsOnHeaderClick(enabled)
+	local settings = addon.GetSettings()
+	enabled = normalizeBooleanSetting(enabled, defaultSettings.clearNewItemsOnHeaderClick)
+	if settings.clearNewItemsOnHeaderClick == enabled then
+		return false
+	end
+
+	settings.clearNewItemsOnHeaderClick = enabled
+	return true
+end
+
+function addon.GetRememberLastBankTab()
+	local settings = addon.GetSettings()
+	settings.rememberLastBankTab = normalizeBooleanSetting(settings.rememberLastBankTab, defaultSettings.rememberLastBankTab)
+	return settings.rememberLastBankTab
+end
+
+function addon.SetRememberLastBankTab(enabled)
+	local settings = addon.GetSettings()
+	enabled = normalizeBooleanSetting(enabled, defaultSettings.rememberLastBankTab)
+	if settings.rememberLastBankTab == enabled then
+		return false
+	end
+
+	settings.rememberLastBankTab = enabled
 	return true
 end
 
@@ -1437,12 +1577,7 @@ function addon.SetTextElementSize(elementID, size)
 	if not element then
 		return false
 	end
-	size = math.floor((tonumber(size) or element.size or defaultSettings.textAppearance.size) + 0.5)
-	if size < 8 then
-		size = 8
-	elseif size > 24 then
-		size = 24
-	end
+	size = clampTextAppearanceSize(tonumber(size) or element.size or defaultSettings.textAppearance.size)
 	if tonumber(element.size) == size then
 		return false
 	end
@@ -1578,18 +1713,17 @@ function addon.SetTextAppearanceFont(fontID)
 end
 
 function addon.SetTextAppearanceSize(size)
-	size = math.floor((tonumber(size) or defaultSettings.textAppearance.size) + 0.5)
-	if size < 8 then
-		size = 8
-	elseif size > 24 then
-		size = 24
-	end
+	size = clampTextAppearanceSize(size)
 
 	local appearance = addon.GetTextAppearance()
+	local oldSize = clampTextAppearanceSize(tonumber(appearance.size) or defaultSettings.textAppearance.size)
 	if tonumber(appearance.size) == size then
 		return false
 	end
 	appearance.size = size
+	local sizeDelta = size - oldSize
+	setResolvedElementSize(appearance, "categoryHeader", (tonumber(appearance.elements.categoryHeader.size) or TEXT_ELEMENT_DEFINITIONS.categoryHeader.size) + sizeDelta)
+	setResolvedElementSize(appearance, "subcategoryHeader", (tonumber(appearance.elements.subcategoryHeader.size) or TEXT_ELEMENT_DEFINITIONS.subcategoryHeader.size) + sizeDelta)
 	invalidateResolvedTextAppearanceCache()
 	return true
 end
@@ -1611,12 +1745,7 @@ function addon.GetTextAppearanceOverlaySize()
 end
 
 function addon.SetTextAppearanceOverlaySize(size)
-	size = math.floor((tonumber(size) or defaultSettings.textAppearance.size) + 0.5)
-	if size < 8 then
-		size = 8
-	elseif size > 24 then
-		size = 24
-	end
+	size = clampTextAppearanceSize(size)
 
 	local appearance = addon.GetTextAppearance()
 	if tonumber(appearance.overlaySize) == size then
@@ -1624,6 +1753,8 @@ function addon.SetTextAppearanceOverlaySize(size)
 	end
 
 	appearance.overlaySize = size
+	setResolvedElementSize(appearance, "overlays", size)
+	setResolvedElementSize(appearance, "stackCount", size)
 	invalidateResolvedTextAppearanceCache()
 	return true
 end

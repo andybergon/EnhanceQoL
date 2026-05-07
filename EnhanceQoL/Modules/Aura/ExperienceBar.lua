@@ -947,12 +947,8 @@ local widthSyncQueued = false
 
 function ExperienceBar:ScheduleMatchedWidthSync()
 	if widthSyncQueued then return end
-	if not (C_Timer and C_Timer.After) then
-		self:ApplySize()
-		return
-	end
 	widthSyncQueued = true
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		widthSyncQueued = false
 		if not (addon and addon.db and addon.db[DB_ENABLED] == true) then return end
 		ExperienceBar:ApplySize()
@@ -1423,13 +1419,10 @@ end
 function ExperienceBar:UpdateSoon()
 	if not self:IsEnabled() then return end
 	self:StartBootstrapRefresh()
-	if not (C_Timer and C_Timer.After) then
-		self:UpdateXP()
-		return
-	end
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		if ExperienceBar and ExperienceBar.IsEnabled and ExperienceBar:IsEnabled() then ExperienceBar:UpdateXP() end
 	end)
+	if not (C_Timer and C_Timer.After) then return end
 	C_Timer.After(0.2, function()
 		if ExperienceBar and ExperienceBar.IsEnabled and ExperienceBar:IsEnabled() then ExperienceBar:UpdateXP() end
 	end)

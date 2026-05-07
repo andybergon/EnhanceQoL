@@ -51,12 +51,29 @@ local GROUP_DEBUFF_FILTER_CROWD_CONTROL = "CROWD_CONTROL"
 local GROUP_DEBUFF_FILTER_IMPORTANT = "IMPORTANT"
 local GROUP_DEBUFF_FILTER_RAID = "RAID"
 local GROUP_DEBUFF_FILTER_RAID_IN_COMBAT = "RAID_IN_COMBAT"
+GF.BLIZZARD_DISPEL_MODE_BY_ME = "BY_ME"
+GF.BLIZZARD_DISPEL_MODE_ALL = "ALL"
+GF.BLIZZARD_AURA_ORGANIZATION_LEGACY = "LEGACY"
+GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM = "BUFFS_TOP_DEBUFFS_BOTTOM"
+GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT = "BUFFS_RIGHT_DEBUFFS_LEFT"
 local groupDebuffFilterOptions = {
 	{ value = GROUP_DEBUFF_FILTER_ALL, label = L["UFGroupDebuffFilterAll"] or "All debuffs" },
 	{ value = GROUP_DEBUFF_FILTER_RAID, label = L["UFGroupDebuffFilterRaid"] or "Raid debuffs" },
 	{ value = GROUP_DEBUFF_FILTER_RAID_IN_COMBAT, label = L["UFGroupDebuffFilterRaidInCombat"] or "Raid in combat" },
 	{ value = GROUP_DEBUFF_FILTER_CROWD_CONTROL, label = L["UFGroupDebuffFilterCrowdControl"] or "Crowd control" },
+	{ value = "DISPEL", label = L["UFGroupDebuffFilterDispel"] or "Dispellable" },
 	{ value = GROUP_DEBUFF_FILTER_IMPORTANT, label = L["UFGroupDebuffFilterImportant"] or "Important spells" },
+}
+
+GF.blizzardDispelIndicatorModeOptions = {
+	{ value = GF.BLIZZARD_DISPEL_MODE_BY_ME, label = L["UFAuraRendererBlizzardDispelModeByMe"] or "Dispellable by me", text = L["UFAuraRendererBlizzardDispelModeByMe"] or "Dispellable by me" },
+	{ value = GF.BLIZZARD_DISPEL_MODE_ALL, label = L["UFAuraRendererBlizzardDispelModeAll"] or "All", text = L["UFAuraRendererBlizzardDispelModeAll"] or "All" },
+}
+
+GF.blizzardAuraOrganizationOptions = {
+	{ value = GF.BLIZZARD_AURA_ORGANIZATION_LEGACY, label = L["UFAuraRendererBlizzardOrganizationLegacy"] or "Legacy", text = L["UFAuraRendererBlizzardOrganizationLegacy"] or "Legacy" },
+	{ value = GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM, label = L["UFAuraRendererBlizzardOrganizationBuffsTopDebuffsBottom"] or "Buffs top, debuffs bottom", text = L["UFAuraRendererBlizzardOrganizationBuffsTopDebuffsBottom"] or "Buffs top, debuffs bottom" },
+	{ value = GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT, label = L["UFAuraRendererBlizzardOrganizationBuffsRightDebuffsLeft"] or "Buffs right, debuffs left", text = L["UFAuraRendererBlizzardOrganizationBuffsRightDebuffsLeft"] or "Buffs right, debuffs left" },
 }
 
 GF.splitRoleViewerRoleOptions = {
@@ -232,6 +249,11 @@ local function formatSliderDecimal(value)
 	text = text:gsub("(%..-)0+$", "%1")
 	text = text:gsub("%.$", "")
 	return text
+end
+
+function GF.FormatOverlayHeight(value)
+	if (tonumber(value) or 0) <= 0 then return L["Max"] or "Max" end
+	return tostring(floor((tonumber(value) or 0) + 0.5))
 end
 
 function GF.SetStatusBarValue(bar, value, smooth, forceImmediate)
@@ -425,6 +447,7 @@ local function getGroupDebuffMatchFilter(typeCfg)
 	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_RAID) and AURA_FILTERS.harmfulRaid then filters[#filters + 1] = AURA_FILTERS.harmfulRaid end
 	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_RAID_IN_COMBAT) and AURA_FILTERS.harmfulRaidInCombat then filters[#filters + 1] = AURA_FILTERS.harmfulRaidInCombat end
 	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_CROWD_CONTROL) and AURA_FILTERS.harmfulCrowdControl then filters[#filters + 1] = AURA_FILTERS.harmfulCrowdControl end
+	if GFH.SelectionContains(selection, "DISPEL") and AURA_FILTERS.dispellable then filters[#filters + 1] = AURA_FILTERS.dispellable end
 	if GFH.SelectionContains(selection, GROUP_DEBUFF_FILTER_IMPORTANT) and AURA_FILTERS.harmfulImportant then filters[#filters + 1] = AURA_FILTERS.harmfulImportant end
 	if #filters == 0 then return nil end
 	return filters
@@ -958,7 +981,7 @@ local function applyBarBackdrop(bar, cfg, options)
 	bar._eqolBackdropR, bar._eqolBackdropG, bar._eqolBackdropB, bar._eqolBackdropA = r, g, b, a
 end
 
-function GF._applyOverlayHeight(bar, anchor, height, maxHeight)
+function GF._applyOverlayHeight(bar, anchor, height, maxHeight, anchorTop)
 	if not bar or not anchor then return end
 	bar:ClearAllPoints()
 	local desired = tonumber(height)
@@ -969,8 +992,13 @@ function GF._applyOverlayHeight(bar, anchor, height, maxHeight)
 	local limit = tonumber(maxHeight)
 	if not limit or limit <= 0 then limit = anchor.GetHeight and anchor:GetHeight() or 0 end
 	if limit and limit > 0 and desired > limit then desired = limit end
-	bar:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
-	bar:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
+	if anchorTop then
+		bar:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, 0)
+		bar:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", 0, 0)
+	else
+		bar:SetPoint("BOTTOMLEFT", anchor, "BOTTOMLEFT", 0, 0)
+		bar:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
+	end
 	if Pixel and Pixel.SetHeight then
 		Pixel.SetHeight(bar, desired)
 	else
@@ -1013,8 +1041,9 @@ end
 
 function GF._resolveOverlayHeightSetting(value, fallback)
 	local v = tonumber(value)
-	if not v or v <= 0 then return fallback end
-	if v > fallback then return fallback end
+	if not v then return fallback end
+	if v <= 0 then return 0 end
+	if v >= fallback then return 0 end
 	return v
 end
 
@@ -6833,6 +6862,10 @@ function GF:LayoutButton(self)
 	local resolvedAbsorbHeight = GF._resolveRuntimeOverlayHeightSetting(hc.absorbOverlayHeight ~= nil and hc.absorbOverlayHeight or defH.absorbOverlayHeight, configuredOverlayFallback, healthHeight)
 	local resolvedHealAbsorbHeight =
 		GF._resolveRuntimeOverlayHeightSetting(hc.healAbsorbOverlayHeight ~= nil and hc.healAbsorbOverlayHeight or defH.healAbsorbOverlayHeight, configuredOverlayFallback, healthHeight)
+	local absorbAnchorTop = hc.absorbOverlayAnchorTop
+	if absorbAnchorTop == nil then absorbAnchorTop = defH.absorbOverlayAnchorTop == true end
+	local healAbsorbAnchorTop = hc.healAbsorbOverlayAnchorTop
+	if healAbsorbAnchorTop == nil then healAbsorbAnchorTop = defH.healAbsorbOverlayAnchorTop == true end
 	local overlayClip = GF._ensureOverlayClipFrame(st.health, "_eqolDirectOverlayClip")
 	if st.incomingHeal then
 		local incomingHealTextureKey = hc.incomingHealTexture or healthTexKey
@@ -6895,7 +6928,7 @@ function GF:LayoutButton(self)
 		local absorbClip = overlayClip
 		if absorbClip and st.absorb.GetParent and st.absorb:GetParent() ~= absorbClip then st.absorb:SetParent(absorbClip) end
 		local absorbHeight = resolvedAbsorbHeight
-		GF._applyOverlayHeight(st.absorb, absorbClip or st.health, absorbHeight, healthHeight)
+		GF._applyOverlayHeight(st.absorb, absorbClip or st.health, absorbHeight, healthHeight, absorbAnchorTop == true)
 		setFrameLevelAbove(st.absorb, st.health, 1)
 		if reverseAbsorb and st.absorb2 then
 			if st.absorb2.SetStatusBarTexture and UFHelper and UFHelper.resolveTexture then
@@ -6913,10 +6946,10 @@ function GF:LayoutButton(self)
 					if UFHelper.setupAbsorbClampReverseAware then UFHelper.setupAbsorbClampReverseAware(st.health, st.absorb2) end
 				else
 					if UFHelper.setupAbsorbClamp then UFHelper.setupAbsorbClamp(st.health, st.absorb2) end
-					if not absorbDontOverflow and UFHelper.setupAbsorbOverShift then UFHelper.setupAbsorbOverShift(st.health, st.absorb, absorbHeight, healthHeight) end
+					if not absorbDontOverflow and UFHelper.setupAbsorbOverShift then UFHelper.setupAbsorbOverShift(st.health, st.absorb, absorbHeight, healthHeight, absorbAnchorTop == true) end
 				end
 				if overlayClip and st.absorb2.GetParent and st.absorb2:GetParent() ~= overlayClip then st.absorb2:SetParent(overlayClip) end
-				UFHelper.applyAbsorbClampLayout(st.absorb2, st.health, absorbHeight, healthHeight, reverseHealth)
+				UFHelper.applyAbsorbClampLayout(st.absorb2, st.health, absorbHeight, healthHeight, reverseHealth, absorbAnchorTop == true)
 				syncTextFrameLevels(st)
 			end
 			stabilizeStatusBarTexture(st.absorb2)
@@ -6958,7 +6991,7 @@ function GF:LayoutButton(self)
 		local healAbsorbClip = overlayClip
 		if healAbsorbClip and st.healAbsorb.GetParent and st.healAbsorb:GetParent() ~= healAbsorbClip then st.healAbsorb:SetParent(healAbsorbClip) end
 		local healAbsorbHeight = resolvedHealAbsorbHeight
-		GF._applyOverlayHeight(st.healAbsorb, healAbsorbClip or st.health, healAbsorbHeight, healthHeight)
+		GF._applyOverlayHeight(st.healAbsorb, healAbsorbClip or st.health, healAbsorbHeight, healthHeight, healAbsorbAnchorTop == true)
 		setFrameLevelAbove(st.healAbsorb, st.incomingHeal or st.absorb or st.health, 1)
 	end
 
@@ -8757,6 +8790,61 @@ function GF.IsBlizzardAuraCooldownTextEnabled(cfg, def)
 	return true
 end
 
+function GF.NormalizeBlizzardDispelIndicatorMode(value)
+	if value == nil then return nil end
+	local token = tostring(value):upper()
+	if token == GF.BLIZZARD_DISPEL_MODE_BY_ME or token == "BYME" or token == "ME" or token == "DISPELLABLE_BY_ME" or token == "DISPELLABLEBYME" or token == "1" then
+		return GF.BLIZZARD_DISPEL_MODE_BY_ME
+	end
+	if token == GF.BLIZZARD_DISPEL_MODE_ALL or token == "DISPLAY_ALL" or token == "DISPLAYALL" or token == "2" then return GF.BLIZZARD_DISPEL_MODE_ALL end
+	return nil
+end
+
+function GF.GetBlizzardDispelIndicatorMode(cfg, def)
+	local ac = cfg and cfg.auras
+	local mode = GF.NormalizeBlizzardDispelIndicatorMode(ac and ac.blizzardDispelIndicatorMode)
+	if mode then return mode end
+	local defAc = def and def.auras
+	mode = GF.NormalizeBlizzardDispelIndicatorMode(defAc and defAc.blizzardDispelIndicatorMode)
+	return mode or GF.BLIZZARD_DISPEL_MODE_ALL
+end
+
+function GF.GetBlizzardDispelIndicatorOption(cfg, def)
+	local mode = GF.GetBlizzardDispelIndicatorMode(cfg, def)
+	if mode == GF.BLIZZARD_DISPEL_MODE_BY_ME then
+		return (Enum and Enum.RaidDispelDisplayType and Enum.RaidDispelDisplayType.DispellableByMe) or 1
+	end
+	return (Enum and Enum.RaidDispelDisplayType and Enum.RaidDispelDisplayType.DisplayAll) or 2
+end
+
+function GF.NormalizeBlizzardAuraOrganization(value)
+	if value == nil then return nil end
+	if type(value) == "number" then
+		if Enum and Enum.RaidAuraOrganizationType then
+			if value == Enum.RaidAuraOrganizationType.BuffsTopDebuffsBottom then return GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM end
+			if value == Enum.RaidAuraOrganizationType.BuffsRightDebuffsLeft then return GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT end
+			if value == Enum.RaidAuraOrganizationType.Legacy then return GF.BLIZZARD_AURA_ORGANIZATION_LEGACY end
+		end
+		if value == 1 then return GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM end
+		if value == 2 then return GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT end
+		return GF.BLIZZARD_AURA_ORGANIZATION_LEGACY
+	end
+	local token = tostring(value):upper()
+	if token == GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM or token == "TOP_BOTTOM" or token == "BUFFS_TOP" or token == "1" then return GF.BLIZZARD_AURA_ORGANIZATION_TOP_BOTTOM end
+	if token == GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT or token == "RIGHT_LEFT" or token == "BUFFS_RIGHT" or token == "2" then return GF.BLIZZARD_AURA_ORGANIZATION_RIGHT_LEFT end
+	if token == GF.BLIZZARD_AURA_ORGANIZATION_LEGACY or token == "0" then return GF.BLIZZARD_AURA_ORGANIZATION_LEGACY end
+	return nil
+end
+
+function GF.GetBlizzardAuraOrganization(cfg, def)
+	local ac = cfg and cfg.auras
+	local organization = GF.NormalizeBlizzardAuraOrganization(ac and ac.blizzardOrganizationType)
+	if organization then return organization end
+	local defAc = def and def.auras
+	organization = GF.NormalizeBlizzardAuraOrganization(defAc and defAc.blizzardOrganizationType)
+	return organization or GF.BLIZZARD_AURA_ORGANIZATION_LEGACY
+end
+
 function GF.IsBlizzardLargerRoleDebuffEnabled(cfg, def)
 	local debuff = cfg and cfg.auras and cfg.auras.debuff
 	if debuff and debuff.displayLargerRoleSpecificDebuffs ~= nil then return debuff.displayLargerRoleSpecificDebuffs == true end
@@ -8923,8 +9011,8 @@ function GF:UpdateBlizzardAuraContainer(self)
 		maxDispelDebuffs = 3,
 		iconSize = iconSize,
 		bigDefensiveSize = (showBigDefensive and (externals.size or defExternals.size or iconSize)) or iconSize,
-		organizationType = ac.blizzardOrganizationType,
-		dispelIndicatorOption = 2,
+		organizationType = GF.GetBlizzardAuraOrganization(cfg, def),
+		dispelIndicatorOption = GF.GetBlizzardDispelIndicatorOption(cfg, def),
 		powerBarUsedHeight = cfg and cfg.powerHeight or 0,
 		groupType = (kind == "party") and 4 or 5,
 		displayLargerRoleSpecificDebuffs = GF.IsBlizzardLargerRoleDebuffEnabled(cfg, def),
@@ -11248,6 +11336,8 @@ function GF:UnitButton_RegisterUnitEvents(self, unit)
 		regUnit("UNIT_EXITING_VEHICLE")
 	end
 	regUnit("UNIT_FLAGS")
+	regUnit("UNIT_CTR_OPTIONS")
+	regUnit("UNIT_OTHER_PARTY_CHANGED")
 	local wantsLevel = self._eqolUFState and self._eqolUFState._wantsLevel
 	if not wantsLevel and UFHelper and UFHelper.textModeUsesLevel then
 		local hc = cfg and cfg.health or {}
@@ -11331,6 +11421,7 @@ local function dispatchUnitFlags(btn, unit)
 	GF:UpdateHealthValue(btn, unit, st)
 	GF:UpdateStatusText(btn, unit, st)
 	GF:UpdateName(btn, unit, st)
+	GF:UpdatePhaseIcon(btn)
 end
 local function dispatchUnitRange(btn, _, inRange) GF:UpdateRange(btn, inRange) end
 local function dispatchUnitAura(btn, _, updateInfo) GF:UpdateAuras(btn, updateInfo) end
@@ -11365,6 +11456,8 @@ local UNIT_DISPATCH = {
 	UNIT_EXITED_VEHICLE = dispatchUnitPortrait,
 	UNIT_EXITING_VEHICLE = dispatchUnitPortrait,
 	UNIT_FLAGS = dispatchUnitFlags,
+	UNIT_CTR_OPTIONS = function(btn) GF:UpdatePhaseIcon(btn) end,
+	UNIT_OTHER_PARTY_CHANGED = function(btn) GF:UpdatePhaseIcon(btn) end,
 	UNIT_IN_RANGE_UPDATE = dispatchUnitRange,
 	UNIT_AURA = dispatchUnitAura,
 	UNIT_THREAT_SITUATION_UPDATE = GF.DispatchUnitThreat,
@@ -12575,6 +12668,16 @@ function GF:RefreshRoleIcons()
 	end
 end
 
+function GF:ScheduleRoleIconRefresh()
+	if GF._roleIconRefreshQueued then return end
+	GF._roleIconRefreshQueued = true
+	local function refresh()
+		GF._roleIconRefreshQueued = nil
+		GF:RefreshRoleIcons()
+	end
+	RunNextFrame(refresh)
+end
+
 function GF:RefreshGroupIcons()
 	if not isFeatureEnabled() then return end
 	for _, header in pairs(GF.headers or {}) do
@@ -13056,6 +13159,22 @@ function GF.BuildRaidRuntimeSortState(cfg)
 		groupedSpecs = groupedSpecs,
 		visibleCount = visibleCount,
 	}
+end
+
+function GF:IsCustomRosterSortActive(kind)
+	if kind ~= "party" and kind ~= "raid" then return false end
+	local db = DB or ensureDB()
+	local cfg = db and db[kind]
+	if not cfg then return false end
+	local raw = cfg.sortMethod
+	local method = tostring(raw or ""):upper()
+	if method == "CUSTOM" or method == "NAMELIST" then return true end
+	local custom = cfg.customSort
+	return custom and custom.enabled == true and (raw == nil or raw == "")
+end
+
+function GF:HasCustomRosterSort()
+	return GF:IsCustomRosterSortActive("party") or GF:IsCustomRosterSortActive("raid")
 end
 
 function GF:RefreshCustomSortNameList(kind)
@@ -14236,6 +14355,7 @@ GF._groupCopySectionRules = {
 		{ "health", "absorbReverseFill" },
 		{ "health", "absorbDontOverflowHealthBar" },
 		{ "health", "absorbOverlayHeight" },
+		{ "health", "absorbOverlayAnchorTop" },
 		{ "health", "absorbUseCustomColor" },
 		{ "health", "absorbColor" },
 		{ "health", "useAbsorbGlow" },
@@ -14247,6 +14367,7 @@ GF._groupCopySectionRules = {
 		{ "health", "healAbsorbReverseFill" },
 		{ "health", "healAbsorbDontOverflowHealthBar" },
 		{ "health", "healAbsorbOverlayHeight" },
+		{ "health", "healAbsorbOverlayAnchorTop" },
 		{ "health", "healAbsorbUseCustomColor" },
 		{ "health", "healAbsorbColor" },
 	},
@@ -14948,6 +15069,7 @@ function GF._copyUnitSourceSectionToGroup(sectionId, src, dest)
 			"absorbReverseFill",
 			"absorbDontOverflowHealthBar",
 			"absorbOverlayHeight",
+			"absorbOverlayAnchorTop",
 			"absorbUseCustomColor",
 			"absorbColor",
 			"useAbsorbGlow",
@@ -14970,6 +15092,7 @@ function GF._copyUnitSourceSectionToGroup(sectionId, src, dest)
 			"healAbsorbReverseFill",
 			"healAbsorbDontOverflowHealthBar",
 			"healAbsorbOverlayHeight",
+			"healAbsorbOverlayAnchorTop",
 			"healAbsorbUseCustomColor",
 			"healAbsorbColor",
 		}) do
@@ -15107,7 +15230,7 @@ function GF._applyGroupCopyRefresh(targetKind, editModeId)
 	refreshAllAuras()
 	if GF._previewActive and GF._previewActive[targetKind] then GF:UpdatePreviewLayout(targetKind) end
 	-- Do not call EditMode:RefreshFrame here: it reapplies layout data via onApply.
-	-- Instead, sync the stored layout record so future applies (e.g. dragging the frame)
+	-- Instead, sync the runtime layout values so future applies (e.g. dragging the frame)
 	-- do not overwrite freshly copied cfg values with stale ones.
 	if editModeId and GF._syncGroupEditModeLayoutData then GF._syncGroupEditModeLayoutData(targetKind, editModeId) end
 	if addon.EditModeLib and addon.EditModeLib.internal and addon.EditModeLib.internal.RefreshSettingValues then addon.EditModeLib.internal:RefreshSettingValues() end
@@ -16309,6 +16432,50 @@ local function buildEditModeSettings(kind, editModeId)
 			end,
 			isEnabled = isBlizzardRendererSelected,
 			isShown = isBlizzardRendererSelected,
+		},
+		{
+			name = L["UFAuraRendererBlizzardOrganization"] or "Aura organization",
+			kind = SettingType.Dropdown,
+			field = "auraRendererBlizzardOrganization",
+			parentId = "utility",
+			values = GF.blizzardAuraOrganizationOptions,
+			customDefaultText = GF.DropdownOptionLabel(GF.blizzardAuraOrganizationOptions, GF.GetBlizzardAuraOrganization(getCfg(kind), DEFAULTS[kind] or EMPTY), L["UFAuraRendererBlizzardOrganizationLegacy"] or "Legacy"),
+			get = function() return GF.GetBlizzardAuraOrganization(getCfg(kind), DEFAULTS[kind] or EMPTY) end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.auras = cfg.auras or {}
+				cfg.auras.blizzardOrganizationType = GF.NormalizeBlizzardAuraOrganization(value) or GF.BLIZZARD_AURA_ORGANIZATION_LEGACY
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "auraRendererBlizzardOrganization", cfg.auras.blizzardOrganizationType, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+				refreshAllAuras()
+				refreshAllPrivateAuras()
+			end,
+			generator = GF.DropdownRadioGenerator(GF.blizzardAuraOrganizationOptions),
+			isEnabled = isBlizzardRendererSelected,
+			isShown = isBlizzardRendererSelected,
+		},
+		{
+			name = L["UFAuraRendererBlizzardDispelMode"] or "Dispel indicator mode",
+			kind = SettingType.Dropdown,
+			field = "auraRendererBlizzardDispelMode",
+			parentId = "utility",
+			values = GF.blizzardDispelIndicatorModeOptions,
+			customDefaultText = GF.DropdownOptionLabel(GF.blizzardDispelIndicatorModeOptions, GF.GetBlizzardDispelIndicatorMode(getCfg(kind), DEFAULTS[kind] or EMPTY), L["UFAuraRendererBlizzardDispelModeAll"] or "All"),
+			get = function() return GF.GetBlizzardDispelIndicatorMode(getCfg(kind), DEFAULTS[kind] or EMPTY) end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.auras = cfg.auras or {}
+				cfg.auras.blizzardDispelIndicatorMode = GF.NormalizeBlizzardDispelIndicatorMode(value) or GF.BLIZZARD_DISPEL_MODE_ALL
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "auraRendererBlizzardDispelMode", cfg.auras.blizzardDispelIndicatorMode, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+				refreshAllAuras()
+				refreshAllPrivateAuras()
+			end,
+			generator = GF.DropdownRadioGenerator(GF.blizzardDispelIndicatorModeOptions),
+			isEnabled = function() return GF.IsBlizzardAuraRenderTypeEnabled(getCfg(kind), DEFAULTS[kind] or EMPTY, "dispels") end,
+			isShown = function() return GF.IsBlizzardAuraRenderTypeEnabled(getCfg(kind), DEFAULTS[kind] or EMPTY, "dispels") end,
 		},
 		{
 			name = L["Frame"] or "Frame",
@@ -19875,10 +20042,11 @@ local function buildEditModeSettings(kind, editModeId)
 			allowInput = true,
 			field = "absorbOverlayHeight",
 			parentId = "absorb",
-			minValue = 1,
+			minValue = 0,
 			maxValue = 300,
 			valueStep = 1,
-			default = GF._computeOverlayHeightFallback((DEFAULTS[kind] and DEFAULTS[kind].height) or 24, (DEFAULTS[kind] and DEFAULTS[kind].powerHeight) or 6),
+			formatter = GF.FormatOverlayHeight,
+			default = 0,
 			get = function()
 				local cfg = getCfg(kind)
 				local hc = cfg and cfg.health or {}
@@ -19895,11 +20063,38 @@ local function buildEditModeSettings(kind, editModeId)
 				cfg.health = cfg.health or {}
 				local def = DEFAULTS[kind] or {}
 				local fallback = GF._computeOverlayHeightFallback((cfg and cfg.height) or def.height, (cfg and cfg.powerHeight) or def.powerHeight)
-				local v = clampNumber(value, 1, 300, fallback)
-				if not v or v <= 0 then v = fallback end
+				local v = clampNumber(value, 0, 300, 0)
+				if not v or v <= 0 then v = 0 end
 				v = GF._resolveOverlayHeightSetting(v, fallback)
 				cfg.health.absorbOverlayHeight = v
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "absorbOverlayHeight", v, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.absorbEnabled ~= false
+			end,
+		},
+		{
+			name = L["Anchor overlay to top"] or "Anchor overlay to top",
+			kind = SettingType.Checkbox,
+			field = "absorbOverlayAnchorTop",
+			parentId = "absorb",
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
+				local value = hc.absorbOverlayAnchorTop
+				if value == nil then value = defH.absorbOverlayAnchorTop == true end
+				return value == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.absorbOverlayAnchorTop = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "absorbOverlayAnchorTop", cfg.health.absorbOverlayAnchorTop, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			isEnabled = function()
@@ -20151,10 +20346,11 @@ local function buildEditModeSettings(kind, editModeId)
 			allowInput = true,
 			field = "healAbsorbOverlayHeight",
 			parentId = "healabsorb",
-			minValue = 1,
+			minValue = 0,
 			maxValue = 300,
 			valueStep = 1,
-			default = GF._computeOverlayHeightFallback((DEFAULTS[kind] and DEFAULTS[kind].height) or 24, (DEFAULTS[kind] and DEFAULTS[kind].powerHeight) or 6),
+			formatter = GF.FormatOverlayHeight,
+			default = 0,
 			get = function()
 				local cfg = getCfg(kind)
 				local hc = cfg and cfg.health or {}
@@ -20171,11 +20367,38 @@ local function buildEditModeSettings(kind, editModeId)
 				cfg.health = cfg.health or {}
 				local def = DEFAULTS[kind] or {}
 				local fallback = GF._computeOverlayHeightFallback((cfg and cfg.height) or def.height, (cfg and cfg.powerHeight) or def.powerHeight)
-				local v = clampNumber(value, 1, 300, fallback)
-				if not v or v <= 0 then v = fallback end
+				local v = clampNumber(value, 0, 300, 0)
+				if not v or v <= 0 then v = 0 end
 				v = GF._resolveOverlayHeightSetting(v, fallback)
 				cfg.health.healAbsorbOverlayHeight = v
 				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healAbsorbOverlayHeight", v, nil, true) end
+				GF:ApplyHeaderAttributes(kind)
+			end,
+			isEnabled = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				return hc.healAbsorbEnabled ~= false
+			end,
+		},
+		{
+			name = L["Anchor overlay to top"] or "Anchor overlay to top",
+			kind = SettingType.Checkbox,
+			field = "healAbsorbOverlayAnchorTop",
+			parentId = "healabsorb",
+			get = function()
+				local cfg = getCfg(kind)
+				local hc = cfg and cfg.health or {}
+				local defH = (DEFAULTS[kind] and DEFAULTS[kind].health) or {}
+				local value = hc.healAbsorbOverlayAnchorTop
+				if value == nil then value = defH.healAbsorbOverlayAnchorTop == true end
+				return value == true
+			end,
+			set = function(_, value)
+				local cfg = getCfg(kind)
+				if not cfg then return end
+				cfg.health = cfg.health or {}
+				cfg.health.healAbsorbOverlayAnchorTop = value and true or false
+				if EditMode and EditMode.SetValue then EditMode:SetValue(editModeId, "healAbsorbOverlayAnchorTop", cfg.health.healAbsorbOverlayAnchorTop, nil, true) end
 				GF:ApplyHeaderAttributes(kind)
 			end,
 			isEnabled = function()
@@ -27735,6 +27958,14 @@ function GF.SyncGroupEditModePositionValues(kind, editModeId, cfg, layoutName)
 	EditMode:SetValue(editModeId, "y", y, layoutName, true)
 end
 
+function GF.SyncAllGroupEditModeLayoutData(layoutName)
+	if not EDITMODE_IDS then return end
+	for _, kind in ipairs({ "party", "raid", "mt", "ma" }) do
+		local editModeId = EDITMODE_IDS[kind]
+		if editModeId then GF._syncGroupEditModeLayoutData(kind, editModeId, layoutName) end
+	end
+end
+
 local function applyEditModeData(kind, data)
 	if not data then return end
 	-- EditMode may fire apply callbacks during login/reload/profile refresh with
@@ -28143,7 +28374,11 @@ local function applyEditModeData(kind, data)
 	if data.absorbOverlayHeight ~= nil then
 		cfg.health = cfg.health or {}
 		local fallback = GF._computeOverlayHeightFallback(cfg.height, cfg.powerHeight)
-		cfg.health.absorbOverlayHeight = GF._resolveOverlayHeightSetting(clampNumber(data.absorbOverlayHeight, 1, 300, fallback), fallback)
+		cfg.health.absorbOverlayHeight = GF._resolveOverlayHeightSetting(clampNumber(data.absorbOverlayHeight, 0, 300, 0), fallback)
+	end
+	if data.absorbOverlayAnchorTop ~= nil then
+		cfg.health = cfg.health or {}
+		cfg.health.absorbOverlayAnchorTop = data.absorbOverlayAnchorTop and true or false
 	end
 	if data.absorbUseCustomColor ~= nil then
 		cfg.health = cfg.health or {}
@@ -28184,7 +28419,11 @@ local function applyEditModeData(kind, data)
 	if data.healAbsorbOverlayHeight ~= nil then
 		cfg.health = cfg.health or {}
 		local fallback = GF._computeOverlayHeightFallback(cfg.height, cfg.powerHeight)
-		cfg.health.healAbsorbOverlayHeight = GF._resolveOverlayHeightSetting(clampNumber(data.healAbsorbOverlayHeight, 1, 300, fallback), fallback)
+		cfg.health.healAbsorbOverlayHeight = GF._resolveOverlayHeightSetting(clampNumber(data.healAbsorbOverlayHeight, 0, 300, 0), fallback)
+	end
+	if data.healAbsorbOverlayAnchorTop ~= nil then
+		cfg.health = cfg.health or {}
+		cfg.health.healAbsorbOverlayAnchorTop = data.healAbsorbOverlayAnchorTop and true or false
 	end
 	if data.healAbsorbUseCustomColor ~= nil then
 		cfg.health = cfg.health or {}
@@ -28663,6 +28902,8 @@ local function applyEditModeData(kind, data)
 	if data.auraRendererBlizzardTypes ~= nil then ac.blizzardTypes = GF._sharedEdit.csm(data.auraRendererBlizzardTypes) end
 	if data.auraRendererBlizzardIconSize ~= nil then ac.blizzardIconSize = clampNumber(data.auraRendererBlizzardIconSize, 8, 120, ac.blizzardIconSize or 16) end
 	if data.auraRendererBlizzardCooldownText ~= nil then ac.blizzardShowCooldownText = data.auraRendererBlizzardCooldownText and true or false end
+	if data.auraRendererBlizzardOrganization ~= nil then ac.blizzardOrganizationType = GF.NormalizeBlizzardAuraOrganization(data.auraRendererBlizzardOrganization) or GF.BLIZZARD_AURA_ORGANIZATION_LEGACY end
+	if data.auraRendererBlizzardDispelMode ~= nil then ac.blizzardDispelIndicatorMode = GF.NormalizeBlizzardDispelIndicatorMode(data.auraRendererBlizzardDispelMode) or GF.BLIZZARD_DISPEL_MODE_ALL end
 	if data.buffsEnabled ~= nil then ac.buff.enabled = data.buffsEnabled and true or false end
 	if data.buffAnchor ~= nil then ac.buff.anchorPoint = data.buffAnchor end
 	if data.buffAnchorOutside ~= nil then ac.buff.anchorOutside = data.buffAnchorOutside and true or false end
@@ -29053,6 +29294,10 @@ function GF:EnsureEditMode()
 			local healAbsorbDontOverflowValue = hc.healAbsorbDontOverflowHealthBar
 			if healAbsorbDontOverflowValue == nil then healAbsorbDontOverflowValue = defH.healAbsorbDontOverflowHealthBar ~= false end
 			healAbsorbDontOverflowValue = healAbsorbDontOverflowValue == true and healAbsorbReverseValue ~= true
+			local absorbOverlayAnchorTopValue = hc.absorbOverlayAnchorTop
+			if absorbOverlayAnchorTopValue == nil then absorbOverlayAnchorTopValue = defH.absorbOverlayAnchorTop == true end
+			local healAbsorbOverlayAnchorTopValue = hc.healAbsorbOverlayAnchorTop
+			if healAbsorbOverlayAnchorTopValue == nil then healAbsorbOverlayAnchorTopValue = defH.healAbsorbOverlayAnchorTop == true end
 			local _, resolvedGrowth = GF.ResolveUnitGrowthDirection(cfg.growth, "DOWN")
 			local defaults = {
 				point = cfg.point or "CENTER",
@@ -29225,6 +29470,7 @@ function GF:EnsureEditMode()
 				absorbReverse = absorbReverseValue == true,
 				absorbDontOverflow = absorbDontOverflowValue == true,
 				absorbOverlayHeight = absorbOverlayHeightValue,
+				absorbOverlayAnchorTop = absorbOverlayAnchorTopValue == true,
 				absorbUseCustomColor = (cfg.health and cfg.health.absorbUseCustomColor) == true,
 				absorbColor = (cfg.health and cfg.health.absorbColor) or { 0.85, 0.95, 1, 0.7 },
 				absorbGlow = absorbGlowValue == true,
@@ -29234,6 +29480,7 @@ function GF:EnsureEditMode()
 				healAbsorbReverse = healAbsorbReverseValue == true,
 				healAbsorbDontOverflow = healAbsorbDontOverflowValue == true,
 				healAbsorbOverlayHeight = healAbsorbOverlayHeightValue,
+				healAbsorbOverlayAnchorTop = healAbsorbOverlayAnchorTopValue == true,
 				healAbsorbUseCustomColor = (cfg.health and cfg.health.healAbsorbUseCustomColor) == true,
 				healAbsorbColor = (cfg.health and cfg.health.healAbsorbColor) or { 1, 0.3, 0.3, 0.7 },
 				nameColorMode = sc.nameColorMode or (((cfg.text and cfg.text.useClassColor) ~= false) and "CLASS" or "CUSTOM"),
@@ -29482,6 +29729,8 @@ function GF:EnsureEditMode()
 				auraRendererBlizzardTypes = GF._sharedEdit.csm((ac and ac.blizzardTypes) or (defAuras and defAuras.blizzardTypes) or GF.BLIZZARD_AURA_RENDER_TYPES),
 				auraRendererBlizzardIconSize = GF.GetBlizzardAuraIconSize(cfg, def),
 				auraRendererBlizzardCooldownText = GF.IsBlizzardAuraCooldownTextEnabled(cfg, def),
+				auraRendererBlizzardOrganization = GF.GetBlizzardAuraOrganization(cfg, def),
+				auraRendererBlizzardDispelMode = GF.GetBlizzardDispelIndicatorMode(cfg, def),
 				privateAurasEnabled = (pa.enabled ~= nil) and (pa.enabled == true) or ((pa.enabled == nil) and defPrivate.enabled == true),
 				privateAurasAmount = paIcon.amount or defPrivateIcon.amount or 2,
 				privateAurasSize = paIcon.size or defPrivateIcon.size or 20,
@@ -29604,9 +29853,10 @@ function GF:EnsureEditMode()
 				frame = anchor,
 				title = (kind == "party" and (PARTY or "Party")) or (kind == "raid" and (RAID or "Raid")) or (kind == "mt" and "Main Tank") or (kind == "ma" and "Main Assist") or tostring(kind),
 				layoutDefaults = defaults,
+				persistPosition = false,
 				settings = buildEditModeSettings(kind, EDITMODE_IDS[kind]),
 				onApply = function(_, layoutName, data)
-					local token = addon.db
+					local token = getCfg(kind) or addon.db
 					if anchor._eqolEditModeHydratedToken ~= token then
 						anchor._eqolEditModeHydratedToken = token
 						if GF._syncGroupEditModeLayoutData then GF._syncGroupEditModeLayoutData(kind, EDITMODE_IDS[kind], layoutName) end
@@ -29792,11 +30042,7 @@ function GF:OnExitEditMode(kind)
 		refreshAllPrivateAuras()
 		GF.ShowEditModeReloadIfRequired()
 	end
-	if C_Timer and C_Timer.After then
-		C_Timer.After(0, refreshAfterEditMode)
-	else
-		refreshAfterEditMode()
-	end
+	RunNextFrame(refreshAfterEditMode)
 end
 
 registerFeatureEvents = function(frame)
@@ -29808,6 +30054,8 @@ registerFeatureEvents = function(frame)
 		frame:RegisterEvent("UNIT_CONNECTION")
 		frame:RegisterEvent("PARTY_MEMBER_ENABLE")
 		frame:RegisterEvent("PARTY_MEMBER_DISABLE")
+		frame:RegisterEvent("GROUP_FORMED")
+		frame:RegisterEvent("GROUP_JOINED")
 		frame:RegisterEvent("GROUP_ROSTER_UPDATE")
 		frame:RegisterEvent("RAID_ROSTER_UPDATE")
 		frame:RegisterEvent("UNIT_NAME_UPDATE")
@@ -29841,6 +30089,8 @@ unregisterFeatureEvents = function(frame)
 		frame:UnregisterEvent("UNIT_CONNECTION")
 		frame:UnregisterEvent("PARTY_MEMBER_ENABLE")
 		frame:UnregisterEvent("PARTY_MEMBER_DISABLE")
+		frame:UnregisterEvent("GROUP_FORMED")
+		frame:UnregisterEvent("GROUP_JOINED")
 		frame:UnregisterEvent("GROUP_ROSTER_UPDATE")
 		frame:UnregisterEvent("RAID_ROSTER_UPDATE")
 		frame:UnregisterEvent("UNIT_NAME_UPDATE")
@@ -29878,6 +30128,7 @@ end
 function GF:RunProfileChangeRefreshPass()
 	if not isFeatureEnabled() then return end
 	self:EnsureHeaders()
+	self.SyncAllGroupEditModeLayoutData()
 	-- Profile switches can flip secure header attributes like showPlayer while
 	-- the group header is live. Use the lighter refresh path so the secure
 	-- header owns child rebuilding unless the layout key actually changed.
@@ -29915,6 +30166,16 @@ function GF:RunPostRosterRefreshPass()
 		self:ApplyHeaderAttributes("mt", options)
 		self:ApplyHeaderAttributes("ma", options)
 	else
+		local options = GF._lightHeaderRefreshOptions
+		if self:IsCustomRosterSortActive("party") then
+			self:ApplyHeaderAttributes("party", options)
+			appliedHeaders = true
+		end
+		if self:IsCustomRosterSortActive("raid") then
+			self:ApplyHeaderAttributes("raid", options)
+			appliedHeaders = true
+		end
+
 		local function nudgeVisible(header)
 			if not (header and header.IsShown and header:IsShown()) then return end
 			nudgeHeaderLayout(header)
@@ -30046,16 +30307,18 @@ do
 		elseif event == "PLAYER_FLAGS_CHANGED" then
 			local refreshed = GF:RefreshConnectionState(...)
 			if refreshed == 0 then GF:RefreshStatusText() end
-		elseif event == "INSPECT_READY" then
-			if GFH and GFH.OnInspectReady then
-				local updated = GFH.OnInspectReady(...)
-				if updated then
-					GF:RefreshCustomSortNameList("raid")
-					if GF._previewActive and GF._previewActive.raid then GF:UpdatePreviewLayout("raid") end
+			elseif event == "INSPECT_READY" then
+				if GFH and GFH.OnInspectReady then
+					local updated = GFH.OnInspectReady(...)
+					if updated then
+						GF:RefreshCustomSortNameList("raid")
+						if GF._previewActive and GF._previewActive.raid then GF:UpdatePreviewLayout("raid") end
+					end
 				end
-			end
-		elseif event == "GROUP_ROSTER_UPDATE" then
-			local headerStateChanged = GF:DidRosterStateChange()
+			elseif event == "GROUP_FORMED" or event == "GROUP_JOINED" then
+				if GF:HasCustomRosterSort() then GF:SchedulePostRosterRefresh() end
+			elseif event == "GROUP_ROSTER_UPDATE" then
+				local headerStateChanged = GF:DidRosterStateChange()
 			local cfg = getCfg("raid")
 			local custom = cfg and GFH and GFH.EnsureCustomSortConfig and GFH.EnsureCustomSortConfig(cfg)
 			local sortMethod = cfg and resolveSortMethod(cfg) or "INDEX"
@@ -30125,6 +30388,10 @@ do
 		elseif event == "PLAYER_SPECIALIZATION_CHANGED" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
 			local unit = ...
 			if event == "PLAYER_SPECIALIZATION_CHANGED" and unit and unit ~= "player" then return end
+			if not IsInGroup() then
+				GF:RefreshRoleIcons()
+				GF:ScheduleRoleIconRefresh()
+			end
 			GF:RefreshPowerVisibility()
 			GF:RefreshSplitRoleHeadersForViewerRoleChange()
 			GF:RefreshCustomSortNameList("raid")

@@ -474,7 +474,7 @@ end
 local function queueLayoutButtons()
 	if gemLayoutQueued or not C_Timer then return end
 	gemLayoutQueued = true
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		gemLayoutQueued = false
 		layoutButtons()
 	end)

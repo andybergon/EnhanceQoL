@@ -140,6 +140,29 @@ local ANCHOR_OPTIONS = {
 
 local OVERLAY_ELEMENTS = {
 	{
+		id = "bindStatus",
+		frameKey = "BindStatusText",
+		labelKey = "settingsOverlayBindStatus",
+		descriptionKey = "settingsOverlayBindStatusTooltip",
+		defaultAnchor = "BOTTOMRIGHT",
+		defaultEnabled = false,
+		previewText = "BoE",
+		previewColor = { 0.38, 0.82, 1 },
+	},
+	{
+		id = "equipmentSet",
+		frameKey = "EquipmentSetIcon",
+		textFrameKey = "EquipmentSetText",
+		labelKey = "settingsOverlayEquipmentSet",
+		descriptionKey = "settingsOverlayEquipmentSetTooltip",
+		defaultAnchor = "BOTTOMLEFT",
+		defaultEnabled = false,
+		supportsDisplayMode = true,
+		defaultDisplayMode = "icon",
+		previewText = "SET",
+		previewColor = { 0.36, 0.78, 1 },
+	},
+	{
 		id = "itemLevel",
 		frameKey = "ItemLevelText",
 		labelKey = "settingsOverlayItemLevel",
@@ -176,6 +199,17 @@ local OVERLAY_COLOR_MODE_OPTIONS = {
 	},
 }
 
+local OVERLAY_DISPLAY_MODE_OPTIONS = {
+	{
+		value = "icon",
+		labelKey = "settingsOverlayDisplayModeIcon",
+	},
+	{
+		value = "text",
+		labelKey = "settingsOverlayDisplayModeText",
+	},
+}
+
 local OVERLAY_ELEMENT_LOOKUP = {}
 for _, definition in ipairs(OVERLAY_ELEMENTS) do
 	OVERLAY_ELEMENT_LOOKUP[definition.id] = definition
@@ -184,6 +218,11 @@ end
 local OVERLAY_COLOR_MODE_LOOKUP = {}
 for _, option in ipairs(OVERLAY_COLOR_MODE_OPTIONS) do
 	OVERLAY_COLOR_MODE_LOOKUP[option.value] = option
+end
+
+local OVERLAY_DISPLAY_MODE_LOOKUP = {}
+for _, option in ipairs(OVERLAY_DISPLAY_MODE_OPTIONS) do
+	OVERLAY_DISPLAY_MODE_LOOKUP[option.value] = option
 end
 
 local upgradeTrackOptionsSignatureCache = {
@@ -218,6 +257,14 @@ local function normalizeOverlayColorMode(definition, value)
 		return value
 	end
 	return definition.defaultColorMode or "rarity"
+end
+
+local function normalizeOverlayDisplayMode(definition, value)
+	value = tostring(value or definition.defaultDisplayMode or "icon")
+	if OVERLAY_DISPLAY_MODE_LOOKUP[value] then
+		return value
+	end
+	return definition.defaultDisplayMode or "icon"
 end
 
 local function copyColorTable(source, fallback)
@@ -330,6 +377,9 @@ function addon.GetOverlayElementSettings(elementID)
 		elementSettings.colorMode = normalizeOverlayColorMode(definition, elementSettings.colorMode)
 		elementSettings.customColor = copyColorTable(elementSettings.customColor, definition.defaultCustomColor)
 	end
+	if definition.supportsDisplayMode then
+		elementSettings.displayMode = normalizeOverlayDisplayMode(definition, elementSettings.displayMode)
+	end
 	if definition.trackFilter then
 		local trackOptions = getUpgradeTrackOptions()
 		local trackOptionsSignature = getUpgradeTrackOptionsSignature(trackOptions)
@@ -370,10 +420,12 @@ function addon.GetOverlayRuntimeConfig()
 		local entry = {
 			id = definition.id,
 			frameKey = definition.frameKey,
+			textFrameKey = definition.textFrameKey,
 			enabled = isEnabled,
 			anchorInfo = addon.GetOverlayAnchorInfo((elementSettings and elementSettings.anchor) or definition.defaultAnchor),
 			colorMode = definition.supportsColorMode and normalizeOverlayColorMode(definition, elementSettings and elementSettings.colorMode) or nil,
 			customColor = definition.supportsColorMode and copyColorTable(elementSettings and elementSettings.customColor, definition.defaultCustomColor) or nil,
+			displayMode = definition.supportsDisplayMode and normalizeOverlayDisplayMode(definition, elementSettings and elementSettings.displayMode) or nil,
 			visibleTracks = elementSettings and elementSettings.visibleTracks or nil,
 		}
 		runtime.entries[#runtime.entries + 1] = entry
@@ -429,6 +481,54 @@ function addon.SetOverlayElementAnchor(elementID, anchorID)
 	end
 
 	settings.anchor = anchorID
+	invalidateOverlayRuntimeConfig()
+	return true
+end
+
+function addon.GetOverlayElementDisplayModeOptions(elementID)
+	local definition = addon.GetOverlayElementDefinition(elementID)
+	if not definition or not definition.supportsDisplayMode then
+		return {}
+	end
+
+	local options = {}
+	for _, option in ipairs(OVERLAY_DISPLAY_MODE_OPTIONS) do
+		options[#options + 1] = {
+			value = option.value,
+			label = (addon.L and addon.L[option.labelKey]) or option.labelKey or option.value,
+		}
+	end
+
+	return options
+end
+
+function addon.GetOverlayElementDisplayMode(elementID)
+	local definition = addon.GetOverlayElementDefinition(elementID)
+	if not definition or not definition.supportsDisplayMode then
+		return nil
+	end
+
+	local settings = addon.GetOverlayElementSettings(elementID)
+	return settings and normalizeOverlayDisplayMode(definition, settings.displayMode) or definition.defaultDisplayMode or "icon"
+end
+
+function addon.SetOverlayElementDisplayMode(elementID, displayMode)
+	local definition = addon.GetOverlayElementDefinition(elementID)
+	if not definition or not definition.supportsDisplayMode then
+		return false
+	end
+
+	local settings = addon.GetOverlayElementSettings(elementID)
+	if not settings then
+		return false
+	end
+
+	displayMode = normalizeOverlayDisplayMode(definition, displayMode)
+	if settings.displayMode == displayMode then
+		return true
+	end
+
+	settings.displayMode = displayMode
 	invalidateOverlayRuntimeConfig()
 	return true
 end

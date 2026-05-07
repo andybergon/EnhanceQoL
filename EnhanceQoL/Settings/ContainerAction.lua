@@ -172,7 +172,7 @@ local eventHandlers = {
 		if wOpen or addon._bagScanScheduled then return end
 
 		addon._bagScanScheduled = true
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			addon._bagScanScheduled = nil
 			if wOpen or not addon.db["automaticallyOpenContainer"] then return end
 

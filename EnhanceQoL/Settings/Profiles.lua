@@ -8,6 +8,37 @@ local deflate = LibStub("LibDeflate")
 local PROFILE_EXPORT_KIND = "EQOL_PROFILE"
 local BAGS_CATEGORIES_EXPORT_KIND = "EQOL_BAGS_CATEGORIES"
 local HBP_EXPORT_KIND = "EQOL_HBP"
+local IMPORT_PROTECTION_KEY = "importProtection"
+local IMPORT_PROTECTION = {
+	ACTION_BARS = "actionBars",
+	BAGS = "bags",
+	CASTBARS = "castbars",
+	COOLDOWN_PANELS = "cooldownPanels",
+	DATA_PANELS = "dataPanels",
+	DUNGEON_COMBAT = "dungeonCombat",
+	HBP = "hbp",
+	INSTANCE_DIFFICULTY = "instanceDifficulty",
+	MOUSE_ACCESSIBILITY = "mouseAccessibility",
+	MOVER = "mover",
+	QUICK_ACCEPT = "quickAccept",
+	RESOURCE_BARS = "resourceBars",
+	UNIT_FRAMES = "unitFrames",
+}
+local IMPORT_PROTECTION_DEFS = {
+	{ key = IMPORT_PROTECTION.ACTION_BARS, labelKey = "ProfileImportProtectionActionBars", fallback = "Action Bars" },
+	{ key = IMPORT_PROTECTION.BAGS, labelKey = "ProfileImportProtectionBags", fallback = "Bags" },
+	{ key = IMPORT_PROTECTION.CASTBARS, labelKey = "ProfileImportProtectionCastbars", fallback = "Castbars" },
+	{ key = IMPORT_PROTECTION.COOLDOWN_PANELS, labelKey = "ProfileImportProtectionCooldownPanels", fallback = "Cooldown Panels" },
+	{ key = IMPORT_PROTECTION.DATA_PANELS, labelKey = "ProfileImportProtectionDataPanels", fallback = "Data Panels" },
+	{ key = IMPORT_PROTECTION.DUNGEON_COMBAT, labelKey = "ProfileImportProtectionDungeonCombat", fallback = "Dungeon & Combat Tools" },
+	{ key = IMPORT_PROTECTION.HBP, labelKey = "ProfileImportProtectionHBP", fallback = "Healer Buff Placement" },
+	{ key = IMPORT_PROTECTION.INSTANCE_DIFFICULTY, labelKey = "ProfileImportProtectionInstanceDifficulty", fallback = "Instance Difficulty" },
+	{ key = IMPORT_PROTECTION.MOUSE_ACCESSIBILITY, labelKey = "ProfileImportProtectionMouseAccessibility", fallback = "Mouse & Accessibility" },
+	{ key = IMPORT_PROTECTION.MOVER, labelKey = "ProfileImportProtectionMover", fallback = "Mover" },
+	{ key = IMPORT_PROTECTION.QUICK_ACCEPT, labelKey = "ProfileImportProtectionQuickAccept", fallback = "Quick Accept" },
+	{ key = IMPORT_PROTECTION.RESOURCE_BARS, labelKey = "ProfileImportProtectionResourceBars", fallback = "Resource Bars" },
+	{ key = IMPORT_PROTECTION.UNIT_FRAMES, labelKey = "ProfileImportProtectionUnitFrames", fallback = "Unit Frames" },
+}
 
 local cProfiles = addon.SettingsLayout.rootPROFILES
 
@@ -27,6 +58,7 @@ end
 
 local profileOrderActive, profileOrderGlobal, profileOrderCopy, profileOrderDelete = {}, {}, {}, {}
 local globalFontOrder = {}
+local importProtectionOrder = {}
 
 local function getCachedFontMedia()
 	local names = addon.functions and addon.functions.GetLSMMediaNames and addon.functions.GetLSMMediaNames("font")
@@ -51,6 +83,48 @@ local function buildGlobalFontDropdown()
 		globalFontOrder[i] = key
 	end
 	return list
+end
+
+local function ensureImportProtectionDB()
+	EnhanceQoLDB = EnhanceQoLDB or {}
+	if type(EnhanceQoLDB[IMPORT_PROTECTION_KEY]) ~= "table" then EnhanceQoLDB[IMPORT_PROTECTION_KEY] = {} end
+	return EnhanceQoLDB[IMPORT_PROTECTION_KEY]
+end
+
+local function buildImportProtectionDropdown()
+	local list = {}
+	for _, def in ipairs(IMPORT_PROTECTION_DEFS) do
+		list[def.key] = L[def.labelKey] or def.fallback
+	end
+
+	wipe(importProtectionOrder)
+	local sorted = {}
+	for key in pairs(list) do
+		sorted[#sorted + 1] = key
+	end
+	table.sort(sorted, function(a, b) return tostring(list[a]) < tostring(list[b]) end)
+	for i, key in ipairs(sorted) do
+		importProtectionOrder[i] = key
+	end
+	return list
+end
+
+local function isImportSectionProtected(section)
+	local protection = EnhanceQoLDB and EnhanceQoLDB[IMPORT_PROTECTION_KEY]
+	return type(protection) == "table" and protection[section] == true
+end
+
+local function getImportProtectionSelection()
+	return ensureImportProtectionDB()
+end
+
+local function setImportProtectionSelection(map)
+	local target = ensureImportProtectionDB()
+	wipe(target)
+	if type(map) ~= "table" then return end
+	for _, def in ipairs(IMPORT_PROTECTION_DEFS) do
+		if map[def.key] == true then target[def.key] = true end
+	end
 end
 
 local function refreshGlobalFonts()
@@ -628,6 +702,170 @@ local function sanitizeProfileData(source)
 	return filtered
 end
 
+local function copyProtectedProfileValue(target, key, value)
+	if type(target) ~= "table" or key == nil then return end
+	local sanitized = sanitizeProfileData({ [key] = value })
+	if sanitized[key] ~= nil then
+		target[key] = sanitized[key]
+	else
+		target[key] = nil
+	end
+end
+
+local function preserveProtectedKeys(imported, current, predicate)
+	if type(imported) ~= "table" or type(predicate) ~= "function" then return end
+	for key in pairs(imported) do
+		if predicate(key) then imported[key] = nil end
+	end
+	if type(current) ~= "table" then return end
+	for key, value in pairs(current) do
+		if predicate(key) then copyProtectedProfileValue(imported, key, value) end
+	end
+end
+
+local function profileKeyStartsWith(key, prefix)
+	return type(key) == "string" and key:sub(1, #prefix) == prefix
+end
+
+local function isActionBarProfileKey(key)
+	return profileKeyStartsWith(key, "actionBar") or key == "hideMacroNames" or key == "hideExtraActionArtwork"
+end
+
+local function isBagsProfileKey(key)
+	return key == "bags" or key == "bagsProfile"
+end
+
+local function isCastbarProfileKey(key)
+	return key == "castbar" or key == "castbarTarget"
+end
+
+local function isCooldownPanelsProfileKey(key)
+	return key == "cooldownPanels" or profileKeyStartsWith(key, "cooldownPanels")
+end
+
+local function isDataPanelsProfileKey(key)
+	return key == "datapanel" or key == "dataPanels"
+end
+
+local function isDungeonCombatProfileKey(key)
+	return profileKeyStartsWith(key, "mythicPlus")
+		or profileKeyStartsWith(key, "combatText")
+		or profileKeyStartsWith(key, "gcdBar")
+		or profileKeyStartsWith(key, "xpBar")
+		or profileKeyStartsWith(key, "actionTracker")
+		or key == "focusInterruptTracker"
+		or key == "standalonePrivateAuras"
+		or key == "mythicPlusBossAlertsConfig"
+end
+
+local function isInstanceDifficultyProfileKey(key)
+	return profileKeyStartsWith(key, "instanceDifficulty")
+end
+
+local function isMouseAccessibilityProfileKey(key)
+	return profileKeyStartsWith(key, "mouse")
+end
+
+local function isQuickAcceptProfileKey(key)
+	return key == "autoAcceptGroupInvite"
+		or key == "autoAcceptGroupInviteFriendOnly"
+		or key == "autoAcceptGroupInviteGuildOnly"
+		or key == "autoAcceptResurrection"
+		or key == "autoAcceptResurrectionExcludeAfterlife"
+		or key == "autoAcceptResurrectionExcludeCombat"
+		or key == "autoAcceptSummon"
+		or key == "autoChooseQuest"
+		or key == "autoChooseQuestModifier"
+		or key == "autoQuickLoot"
+		or key == "autoQuickLootWithShift"
+		or key == "groupfinderSkipRoleSelect"
+		or key == "groupfinderSkipRoleSelectOption"
+		or key == "ignoreDailyQuests"
+		or key == "ignoreTrivialQuests"
+		or key == "ignoreWarbandCompleted"
+		or key == "persistSignUpNote"
+		or key == "skipSignUpDialog"
+end
+
+local function isResourceBarsProfileKey(key)
+	return key == "enableResourceFrame"
+		or key == "personalResourceBarSettings"
+		or key == "sharedResourceBarSettings"
+		or key == "globalResourceBarSettings"
+		or profileKeyStartsWith(key, "resourceBars")
+end
+
+local function isUnitFramesProfileKey(key)
+	return profileKeyStartsWith(key, "uf")
+end
+
+local function removeHealerBuffPlacementFromGroupFrames(groupFrames)
+	if type(groupFrames) ~= "table" then return end
+	for _, kind in ipairs({ "party", "raid" }) do
+		if type(groupFrames[kind]) == "table" then groupFrames[kind].healerBuffPlacement = nil end
+	end
+end
+
+local function copyHealerBuffPlacementToGroupFrames(importedGroups, currentGroups)
+	if type(importedGroups) ~= "table" then return false end
+	if type(currentGroups) ~= "table" then return false end
+	local copied = false
+	for _, kind in ipairs({ "party", "raid" }) do
+		local placement = type(currentGroups[kind]) == "table" and currentGroups[kind].healerBuffPlacement or nil
+		if type(placement) == "table" then
+			importedGroups[kind] = type(importedGroups[kind]) == "table" and importedGroups[kind] or {}
+			importedGroups[kind].healerBuffPlacement = sanitizeProfileData(placement)
+			copied = true
+		end
+	end
+	return copied
+end
+
+local function preserveHealerBuffPlacementGroupFrames(importedOwner, currentOwner)
+	if type(importedOwner) ~= "table" then return end
+	local importedGroups = type(importedOwner.ufGroupFrames) == "table" and importedOwner.ufGroupFrames or nil
+	if importedGroups then removeHealerBuffPlacementFromGroupFrames(importedGroups) end
+
+	local currentGroups = type(currentOwner) == "table" and type(currentOwner.ufGroupFrames) == "table" and currentOwner.ufGroupFrames or nil
+	if currentGroups then
+		importedOwner.ufGroupFrames = type(importedOwner.ufGroupFrames) == "table" and importedOwner.ufGroupFrames or {}
+		copyHealerBuffPlacementToGroupFrames(importedOwner.ufGroupFrames, currentGroups)
+	end
+	if type(importedOwner.ufGroupFrames) == "table" and not next(importedOwner.ufGroupFrames) then importedOwner.ufGroupFrames = nil end
+end
+
+local function copyHealerBuffPlacement(imported, current)
+	if type(imported) ~= "table" then return end
+	preserveHealerBuffPlacementGroupFrames(imported, current)
+
+	local importedProfiles = type(imported.ufProfiles) == "table" and imported.ufProfiles or nil
+	if not importedProfiles then return end
+	local currentProfiles = type(current) == "table" and type(current.ufProfiles) == "table" and current.ufProfiles or nil
+	for profileName, importedProfile in pairs(importedProfiles) do
+		if type(importedProfile) == "table" then
+			local currentProfile = currentProfiles and currentProfiles[profileName] or nil
+			preserveHealerBuffPlacementGroupFrames(importedProfile, currentProfile)
+		end
+	end
+end
+
+local function applyImportProtection(imported, current)
+	if type(imported) ~= "table" then return imported end
+	if isImportSectionProtected(IMPORT_PROTECTION.ACTION_BARS) then preserveProtectedKeys(imported, current, isActionBarProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.BAGS) then preserveProtectedKeys(imported, current, isBagsProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.CASTBARS) then preserveProtectedKeys(imported, current, isCastbarProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.COOLDOWN_PANELS) then preserveProtectedKeys(imported, current, isCooldownPanelsProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.DATA_PANELS) then preserveProtectedKeys(imported, current, isDataPanelsProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.DUNGEON_COMBAT) then preserveProtectedKeys(imported, current, isDungeonCombatProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.INSTANCE_DIFFICULTY) then preserveProtectedKeys(imported, current, isInstanceDifficultyProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.MOUSE_ACCESSIBILITY) then preserveProtectedKeys(imported, current, isMouseAccessibilityProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.QUICK_ACCEPT) then preserveProtectedKeys(imported, current, isQuickAcceptProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.RESOURCE_BARS) then preserveProtectedKeys(imported, current, isResourceBarsProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.UNIT_FRAMES) then preserveProtectedKeys(imported, current, isUnitFramesProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.HBP) then copyHealerBuffPlacement(imported, current) end
+	return imported
+end
+
 local function encodeExportPayload(payload)
 	if not serializer or not deflate then return nil, "NO_LIB" end
 	local ok, serialized = pcall(serializer.Serialize, serializer, payload)
@@ -862,9 +1100,11 @@ local function importProfile(encoded, options)
 
 	local sanitized = sanitizeProfileData(data)
 	normalizeProfileStorage(sanitized, meta)
+	local current = EnhanceQoLDB.profiles[target]
+	applyImportProtection(sanitized, current)
 	EnhanceQoLDB.profiles[target] = sanitized
-	applyImportedMoverState(meta)
-	applyImportedBagsState(meta)
+	if not isImportSectionProtected(IMPORT_PROTECTION.MOVER) then applyImportedMoverState(meta) end
+	if not isImportSectionProtected(IMPORT_PROTECTION.BAGS) then applyImportedBagsState(meta) end
 
 	if useImportedTarget then
 		if options.setImportedProfileActive == true then
@@ -1098,6 +1338,17 @@ data = {
 addon.functions.SettingsCreateButton(cProfiles, data)
 
 addon.functions.SettingsCreateHeadline(cProfiles, L["Export / Import"] or "Export / Import", { parentSection = expandable })
+
+addon.functions.SettingsCreateMultiDropdown(cProfiles, {
+	var = IMPORT_PROTECTION_KEY,
+	text = L["ProfileImportProtection"] or "Protected import sections",
+	desc = L["ProfileImportProtectionDesc"] or "Selected sections stay unchanged when importing full profiles or external installer profiles.",
+	listFunc = buildImportProtectionDropdown,
+	order = importProtectionOrder,
+	getSelection = getImportProtectionSelection,
+	setSelection = setImportProtectionSelection,
+	parentSection = expandable,
+})
 
 addon.functions.SettingsCreateButton(cProfiles, {
 	var = "profileExport",

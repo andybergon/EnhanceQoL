@@ -1072,9 +1072,53 @@ addon.MythicPlus.variables.portalCompendium = {
 	},
 }
 
+local hearthstoneID
+local teleportItemIDs
+
+local function addTeleportItemID(itemID)
+	if type(itemID) == "table" then
+		for _, nestedItemID in ipairs(itemID) do
+			addTeleportItemID(nestedItemID)
+		end
+		return
+	end
+
+	itemID = tonumber(itemID)
+	if itemID and itemID > 0 then
+		teleportItemIDs[itemID] = true
+	end
+end
+
+local function buildTeleportItemIDs()
+	teleportItemIDs = {}
+
+	for _, section in pairs(addon.MythicPlus.variables.portalCompendium or {}) do
+		for _, entry in pairs(section.spells or {}) do
+			if type(entry) == "table" and entry.isItem and entry.itemID then
+				addTeleportItemID(entry.itemID)
+			end
+		end
+	end
+
+	for _, entry in ipairs(hearthstoneID or {}) do
+		if type(entry) == "table" and entry.isItem and entry.id then
+			addTeleportItemID(entry.id)
+		end
+	end
+end
+
+function addon.MythicPlus.functions.IsTeleportItem(itemID)
+	if not teleportItemIDs then
+		buildTeleportItemIDs()
+	end
+
+	itemID = tonumber(itemID)
+	return itemID ~= nil and teleportItemIDs[itemID] == true or false
+end
+
 -- Pre-Stage all icon to have less calls to LUA API
 local RANDOM_HS_ID = 999999
-local hearthstoneID = {
+hearthstoneID = {
 	-- Midnight
 	{ isToy = true, id = 263933, spellID = 1270814 }, -- Preyseeker's Hearthstone
 	{ isToy = true, id = 265100, spellID = 1273401 }, -- Corewarden's Hearthstone

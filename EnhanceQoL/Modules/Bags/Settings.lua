@@ -102,7 +102,16 @@ local function isBasicCategoryMode()
 	return getActiveCategoryMode() == "basic"
 end
 
+local function isOneBagModeEnabled()
+	local settings = getSettings()
+	return addon.GetOneBagMode and addon.GetOneBagMode() or settings.oneBagMode == true
+end
+
 local function isSettingsPageVisibleForMode(pageID)
+	if pageID == "categories" and isOneBagModeEnabled() then
+		return false
+	end
+
 	if not isBasicCategoryMode() then
 		return true
 	end
@@ -893,6 +902,7 @@ local function buildCustomCategoryListEntries(groups, categories)
 			name = group.name,
 			color = group.color,
 			sortOrder = group.sortOrder,
+			hidden = group.hidden == true,
 			childCategories = childCategories,
 		}
 	end
@@ -905,6 +915,7 @@ local function buildCustomCategoryListEntries(groups, categories)
 			color = category.color,
 			priority = category.priority,
 			sortOrder = category.sortOrder,
+			hidden = category.hidden == true,
 			indent = 0,
 		}
 	end
@@ -921,6 +932,7 @@ local function buildCustomCategoryListEntries(groups, categories)
 				name = entry.name,
 				color = entry.color,
 				sortOrder = entry.sortOrder,
+				hidden = entry.hidden == true,
 			}
 			for _, category in ipairs(childCategories) do
 				entries[#entries + 1] = {
@@ -930,6 +942,7 @@ local function buildCustomCategoryListEntries(groups, categories)
 					color = category.color,
 					priority = category.priority,
 					sortOrder = category.sortOrder,
+					hidden = category.hidden == true or entry.hidden == true,
 					indent = 1,
 				}
 			end
@@ -1420,7 +1433,7 @@ local function acquireRuleNodeFrame(page, index)
 	return frame
 end
 
-local function setCategoryButtonVisual(button, isSelected, color, entryType)
+local function setCategoryButtonVisual(button, isSelected, color, entryType, hidden)
 	if not button then
 		return
 	end
@@ -1428,12 +1441,13 @@ local function setCategoryButtonVisual(button, isSelected, color, entryType)
 	local r = color and color[1] or 0.8
 	local g = color and color[2] or 0.8
 	local b = color and color[3] or 0.8
-	button.ColorBar:SetColorTexture(r, g, b, isSelected and 1 or 0.72)
+	local alpha = hidden and 0.35 or (isSelected and 1 or 0.72)
+	button.ColorBar:SetColorTexture(r, g, b, alpha)
 
 	if isSelected then
 		button:SetBackdropColor(0.08, 0.08, 0.1, 0.82)
 		button:SetBackdropBorderColor(r, g, b, 0.95)
-		button.Name:SetTextColor(1, 0.87, 0.2)
+		button.Name:SetTextColor(1, hidden and 0.72 or 0.87, hidden and 0.45 or 0.2)
 		if button.Priority then
 			button.Priority:SetTextColor(1, 0.87, 0.2)
 		end
@@ -1441,12 +1455,12 @@ local function setCategoryButtonVisual(button, isSelected, color, entryType)
 		button:SetBackdropColor(0.03, 0.03, 0.04, 0.56)
 		button:SetBackdropBorderColor(0.42, 0.39, 0.27, 0.7)
 		if entryType == "group" then
-			button.Name:SetTextColor(1, 0.87, 0.2)
+			button.Name:SetTextColor(1, hidden and 0.62 or 0.87, hidden and 0.45 or 0.2)
 		else
-			button.Name:SetTextColor(0.95, 0.95, 0.95)
+			button.Name:SetTextColor(hidden and 0.55 or 0.95, hidden and 0.55 or 0.95, hidden and 0.55 or 0.95)
 		end
 		if button.Priority then
-			button.Priority:SetTextColor(0.65, 0.65, 0.65)
+			button.Priority:SetTextColor(hidden and 0.42 or 0.65, hidden and 0.42 or 0.65, hidden and 0.42 or 0.65)
 		end
 	end
 end
@@ -1797,6 +1811,18 @@ local function refreshOverlayCard(card)
 	if card.ColorModeLabel then
 		card.ColorModeLabel:SetAlpha(isEnabled and 1 or 0.45)
 	end
+	if card.DisplayModeButton then
+		local displayMode = addon.GetOverlayElementDisplayMode and addon.GetOverlayElementDisplayMode(card.Definition.id) or card.Definition.defaultDisplayMode or "icon"
+		card.DisplayModeButton:SetText(getOptionLabel(
+			addon.GetOverlayElementDisplayModeOptions and addon.GetOverlayElementDisplayModeOptions(card.Definition.id) or {},
+			displayMode,
+			L["settingsOverlayDisplayModeLabel"] or "Display"
+		))
+		setButtonEnabledState(card.DisplayModeButton, isEnabled)
+	end
+	if card.DisplayModeLabel then
+		card.DisplayModeLabel:SetAlpha(isEnabled and 1 or 0.45)
+	end
 	if card.ColorSwatch then
 		local customColor = addon.GetOverlayElementCustomColor and addon.GetOverlayElementCustomColor(card.Definition.id) or { 1, 1, 1 }
 		card.ColorSwatch:SetColorRGB(customColor[1] or 1, customColor[2] or 1, customColor[3] or 1)
@@ -1827,6 +1853,9 @@ local function updateOverlayCardLayout(card)
 	local descriptionHeight = math.max(14, math.ceil((card.Description and card.Description:GetStringHeight()) or 0))
 	local trackRowCount = math.ceil(#(card.TrackButtons or {}) / 2)
 	local cardHeight = 208 + descriptionHeight
+	if card.DisplayModeButton then
+		cardHeight = cardHeight + 34
+	end
 	if card.ColorModeButton then
 		cardHeight = cardHeight + 34
 	end
@@ -1880,9 +1909,39 @@ local function createOverlayAnchorCard(parent, definition)
 	local anchorTopOffsetX = 4
 	local anchorTopOffsetY = -12
 
+	if definition.supportsDisplayMode then
+		local displayModeLabel = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		displayModeLabel:SetPoint("TOPLEFT", anchorTopRegion, "BOTTOMLEFT", anchorTopOffsetX, anchorTopOffsetY)
+		displayModeLabel:SetText(L["settingsOverlayDisplayModeLabel"] or "Display")
+		card.DisplayModeLabel = displayModeLabel
+
+		local displayModeButton = CreateFrame("Button", nil, card, "UIPanelButtonTemplate")
+		displayModeButton:SetSize(112, 22)
+		displayModeButton:SetPoint("LEFT", displayModeLabel, "RIGHT", 8, 0)
+		setButtonFontObject(displayModeButton, GameFontNormalSmall)
+		displayModeButton:SetScript("OnClick", function(self)
+			openSimpleRadioMenu(
+				self,
+				addon.GetOverlayElementDisplayModeOptions and addon.GetOverlayElementDisplayModeOptions(definition.id) or {},
+				addon.GetOverlayElementDisplayMode and addon.GetOverlayElementDisplayMode(definition.id) or definition.defaultDisplayMode,
+				function(value)
+					if addon.SetOverlayElementDisplayMode and addon.SetOverlayElementDisplayMode(definition.id, value) then
+						addon.RefreshSettingsFrame("overlays")
+						requestBagRefresh(false, true)
+					end
+				end
+			)
+		end)
+		card.DisplayModeButton = displayModeButton
+
+		anchorTopRegion = displayModeLabel
+		anchorTopOffsetX = 0
+		anchorTopOffsetY = -12
+	end
+
 	if definition.supportsColorMode then
 		local colorModeLabel = card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		colorModeLabel:SetPoint("TOPLEFT", enabledCheck, "BOTTOMLEFT", 4, -12)
+		colorModeLabel:SetPoint("TOPLEFT", anchorTopRegion, "BOTTOMLEFT", anchorTopOffsetX, anchorTopOffsetY)
 		colorModeLabel:SetText(L["settingsOverlayColorModeLabel"] or "Item level color")
 		card.ColorModeLabel = colorModeLabel
 
@@ -2540,8 +2599,29 @@ local function createCategoriesPage(parent)
 	groupHint:SetText(L["settingsCategoryGroupHint"] or "Categories inside the same parent group render under one shared header and collapse together in the bag and bank views.")
 	page.GroupHint = groupHint
 
+	local hideInBags = createInlineCheckbox(
+		detailContent,
+		L["settingsCategoryHideInBags"] or "Hide this category in bags",
+		L["settingsCategoryHideInBagsTooltip"] or "Completely hides this category or group and its matching items from the bag and bank views.",
+		function(value)
+			local selection = getCategoryPageSelection()
+			if selection.selectedType == "group" and selection.selectedGroup and addon.SetCustomCategoryGroupHidden then
+				addon.SetCustomCategoryGroupHidden(selection.selectedGroup.id, value)
+				requestCategoryRefresh()
+			elseif selection.selectedCategory and addon.SetCustomCategoryHidden then
+				addon.SetCustomCategoryHidden(selection.selectedCategory.id, value)
+				requestCategoryRefresh()
+			end
+		end
+	)
+	hideInBags:SetPoint("TOPLEFT", groupHint, "BOTTOMLEFT", -4, -12)
+	if hideInBags.Label then
+		hideInBags.Label:SetPoint("RIGHT", detailContent, "RIGHT", -14, 0)
+	end
+	page.HideInBags = hideInBags
+
 	local priorityLabel = detailContent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	priorityLabel:SetPoint("TOPLEFT", groupHint, "BOTTOMLEFT", 0, -16)
+	priorityLabel:SetPoint("TOPLEFT", hideInBags, "BOTTOMLEFT", 4, -16)
 	priorityLabel:SetText(L["settingsCategoryPriorityLabel"] or "Priority")
 	page.PriorityLabel = priorityLabel
 
@@ -2661,6 +2741,42 @@ local function createCategoriesPage(parent)
 	priorityHint:SetJustifyV("TOP")
 	priorityHint:SetText(L["settingsCategoryPriorityHint"] or "Higher priority wins when one item matches multiple categories.")
 	page.PriorityHint = priorityHint
+
+	local groupSpacerBefore = createInlineCheckbox(
+		detailContent,
+		L["settingsCategoryGroupSpacerBefore"] or "Add spacer before group",
+		L["settingsCategoryGroupSpacerBeforeTooltip"] or "",
+		function(value)
+			local selection = getCategoryPageSelection()
+			if selection.selectedType == "group" and selection.selectedGroup and addon.SetCustomCategoryGroupSpacerBefore then
+				addon.SetCustomCategoryGroupSpacerBefore(selection.selectedGroup.id, value)
+				requestCategoryRefresh()
+			end
+		end
+	)
+	groupSpacerBefore:SetPoint("TOPLEFT", priorityHint, "BOTTOMLEFT", -4, -14)
+	if groupSpacerBefore.Label then
+		groupSpacerBefore.Label:SetPoint("RIGHT", detailContent, "RIGHT", -14, 0)
+	end
+	page.GroupSpacerBefore = groupSpacerBefore
+
+	local groupCombineSubcategories = createInlineCheckbox(
+		detailContent,
+		L["settingsCategoryGroupCombineSubcategories"] or "Combine subcategories in this group",
+		L["settingsCategoryGroupCombineSubcategoriesTooltip"] or "",
+		function(value)
+			local selection = getCategoryPageSelection()
+			if selection.selectedType == "group" and selection.selectedGroup and addon.SetCustomCategoryGroupCombineSubcategories then
+				addon.SetCustomCategoryGroupCombineSubcategories(selection.selectedGroup.id, value)
+				requestCategoryRefresh()
+			end
+		end
+	)
+	groupCombineSubcategories:SetPoint("TOPLEFT", groupSpacerBefore, "BOTTOMLEFT", 0, -8)
+	if groupCombineSubcategories.Label then
+		groupCombineSubcategories.Label:SetPoint("RIGHT", detailContent, "RIGHT", -14, 0)
+	end
+	page.GroupCombineSubcategories = groupCombineSubcategories
 
 	local matchPriorityLabel = detailContent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	matchPriorityLabel:SetPoint("TOPLEFT", priorityHint, "BOTTOMLEFT", 0, -16)
@@ -2950,7 +3066,8 @@ refreshCategoriesPage = function(page)
 			(entry.type == "group" and selectedType == "group" and selectedGroup and selectedGroup.id == entry.id)
 				or (entry.type == "category" and selectedType == "category" and selectedCategory and selectedCategory.id == entry.id),
 			entry.color,
-			entry.type
+			entry.type,
+			entry.hidden == true
 		)
 		button:Show()
 		listOffset = listOffset + button:GetHeight() + 6
@@ -2987,7 +3104,19 @@ refreshCategoriesPage = function(page)
 	page.SortHint:SetShown(isCategorySelection)
 	page.CategoryColorLabel:SetShown(hasSelection)
 	page.CategoryColorSwatch:SetShown(hasSelection)
+	page.HideInBags:SetShown(hasSelection)
+	if page.HideInBags.Label then
+		page.HideInBags.Label:SetShown(hasSelection)
+	end
 	page.PriorityHint:SetShown(hasSelection)
+	page.GroupSpacerBefore:SetShown(isGroupSelection)
+	if page.GroupSpacerBefore.Label then
+		page.GroupSpacerBefore.Label:SetShown(isGroupSelection)
+	end
+	page.GroupCombineSubcategories:SetShown(isGroupSelection)
+	if page.GroupCombineSubcategories.Label then
+		page.GroupCombineSubcategories.Label:SetShown(isGroupSelection)
+	end
 	page.ItemsCard:SetShown(isCategorySelection)
 	page.RulesCard:SetShown(isCategorySelection)
 
@@ -3010,10 +3139,13 @@ refreshCategoriesPage = function(page)
 		local color = colorOwner.color or { 1, 1, 1 }
 		page.CategoryColorSwatch:SetColorRGB(color[1] or 1, color[2] or 1, color[3] or 1)
 	end
+	if page.HideInBags then
+		page.HideInBags:SetChecked((selectedCategory and selectedCategory.hidden == true) or (selectedGroup and selectedGroup.hidden == true) or false)
+	end
 
 	if isGroupSelection then
 		page.PriorityLabel:ClearAllPoints()
-		page.PriorityLabel:SetPoint("TOPLEFT", page.NameBox, "BOTTOMLEFT", 0, -18)
+		page.PriorityLabel:SetPoint("TOPLEFT", page.HideInBags, "BOTTOMLEFT", 4, -16)
 		page.PriorityLabel:SetText(L["settingsCategoryOrderLabel"] or "Display order")
 		page.CategoryColorLabel:ClearAllPoints()
 		page.CategoryColorLabel:SetPoint("LEFT", page.PriorityUpButton, "RIGHT", 20, 0)
@@ -3024,6 +3156,8 @@ refreshCategoriesPage = function(page)
 		page.PriorityHint:SetPoint("RIGHT", page.DetailContent, "RIGHT", -14, 0)
 		page.PriorityHint:SetText(L["settingsCategoryOrderHint"] or "Lower values render earlier. This only changes where the entry appears, not which items match its rules.")
 		page.SortButton:SetText(L["settingsCategorySortDefault"] or "Default")
+		page.GroupSpacerBefore:SetChecked(selectedGroup.spacerBefore == true)
+		page.GroupCombineSubcategories:SetChecked(selectedGroup.combineSubcategories == true)
 		if not page.PriorityValue:HasFocus() then
 			page.PriorityValue:SetText(tostring(selectedGroup.sortOrder or 0))
 		end
@@ -3038,19 +3172,19 @@ refreshCategoriesPage = function(page)
 		end
 
 		local detailTop = page.DetailContent:GetTop()
-		local hintBottom = page.PriorityHint:GetBottom()
+		local groupSpacerBottom = page.GroupCombineSubcategories:GetBottom()
 		local contentHeight
-		if detailTop and hintBottom then
-			contentHeight = math.ceil((detailTop - hintBottom) + 24)
+		if detailTop and groupSpacerBottom then
+			contentHeight = math.ceil((detailTop - groupSpacerBottom) + 24)
 		else
-			contentHeight = 148
+			contentHeight = 184
 		end
 		updateScrollContainer(page.DetailScrollFrame, page.DetailContent, contentHeight)
 		return
 	end
 
 	page.PriorityLabel:ClearAllPoints()
-	page.PriorityLabel:SetPoint("TOPLEFT", page.GroupHint, "BOTTOMLEFT", 0, -16)
+	page.PriorityLabel:SetPoint("TOPLEFT", page.HideInBags, "BOTTOMLEFT", 4, -16)
 	page.PriorityLabel:SetText(L["settingsCategoryOrderLabel"] or "Display order")
 	page.CategoryColorLabel:ClearAllPoints()
 	page.CategoryColorLabel:SetPoint("LEFT", page.PriorityUpButton, "RIGHT", 20, 0)
@@ -3175,20 +3309,48 @@ local function createLayoutPage(parent)
 	scrollFrame:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -28, 0)
 	page.ScrollFrame = scrollFrame
 	page.Content = content
-	page.LayoutContentHeight = 1544
+	page.LayoutContentHeight = 1940
 
 	local contentParent = content
+
+	page.OneBagMode = createCheckbox(
+		contentParent,
+		L["settingsOneBagMode"] or "One Bag mode",
+		L["settingsOneBagModeTooltip"] or "",
+		0,
+		-8,
+		function(value)
+			if addon.SetOneBagMode and addon.SetOneBagMode(value) then
+				addon.RefreshSettingsFrame("layout")
+				requestBagRefresh(true, true)
+			end
+		end
+	)
 
 	page.ShowCategories = createCheckbox(
 		contentParent,
 		L["settingsShowCategories"] or "Show item categories",
 		L["settingsShowCategoriesTooltip"] or "",
 		0,
-		-8,
+		-38,
 		function(value)
 			getSettings().showCategories = value
 			addon.RefreshSettingsFrame("layout")
 			requestBagRefresh(true)
+		end
+	)
+
+	page.OneBagFreeSlotsAtEnd = createCheckbox(
+		contentParent,
+		L["settingsOneBagFreeSlotsAtEnd"] or "Move free slots to end",
+		L["settingsOneBagFreeSlotsAtEndTooltip"] or "",
+		0,
+		-68,
+		function(value)
+			if addon.SetOneBagFreeSlotsAtEnd and addon.SetOneBagFreeSlotsAtEnd(value) then
+				addon.RefreshSettingsFrame("layout")
+				requestBagRefresh(true, true)
+			end
 		end
 	)
 
@@ -3197,7 +3359,7 @@ local function createLayoutPage(parent)
 		L["settingsCombineFreeSlots"] or "Combine free slots into indicators",
 		L["settingsCombineFreeSlotsTooltip"] or "",
 		0,
-		-38,
+		-68,
 		function(value)
 			getSettings().combineFreeSlots = value
 			requestBagRefresh(true)
@@ -3209,7 +3371,7 @@ local function createLayoutPage(parent)
 		L["settingsShowFreeSlots"] or "Show free slots",
 		L["settingsShowFreeSlotsTooltip"] or "",
 		0,
-		-68,
+		-98,
 		function(value)
 			if addon.SetShowFreeSlots and addon.SetShowFreeSlots(value) then
 				addon.RefreshSettingsFrame("layout")
@@ -3223,10 +3385,24 @@ local function createLayoutPage(parent)
 		L["settingsCombineUnstackableItems"] or "Combine identical items",
 		L["settingsCombineUnstackableItemsTooltip"] or "",
 		0,
-		-98,
+		-128,
 		function(value)
 			getSettings().combineUnstackableItems = value
 			requestBagRefresh(true)
+		end
+	)
+
+	page.ClearNewItemsOnHeaderClick = createCheckbox(
+		contentParent,
+		L["settingsClearNewItemsOnHeaderClick"] or "Click New Items header to clear",
+		L["settingsClearNewItemsOnHeaderClickTooltip"] or "",
+		0,
+		-158,
+		function(value)
+			if addon.SetClearNewItemsOnHeaderClick and addon.SetClearNewItemsOnHeaderClick(value) then
+				addon.RefreshSettingsFrame("layout")
+				requestBagRefresh(true, true)
+			end
 		end
 	)
 
@@ -3235,11 +3411,25 @@ local function createLayoutPage(parent)
 		L["settingsCompactCategoryLayout"] or "Compact category layout",
 		L["settingsCompactCategoryLayoutTooltip"] or "",
 		0,
-		-128,
+		-188,
 		function(value)
 			if addon.SetCompactCategoryLayout and addon.SetCompactCategoryLayout(value) then
 				addon.RefreshSettingsFrame("layout")
 				requestBagRefresh(true)
+			end
+		end
+	)
+
+	page.CategoryTreeView = createCheckbox(
+		contentParent,
+		L["settingsCategoryTreeView"] or "Tree view for grouped categories",
+		L["settingsCategoryTreeViewTooltip"] or "",
+		0,
+		-218,
+		function(value)
+			if addon.SetCategoryTreeView and addon.SetCategoryTreeView(value) then
+				addon.RefreshSettingsFrame("layout")
+				requestBagRefresh(true, true)
 			end
 		end
 	)
@@ -3249,7 +3439,7 @@ local function createLayoutPage(parent)
 		L["settingsShowCloseButton"] or "Show close button",
 		L["settingsShowCloseButtonTooltip"] or "",
 		0,
-		-158,
+		-248,
 		function(value)
 			if addon.SetShowCloseButton and addon.SetShowCloseButton(value) then
 				addon.RefreshSettingsFrame("layout")
@@ -3258,9 +3448,23 @@ local function createLayoutPage(parent)
 		end
 	)
 
+	page.RememberLastBankTab = createCheckbox(
+		contentParent,
+		L["settingsRememberLastBankTab"] or "Remember last bank tab",
+		L["settingsRememberLastBankTabTooltip"] or "",
+		0,
+		-278,
+		function(value)
+			if addon.SetRememberLastBankTab and addon.SetRememberLastBankTab(value) then
+				addon.RefreshSettingsFrame("layout")
+				requestBagRefresh(true, true)
+			end
+		end
+	)
+
 	local compactGapRow = CreateFrame("Frame", nil, contentParent)
 	compactGapRow:SetHeight(22)
-	compactGapRow:SetPoint("TOPLEFT", page.ShowCloseButton, "BOTTOMLEFT", 24, -14)
+	compactGapRow:SetPoint("TOPLEFT", page.RememberLastBankTab, "BOTTOMLEFT", 24, -14)
 	compactGapRow:SetPoint("RIGHT", contentParent, "RIGHT", -14, 0)
 	page.CompactCategoryGapRow = compactGapRow
 
@@ -3315,9 +3519,66 @@ local function createLayoutPage(parent)
 		Value = compactGapValue,
 	}
 
+	local treeIndentRow = CreateFrame("Frame", nil, contentParent)
+	treeIndentRow:SetHeight(22)
+	treeIndentRow:SetPoint("TOPLEFT", compactGapRow, "BOTTOMLEFT", 0, -10)
+	treeIndentRow:SetPoint("RIGHT", contentParent, "RIGHT", -14, 0)
+	page.CategoryTreeIndentRow = treeIndentRow
+
+	local treeIndentLabel = treeIndentRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	treeIndentLabel:SetPoint("LEFT", treeIndentRow, "LEFT", 0, 0)
+	treeIndentLabel:SetPoint("RIGHT", treeIndentRow, "RIGHT", -172, 0)
+	treeIndentLabel:SetJustifyH("LEFT")
+	treeIndentLabel:SetJustifyV("MIDDLE")
+	treeIndentLabel:SetText(L["settingsCategoryTreeIndentLabel"] or "Tree category indent")
+
+	local treeIndentStepper = CreateFrame("Frame", nil, treeIndentRow)
+	treeIndentStepper:SetSize(156, 22)
+	treeIndentStepper:SetPoint("RIGHT", treeIndentRow, "RIGHT", 0, 0)
+
+	local treeIndentDownButton = CreateFrame("Button", nil, treeIndentStepper, "UIPanelButtonTemplate")
+	treeIndentDownButton:SetSize(24, 22)
+	treeIndentDownButton:SetPoint("LEFT", treeIndentStepper, "LEFT", 0, 0)
+	treeIndentDownButton:SetText("-")
+	setButtonFontObject(treeIndentDownButton, GameFontNormalSmall)
+	treeIndentDownButton:SetScript("OnClick", function()
+		local currentValue = addon.GetCategoryTreeIndent and addon.GetCategoryTreeIndent() or 14
+		if addon.SetCategoryTreeIndent and addon.SetCategoryTreeIndent(currentValue - 1) then
+			addon.RefreshSettingsFrame("layout")
+			requestBagRefresh(true, true)
+		end
+	end)
+
+	local treeIndentUpButton = CreateFrame("Button", nil, treeIndentStepper, "UIPanelButtonTemplate")
+	treeIndentUpButton:SetSize(24, 22)
+	treeIndentUpButton:SetPoint("RIGHT", treeIndentStepper, "RIGHT", 0, 0)
+	treeIndentUpButton:SetText("+")
+	setButtonFontObject(treeIndentUpButton, GameFontNormalSmall)
+	treeIndentUpButton:SetScript("OnClick", function()
+		local currentValue = addon.GetCategoryTreeIndent and addon.GetCategoryTreeIndent() or 14
+		if addon.SetCategoryTreeIndent and addon.SetCategoryTreeIndent(currentValue + 1) then
+			addon.RefreshSettingsFrame("layout")
+			requestBagRefresh(true, true)
+		end
+	end)
+
+	local treeIndentValue = treeIndentStepper:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	treeIndentValue:SetPoint("LEFT", treeIndentDownButton, "RIGHT", 10, 0)
+	treeIndentValue:SetPoint("RIGHT", treeIndentUpButton, "LEFT", -10, 0)
+	treeIndentValue:SetJustifyH("CENTER")
+
+	page.CategoryTreeIndentControl = {
+		Row = treeIndentRow,
+		Label = treeIndentLabel,
+		Stepper = treeIndentStepper,
+		DownButton = treeIndentDownButton,
+		UpButton = treeIndentUpButton,
+		Value = treeIndentValue,
+	}
+
 	local resetButton = CreateFrame("Button", nil, contentParent, "UIPanelButtonTemplate")
 	resetButton:SetSize(190, 22)
-	resetButton:SetPoint("TOPLEFT", compactGapRow, "BOTTOMLEFT", -20, -18)
+	resetButton:SetPoint("TOPLEFT", treeIndentRow, "BOTTOMLEFT", -20, -18)
 	resetButton:SetText(L["settingsResetPosition"] or "Reset window position")
 	resetButton:SetScript("OnClick", function()
 		if Bags.functions and Bags.functions.ResetFramePosition then
@@ -3490,7 +3751,7 @@ local function createLayoutPage(parent)
 	local textAppearanceCard = CreateFrame("Frame", nil, contentParent, "BackdropTemplate")
 	textAppearanceCard:SetPoint("TOPLEFT", paddingCard, "BOTTOMLEFT", 0, -18)
 	textAppearanceCard:SetPoint("RIGHT", contentParent, "RIGHT", -12, 0)
-	textAppearanceCard:SetHeight(724)
+	textAppearanceCard:SetHeight(836)
 	createCardBackdrop(textAppearanceCard)
 	page.TextAppearanceCard = textAppearanceCard
 
@@ -3710,6 +3971,147 @@ local function createLayoutPage(parent)
 	backgroundOpacityValue:SetJustifyH("CENTER")
 	page.FrameBackgroundOpacityValue = backgroundOpacityValue
 
+	local frameBorderTextureLabel = textAppearanceCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	frameBorderTextureLabel:SetText(L["settingsFrameBorderTextureLabel"] or "Border texture")
+	page.FrameBorderTextureLabel = frameBorderTextureLabel
+
+	local frameBorderTextureButton = CreateFrame("Button", nil, textAppearanceCard, "UIPanelButtonTemplate")
+	frameBorderTextureButton:SetSize(textAppearanceControlWidth, 22)
+	setButtonFontObject(frameBorderTextureButton, GameFontNormalSmall)
+	frameBorderTextureButton:SetScript("OnClick", function(self)
+		openSimpleRadioMenu(self, addon.GetFrameBorderTextureOptions and addon.GetFrameBorderTextureOptions() or {}, addon.GetFrameBorderTexture and addon.GetFrameBorderTexture() or "__skin__", function(value)
+			if addon.SetFrameBorderTexture and addon.SetFrameBorderTexture(value) then
+				addon.RefreshSettingsFrame("layout")
+				requestBagRefresh(true)
+			end
+		end)
+	end)
+	page.FrameBorderTextureButton = frameBorderTextureButton
+	anchorTextAppearanceRow(frameBorderTextureLabel, frameBorderTextureButton, backgroundOpacityStepper)
+
+	local frameBorderColorLabel = textAppearanceCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	frameBorderColorLabel:SetText(L["settingsFrameBorderColorLabel"] or "Border color")
+	page.FrameBorderColorLabel = frameBorderColorLabel
+
+	local frameBorderColorSwatch = CreateFrame("Button", nil, textAppearanceCard, "ColorSwatchTemplate")
+	frameBorderColorSwatch:SetSize(22, 22)
+	frameBorderColorSwatch:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	frameBorderColorSwatch:SetScript("OnClick", function(_, button)
+		if button == "RightButton" then
+			if addon.ClearFrameBorderColor and addon.ClearFrameBorderColor() then
+				addon.RefreshSettingsFrame("layout")
+				requestBagRefresh(true)
+			end
+			return
+		end
+
+		local skin = addon.GetActiveSkinDefinition and addon.GetActiveSkinDefinition() or nil
+		local color = addon.GetFrameBorderColor and addon.GetFrameBorderColor(skin and skin.frame and skin.frame.borderColor) or { 0.35, 0.35, 0.42, 1 }
+		openColorPicker(color, function(r, g, b)
+			if addon.SetFrameBorderColor and addon.SetFrameBorderColor(r, g, b) then
+				addon.RefreshSettingsFrame("layout")
+				requestBagRefresh(true)
+			end
+		end)
+	end)
+	frameBorderColorSwatch:HookScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText(L["settingsFrameBorderColorLabel"] or "Border color")
+		GameTooltip:AddLine(L["settingsFrameBorderColorTooltip"] or "Right-click to follow the selected skin color.", 0.78, 0.78, 0.78, true)
+		GameTooltip:Show()
+	end)
+	frameBorderColorSwatch:HookScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+	page.FrameBorderColorSwatch = frameBorderColorSwatch
+	anchorTextAppearanceRow(frameBorderColorLabel, frameBorderColorSwatch, frameBorderTextureButton)
+
+	local frameBorderSizeLabel = textAppearanceCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	frameBorderSizeLabel:SetText(L["settingsFrameBorderSizeLabel"] or "Border size")
+	page.FrameBorderSizeLabel = frameBorderSizeLabel
+
+	local frameBorderSizeStepper = CreateFrame("Frame", nil, textAppearanceCard)
+	frameBorderSizeStepper:SetSize(textAppearanceControlWidth, 22)
+	page.FrameBorderSizeStepper = frameBorderSizeStepper
+	anchorTextAppearanceRow(frameBorderSizeLabel, frameBorderSizeStepper, frameBorderColorSwatch)
+
+	local frameBorderSizeDownButton = CreateFrame("Button", nil, frameBorderSizeStepper, "UIPanelButtonTemplate")
+	frameBorderSizeDownButton:SetSize(24, 22)
+	frameBorderSizeDownButton:SetPoint("LEFT", frameBorderSizeStepper, "LEFT", 0, 0)
+	frameBorderSizeDownButton:SetText("-")
+	setButtonFontObject(frameBorderSizeDownButton, GameFontNormalSmall)
+	frameBorderSizeDownButton:SetScript("OnClick", function()
+		local currentSize = addon.GetFrameBorderSize and addon.GetFrameBorderSize() or 1
+		if addon.SetFrameBorderSize and addon.SetFrameBorderSize(currentSize - 1) then
+			addon.RefreshSettingsFrame("layout")
+			requestBagRefresh(true)
+		end
+	end)
+	page.FrameBorderSizeDownButton = frameBorderSizeDownButton
+
+	local frameBorderSizeUpButton = CreateFrame("Button", nil, frameBorderSizeStepper, "UIPanelButtonTemplate")
+	frameBorderSizeUpButton:SetSize(24, 22)
+	frameBorderSizeUpButton:SetPoint("RIGHT", frameBorderSizeStepper, "RIGHT", 0, 0)
+	frameBorderSizeUpButton:SetText("+")
+	setButtonFontObject(frameBorderSizeUpButton, GameFontNormalSmall)
+	frameBorderSizeUpButton:SetScript("OnClick", function()
+		local currentSize = addon.GetFrameBorderSize and addon.GetFrameBorderSize() or 1
+		if addon.SetFrameBorderSize and addon.SetFrameBorderSize(currentSize + 1) then
+			addon.RefreshSettingsFrame("layout")
+			requestBagRefresh(true)
+		end
+	end)
+	page.FrameBorderSizeUpButton = frameBorderSizeUpButton
+
+	local frameBorderSizeValue = frameBorderSizeStepper:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	frameBorderSizeValue:SetPoint("LEFT", frameBorderSizeDownButton, "RIGHT", 10, 0)
+	frameBorderSizeValue:SetPoint("RIGHT", frameBorderSizeUpButton, "LEFT", -10, 0)
+	frameBorderSizeValue:SetJustifyH("CENTER")
+	page.FrameBorderSizeValue = frameBorderSizeValue
+
+	local frameBorderOffsetLabel = textAppearanceCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	frameBorderOffsetLabel:SetText(L["settingsFrameBorderOffsetLabel"] or "Border offset")
+	page.FrameBorderOffsetLabel = frameBorderOffsetLabel
+
+	local frameBorderOffsetStepper = CreateFrame("Frame", nil, textAppearanceCard)
+	frameBorderOffsetStepper:SetSize(textAppearanceControlWidth, 22)
+	page.FrameBorderOffsetStepper = frameBorderOffsetStepper
+	anchorTextAppearanceRow(frameBorderOffsetLabel, frameBorderOffsetStepper, frameBorderSizeStepper)
+
+	local frameBorderOffsetDownButton = CreateFrame("Button", nil, frameBorderOffsetStepper, "UIPanelButtonTemplate")
+	frameBorderOffsetDownButton:SetSize(24, 22)
+	frameBorderOffsetDownButton:SetPoint("LEFT", frameBorderOffsetStepper, "LEFT", 0, 0)
+	frameBorderOffsetDownButton:SetText("-")
+	setButtonFontObject(frameBorderOffsetDownButton, GameFontNormalSmall)
+	frameBorderOffsetDownButton:SetScript("OnClick", function()
+		local currentOffset = addon.GetFrameBorderOffset and addon.GetFrameBorderOffset() or 0
+		if addon.SetFrameBorderOffset and addon.SetFrameBorderOffset(currentOffset - 1) then
+			addon.RefreshSettingsFrame("layout")
+			requestBagRefresh(true)
+		end
+	end)
+	page.FrameBorderOffsetDownButton = frameBorderOffsetDownButton
+
+	local frameBorderOffsetUpButton = CreateFrame("Button", nil, frameBorderOffsetStepper, "UIPanelButtonTemplate")
+	frameBorderOffsetUpButton:SetSize(24, 22)
+	frameBorderOffsetUpButton:SetPoint("RIGHT", frameBorderOffsetStepper, "RIGHT", 0, 0)
+	frameBorderOffsetUpButton:SetText("+")
+	setButtonFontObject(frameBorderOffsetUpButton, GameFontNormalSmall)
+	frameBorderOffsetUpButton:SetScript("OnClick", function()
+		local currentOffset = addon.GetFrameBorderOffset and addon.GetFrameBorderOffset() or 0
+		if addon.SetFrameBorderOffset and addon.SetFrameBorderOffset(currentOffset + 1) then
+			addon.RefreshSettingsFrame("layout")
+			requestBagRefresh(true)
+		end
+	end)
+	page.FrameBorderOffsetUpButton = frameBorderOffsetUpButton
+
+	local frameBorderOffsetValue = frameBorderOffsetStepper:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	frameBorderOffsetValue:SetPoint("LEFT", frameBorderOffsetDownButton, "RIGHT", 10, 0)
+	frameBorderOffsetValue:SetPoint("RIGHT", frameBorderOffsetUpButton, "LEFT", -10, 0)
+	frameBorderOffsetValue:SetJustifyH("CENTER")
+	page.FrameBorderOffsetValue = frameBorderOffsetValue
+
 	local fontLabel = textAppearanceCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	fontLabel:SetText(L["settingsTextFontLabel"] or "Font")
 	page.TextFontLabel = fontLabel
@@ -3727,7 +4129,7 @@ local function createLayoutPage(parent)
 		end)
 	end)
 	page.TextFontButton = fontButton
-	anchorTextAppearanceRow(fontLabel, fontButton, backgroundOpacityStepper)
+	anchorTextAppearanceRow(fontLabel, fontButton, frameBorderOffsetStepper)
 
 	local sizeLabel = textAppearanceCard:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	sizeLabel:SetText(L["settingsTextSizeLabel"] or "Size")
@@ -4022,38 +4424,89 @@ refreshLayoutPage = function(page)
 
 	local settings = getSettings()
 	local appearance = addon.GetTextAppearance and addon.GetTextAppearance() or {}
+	local oneBagMode = addon.GetOneBagMode and addon.GetOneBagMode() or settings.oneBagMode == true
 
+	if page.OneBagMode then
+		page.OneBagMode:SetChecked(oneBagMode)
+	end
+	if page.OneBagFreeSlotsAtEnd then
+		page.OneBagFreeSlotsAtEnd:SetChecked(addon.GetOneBagFreeSlotsAtEnd and addon.GetOneBagFreeSlotsAtEnd() or settings.oneBagFreeSlotsAtEnd == true)
+	end
 	if page.ShowCategories then
 		page.ShowCategories:SetChecked(settings.showCategories)
+		page.ShowCategories:SetEnabled(not oneBagMode)
+		page.ShowCategories:SetAlpha(oneBagMode and 0.45 or 1)
+		if page.ShowCategories.Label then
+			page.ShowCategories.Label:SetAlpha(oneBagMode and 0.45 or 1)
+		end
 	end
 	if page.CombineFreeSlots then
 		page.CombineFreeSlots:SetChecked(settings.combineFreeSlots)
+		page.CombineFreeSlots:SetEnabled(not oneBagMode)
+		page.CombineFreeSlots:SetAlpha(oneBagMode and 0.45 or 1)
+		if page.CombineFreeSlots.Label then
+			page.CombineFreeSlots.Label:SetAlpha(oneBagMode and 0.45 or 1)
+		end
 	end
 	if page.ShowFreeSlots then
 		page.ShowFreeSlots:SetChecked(addon.GetShowFreeSlots == nil or addon.GetShowFreeSlots())
 	end
 	if page.CombineDuplicateItems then
 		page.CombineDuplicateItems:SetChecked(settings.combineUnstackableItems)
+		page.CombineDuplicateItems:SetEnabled(not oneBagMode)
+		page.CombineDuplicateItems:SetAlpha(oneBagMode and 0.45 or 1)
+		if page.CombineDuplicateItems.Label then
+			page.CombineDuplicateItems.Label:SetAlpha(oneBagMode and 0.45 or 1)
+		end
+	end
+	if page.ClearNewItemsOnHeaderClick then
+		page.ClearNewItemsOnHeaderClick:SetChecked(addon.GetClearNewItemsOnHeaderClick and addon.GetClearNewItemsOnHeaderClick() or false)
+		page.ClearNewItemsOnHeaderClick:SetEnabled(not oneBagMode)
+		page.ClearNewItemsOnHeaderClick:SetAlpha(oneBagMode and 0.45 or 1)
+		if page.ClearNewItemsOnHeaderClick.Label then
+			page.ClearNewItemsOnHeaderClick.Label:SetAlpha(oneBagMode and 0.45 or 1)
+		end
+	end
+	if page.CategoryTreeView then
+		page.CategoryTreeView:SetChecked(addon.GetCategoryTreeView and addon.GetCategoryTreeView() or false)
+		page.CategoryTreeView:SetEnabled(not oneBagMode)
+		page.CategoryTreeView:SetAlpha(oneBagMode and 0.45 or 1)
+		if page.CategoryTreeView.Label then
+			page.CategoryTreeView.Label:SetAlpha(oneBagMode and 0.45 or 1)
+		end
 	end
 	if page.CompactCategoryLayout then
 		local compactLayoutEnabled = addon.GetCompactCategoryLayout and addon.GetCompactCategoryLayout() or settings.compactCategoryLayout == true
+		local categoryOptionsEnabled = settings.showCategories and not oneBagMode
 		page.CompactCategoryLayout:SetChecked(compactLayoutEnabled)
-		page.CompactCategoryLayout:SetEnabled(settings.showCategories)
-		page.CompactCategoryLayout:SetAlpha(settings.showCategories and 1 or 0.45)
+		page.CompactCategoryLayout:SetEnabled(categoryOptionsEnabled)
+		page.CompactCategoryLayout:SetAlpha(categoryOptionsEnabled and 1 or 0.45)
 		if page.CompactCategoryLayout.Label then
-			page.CompactCategoryLayout.Label:SetAlpha(settings.showCategories and 1 or 0.45)
+			page.CompactCategoryLayout.Label:SetAlpha(categoryOptionsEnabled and 1 or 0.45)
 		end
 		if page.CompactCategoryGapControl and page.CompactCategoryGapControl.Value then
 			local compactGap = addon.GetCompactCategoryGap and addon.GetCompactCategoryGap() or 8
-			local gapEnabled = settings.showCategories and compactLayoutEnabled
+			local gapEnabled = categoryOptionsEnabled and compactLayoutEnabled
 			page.CompactCategoryGapControl.Row:SetAlpha(gapEnabled and 1 or 0.45)
 			page.CompactCategoryGapControl.Value:SetText(tostring(compactGap))
 			page.CompactCategoryGapControl.DownButton:SetEnabled(gapEnabled and compactGap > 0)
-			page.CompactCategoryGapControl.UpButton:SetEnabled(gapEnabled and compactGap < 24)
+			page.CompactCategoryGapControl.UpButton:SetEnabled(gapEnabled and compactGap < 40)
 		end
+	end
+	if page.CategoryTreeIndentControl and page.CategoryTreeIndentControl.Value then
+		local treeViewEnabled = addon.GetCategoryTreeView and addon.GetCategoryTreeView() or false
+		local treeIndent = addon.GetCategoryTreeIndent and addon.GetCategoryTreeIndent() or 14
+		treeViewEnabled = treeViewEnabled and not oneBagMode
+		page.CategoryTreeIndentControl.Row:SetAlpha(treeViewEnabled and 1 or 0.45)
+		page.CategoryTreeIndentControl.Value:SetText(tostring(treeIndent))
+		page.CategoryTreeIndentControl.DownButton:SetEnabled(treeViewEnabled and treeIndent > 0)
+		page.CategoryTreeIndentControl.UpButton:SetEnabled(treeViewEnabled and treeIndent < 40)
 	end
 	if page.ShowCloseButton then
 		page.ShowCloseButton:SetChecked(addon.GetShowCloseButton == nil or addon.GetShowCloseButton())
+	end
+	if page.RememberLastBankTab then
+		page.RememberLastBankTab:SetChecked(addon.GetRememberLastBankTab == nil or addon.GetRememberLastBankTab())
 	end
 	if page.OutsideHeaderPaddingControl and page.OutsideHeaderPaddingControl.Value then
 		local outsideHeaderPadding = addon.GetOutsideHeaderPadding and addon.GetOutsideHeaderPadding() or 0
@@ -4145,6 +4598,29 @@ refreshLayoutPage = function(page)
 		page.FrameBackgroundOpacityValue:SetText(string.format("%d%%", backgroundOpacity))
 		page.FrameBackgroundOpacityDownButton:SetEnabled(backgroundOpacity > 0)
 		page.FrameBackgroundOpacityUpButton:SetEnabled(backgroundOpacity < 100)
+	end
+	if page.FrameBorderTextureButton then
+		page.FrameBorderTextureButton:SetText(getOptionLabel(addon.GetFrameBorderTextureOptions and addon.GetFrameBorderTextureOptions() or {}, addon.GetFrameBorderTexture and addon.GetFrameBorderTexture() or "__skin__", L["settingsFrameBorderTextureLabel"] or "Border texture"))
+	end
+	if page.FrameBorderColorSwatch then
+		local skin = addon.GetActiveSkinDefinition and addon.GetActiveSkinDefinition() or nil
+		local color = addon.GetFrameBorderColor and addon.GetFrameBorderColor(skin and skin.frame and skin.frame.borderColor) or { 0.35, 0.35, 0.42, 1 }
+		page.FrameBorderColorSwatch:SetColorRGB(color[1] or 0.35, color[2] or 0.35, color[3] or 0.42)
+	end
+	if page.FrameBorderColorLabel then
+		page.FrameBorderColorLabel:SetAlpha((addon.HasCustomFrameBorderColor and addon.HasCustomFrameBorderColor()) and 1 or 0.78)
+	end
+	if page.FrameBorderSizeValue then
+		local borderSize = addon.GetFrameBorderSize and addon.GetFrameBorderSize() or 1
+		page.FrameBorderSizeValue:SetText(tostring(borderSize))
+		page.FrameBorderSizeDownButton:SetEnabled(borderSize > 0)
+		page.FrameBorderSizeUpButton:SetEnabled(borderSize < 64)
+	end
+	if page.FrameBorderOffsetValue then
+		local borderOffset = addon.GetFrameBorderOffset and addon.GetFrameBorderOffset() or 0
+		page.FrameBorderOffsetValue:SetText(tostring(borderOffset))
+		page.FrameBorderOffsetDownButton:SetEnabled(borderOffset > -32)
+		page.FrameBorderOffsetUpButton:SetEnabled(borderOffset < 32)
 	end
 	if page.TextSizeValue then
 		page.TextSizeValue:SetText(tostring(tonumber(appearance.size) or 12))
@@ -4604,27 +5080,79 @@ local function anchorTextAppearanceControl(card, hint, label, control, previousC
 	label:SetJustifyV("MIDDLE")
 end
 
+local function setLayoutCheckboxVisible(button, visible)
+	if not button then
+		return
+	end
+	button:SetShown(visible)
+	if button.Label then
+		button.Label:SetShown(visible)
+	end
+end
+
 applyLayoutPageMode = function(page)
 	if not page then
 		return
 	end
 
 	local basicMode = isBasicCategoryMode()
+	local oneBagMode = isOneBagModeEnabled()
+	local previousControl
+	local function placeLayoutCheckbox(button, visible)
+		setLayoutCheckboxVisible(button, visible)
+		if not visible or not button then
+			return
+		end
 
-	if page.ShowCategories then
-		page.ShowCategories:SetShown(not basicMode)
-		if page.ShowCategories.Label then
-			page.ShowCategories.Label:SetShown(not basicMode)
+		button:ClearAllPoints()
+		if previousControl then
+			button:SetPoint("TOPLEFT", previousControl, "BOTTOMLEFT", 0, -8)
+		else
+			button:SetPoint("TOPLEFT", page.Content, "TOPLEFT", 0, -8)
 		end
+		previousControl = button
 	end
-	if page.CompactCategoryLayout then
-		page.CompactCategoryLayout:SetShown(true)
-		if page.CompactCategoryLayout.Label then
-			page.CompactCategoryLayout.Label:SetShown(true)
-		end
-	end
+
+	placeLayoutCheckbox(page.OneBagMode, true)
+	placeLayoutCheckbox(page.OneBagFreeSlotsAtEnd, oneBagMode)
+	placeLayoutCheckbox(page.ShowCategories, not basicMode and not oneBagMode)
+	placeLayoutCheckbox(page.CombineFreeSlots, not oneBagMode)
+	placeLayoutCheckbox(page.ShowFreeSlots, true)
+	placeLayoutCheckbox(page.CombineDuplicateItems, not oneBagMode)
+	placeLayoutCheckbox(page.ClearNewItemsOnHeaderClick, not oneBagMode)
+	placeLayoutCheckbox(page.CompactCategoryLayout, not oneBagMode)
+	placeLayoutCheckbox(page.CategoryTreeView, not oneBagMode)
+	placeLayoutCheckbox(page.ShowCloseButton, true)
+	placeLayoutCheckbox(page.RememberLastBankTab, true)
+
 	if page.CompactCategoryGapControl and page.CompactCategoryGapControl.Row then
-		page.CompactCategoryGapControl.Row:SetShown(true)
+		page.CompactCategoryGapControl.Row:SetShown(not oneBagMode)
+		if not oneBagMode then
+			page.CompactCategoryGapControl.Row:ClearAllPoints()
+			page.CompactCategoryGapControl.Row:SetPoint("TOPLEFT", previousControl, "BOTTOMLEFT", 24, -14)
+			page.CompactCategoryGapControl.Row:SetPoint("RIGHT", page.Content, "RIGHT", -14, 0)
+			previousControl = page.CompactCategoryGapControl.Row
+		end
+	end
+	if page.CategoryTreeIndentControl and page.CategoryTreeIndentControl.Row then
+		page.CategoryTreeIndentControl.Row:SetShown(not oneBagMode)
+		if not oneBagMode then
+			page.CategoryTreeIndentControl.Row:ClearAllPoints()
+			page.CategoryTreeIndentControl.Row:SetPoint("TOPLEFT", previousControl, "BOTTOMLEFT", 0, -10)
+			page.CategoryTreeIndentControl.Row:SetPoint("RIGHT", page.Content, "RIGHT", -14, 0)
+			previousControl = page.CategoryTreeIndentControl.Row
+		end
+	end
+	if page.ResetButton and previousControl then
+		page.ResetButton:ClearAllPoints()
+		local resetOffsetX = (previousControl == (page.CompactCategoryGapControl and page.CompactCategoryGapControl.Row)
+			or previousControl == (page.CategoryTreeIndentControl and page.CategoryTreeIndentControl.Row)) and -20 or 4
+		page.ResetButton:SetPoint("TOPLEFT", previousControl, "BOTTOMLEFT", resetOffsetX, -18)
+	end
+	if page.PaddingCard and page.ResetButton then
+		page.PaddingCard:ClearAllPoints()
+		page.PaddingCard:SetPoint("TOPLEFT", page.ResetButton, "BOTTOMLEFT", -4, -18)
+		page.PaddingCard:SetPoint("RIGHT", page.Content, "RIGHT", -12, 0)
 	end
 
 	if page.PaddingCard then
@@ -4659,14 +5187,14 @@ applyLayoutPageMode = function(page)
 	end
 
 	if page.TextAppearanceCard then
-		page.TextAppearanceCard:SetHeight(basicMode and 552 or 836)
+		page.TextAppearanceCard:SetHeight(basicMode and 664 or 948)
 	end
 	if page.TextAppearanceTitle then
 		page.TextAppearanceTitle:SetText((basicMode and (L["settingsBasicLookTitle"] or "Look")) or (L["settingsTextAppearanceTitle"] or "Text appearance"))
 	end
 	if page.TextAppearanceHint then
 		page.TextAppearanceHint:SetText(
-			(basicMode and (L["settingsBasicLookHint"] or "Choose the bag skin, icon shape, background, opacity, font, sizes, and outline."))
+			(basicMode and (L["settingsBasicLookHint"] or "Choose the bag skin, icon shape, background, border, opacity, font, sizes, and outline."))
 				or (L["settingsTextAppearanceHint"] or "Choose the font, size, and outline used for bag headers, footer text, and item overlays.")
 		)
 	end
@@ -4715,7 +5243,11 @@ applyLayoutPageMode = function(page)
 	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.FrameBackgroundLabel, page.FrameBackgroundButton, page.FreeSlotReagentColorSwatch)
 	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.FrameBackgroundColorLabel, page.FrameBackgroundColorSwatch, page.FrameBackgroundButton)
 	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.FrameBackgroundOpacityLabel, page.FrameBackgroundOpacityStepper, page.FrameBackgroundColorSwatch)
-	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.TextFontLabel, page.TextFontButton, page.FrameBackgroundOpacityStepper)
+	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.FrameBorderTextureLabel, page.FrameBorderTextureButton, page.FrameBackgroundOpacityStepper)
+	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.FrameBorderColorLabel, page.FrameBorderColorSwatch, page.FrameBorderTextureButton)
+	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.FrameBorderSizeLabel, page.FrameBorderSizeStepper, page.FrameBorderColorSwatch)
+	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.FrameBorderOffsetLabel, page.FrameBorderOffsetStepper, page.FrameBorderSizeStepper)
+	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.TextFontLabel, page.TextFontButton, page.FrameBorderOffsetStepper)
 	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.TextSizeLabel, page.TextSizeStepper, page.TextFontButton)
 	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.TextOverlaySizeLabel, page.TextOverlaySizeStepper, page.TextSizeStepper)
 	anchorTextAppearanceControl(page.TextAppearanceCard, page.TextAppearanceHint, page.TextOutlineLabel, page.TextOutlineButton, page.TextOverlaySizeStepper)

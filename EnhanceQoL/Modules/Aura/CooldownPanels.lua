@@ -18,6 +18,11 @@ local L = LibStub("AceLocale-3.0"):GetLocale(parentAddonName)
 local LSM = LibStub("LibSharedMedia-3.0", true)
 local Glow = addon.Glow
 local cdp = {
+	EXPORT = {
+		KIND = "EQOL_COOLDOWN_PANEL",
+		SERIALIZER = LibStub("AceSerializer-3.0"),
+		DEFLATE = LibStub("LibDeflate"),
+	},
 	FAKE_CURSOR = {
 		FRAME_NAME = "EQOL_CooldownPanelsFakeCursor",
 		ATLAS = "Cursor_Point_32",
@@ -1249,7 +1254,6 @@ end
 
 local fakeCursorFrame
 local fakeCursorResetOnShow = true
-local fakeCursorMode
 local cursorFollowRunner
 local cursorSpecRetryPending
 
@@ -1290,7 +1294,12 @@ local function showFakeCursorFrame()
 end
 
 local function hideFakeCursorFrame()
-	if fakeCursorFrame then fakeCursorFrame:Hide() end
+	if fakeCursorFrame then
+		fakeCursorFrame:SetAlpha(0)
+		if fakeCursorFrame.texture then fakeCursorFrame.texture:Hide() end
+		fakeCursorFrame:EnableMouse(false)
+		fakeCursorFrame:Hide()
+	end
 end
 
 local function resetFakeCursorFrame()
@@ -1299,8 +1308,9 @@ local function resetFakeCursorFrame()
 end
 
 local function setFakeCursorMode(mode)
-	if fakeCursorMode == mode then return end
-	fakeCursorMode = mode
+	-- Always re-apply the visual state because layout edit paths can manipulate
+	-- the fake cursor frame directly between mode transitions.
+	if mode ~= "edit" and mode ~= "follow" then mode = "hidden" end
 	if mode == "hidden" then
 		hideFakeCursorFrame()
 		return
@@ -3972,11 +3982,392 @@ function CooldownPanels:DuplicatePanel(panelId)
 	markRootOrderDirty(root)
 	Keybinds.MarkPanelsDirty()
 	self:RebuildSpellIndex()
-	local cdmAuras = CooldownPanels.CDMAuras
-	if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
 	self:UpdateCursorAnchorState()
 	self:RefreshPanel(id)
 	return id, panel
+end
+
+cdp.EXPORT.SERIALIZABLE_KEY_TYPES = {
+	boolean = true,
+	number = true,
+	string = true,
+}
+
+cdp.EXPORT.SERIALIZABLE_VALUE_TYPES = {
+	boolean = true,
+	number = true,
+	string = true,
+}
+
+function cdp.EXPORT.SanitizeValue(value, activeTables)
+	local valueType = type(value)
+	if cdp.EXPORT.SERIALIZABLE_VALUE_TYPES[valueType] then return value end
+	if valueType ~= "table" then return nil end
+	if activeTables[value] then return nil end
+
+	activeTables[value] = true
+	local clone = {}
+	for key, child in pairs(value) do
+		if cdp.EXPORT.SERIALIZABLE_KEY_TYPES[type(key)] then
+			local sanitized = cdp.EXPORT.SanitizeValue(child, activeTables)
+			if sanitized ~= nil then clone[key] = sanitized end
+		end
+	end
+	activeTables[value] = nil
+	return clone
+end
+
+function cdp.EXPORT.SanitizeTable(source)
+	if type(source) ~= "table" then return {} end
+	return cdp.EXPORT.SanitizeValue(source, {}) or {}
+end
+
+function cdp.EXPORT.EncodePayload(payload)
+	local serializer = cdp.EXPORT.SERIALIZER
+	local deflate = cdp.EXPORT.DEFLATE
+	if not serializer or not deflate then return nil, "NO_LIB" end
+	local ok, serialized = pcall(serializer.Serialize, serializer, payload)
+	if not ok or type(serialized) ~= "string" or serialized == "" then return nil, "SERIALIZE" end
+	local compressed = deflate:CompressDeflate(serialized)
+	if not compressed then return nil, "COMPRESS" end
+	return deflate:EncodeForPrint(compressed)
+end
+
+function cdp.EXPORT.DecodePayload(encoded)
+	local serializer = cdp.EXPORT.SERIALIZER
+	local deflate = cdp.EXPORT.DEFLATE
+	if not serializer or not deflate then return nil, "NO_LIB" end
+	encoded = tostring(encoded or "")
+	encoded = encoded:gsub("^%s+", ""):gsub("%s+$", "")
+	if encoded == "" then return nil, "NO_INPUT" end
+
+	local decoded = deflate:DecodeForPrint(encoded) or deflate:DecodeForWoWChatChannel(encoded) or deflate:DecodeForWoWAddonChannel(encoded)
+	if not decoded then return nil, "DECODE" end
+	local decompressed = deflate:DecompressDeflate(decoded)
+	if not decompressed then return nil, "DECOMPRESS" end
+	local ok, payload = serializer:Deserialize(decompressed)
+	if not ok or type(payload) ~= "table" then return nil, "DESERIALIZE" end
+	local meta = payload.meta
+	if type(meta) ~= "table" or meta.addon ~= parentAddonName or meta.kind ~= cdp.EXPORT.KIND then return nil, "INVALID" end
+	return payload
+end
+
+function cdp.EXPORT.GetUniquePanelName(root, preferredName)
+	local usedNames = {}
+	for _, existingPanel in pairs(root and root.panels or {}) do
+		local existingName = existingPanel and existingPanel.name
+		if type(existingName) == "string" and existingName ~= "" then usedNames[existingName] = true end
+	end
+	local baseName = (type(preferredName) == "string" and preferredName ~= "" and preferredName) or (L["CooldownPanelNewPanel"] or "New Panel")
+	if not usedNames[baseName] then return baseName end
+	local suffix = 2
+	local candidate
+	repeat
+		candidate = string.format("%s %d", baseName, suffix)
+		suffix = suffix + 1
+	until not usedNames[candidate]
+	return candidate
+end
+
+function cdp.EXPORT.GetUniqueGroupName(root, preferredName)
+	local usedNames = {}
+	for _, group in pairs(root and root.editorGroups or {}) do
+		local groupName = group and group.name
+		if type(groupName) == "string" and groupName ~= "" then usedNames[groupName] = true end
+	end
+	local baseName = CooldownPanels.NormalizePanelGroupName(preferredName) or (L["CooldownPanelNewGroup"] or "New Group")
+	if not usedNames[baseName] then return baseName end
+	local suffix = 2
+	local candidate
+	repeat
+		candidate = string.format("%s %d", baseName, suffix)
+		suffix = suffix + 1
+	until not usedNames[candidate]
+	return candidate
+end
+
+function CooldownPanels:ExportPanel(panelId)
+	local root = ensureRoot()
+	panelId = normalizeId(panelId)
+	local panel = root and root.panels and panelId and root.panels[panelId] or nil
+	if type(panel) ~= "table" then return nil, "NO_DATA" end
+	local exportPanel = Helper.CopyTableDeep(panel)
+	exportPanel.editorGroupId = nil
+	return cdp.EXPORT.EncodePayload({
+		meta = {
+			addon = parentAddonName,
+			kind = cdp.EXPORT.KIND,
+			version = tostring(C_AddOns.GetAddOnMetadata(parentAddonName, "Version") or ""),
+			payloadVersion = 1,
+			scope = "PANEL",
+		},
+		data = {
+			panel = cdp.EXPORT.SanitizeTable(exportPanel),
+		},
+	})
+end
+
+function CooldownPanels:ExportEditorGroup(groupId)
+	local root = ensureRoot()
+	root = CooldownPanels.EnsureEditorGroupStorage(root)
+	groupId = normalizeId(groupId)
+	if not (root and root.editorGroups and groupId and root.editorGroups[groupId]) then return nil, "NO_DATA" end
+
+	local groupIds = { groupId }
+	local includedGroups = { [groupId] = true }
+	local descendants = self:GetEditorGroupDescendantIdSet(root, groupId)
+	for descendantId in pairs(descendants) do
+		if root.editorGroups[descendantId] then
+			includedGroups[descendantId] = true
+			groupIds[#groupIds + 1] = descendantId
+		end
+	end
+	table.sort(groupIds, function(left, right) return (tonumber(left) or 0) < (tonumber(right) or 0) end)
+
+	local groups = {}
+	for _, exportGroupId in ipairs(groupIds) do
+		local group = Helper.CopyTableDeep(root.editorGroups[exportGroupId])
+		group.parentGroupId = includedGroups[normalizeId(group.parentGroupId)] and normalizeId(group.parentGroupId) or nil
+		groups[exportGroupId] = cdp.EXPORT.SanitizeTable(group)
+	end
+
+	local panels = {}
+	local panelOrder = {}
+	for _, exportPanelId in ipairs(root.order or {}) do
+		local panel = root.panels and root.panels[exportPanelId] or nil
+		if panel and includedGroups[normalizeId(panel.editorGroupId)] then
+			panels[exportPanelId] = cdp.EXPORT.SanitizeTable(panel)
+			panelOrder[#panelOrder + 1] = exportPanelId
+		end
+	end
+
+	return cdp.EXPORT.EncodePayload({
+		meta = {
+			addon = parentAddonName,
+			kind = cdp.EXPORT.KIND,
+			version = tostring(C_AddOns.GetAddOnMetadata(parentAddonName, "Version") or ""),
+			payloadVersion = 1,
+			scope = "GROUP",
+		},
+		data = {
+			rootGroupId = groupId,
+			groups = groups,
+			groupOrder = groupIds,
+			panels = panels,
+			panelOrder = panelOrder,
+		},
+	})
+end
+
+function cdp.EXPORT.ImportPanelData(data)
+	local root = ensureRoot()
+	if not root or type(data) ~= "table" or type(data.panel) ~= "table" then return nil, "NO_DATA" end
+	local id = Helper.GetNextNumericId(root.panels)
+	local panel = cdp.EXPORT.SanitizeTable(data.panel)
+	panel.id = id
+	panel.name = cdp.EXPORT.GetUniquePanelName(root, panel.name)
+	panel.editorGroupId = nil
+	Helper.NormalizePanel(panel, root.defaults)
+	for _, entry in pairs(panel.entries or {}) do
+		Helper.NormalizeEntry(entry, root.defaults)
+	end
+	root.panels[id] = panel
+	root.order[#root.order + 1] = id
+	root.selectedPanel = id
+	markRootOrderDirty(root)
+	Keybinds.MarkPanelsDirty()
+	CooldownPanels:RebuildSpellIndex()
+	CooldownPanels:UpdateCursorAnchorState()
+	CooldownPanels:RefreshPanel(id)
+	return id
+end
+
+function cdp.EXPORT.ImportGroupData(data)
+	local root = ensureRoot()
+	root = CooldownPanels.EnsureEditorGroupStorage(root)
+	if not root or type(data) ~= "table" or type(data.groups) ~= "table" then return nil, "NO_DATA" end
+
+	local groupIdMap = {}
+	for _, oldGroupId in ipairs(data.groupOrder or {}) do
+		local group = data.groups[oldGroupId]
+		if type(group) == "table" then
+			local newGroupId = Helper.GetNextNumericId(root.editorGroups)
+			groupIdMap[oldGroupId] = newGroupId
+			local groupName = oldGroupId == normalizeId(data.rootGroupId) and cdp.EXPORT.GetUniqueGroupName(root, group.name) or CooldownPanels.NormalizePanelGroupName(group.name)
+			root.editorGroups[newGroupId] = {
+				id = newGroupId,
+				name = groupName or (L["CooldownPanelNewGroup"] or "New Group"),
+				parentGroupId = nil,
+			}
+			root.editorGroupOrder[#root.editorGroupOrder + 1] = newGroupId
+		end
+	end
+
+	for oldGroupId, newGroupId in pairs(groupIdMap) do
+		local group = data.groups[oldGroupId]
+		local oldParentId = group and normalizeId(group.parentGroupId)
+		root.editorGroups[newGroupId].parentGroupId = oldParentId and groupIdMap[oldParentId] or nil
+	end
+
+	local firstPanelId
+	for _, oldPanelId in ipairs(data.panelOrder or {}) do
+		local oldPanel = data.panels and data.panels[oldPanelId]
+		if type(oldPanel) == "table" then
+			local newPanelId = Helper.GetNextNumericId(root.panels)
+			local panel = cdp.EXPORT.SanitizeTable(oldPanel)
+			panel.id = newPanelId
+			panel.name = cdp.EXPORT.GetUniquePanelName(root, panel.name)
+			panel.editorGroupId = groupIdMap[normalizeId(panel.editorGroupId)] or groupIdMap[normalizeId(data.rootGroupId)]
+			Helper.NormalizePanel(panel, root.defaults)
+			for _, entry in pairs(panel.entries or {}) do
+				Helper.NormalizeEntry(entry, root.defaults)
+			end
+			root.panels[newPanelId] = panel
+			root.order[#root.order + 1] = newPanelId
+			firstPanelId = firstPanelId or newPanelId
+		end
+	end
+
+	if not next(groupIdMap) and not firstPanelId then return nil, "NO_DATA" end
+	root._eqolEditorGroupOrderDirty = true
+	CooldownPanels:SortEditorGroupOrder(root)
+	root.selectedPanel = firstPanelId or root.selectedPanel
+	markRootOrderDirty(root)
+	Keybinds.MarkPanelsDirty()
+	CooldownPanels:RebuildSpellIndex()
+	CooldownPanels:UpdateCursorAnchorState()
+	if firstPanelId then CooldownPanels:RefreshPanel(firstPanelId) end
+	return firstPanelId or true
+end
+
+function CooldownPanels:ImportPanelOrGroup(encoded)
+	local payload, reason = cdp.EXPORT.DecodePayload(encoded)
+	if not payload then return false, reason end
+	local scope = payload.meta and payload.meta.scope
+	local imported, importReason
+	if scope == "GROUP" then
+		imported, importReason = cdp.EXPORT.ImportGroupData(payload.data)
+	else
+		imported, importReason = cdp.EXPORT.ImportPanelData(payload.data)
+	end
+	if not imported then return false, importReason or "NO_DATA" end
+	CooldownPanels:RefreshEditor()
+	return true
+end
+
+function CooldownPanels:ReleaseDeletedPanelRuntime(panelId)
+	panelId = normalizeId(panelId)
+	local allRuntime = self.runtime
+	local runtime = allRuntime and panelId and allRuntime[panelId] or nil
+	if not runtime then return end
+
+	runtime.visibleCount = 0
+	runtime.visiblePowerSpellCount = 0
+	runtime._eqolDeletedPanelRuntime = true
+	if runtime.visibleEntries then
+		for i = 1, #runtime.visibleEntries do
+			runtime.visibleEntries[i] = nil
+		end
+	end
+	if runtime.visiblePowerSpells then
+		for i = 1, #runtime.visiblePowerSpells do
+			runtime.visiblePowerSpells[i] = nil
+		end
+	end
+
+	local frame = runtime.frame
+	if frame then
+		local detachedDriver = self:ApplyVisibilityDriverToFrame(frame, nil)
+		if allRuntime.pendingVisibilityDriverUpdates then
+			if detachedDriver then
+				allRuntime.pendingVisibilityDriverUpdates[frame] = nil
+			else
+				allRuntime.pendingVisibilityDriverUpdates[frame] = false
+			end
+		end
+		frame._eqolDeletedPanelRuntime = true
+		frame._eqolDeletedPanelId = panelId
+		frame.panelId = nil
+		if frame.EnableMouse then frame:EnableMouse(false) end
+		if frame.SetAlpha then frame:SetAlpha(0) end
+		if frame.bg then frame.bg:Hide() end
+		if frame.label then
+			frame.label:SetText("")
+			frame.label:Hide()
+		end
+		if frame.editDropZone then
+			frame.editDropZone:Hide()
+			frame.editDropZone:EnableMouse(false)
+			frame.editDropZone.panelId = nil
+		end
+		if frame.editPanelHandle then
+			frame.editPanelHandle:Hide()
+			frame.editPanelHandle:EnableMouse(false)
+			frame.editPanelHandle.panelId = nil
+		end
+		if frame.editMoveHandle then
+			frame.editMoveHandle:Hide()
+			frame.editMoveHandle:EnableMouse(false)
+			frame.editMoveHandle.panelId = nil
+		end
+		if frame.icons then
+			for i = 1, #frame.icons do
+				local icon = frame.icons[i]
+				if icon then
+					icon.entryId = nil
+					icon._eqolRuntimeData = nil
+					icon._eqolRuntimeSnapshot = nil
+					if CooldownPanels.StopAllIconGlows then CooldownPanels.StopAllIconGlows(icon) end
+					if icon.cooldown then
+						if icon.cooldown.SetScript then icon.cooldown:SetScript("OnCooldownDone", nil) end
+						if icon.cooldown.Clear then icon.cooldown:Clear() end
+						icon.cooldown._eqolPanelId = nil
+						icon.cooldown._eqolEntryId = nil
+					end
+					if icon.count then icon.count:Hide() end
+					if icon.charges then icon.charges:Hide() end
+					if icon.rangeOverlay then icon.rangeOverlay:Hide() end
+					if icon.keybind then icon.keybind:Hide() end
+					if icon.staticText then icon.staticText:Hide() end
+					if icon.stateTexture then icon.stateTexture:Hide() end
+					if icon.stateTextureSecond then icon.stateTextureSecond:Hide() end
+					icon:Hide()
+				end
+			end
+		end
+		local inCombat = InCombatLockdown and InCombatLockdown()
+		local protected = frame.IsProtected and frame:IsProtected()
+		if not (inCombat and protected) then
+			frame:Hide()
+			if frame.ClearAllPoints then frame:ClearAllPoints() end
+			if frame.SetParent then pcall(frame.SetParent, frame, nil) end
+		end
+		runtime.frame = nil
+	end
+
+	allRuntime[panelId] = nil
+end
+
+function CooldownPanels:ClearAnchorsToDeletedPanel(root, deletedPanelId)
+	deletedPanelId = normalizeId(deletedPanelId)
+	local deletedFrameName = deletedPanelId and panelFrameName(deletedPanelId) or nil
+	if not (root and root.panels and deletedFrameName) then return end
+
+	local changed = false
+	for otherPanelId, otherPanel in pairs(root.panels) do
+		local anchor = ensurePanelAnchor(otherPanel)
+		if anchor and Helper.NormalizeRelativeFrameName(anchor.relativeFrame) == deletedFrameName then
+			anchor.relativeFrame = "UIParent"
+			changed = true
+			local runtime = self.runtime and self.runtime[normalizeId(otherPanelId)] or nil
+			if runtime then
+				runtime._eqolRelativeFrameCache = nil
+				if self.ClearAppliedAnchorCache then self.ClearAppliedAnchorCache(runtime) end
+			end
+		end
+	end
+
+	if changed then self.MarkRelativeFrameEntriesDirty() end
 end
 
 function CooldownPanels:DeletePanel(panelId)
@@ -3986,23 +4377,14 @@ function CooldownPanels:DeletePanel(panelId)
 	self:HideLayoutEntryStandaloneMenu(panelId)
 	self:HideLayoutPanelStandaloneMenu(panelId)
 	self:HideLayoutFixedGroupStandaloneMenu(panelId)
+	self:ReleaseDeletedPanelRuntime(panelId)
 	root.panels[panelId] = nil
 	markRootOrderDirty(root)
 	syncRootOrderIfDirty(root, true)
+	self:ClearAnchorsToDeletedPanel(root, panelId)
 	Keybinds.MarkPanelsDirty()
 	if root.selectedPanel == panelId then root.selectedPanel = root.order[1] end
-	local runtime = CooldownPanels.runtime and CooldownPanels.runtime[panelId]
-	if runtime then
-		if runtime.frame then
-			runtime.frame:Hide()
-			runtime.frame:SetParent(nil)
-			runtime.frame = nil
-		end
-		CooldownPanels.runtime[panelId] = nil
-	end
 	self:RebuildSpellIndex()
-	local cdmAuras = CooldownPanels.CDMAuras
-	if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
 	self:UpdateCursorAnchorState()
 end
 
@@ -4075,10 +4457,6 @@ function CooldownPanels:AddEntry(panelId, entryType, idValue, overrides)
 		if macro and macro.kind == "ITEM" and macro.itemID then updateItemCountCacheForItem(macro.itemID) end
 	end
 	self:RebuildSpellIndex()
-	if entry.type == "CDM_AURA" then
-		local cdmAuras = self.CDMAuras
-		if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
-	end
 	self:RefreshPanel(panelId)
 	return entryId, entry
 end
@@ -4144,8 +4522,6 @@ function CooldownPanels:RemoveEntry(panelId, entryId)
 	Helper.SyncOrder(panel.order, panel.entries)
 	Helper.InvalidateFixedLayoutCache(panel)
 	self:RebuildSpellIndex()
-	local cdmAuras = CooldownPanels.CDMAuras
-	if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
 	self:RefreshPanel(panelId)
 end
 
@@ -4217,6 +4593,17 @@ function CooldownPanels:RebuildSpellIndex()
 	local slotEntryMeta = {}
 	local enabledPanels = {}
 	local enabledPanelIds = {}
+	local cdmAuraPanels = {}
+	local cdmAuraPanelIds = {}
+	local cdmAuraEntryIdsByPanel = {}
+	local cdmAuraCooldownKeys = {}
+	local cdmAuraSpellIds = {}
+	local cdmAuraHasSpellOnlyEntries = false
+	local cdmAuraEntryCount = 0
+	local barPanels = {}
+	local barPanelIds = {}
+	local barEntryIdsByPanel = {}
+	local barEntryCount = 0
 	local enabledPanelsBySpec = {}
 	local enabledPanelIdsBySpec = {}
 	local itemPanels = {}
@@ -4270,6 +4657,39 @@ function CooldownPanels:RebuildSpellIndex()
 					local spellEntryMetaData
 					local itemEntryMetaData
 					local slotEntryMetaData
+					if entry and entry.displayMode == "BAR" then
+						local entryIds = barEntryIdsByPanel[panelId]
+						if not entryIds then
+							barPanels[panelId] = true
+							barPanelIds[#barPanelIds + 1] = panelId
+							entryIds = {}
+							barEntryIdsByPanel[panelId] = entryIds
+						end
+						entryIds[#entryIds + 1] = entryId
+						barEntryCount = barEntryCount + 1
+					end
+					if entry and entry.type == "CDM_AURA" then
+						local entryIds = cdmAuraEntryIdsByPanel[panelId]
+						if not entryIds then
+							cdmAuraPanels[panelId] = true
+							cdmAuraPanelIds[#cdmAuraPanelIds + 1] = panelId
+							entryIds = {}
+							cdmAuraEntryIdsByPanel[panelId] = entryIds
+							end
+							entryIds[#entryIds + 1] = entryId
+							cdmAuraEntryCount = cdmAuraEntryCount + 1
+							local cooldownID = entry.cooldownID
+							if type(cooldownID) == "number" and cooldownID > 0 then
+								cdmAuraCooldownKeys[cooldownID] = true
+							elseif type(cooldownID) == "string" and cooldownID ~= "" then
+								cdmAuraCooldownKeys[cooldownID] = true
+							end
+							local cdmAuraSpellID = tonumber(entry.spellID)
+							if cdmAuraSpellID and cdmAuraSpellID > 0 then
+								cdmAuraSpellIds[cdmAuraSpellID] = true
+								if not cooldownID then cdmAuraHasSpellOnlyEntries = true end
+							end
+						end
 					if entry and entry.type == "SPELL" and entry.spellID then
 						spellId = tonumber(entry.spellID)
 					elseif entry and entry.type == "MACRO" then
@@ -4410,6 +4830,19 @@ function CooldownPanels:RebuildSpellIndex()
 	runtime.slotEntryMeta = slotEntryMeta
 	runtime.enabledPanels = enabledPanels
 	runtime.enabledPanelIds = enabledPanelIds
+	runtime.cdmAuraPanels = cdmAuraPanels
+	runtime.cdmAuraPanelIds = cdmAuraPanelIds
+	runtime.cdmAuraEntryIdsByPanel = cdmAuraEntryIdsByPanel
+	runtime.cdmAuraCooldownKeys = cdmAuraCooldownKeys
+	runtime.cdmAuraSpellIds = cdmAuraSpellIds
+	runtime.cdmAuraHasSpellOnlyEntries = cdmAuraHasSpellOnlyEntries
+	runtime.cdmAuraEntryCount = cdmAuraEntryCount
+	runtime.barPanels = barPanels
+	runtime.barPanelIds = barPanelIds
+	runtime.barEntryIdsByPanel = barEntryIdsByPanel
+	runtime.barEntryCount = barEntryCount
+	runtime.barStaticGeneration = (runtime.barStaticGeneration or 0) + 1
+	runtime.barLabelGeneration = (runtime.barLabelGeneration or 0) + 1
 	runtime.itemPanels = itemPanels
 	runtime.itemUsesPanels = itemUsesPanels
 	runtime.itemTrackedIds = itemTrackedIds
@@ -4419,7 +4852,11 @@ function CooldownPanels:RebuildSpellIndex()
 	self:RebuildChargesIndex()
 	self:PrimeReadySoundStates()
 	local cdmAuras = self.CDMAuras
-	if cdmAuras and cdmAuras.UpdateEventRegistration then cdmAuras:UpdateEventRegistration() end
+	if cdmAuras and cdmAuras.HandleRuntimeIndexChanged then
+		cdmAuras:HandleRuntimeIndexChanged("RebuildSpellIndex", false)
+	elseif cdmAuras and cdmAuras.UpdateEventRegistration then
+		cdmAuras:UpdateEventRegistration()
+	end
 	if self.UpdateEventRegistration then self:UpdateEventRegistration() end
 	return index
 end
@@ -4700,8 +5137,6 @@ function CooldownPanels:NormalizeAll()
 		if Helper.IsFixedLayout(panel.layout) then Helper.EnsureFixedSlotAssignments(panel) end
 	end
 	self:RebuildSpellIndex()
-	local cdmAuras = CooldownPanels.CDMAuras
-	if cdmAuras and cdmAuras.HandleRootRefresh then cdmAuras:HandleRootRefresh() end
 end
 
 function CooldownPanels:AddEntrySafe(panelId, entryType, idValue, overrides)
@@ -4883,20 +5318,24 @@ function CooldownPanels:SelectPanel(panelId)
 	if not root then return end
 	panelId = normalizeId(panelId)
 	if not root.panels or not root.panels[panelId] then return end
-	local previousPanelId = root.selectedPanel
+	local previousPanelId = normalizeId(root.selectedPanel)
+	local editor = getEditor()
+	local layoutEditActive = editor and editor.layoutEditActive == true
+	local previousLayoutPanelId = layoutEditActive and normalizeId(editor._eqolLayoutPanelId or previousPanelId) or nil
 	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutEntryStandaloneMenu(previousPanelId) end
 	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutPanelStandaloneMenu(previousPanelId) end
 	if previousPanelId and previousPanelId ~= panelId then self:HideLayoutFixedGroupStandaloneMenu(previousPanelId) end
 	root.selectedPanel = panelId
-	local editor = getEditor()
 	if editor then
 		editor.selectedPanelId = panelId
 		editor.selectedEntryId = nil
+		if layoutEditActive then editor._eqolLayoutPanelId = panelId end
 	end
-	local openLayoutPanelDialog = editor and editor.layoutEditActive == true and previousPanelId ~= panelId
+	local openLayoutPanelDialog = layoutEditActive and previousPanelId ~= panelId
 	local needsLiveRefresh = self:IsAnyPanelLayoutEditActive()
 	if needsLiveRefresh then
-		if previousPanelId and previousPanelId ~= panelId and self:GetPanel(previousPanelId) then self:RefreshPanel(previousPanelId) end
+		if previousLayoutPanelId and previousLayoutPanelId ~= panelId and self:GetPanel(previousLayoutPanelId) then self:RefreshPanel(previousLayoutPanelId) end
+		if previousPanelId and previousPanelId ~= panelId and previousPanelId ~= previousLayoutPanelId and self:GetPanel(previousPanelId) then self:RefreshPanel(previousPanelId) end
 		self:RefreshPanel(panelId)
 	end
 	self:UpdateCursorAnchorState()
@@ -4957,6 +5396,10 @@ function CooldownPanels:SetEditorLayoutEditEnabled(enabled)
 	editor.layoutEditActive = enabled
 	local nextPanelId = enabled and normalizeId(editor.selectedPanelId) or nil
 	editor._eqolLayoutPanelId = nextPanelId
+	if not enabled then
+		stopCursorFollow()
+		setFakeCursorMode("hidden")
+	end
 	if not enabled then self:HideLayoutEntryStandaloneMenu(previousPanelId or editor.selectedPanelId) end
 	if not enabled then self:HideLayoutPanelStandaloneMenu(previousPanelId or editor.selectedPanelId) end
 	if not enabled then self:HideLayoutFixedGroupStandaloneMenu(previousPanelId or editor.selectedPanelId) end
@@ -9528,12 +9971,8 @@ function CooldownPanels:OpenLayoutEntryStandaloneMenu(panelId, entryId, anchorFr
 
 	local function scheduleEntryDialogRefresh()
 		if refreshEntryDialogPending then return end
-		if not (C_Timer and C_Timer.After) then
-			updateEntryDialog()
-			return
-		end
 		refreshEntryDialogPending = true
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			refreshEntryDialogPending = false
 			local state = CooldownPanels:GetLayoutEntryStandaloneMenuState(false)
 			if not state or normalizeId(state.panelId) ~= panelId or normalizeId(state.entryId) ~= entryId then return end
@@ -11944,14 +12383,10 @@ function CooldownPanels:ScheduleLayoutFixedGroupStandaloneMenuRefresh(panelId, g
 	local state = self:GetLayoutFixedGroupStandaloneMenuState(false)
 	if not state then return end
 	if state.refreshPending then return end
-	if not (C_Timer and C_Timer.After) then
-		self:RefreshLayoutFixedGroupStandaloneMenu()
-		return
-	end
 	state.refreshPending = true
 	panelId = normalizeId(panelId)
 	groupId = Helper.NormalizeFixedGroupId(groupId)
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		local currentState = CooldownPanels:GetLayoutFixedGroupStandaloneMenuState(false)
 		if currentState then currentState.refreshPending = nil end
 		if not currentState then return end
@@ -12640,6 +13075,9 @@ local function ensureEditor()
 	local addGroup = Helper.CreateButton(left, L["CooldownPanelAddGroup"] or "Add Group", 96, 22)
 	addGroup:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 12, 40)
 
+	local importPanel = Helper.CreateButton(left, L["CooldownPanelImportPanel"] or "Import Panel", 96, 22)
+	importPanel:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", -12, 40)
+
 	local addPanel = Helper.CreateButton(left, L["Add Panel"] or "Add Panel", 96, 22)
 	addPanel:SetPoint("BOTTOMLEFT", left, "BOTTOMLEFT", 12, 12)
 
@@ -12910,6 +13348,7 @@ local function ensureEditor()
 		previewHintLabel = previewHintLabel,
 		entryHint = entryHint,
 		addGroup = addGroup,
+		importPanel = importPanel,
 		addPanel = addPanel,
 		deletePanel = deletePanel,
 		addEntryType = "SPELL",
@@ -12982,6 +13421,11 @@ local function ensureEditor()
 		local newName = L["CooldownPanelNewPanel"] or "New Panel"
 		local panelId = CooldownPanels:CreatePanel(newName)
 		if panelId then CooldownPanels:SelectPanel(panelId) end
+	end)
+
+	importPanel:SetScript("OnClick", function()
+		CooldownPanels.EnsureImportPanelPopup()
+		StaticPopup_Show("EQOL_COOLDOWN_PANEL_IMPORT")
 	end)
 
 	deletePanel:SetScript("OnClick", function()
@@ -13255,6 +13699,75 @@ ensureDeletePopup = function()
 			if not data or not data.panelId then return end
 			CooldownPanels:DeletePanel(data.panelId)
 			CooldownPanels:RefreshEditor()
+		end,
+	}
+end
+
+function cdp.EXPORT.ImportErrorMessage(reason)
+	if reason == "NO_INPUT" then return L["ProfileImportEmpty"] or "Please paste a code to import." end
+	if reason == "INVALID" or reason == "DECODE" or reason == "DECOMPRESS" or reason == "DESERIALIZE" then return L["The code could not be read."] or "The code could not be read." end
+	return L["CooldownPanelImportFailed"] or "Cooldown panel import failed."
+end
+
+function cdp.EXPORT.ShowDialog(title, code)
+	CooldownPanels.EnsureExportPanelPopup()
+	local dialog = StaticPopupDialogs["EQOL_COOLDOWN_PANEL_EXPORT"]
+	dialog.text = title or (L["CooldownPanelExportPanel"] or "Export Panel")
+	dialog._eqolExportCode = code or ""
+	StaticPopup_Show("EQOL_COOLDOWN_PANEL_EXPORT")
+end
+
+function CooldownPanels.EnsureExportPanelPopup()
+	if StaticPopupDialogs["EQOL_COOLDOWN_PANEL_EXPORT"] then return end
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_EXPORT"] = {
+		text = L["CooldownPanelExportPanel"] or "Export Panel",
+		button1 = CLOSE,
+		hasEditBox = true,
+		editBoxWidth = 320,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnShow = function(self)
+			self:SetFrameStrata("TOOLTIP")
+			local editBox = self.editBox or self:GetEditBox()
+			editBox:SetText(StaticPopupDialogs["EQOL_COOLDOWN_PANEL_EXPORT"]._eqolExportCode or "")
+			editBox:HighlightText()
+			editBox:SetFocus()
+		end,
+	}
+end
+
+function CooldownPanels.EnsureImportPanelPopup()
+	if StaticPopupDialogs["EQOL_COOLDOWN_PANEL_IMPORT"] then return end
+	StaticPopupDialogs["EQOL_COOLDOWN_PANEL_IMPORT"] = {
+		text = L["CooldownPanelImportConfirm"] or "Import a cooldown panel or group?",
+		button1 = L["Import"] or OKAY,
+		button2 = CANCEL,
+		hasEditBox = true,
+		editBoxWidth = 320,
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		preferredIndex = 3,
+		OnShow = function(self)
+			self:SetFrameStrata("TOOLTIP")
+			local editBox = self.editBox or self:GetEditBox()
+			editBox:SetText("")
+			editBox:SetFocus()
+		end,
+		EditBoxOnEnterPressed = function(editBox)
+			local parent = editBox:GetParent()
+			if parent and parent.button1 then parent.button1:Click() end
+		end,
+		OnAccept = function(self)
+			local editBox = self.editBox or self:GetEditBox()
+			local ok, reason = CooldownPanels:ImportPanelOrGroup(editBox and editBox:GetText() or "")
+			if not ok then
+				print("|cff00ff98Enhance QoL|r: " .. tostring(cdp.EXPORT.ImportErrorMessage(reason)))
+				return
+			end
+			print("|cff00ff98Enhance QoL|r: " .. (L["CooldownPanelImportSuccess"] or "Cooldown panel imported."))
 		end,
 	}
 end
@@ -13627,6 +14140,14 @@ function CooldownPanels:ShowEditorGroupMenu(owner, groupId)
 		end, { skipGroupIds = blockedGroupIds })
 		rootDescription:CreateDivider()
 		rootDescription:CreateButton(L["CooldownPanelRename"] or "Rename", function() CooldownPanels:ShowEditorGroupRenamePopup(groupId) end)
+		rootDescription:CreateButton(L["CooldownPanelExportGroup"] or "Export Group", function()
+			local code = CooldownPanels:ExportEditorGroup(groupId)
+			if not code then
+				showErrorMessage(L["DataExportFailed"] or "Export failed.")
+				return
+			end
+			cdp.EXPORT.ShowDialog(L["CooldownPanelExportGroup"] or "Export Group", code)
+		end)
 		rootDescription:CreateButton(DELETE or "Delete", function()
 			CooldownPanels:EnsureEditorGroupDeletePopup()
 			StaticPopup_Show("EQOL_COOLDOWN_PANEL_GROUP_DELETE", groupName, nil, { groupId = groupId })
@@ -13649,6 +14170,14 @@ function CooldownPanels:ShowPanelGroupAssignMenu(owner, panelId)
 		rootDescription:CreateButton(L["CooldownPanelDuplicate"] or "Duplicate", function()
 			local duplicatedPanelId = CooldownPanels:DuplicatePanel(panelId)
 			if duplicatedPanelId then CooldownPanels:SelectPanel(duplicatedPanelId) end
+		end)
+		rootDescription:CreateButton(L["CooldownPanelExportPanel"] or "Export Panel", function()
+			local code = CooldownPanels:ExportPanel(panelId)
+			if not code then
+				showErrorMessage(L["DataExportFailed"] or "Export failed.")
+				return
+			end
+			cdp.EXPORT.ShowDialog(L["CooldownPanelExportPanel"] or "Export Panel", code)
 		end)
 
 		local currentGroupId = normalizeId(panel.editorGroupId)
@@ -21474,7 +22003,7 @@ function CooldownPanels.EnsureUpdateFrame()
 			CooldownPanels:InvalidateTalentChoiceSpellVariantGroups()
 			if Keybinds.InvalidateButtonList then Keybinds.InvalidateButtonList() end
 			Keybinds.InvalidateCache()
-			Keybinds.RequestRefresh("Event:PLAYER_LOGIN")
+			Keybinds.RequestRefresh("Event:PLAYER_LOGIN", false)
 			if CooldownPanels.refreshAssistedHighlightCVarState then CooldownPanels.refreshAssistedHighlightCVarState("Event:PLAYER_LOGIN", true) end
 			refreshPanelsForCharges()
 			scheduleSpecAwareRebuild(event, false)
@@ -21791,7 +22320,7 @@ function CooldownPanels:RequestUpdate(cause)
 	runtime.updatePending = true
 	runtime.updateCause = cause
 	runtime.updateFullRefresh = fullRefresh
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		local currentRuntime = self.runtime
 		if not currentRuntime then return end
 		local shouldFullRefresh = currentRuntime.updateFullRefresh == true

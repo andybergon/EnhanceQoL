@@ -476,11 +476,7 @@ function CombatText:ShowEditModeHint(show)
 		self.previewing = nil
 		if self.frame.bg then self.frame.bg:Hide() end
 		if addon.db and addon.db[DB_ENABLED] then
-			if C_Timer and C_Timer.After then
-				C_Timer.After(0, refreshCombatTextDisplayState)
-			else
-				self:RefreshDisplayMode()
-			end
+			RunNextFrame(refreshCombatTextDisplayState)
 		else
 			self:HideText()
 		end
@@ -494,11 +490,7 @@ function CombatText:OnEvent(event)
 		self:ShowCombatText(false)
 	elseif event == "PLAYER_ENTERING_WORLD" then
 		-- Delay one frame so the display state is applied after login/loading transitions.
-		if C_Timer and C_Timer.After then
-			C_Timer.After(0, refreshCombatTextDisplayState)
-		elseif addon.db and addon.db[DB_ENABLED] then
-			self:RefreshDisplayMode()
-		end
+		RunNextFrame(refreshCombatTextDisplayState)
 	end
 end
 

@@ -1380,8 +1380,8 @@ local function ensureManagerTogglePanel()
 		Internal.managerToggleExpanded = self.expanded
 		self.Expander.Label:SetText(getManagerToggleExpanderLabel(self.expanded))
 		self:ApplyScrollLimit()
-		if self.expanded and not wasExpanded and C_Timer and C_Timer.After then
-			C_Timer.After(0, function()
+		if self.expanded and not wasExpanded then
+			RunNextFrame(function()
 				if self and self.expanded and self.ApplyScrollLimit and self:IsShown() then self:ApplyScrollLimit() end
 			end)
 		end

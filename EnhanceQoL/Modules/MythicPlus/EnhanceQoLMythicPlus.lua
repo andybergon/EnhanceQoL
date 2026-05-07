@@ -519,9 +519,9 @@ local function applyBRLiveCooldownTextStyle(deferIfMissing)
 		return true
 	end
 
-	if enabled and deferIfMissing and not brCooldownDeferredApplyPending and C_Timer and C_Timer.After then
+	if enabled and deferIfMissing and not brCooldownDeferredApplyPending then
 		brCooldownDeferredApplyPending = true
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			brCooldownDeferredApplyPending = false
 			if not (brButton and brButton.cooldownFrame) then return end
 			local deferredCooldown = brButton.cooldownFrame
@@ -1910,9 +1910,9 @@ local function applyBloodlustLiveCooldownTextStyle(deferIfMissing)
 		return true
 	end
 
-	if deferIfMissing and not bloodlustCooldownDeferredApplyPending and C_Timer and C_Timer.After then
+	if deferIfMissing and not bloodlustCooldownDeferredApplyPending then
 		bloodlustCooldownDeferredApplyPending = true
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			bloodlustCooldownDeferredApplyPending = false
 			if not (bloodlustButton and bloodlustButton.cooldownFrame) then return end
 			local deferredCooldown = bloodlustButton.cooldownFrame

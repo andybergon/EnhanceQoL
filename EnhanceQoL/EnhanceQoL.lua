@@ -817,6 +817,7 @@ local frameVisibilityStates = {}
 local hookedUnitFrames = {}
 local ApplyFrameVisibilityState -- forward declaration
 local IsInDruidTravelForm
+local GetDruidTravelStanceIndexes
 local EnsureSkyridingStateDriver
 local EnsureSpellActivationOverlayWatcher
 
@@ -913,7 +914,37 @@ local function BuildUnitFrameDriverExpression(config, opts)
 
 	local function addSkyridingClauses(target, seen)
 		addClause(target, seen, "nodead,advflyable,flyable,mounted,flying")
-		if addon.variables and addon.variables.unitClass == "DRUID" then addClause(target, seen, "nodead,advflyable,flyable,stance:3,flying") end
+		if addon.variables and addon.variables.unitClass == "DRUID" and GetDruidTravelStanceIndexes then
+			for _, idx in ipairs(GetDruidTravelStanceIndexes()) do
+				addClause(target, seen, ("nodead,advflyable,flyable,stance:%d,flying"):format(idx))
+			end
+		end
+	end
+
+	local function addMountedClauses(target, seen)
+		addClause(target, seen, "mounted")
+		if addon.variables and addon.variables.unitClass == "DRUID" and GetDruidTravelStanceIndexes then
+			for _, idx in ipairs(GetDruidTravelStanceIndexes()) do
+				addClause(target, seen, ("stance:%d"):format(idx))
+			end
+		end
+	end
+
+	local function addNotMountedClauses(target, seen)
+		if addon.variables and addon.variables.unitClass == "DRUID" and GetDruidTravelStanceIndexes then
+			local stanceIndexes = GetDruidTravelStanceIndexes()
+			if #stanceIndexes > 0 then
+				local clause = "nomounted"
+				for _, idx in ipairs(stanceIndexes) do
+					clause = ("%s,nostance:%d"):format(clause, idx)
+				end
+				addClause(target, seen, clause)
+			else
+				addClause(target, seen, "nomounted")
+			end
+		else
+			addClause(target, seen, "nomounted")
+		end
 	end
 
 	if config.ALWAYS_HIDE_IN_GROUP then addClause(hideClauses, hideSeen, "group") end
@@ -927,8 +958,8 @@ local function BuildUnitFrameDriverExpression(config, opts)
 	if config.SKYRIDING_ACTIVE then addSkyridingClauses(showClauses, showSeen) end
 	if config.FLYING_ACTIVE then addClause(showClauses, showSeen, "nodead,flying") end
 	if config.PLAYER_HAS_TARGET then addClause(showClauses, showSeen, "@target,exists") end
-	if config.PLAYER_MOUNTED then addClause(showClauses, showSeen, "mounted") end
-	if config.PLAYER_NOT_MOUNTED then addClause(showClauses, showSeen, "nomounted") end
+	if config.PLAYER_MOUNTED then addMountedClauses(showClauses, showSeen) end
+	if config.PLAYER_NOT_MOUNTED then addNotMountedClauses(showClauses, showSeen) end
 	if config.PLAYER_IN_GROUP then addClause(showClauses, showSeen, "group") end
 	if config.PLAYER_IN_PARTY then addClause(showClauses, showSeen, "group:party") end
 	if config.PLAYER_IN_RAID then addClause(showClauses, showSeen, "group:raid") end
@@ -1507,6 +1538,16 @@ local DRUID_TRAVEL_FORM_SPELL_IDS = {
 	[210053] = true, -- Mount Form (Stag)
 }
 
+GetDruidTravelStanceIndexes = function()
+	local indexes = {}
+	if not GetNumShapeshiftForms or not GetShapeshiftFormInfo then return indexes end
+	for idx = 1, GetNumShapeshiftForms() do
+		local _, _, _, spellID = GetShapeshiftFormInfo(idx)
+		if spellID and DRUID_TRAVEL_FORM_SPELL_IDS[spellID] then indexes[#indexes + 1] = idx end
+	end
+	return indexes
+end
+
 IsInDruidTravelForm = function()
 	local class = addon.variables and addon.variables.unitClass
 	if not class and UnitClass then
@@ -1523,8 +1564,7 @@ IsInDruidTravelForm = function()
 	end
 	local spellID = select(4, GetShapeshiftFormInfo(form))
 	if spellID and DRUID_TRAVEL_FORM_SPELL_IDS[spellID] then return true end
-	-- Fallback: Travel Form is always slot 3 in the druid shapeshift list.
-	return form == 3
+	return false
 end
 
 local function computeCooldownViewerTargetAlpha(cfg, state)
@@ -2290,7 +2330,7 @@ local function UpdateActionBarGroupHoverState(frame, isEnter)
 	if frame then hovered[frame] = nil end
 	if vars._eqolActionBarHoverUpdatePending then return end
 	vars._eqolActionBarHoverUpdatePending = true
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		local state = addon.variables
 		if not state then return end
 		state._eqolActionBarHoverUpdatePending = nil
@@ -2605,7 +2645,7 @@ end
 local function EQOL_HideBarIfNotHovered(bar, variable)
 	local cfg = GetActionBarVisibilityConfig(variable)
 	if not cfg then return end
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		if addon.variables and addon.variables.actionBarShowGrid then
 			ApplyAlphaToRegion(bar, 1, false)
 			return
@@ -2779,7 +2819,7 @@ local function UpdateActionBarMouseover(barName, config, variable)
 		end
 	end
 
-	if cfg.MOUSEOVER then C_Timer.After(0, EQOL_HookSpellFlyout) end
+	if cfg.MOUSEOVER then RunNextFrame(EQOL_HookSpellFlyout) end
 
 	ApplyActionBarAlpha(bar, variable, cfg)
 	if EnsureActionBarVisibilityWatcher then EnsureActionBarVisibilityWatcher() end
@@ -2915,7 +2955,7 @@ local function RefreshAllActionBarVisibilityAlpha(skipFade, event)
 	if event then vars._eqolActionBarRefreshEvent = event end
 	if vars._eqolActionBarRefreshPending then return end
 	vars._eqolActionBarRefreshPending = true
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		local state = addon.variables
 		if not state then return end
 		local pendingSkipFade = state._eqolActionBarRefreshSkipFade
@@ -2951,7 +2991,14 @@ EnsureSkyridingStateDriver = function()
 	end)
 	local expr
 	if addon.variables.unitClass == "DRUID" then
-		expr = "[nodead,advflyable,flyable,mounted,flying] show; [nodead,advflyable,flyable,stance:3,flying] show; hide"
+		local clauses = { "[nodead,advflyable,flyable,mounted,flying] show" }
+		if GetDruidTravelStanceIndexes then
+			for _, idx in ipairs(GetDruidTravelStanceIndexes()) do
+				clauses[#clauses + 1] = ("[nodead,advflyable,flyable,stance:%d,flying] show"):format(idx)
+			end
+		end
+		clauses[#clauses + 1] = "hide"
+		expr = table.concat(clauses, "; ")
 	else
 		expr = "[nodead,advflyable,flyable,mounted,flying] show; hide"
 	end
@@ -3434,7 +3481,7 @@ local function scheduleAutoReleasePvP(popup)
 	end
 
 	if delay <= 0 then
-		C_Timer.After(0, tryRelease)
+		RunNextFrame(tryRelease)
 	else
 		popup._eqolAutoReleaseTimer = C_Timer.NewTimer(delay, function()
 			popup._eqolAutoReleaseTimer = nil
@@ -3587,7 +3634,7 @@ local function initMisc()
 					elseif addon.db["confirmPurchaseTokenItem"] and self.which == "CONFIRM_PURCHASE_TOKEN_ITEM" and self.numButtons > 0 and self.GetButton then
 						self:GetButton(1):Click()
 					elseif addon.db["confirmHighCostItem"] and self.which == "CONFIRM_HIGH_COST_ITEM" and self.numButtons > 0 and self.GetButton then
-						C_Timer.After(0, function() self:GetButton(1):Click() end)
+						RunNextFrame(function() self:GetButton(1):Click() end)
 					end
 				end
 			end)
@@ -3657,12 +3704,12 @@ local function initMisc()
 		ExpansionLandingPageMinimapButton:RegisterEvent("COVENANT_CHOSEN")
 		ExpansionLandingPageMinimapButton:HookScript("OnEvent", function(_, event)
 			if event ~= "COVENANT_CHOSEN" then return end
-			C_Timer.After(0, refreshLandingPageButtonFix)
+			RunNextFrame(refreshLandingPageButtonFix)
 		end)
 		addon.variables._eqolLandingPageButtonHooked = true
 	end
 
-	C_Timer.After(0, refreshLandingPageButtonFix)
+	RunNextFrame(refreshLandingPageButtonFix)
 
 	-- Right-click context menu for expansion/garrison minimap buttons
 	local MU = MenuUtil
@@ -3688,7 +3735,7 @@ local function initMisc()
 		button._eqolMenuHooked = true
 	end
 
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		if ExpansionLandingPageMinimapButton then AttachRightClickMenu(ExpansionLandingPageMinimapButton) end
 		if GarrisonLandingPageMinimapButton then AttachRightClickMenu(GarrisonLandingPageMinimapButton) end
 	end)
@@ -4813,7 +4860,7 @@ local function initUI()
 	end
 
 	-- Apply border at startup
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		if addon.functions.hookFarmHudSquareMinimapBackground then addon.functions.hookFarmHudSquareMinimapBackground() end
 		if addon.functions.applySquareMinimapBackground then addon.functions.applySquareMinimapBackground() end
 		if addon.functions.applySquareMinimapBorder then addon.functions.applySquareMinimapBorder() end
@@ -5121,7 +5168,7 @@ local function initUI()
 	end
 
 	-- Apply on load with a tiny delay to ensure frames exist
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		if addon.functions.ApplyMinimapElementVisibility then addon.functions.ApplyMinimapElementVisibility() end
 	end)
 
@@ -5470,7 +5517,7 @@ local function initUI()
 			self._eqolDragging = nil
 			self._eqolPressedButton = nil
 			saveSimpleFramePoint(self, "detachedButtonSinkData")
-			C_Timer.After(0, function()
+			RunNextFrame(function()
 				if self then self._eqolSuppressClick = nil end
 			end)
 		end
@@ -7110,7 +7157,7 @@ local function applyCurrentExpansionCraftingOrdersFilter(remainingRetries)
 	if not addon.db["alwaysUserCurExpCraftingOrders"] then return end
 	if not (Enum and Enum.AuctionHouseFilter and Enum.AuctionHouseFilter.CurrentExpansionOnly) then return end
 
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		local frame = _G["ProfessionsCustomerOrdersFrame"]
 		local browseOrders = frame and frame.BrowseOrders
 		local searchBar = browseOrders and browseOrders.SearchBar
@@ -7136,7 +7183,7 @@ local eventHandlers = {
 			addon.variables.unitSpecId = specId
 		end
 
-		if addon.db["showIlvlOnBagItems"] or addon.db["showUpgradeArrowOnBagItems"] then
+		if addon.db["enableBagsModule"] ~= true and (addon.db["showIlvlOnBagItems"] or addon.db["showUpgradeArrowOnBagItems"]) then
 			addon.functions.updateBags(ContainerFrameCombinedBags)
 			for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
 				addon.functions.updateBags(frame)
@@ -7154,7 +7201,7 @@ local eventHandlers = {
 			addon.variables.unitRole = GetSpecializationRole(addon.variables.unitSpec)
 			addon.variables.unitSpecId = specId
 		end
-		if addon.db["showIlvlOnBagItems"] or addon.db["showUpgradeArrowOnBagItems"] then
+		if addon.db["enableBagsModule"] ~= true and (addon.db["showIlvlOnBagItems"] or addon.db["showUpgradeArrowOnBagItems"]) then
 			addon.functions.updateBags(ContainerFrameCombinedBags)
 			for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
 				addon.functions.updateBags(frame)
@@ -7387,8 +7434,8 @@ local eventHandlers = {
 		end
 	end,
 	["INVENTORY_SEARCH_UPDATE"] = function()
-		if addon.db["showBagFilterMenu"] then
-			C_Timer.After(0, function()
+		if addon.db["enableBagsModule"] ~= true and addon.db["showBagFilterMenu"] then
+			RunNextFrame(function()
 				addon.functions.updateBags(ContainerFrameCombinedBags)
 				for _, frame in ipairs(ContainerFrameContainer.ContainerFrames) do
 					addon.functions.updateBags(frame)
@@ -7403,7 +7450,7 @@ local eventHandlers = {
 		local summonInfo = _G.C_SummonInfo
 		if not summonInfo or not summonInfo.ConfirmSummon then return end
 
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			if not addon.db or not addon.db["autoAcceptSummon"] then return end
 			if UnitAffectingCombat("player") then return end
 			local info = _G.C_SummonInfo
@@ -7471,7 +7518,7 @@ local eventHandlers = {
 		end
 	end,
 	["BANKFRAME_OPENED"] = function()
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			if addon.functions and addon.functions.AutoSyncWarbandGold then addon.functions.AutoSyncWarbandGold() end
 		end)
 	end,
@@ -7639,7 +7686,7 @@ local eventHandlers = {
 			end
 		end
 		if addon.db["alwaysUserCurExpAuctionHouse"] then
-			C_Timer.After(0, function()
+			RunNextFrame(function()
 				AuctionHouseFrame.SearchBar.FilterButton.filters[Enum.AuctionHouseFilter.CurrentExpansionOnly] = true
 				AuctionHouseFrame.SearchBar:UpdateClearFiltersButton()
 			end)

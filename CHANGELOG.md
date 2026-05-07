@@ -1,37 +1,161 @@
 # Changelog
 
-<!--@eqol-beta@-->
-
-## [10.10.0-beta1] - 2026-04-30
+## [10.14.0] - 2026-05-06
 
 ### ✨ Added
 
-- Bags: Added the integrated custom Bags and Warband Bank module as an opt-in feature.
-- Bags: Added a solid background color picker for the integrated Bags and Warband Bank frames.
-- Bags: Added Advanced text style controls for category headers, subcategory headers, item overlays, and stack counts, including per-element font, size, case, and outline options where applicable.
-- Bags: Added an Inventory-only bag slot flyout for viewing equipped bag containers and swapping them via drag and drop.
-- Bags: Added bank tab purchase support for the integrated Bank and Warband Bank views using Blizzard's bank tab purchase flow.
-- Bags: Added an optional close button to the integrated Bags, Bank, and Warband Bank windows, enabled by default for users who prefer closing bags via the top-corner X.
-- Bags: Added a Layout option to hide Free Slots from the integrated Bags, Bank, and Warband Bank grids entirely.
-- Profiles: Added a separate import/export section for Bags categories, independent from full profile import/export.
-
-### ⚡ Performance
-
-- Bags: Reduced custom bag skin refresh overhead during vendor auto-sell and bag refresh paths.
+- Profiles: Added protected import sections for Mouse & Accessibility settings and quick accept automation settings.
 
 ### 🐛 Fixed
 
-- Bags: Improved text appearance handling so the integrated Bags and Warband Bank frames follow global font and font-style changes more reliably.
-- Bags: Fixed per-element font and outline changes sometimes requiring a UI reload by resolving text appearance caches per element instead of sharing one cache across all bag text styles.
-- Bags: Fixed Advanced Add Group/Add Category creating ID collisions with existing preset groups, which could mirror categories under the new group and remove too many entries when deleting.
-- Bags: Fixed Profession Group automatic rules using shifted Trade Goods subclass IDs, which could classify Cloth materials as Leatherworking / Skinning.
-- Bags: Fixed the Tracking settings page so its full content scrolls inside the settings panel instead of overflowing below the window at smaller heights.
-- Bags: Fixed collapsed compact-layout section headers such as Miscellaneous shrinking to `...` instead of keeping enough width for the label.
-- Bags: Fixed New Items moving into their normal category while the bag window is still open after mouseover clears Blizzard's new-item marker.
+- Cooldown Panels / Layout Edit: Fixed cursor-anchored panels leaving a visible fake cursor behind after switching between cursor panels during Layout Edit and pressing Done.
+- Group Frames / Healer Buff Placement: Fixed Priest healer-buff availability so Discipline and Holy buffs are not offered while playing Shadow.
 
 ---
 
-<!--@end-eqol-beta@-->
+## [10.13.1] - 2026-05-05
+
+### 🐛 Fixed
+
+- Bags: Fixed Bank and Warband Bank layouts ignoring the Max columns setting, so the bank window width can be adjusted from the Bags layout settings.
+- Bags: Fixed cosmetic and equipment overlays treating white tooltip requirement lines as unusable, so only red requirement lines mark an item as unusable.
+- Bags: Fixed the Upgrade category treating armor types outside the player's primary armor proficiency as upgrades.
+
+---
+
+## [10.13.0] - 2026-05-05
+
+### ⚠️ Important
+
+- Profiles: Added protected import sections. These selections are stored outside normal profiles, so imported profile strings and external installers cannot overwrite the user's import-protection choices.
+
+### ✨ Added
+
+- Cooldown Panels: Added panel and group export strings from the editor context menus, plus a dedicated Import Panel button for importing exported panels or panel groups.
+- Group Frames / Blizzard Auras: Added Blizzard-rendered aura options for Dispel indicator mode and aura organization layouts.
+- Profiles: Added a Protected import sections multidropdown for full profile imports and external installer imports, allowing users to keep large areas such as Unit Frames, Resource Bars, Cooldown Panels, Mover, Bags, Castbars, Data Panels, Instance Difficulty, Dungeon & Combat Tools, Action Bars, and Healer Buff Placement unchanged.
+- Unit Frames: Added top anchoring for reduced Absorb and Heal Absorb overlay heights so partial overlays can grow from either edge of the health bar.
+
+---
+
+## [10.12.1] - 2026-05-05
+
+### 🐛 Fixed
+
+- Bags: Added the missing text display option for equipment set overlays so they can show SET instead of the icon for better visibility.
+- Bags: Fixed removing automatic category rules when an older category had duplicate internal rule IDs.
+- Cooldown Panels: Fixed disabled charge counters on charged spells being re-enabled after saving or updating the addon.
+
+---
+
+## [10.12.0] - 2026-05-03
+
+### ✨ Added
+
+- Bags: Added optional item overlays for equipment set items and special bind statuses such as BoE, Warbound, and Warbound until equipped.
+- Bags: Added automatic Basic category support and a rule filter for transmog set items such as ensembles.
+- Bags: Added automatic Basic category support and a rule filter for toy items.
+- Bags: Added the known-item highlight to toys that are already collected.
+- Resource Bars: Added an Augmentation Evoker Ebon Might duration bar, including Shared mode support with a third slot only when the active specialization needs one.
+
+### 🐛 Fixed
+
+- Bags: Fixed the subcategory name spacing option so disabling it keeps compact category rows compact again.
+- Bags: Fixed bag text and overlay size controls so changes update the affected labels and item overlays immediately.
+- Bags: Fixed known-item highlights disappearing after search state changes.
+- Bags: Fixed manual item category assignment so moving an item to a new custom category now removes its old fixed assignment.
+- Mythic Plus / Talent Reminder: Delayed the zone-change talent check briefly so dungeon instance data can settle before showing missing talent loadout warnings.
+- Bags: Fixed search updates doing too much background work, making bag search and item overlays respond more smoothly.
+- Group Frames / Healer Buff Placement: Fixed Priest healer buff availability so Power Word: Shield, Prayer of Mending, and related Priest buffs are not restricted to a single healing specialization.
+
+---
+
+## [10.11.0] - 2026-05-03
+
+### ✨ Added
+
+- Bags: Added an option for category groups to show their items together without separate subcategory headers, making grouped layouts more compact.
+- Bags: Added Basic category support for equipment set items so saved gear pieces can be grouped ahead of other gear.
+- Bags: Added a Basic Teleporting category for hearthstones and other teleport items.
+
+---
+
+## [10.10.1] - 2026-05-03
+
+### 🐛 Fixed
+
+- Visibility / Resource Bars: Fixed Mounted and Not mounted visibility rules for Druids so available Travel, Flight, and Mount Form shapeshift slots are handled consistently by Resource Bars, Unit Frames, and other secure visibility drivers.
+- Unit Frames: Added separate Absorb and Heal Absorb overlay height controls for custom unit and group frames; setting either height to 0 now uses the full health bar height so overlays keep scaling with the frame.
+- Unit Frames / Resource Bars: Disabled Blizzard class-resource hide settings, such as Soul Shards and Combo Points, while the custom EQoL Player Frame is active so users are not shown controls that no longer affect the active frame.
+- Bags: Fixed missing Basic preset auto-categories for Housing (ClassID 20) and Item Enhancements (ClassID 8), so these entries are now created automatically with Basic rules again.
+
+---
+
+## [10.10.0] - 2026-05-03
+
+### ✨ Added
+
+- Bags: Added an opt-in custom Bags, Bank, and Warband Bank module with category, One Bag, layout, appearance, and import/export controls.
+- Resource Bars / Shared Mode: Expanded Power Color controls into per-power overrides for text display and bar textures.
+- Group Frames: Added a Dispellable debuff filter for Party and Raid frames, allowing the debuff display to show only debuffs the player can dispel.
+
+### 🔄 Changed
+
+- Resource Bars / Shared Mode: Added default text overrides for stack- and point-based shared resources such as Combo Points, Holy Power, Chi, Soul Shards, Arcane Charges, Icicles, Essence, Maelstrom Weapon, and Tip of the Spear so they show current values instead of inheriting percent-style slot text.
+
+### ⚡ Performance
+
+- Cooldown Panels / Bars: Reduced runtime bar refresh allocations, repeated keybind lookup work, and fixed-layout profile stutters.
+- Cooldown Panels / Cooldown Manager Auras: Reduced tracked aura reset and scan spikes by using active runtime panel indexes, avoiding full tracked-panel rebuilds during reset events, and using a lighter runtime scan path.
+
+### 🐛 Fixed
+
+- Cooldown Panels: Fixed deleted panels reappearing until UI reload by fully releasing their live runtime frame, visibility driver, and internal panel anchors during deletion.
+- Cooldown Panels / Bars: Fixed Button/Bar display mode updates, reused bar runtime reset state, segmented Charge bars with more than two charges, and Cooldown Manager aura bar timer text.
+- Resource Bars: Fixed absorb glow configuration for the standalone health bar, corrected heal absorb layering so it no longer renders over custom borders, and made sample absorbs respect Don't overflow health bar.
+- Resource Bars / Shared Mode: Fixed Secondary resource bars still showing current values when the shared slot text style was set to None.
+- Tooltips: Fixed a secret-value error when resolving spell tooltip icon IDs for spell IDs marked as secret values.
+
+---
+
+## [10.9.4] - 2026-05-01
+
+## First improvement of CD Panel performance for quick fix
+
+### ⚡ Performance
+
+- In some edge cases (over 1000 entries in CD Panels) there was an increase in build work leading to stutter
+
+---
+
+## [10.9.3] - 2026-05-01
+
+### 🐛 Fixed
+
+- Group Frames: Fixed Party and Raid frames sometimes using positions from another Unit Frames profile after profile changes or reloads.
+
+---
+
+## [10.9.2] - 2026-05-01
+
+### 🐛 Fixed
+
+- Profiles / Group Frames: Fixed imported profiles initially applying stale Group Frame Edit Mode positions from the global UF profile until a second UI reload.
+- Resource Bars / Shared Mode: Fixed Druid shared resource bars keeping stale power colors after shapeshifting between forms such as Cat Form and Moonkin Form.
+- Resource Bars / Edit Mode: Fixed the shared Power Color editor not refreshing its color and override controls immediately after switching the selected power type.
+
+---
+
+## [10.9.1] - 2026-05-01
+
+### 🐛 Fixed
+
+- Cooldown Panels: Fixed Blizzard Cooldown Manager tracked aura icons briefly disappearing during spell override updates.
+- Group Frames / Party: Fixed the solo party role icon not updating after active specialization changes.
+- Group Frames: Fixed custom Party/Raid sorting sometimes showing incomplete or overlapping units immediately after joining a group until a later roster update or reload.
+- Unit Frames: Fixed Data Bar texture and spacing issues, added text offset controls, and allowed negative Data Bar gaps for precise alignment.
+
+---
 
 ## [10.9.0] - 2026-04-30
 

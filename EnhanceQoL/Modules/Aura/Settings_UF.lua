@@ -3281,7 +3281,7 @@ function UF.ui.appendDataBarSettings(list, unit, def, refresh, refreshSelf, addD
 	dataBarHeight.isEnabled = isDataBarEnabled
 	list[#list + 1] = dataBarHeight
 
-	local dataBarGap = slider(L["UFDataBarGap"] or "Data bar gap", 0, 40, 1, function()
+	local dataBarGap = slider(L["UFDataBarGap"] or "Data bar gap", -40, 40, 1, function()
 		return getValue(unit, { "dataBar", "gap" }, dataBarDef.gap or 0)
 	end, function(val)
 		debounced(unit .. "_dataBarGap", function()
@@ -3435,12 +3435,138 @@ function UF.ui.appendDataBarSettings(list, unit, def, refresh, refreshSelf, addD
 	dataBarFontOutline.isEnabled = isDataBarEnabled
 	list[#list + 1] = dataBarFontOutline
 
+	local function showDataBarTextOffsets(key, fallback)
+		local mode = normalizeTextMode(getValue(unit, { "dataBar", key }, fallback))
+		return mode ~= "NONE"
+	end
+
+	local dataBarLeftX = slider(
+		L["TextLeftOffsetX"] or "Left text X offset",
+		-OFFSET_RANGE,
+		OFFSET_RANGE,
+		1,
+		function() return getValue(unit, { "dataBar", "offsetLeft", "x" }, (dataBarDef.offsetLeft and dataBarDef.offsetLeft.x) or 0) end,
+		function(val)
+			debounced(unit .. "_dataBarLeftX", function()
+				setValue(unit, { "dataBar", "offsetLeft", "x" }, val or 0)
+				refresh()
+			end)
+		end,
+		(dataBarDef.offsetLeft and dataBarDef.offsetLeft.x) or 0,
+		"dataBar",
+		true
+	)
+	dataBarLeftX.isEnabled = isDataBarEnabled
+	dataBarLeftX.isShown = function() return showDataBarTextOffsets("textLeft", dataBarDef.textLeft or "NAME") end
+	list[#list + 1] = dataBarLeftX
+
+	local dataBarLeftY = slider(
+		L["TextLeftOffsetY"] or "Left text Y offset",
+		-OFFSET_RANGE,
+		OFFSET_RANGE,
+		1,
+		function() return getValue(unit, { "dataBar", "offsetLeft", "y" }, (dataBarDef.offsetLeft and dataBarDef.offsetLeft.y) or 0) end,
+		function(val)
+			debounced(unit .. "_dataBarLeftY", function()
+				setValue(unit, { "dataBar", "offsetLeft", "y" }, val or 0)
+				refresh()
+			end)
+		end,
+		(dataBarDef.offsetLeft and dataBarDef.offsetLeft.y) or 0,
+		"dataBar",
+		true
+	)
+	dataBarLeftY.isEnabled = isDataBarEnabled
+	dataBarLeftY.isShown = function() return showDataBarTextOffsets("textLeft", dataBarDef.textLeft or "NAME") end
+	list[#list + 1] = dataBarLeftY
+
+	local dataBarCenterX = slider(
+		L["TextCenterOffsetX"] or "Center text X offset",
+		-OFFSET_RANGE,
+		OFFSET_RANGE,
+		1,
+		function() return getValue(unit, { "dataBar", "offsetCenter", "x" }, (dataBarDef.offsetCenter and dataBarDef.offsetCenter.x) or 0) end,
+		function(val)
+			debounced(unit .. "_dataBarCenterX", function()
+				setValue(unit, { "dataBar", "offsetCenter", "x" }, val or 0)
+				refresh()
+			end)
+		end,
+		(dataBarDef.offsetCenter and dataBarDef.offsetCenter.x) or 0,
+		"dataBar",
+		true
+	)
+	dataBarCenterX.isEnabled = isDataBarEnabled
+	dataBarCenterX.isShown = function() return showDataBarTextOffsets("textCenter", dataBarDef.textCenter or "CURMAX") end
+	list[#list + 1] = dataBarCenterX
+
+	local dataBarCenterY = slider(
+		L["TextCenterOffsetY"] or "Center text Y offset",
+		-OFFSET_RANGE,
+		OFFSET_RANGE,
+		1,
+		function() return getValue(unit, { "dataBar", "offsetCenter", "y" }, (dataBarDef.offsetCenter and dataBarDef.offsetCenter.y) or 0) end,
+		function(val)
+			debounced(unit .. "_dataBarCenterY", function()
+				setValue(unit, { "dataBar", "offsetCenter", "y" }, val or 0)
+				refresh()
+			end)
+		end,
+		(dataBarDef.offsetCenter and dataBarDef.offsetCenter.y) or 0,
+		"dataBar",
+		true
+	)
+	dataBarCenterY.isEnabled = isDataBarEnabled
+	dataBarCenterY.isShown = function() return showDataBarTextOffsets("textCenter", dataBarDef.textCenter or "CURMAX") end
+	list[#list + 1] = dataBarCenterY
+
+	local dataBarRightX = slider(
+		L["TextRightOffsetX"] or "Right text X offset",
+		-OFFSET_RANGE,
+		OFFSET_RANGE,
+		1,
+		function() return getValue(unit, { "dataBar", "offsetRight", "x" }, (dataBarDef.offsetRight and dataBarDef.offsetRight.x) or 0) end,
+		function(val)
+			debounced(unit .. "_dataBarRightX", function()
+				setValue(unit, { "dataBar", "offsetRight", "x" }, val or 0)
+				refresh()
+			end)
+		end,
+		(dataBarDef.offsetRight and dataBarDef.offsetRight.x) or 0,
+		"dataBar",
+		true
+	)
+	dataBarRightX.isEnabled = isDataBarEnabled
+	dataBarRightX.isShown = function() return showDataBarTextOffsets("textRight", dataBarDef.textRight or "PERCENT") end
+	list[#list + 1] = dataBarRightX
+
+	local dataBarRightY = slider(
+		L["TextRightOffsetY"] or "Right text Y offset",
+		-OFFSET_RANGE,
+		OFFSET_RANGE,
+		1,
+		function() return getValue(unit, { "dataBar", "offsetRight", "y" }, (dataBarDef.offsetRight and dataBarDef.offsetRight.y) or 0) end,
+		function(val)
+			debounced(unit .. "_dataBarRightY", function()
+				setValue(unit, { "dataBar", "offsetRight", "y" }, val or 0)
+				refresh()
+			end)
+		end,
+		(dataBarDef.offsetRight and dataBarDef.offsetRight.y) or 0,
+		"dataBar",
+		true
+	)
+	dataBarRightY.isEnabled = isDataBarEnabled
+	dataBarRightY.isShown = function() return showDataBarTextOffsets("textRight", dataBarDef.textRight or "PERCENT") end
+	list[#list + 1] = dataBarRightY
+	addDivider("dataBar")
+
 	local dataBarTexture = checkboxDropdown(L["Bar Texture"] or "Bar Texture", textureOptions, function()
-		return getValue(unit, { "dataBar", "texture" }, dataBarDef.texture or "DEFAULT")
+		return getValue(unit, { "dataBar", "texture" }, dataBarDef.texture or "SOLID")
 	end, function(val)
-		setValue(unit, { "dataBar", "texture" }, val or "DEFAULT")
+		setValue(unit, { "dataBar", "texture" }, val or "SOLID")
 		refresh()
-	end, dataBarDef.texture or "DEFAULT", "dataBar")
+	end, dataBarDef.texture or "SOLID", "dataBar")
 	dataBarTexture.isEnabled = isDataBarEnabled
 	list[#list + 1] = dataBarTexture
 end
@@ -4734,6 +4860,10 @@ local function buildUnitSettings(unit)
 			if not height or height <= 0 then height = def.healthHeight or 24 end
 			return height
 		end
+		local function formatOverlayHeight(value)
+			if (tonumber(value) or 0) <= 0 then return L["Max"] or "Max" end
+			return tostring(math.floor((tonumber(value) or 0) + 0.5))
+		end
 
 		list[#list + 1] = { name = L["Absorb"] or "Absorb", kind = UF.ui.settingType.Collapsible, id = "absorb", defaultCollapsed = true }
 		local absorbColorDef = healthDef.absorbColor or { 0.85, 0.95, 1, 0.7 }
@@ -4799,15 +4929,23 @@ local function buildUnitSettings(unit)
 			function() return getValue(unit, { "health", "absorbReverseFill" }, healthDef.absorbReverseFill == true) == true end
 		)
 
-		list[#list + 1] = slider(L["Absorb overlay height"] or "Absorb overlay height", 1, 80, 1, function()
+		list[#list + 1] = slider(L["Absorb overlay height"] or "Absorb overlay height", 0, 80, 1, function()
 			local fallback = getOverlayHeightFallback()
 			local val = getValue(unit, { "health", "absorbOverlayHeight" }, healthDef.absorbOverlayHeight)
-			if not val or val <= 0 then return fallback end
+			if not val or val <= 0 then return 0 end
 			return math.min(val, fallback)
 		end, function(val)
-			setValue(unit, { "health", "absorbOverlayHeight" }, val or getOverlayHeightFallback())
+			val = tonumber(val) or 0
+			setValue(unit, { "health", "absorbOverlayHeight" }, val > 0 and val or nil)
 			refresh()
-		end, getOverlayHeightFallback(), "absorb", true)
+		end, 0, "absorb", true, formatOverlayHeight)
+
+		list[#list + 1] = checkbox(L["Anchor overlay to top"] or "Anchor overlay to top", function()
+			return getValue(unit, { "health", "absorbOverlayAnchorTop" }, healthDef.absorbOverlayAnchorTop == true) == true
+		end, function(val)
+			setValue(unit, { "health", "absorbOverlayAnchorTop" }, val and true or false)
+			refresh()
+		end, healthDef.absorbOverlayAnchorTop == true, "absorb")
 
 		list[#list + 1] = checkbox(L["Show sample absorb"] or "Show sample absorb", function() return sampleAbsorb[unit] == true end, function(val)
 			sampleAbsorb[unit] = val and true or false
@@ -4868,15 +5006,23 @@ local function buildUnitSettings(unit)
 			"healAbsorb"
 		)
 
-		list[#list + 1] = slider(L["Heal absorb overlay height"] or "Heal absorb overlay height", 1, 80, 1, function()
+		list[#list + 1] = slider(L["Heal absorb overlay height"] or "Heal absorb overlay height", 0, 80, 1, function()
 			local fallback = getOverlayHeightFallback()
 			local val = getValue(unit, { "health", "healAbsorbOverlayHeight" }, healthDef.healAbsorbOverlayHeight)
-			if not val or val <= 0 then return fallback end
+			if not val or val <= 0 then return 0 end
 			return math.min(val, fallback)
 		end, function(val)
-			setValue(unit, { "health", "healAbsorbOverlayHeight" }, val or getOverlayHeightFallback())
+			val = tonumber(val) or 0
+			setValue(unit, { "health", "healAbsorbOverlayHeight" }, val > 0 and val or nil)
 			refresh()
-		end, getOverlayHeightFallback(), "healAbsorb", true)
+		end, 0, "healAbsorb", true, formatOverlayHeight)
+
+		list[#list + 1] = checkbox(L["Anchor overlay to top"] or "Anchor overlay to top", function()
+			return getValue(unit, { "health", "healAbsorbOverlayAnchorTop" }, healthDef.healAbsorbOverlayAnchorTop == true) == true
+		end, function(val)
+			setValue(unit, { "health", "healAbsorbOverlayAnchorTop" }, val and true or false)
+			refresh()
+		end, healthDef.healAbsorbOverlayAnchorTop == true, "healAbsorb")
 
 		list[#list + 1] = checkbox(L["Show sample heal absorb"] or "Show sample heal absorb", function() return sampleHealAbsorb[unit] == true end, function(val)
 			sampleHealAbsorb[unit] = val and true or false

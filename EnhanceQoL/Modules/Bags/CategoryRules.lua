@@ -177,7 +177,9 @@ local customCategoryStateHiddenBuiltIn
 local customCategoryCompiledState
 local cachedCategoryRuleContextUsage
 local cachedCategorySectionDefinitions
-local BASIC_PRESET_VERSION = 14
+local BASIC_PRESET_VERSION = 21
+local HOUSING_CLASS_ID = 20
+local ITEM_ENHANCEMENTS_CLASS_ID = 8
 local CATEGORY_MODE_IDS = {
 	basic = true,
 	advanced = true,
@@ -205,6 +207,8 @@ for _, definition in ipairs(CATEGORY_SORT_MODE_DEFINITIONS) do
 end
 
 local ITEM_CLASS_TRADEGOODS = Enum and Enum.ItemClass and Enum.ItemClass.Tradegoods or 7
+local ITEM_CLASS_MISCELLANEOUS = Enum and Enum.ItemClass and Enum.ItemClass.Miscellaneous or 15
+local ITEM_MISC_OTHER_SUBCLASS_ID = 4
 local PROFESSION_GROUP_DEFINITIONS = {
 	{ id = "alchemyHerbalism", labelKey = "professionGroupAlchemyHerbalism", fallback = "Herbalism / Alchemy" },
 	{ id = "miningSmithingEngineeringJewelcrafting", labelKey = "professionGroupMiningSmithingEngineeringJewelcrafting", fallback = "Mining / Blacksmithing / Engineering / Jewelcrafting" },
@@ -233,6 +237,20 @@ local TRADEGOODS_PROFESSION_GROUP_BY_SUBCLASS_ID = {
 	[13] = "inscription",
 	[14] = "craftingReagents", -- Optional reagents
 	[15] = "craftingReagents", -- Finishing reagents
+}
+local PROFESSION_GROUP_BY_TREATISE_ITEM_ID = {
+	-- TODO: Review and extend this list for each major expansion when new profession knowledge treatises are added.
+	[245755] = "alchemyHerbalism", -- Thalassian Treatise on Alchemy
+	[245756] = "tailoring", -- Thalassian Treatise on Tailoring
+	[245757] = "inscription", -- Thalassian Treatise on Inscription
+	[245758] = "leatherworkingSkinning", -- Thalassian Treatise on Leatherworking
+	[245759] = "enchanting", -- Thalassian Treatise on Enchanting
+	[245760] = "miningSmithingEngineeringJewelcrafting", -- Thalassian Treatise on Jewelcrafting
+	[245761] = "alchemyHerbalism", -- Thalassian Treatise on Herbalism
+	[245762] = "miningSmithingEngineeringJewelcrafting", -- Thalassian Treatise on Mining
+	[245763] = "miningSmithingEngineeringJewelcrafting", -- Thalassian Treatise on Blacksmithing
+	[245809] = "miningSmithingEngineeringJewelcrafting", -- Thalassian Treatise on Engineering
+	[245828] = "leatherworkingSkinning", -- Thalassian Treatise on Skinning
 }
 
 local function trimUpgradeTrackText(text)
@@ -434,14 +452,44 @@ local function buildProfessionGroupOptions()
 	return options
 end
 
-function addon.GetProfessionGroupKeyForItem(classID, subClassID)
-	classID = tonumber(classID)
-	subClassID = tonumber(subClassID)
-	if classID ~= ITEM_CLASS_TRADEGOODS or subClassID == nil then
+local function getClassLabelByID(classID)
+	if not (C_Item and C_Item.GetItemClassInfo) then
 		return nil
 	end
 
-	return TRADEGOODS_PROFESSION_GROUP_BY_SUBCLASS_ID[subClassID]
+	local label = C_Item.GetItemClassInfo(classID)
+	if type(label) == "string" and label ~= "" then
+		return label
+	end
+
+	return nil
+end
+
+local function getHousingClassLabel()
+	return getClassLabelByID(HOUSING_CLASS_ID) or "Housing"
+end
+
+local function getItemEnhancementsClassLabel()
+	return getClassLabelByID(ITEM_ENHANCEMENTS_CLASS_ID) or "Item Enhancements"
+end
+
+function addon.GetProfessionGroupKeyForItem(classID, subClassID, itemID)
+	classID = tonumber(classID)
+	subClassID = tonumber(subClassID)
+	if classID == ITEM_CLASS_TRADEGOODS and subClassID ~= nil then
+		return TRADEGOODS_PROFESSION_GROUP_BY_SUBCLASS_ID[subClassID]
+	end
+
+	if classID ~= ITEM_CLASS_MISCELLANEOUS or subClassID ~= ITEM_MISC_OTHER_SUBCLASS_ID then
+		return nil
+	end
+
+	itemID = tonumber(itemID)
+	if itemID and PROFESSION_GROUP_BY_TREATISE_ITEM_ID[itemID] then
+		return PROFESSION_GROUP_BY_TREATISE_ITEM_ID[itemID]
+	end
+
+	return itemID and PROFESSION_GROUP_BY_TREATISE_ITEM_ID[itemID] or nil
 end
 
 local FIELD_DEFINITIONS = {
@@ -683,6 +731,24 @@ local FIELD_DEFINITIONS = {
 		contextKey = "canAuctionHouseSell",
 		buildOptions = buildBooleanOptions,
 	},
+	isEquipmentSet = {
+		labelKey = "settingsRuleFieldEquipmentSet",
+		groupID = "smart",
+		valueType = "enum",
+		operators = { "EQUALS" },
+		defaultOperator = "EQUALS",
+		contextKey = "isEquipmentSet",
+		buildOptions = buildBooleanOptions,
+	},
+	isTeleportItem = {
+		labelKey = "settingsRuleFieldTeleportItem",
+		groupID = "smart",
+		valueType = "enum",
+		operators = { "EQUALS" },
+		defaultOperator = "EQUALS",
+		contextKey = "isTeleportItem",
+		buildOptions = buildBooleanOptions,
+	},
 	isHearthstone = {
 		labelKey = "settingsRuleFieldHearthstone",
 		groupID = "smart",
@@ -690,6 +756,24 @@ local FIELD_DEFINITIONS = {
 		operators = { "EQUALS" },
 		defaultOperator = "EQUALS",
 		contextKey = "isHearthstone",
+		buildOptions = buildBooleanOptions,
+	},
+	isTransmogSet = {
+		labelKey = "settingsRuleFieldTransmogSet",
+		groupID = "smart",
+		valueType = "enum",
+		operators = { "EQUALS" },
+		defaultOperator = "EQUALS",
+		contextKey = "isTransmogSet",
+		buildOptions = buildBooleanOptions,
+	},
+	isToy = {
+		labelKey = "settingsRuleFieldToy",
+		groupID = "smart",
+		valueType = "enum",
+		operators = { "EQUALS" },
+		defaultOperator = "EQUALS",
+		contextKey = "isToy",
 		buildOptions = buildBooleanOptions,
 	},
 	isKeystone = {
@@ -1237,7 +1321,15 @@ local function buildCompiledCustomCategoryState(categories, groups)
 		itemIDToCategoryID = {},
 		contextUsage = {},
 		sectionDefinitions = {},
+		hiddenSectionIDs = {},
 	}
+
+	local hiddenGroupIDs = {}
+	for _, group in ipairs(groups or {}) do
+		if group.hidden == true then
+			hiddenGroupIDs[group.id] = true
+		end
+	end
 
 	local matchingCategories = {}
 	for _, category in ipairs(categories or {}) do
@@ -1254,10 +1346,14 @@ local function buildCompiledCustomCategoryState(categories, groups)
 			sortMode = category.sortMode,
 			color = category.color,
 			groupID = category.groupID,
+			hidden = category.hidden == true or hiddenGroupIDs[category.groupID] == true,
 			itemIDs = category.itemIDs,
 			ruleTree = buildCompiledRuleNode(category.ruleTree, compiledState.contextUsage),
 			isCustom = true,
 		}
+		if compiledCategory.hidden then
+			compiledState.hiddenSectionIDs[category.id] = true
+		end
 
 		for _, itemID in ipairs(category.itemIDs or {}) do
 			if compiledState.itemIDToCategoryID[itemID] == nil then
@@ -1276,29 +1372,38 @@ local function buildCompiledCustomCategoryState(categories, groups)
 	local function appendSectionDefinitionForEntry(entry)
 		if entry.kind == "group" then
 			local group = entry.group
+			if group.hidden == true then
+				return
+			end
 			for _, category in ipairs(categoriesByGroupID[group.id] or {}) do
+				if category.hidden ~= true then
+					compiledState.sectionDefinitions[#compiledState.sectionDefinitions + 1] = {
+						id = category.id,
+						label = category.name,
+						color = category.color,
+						sortMode = category.sortMode,
+						isCustom = true,
+						groupID = group.id,
+						groupLabel = group.name,
+						groupColor = group.color,
+						groupCollapseID = string.format("group:%s", group.id),
+						groupSpacerBefore = group.spacerBefore == true,
+						groupCombineSubcategories = group.combineSubcategories == true,
+						collapsible = false,
+					}
+				end
+			end
+		elseif entry.category then
+			local category = entry.category
+			if category.hidden ~= true then
 				compiledState.sectionDefinitions[#compiledState.sectionDefinitions + 1] = {
 					id = category.id,
 					label = category.name,
 					color = category.color,
 					sortMode = category.sortMode,
 					isCustom = true,
-					groupID = group.id,
-					groupLabel = group.name,
-					groupColor = group.color,
-					groupCollapseID = string.format("group:%s", group.id),
-					collapsible = false,
 				}
 			end
-		elseif entry.category then
-			local category = entry.category
-			compiledState.sectionDefinitions[#compiledState.sectionDefinitions + 1] = {
-				id = category.id,
-				label = category.name,
-				color = category.color,
-				sortMode = category.sortMode,
-				isCustom = true,
-			}
 		end
 	end
 
@@ -1419,6 +1524,9 @@ local function sanitizeCustomGroup(settings, group, index)
 	group.sortOrder = math.floor(tonumber(group.sortOrder) or allocateSortOrder(settings))
 	group.name = sanitizeGroupName(group.name) or string.format("%s %d", L["settingsCategoryGroupLabel"] or "Group", index)
 	group.color = sanitizeColor(group.color, getDefaultCategoryColor(index))
+	group.spacerBefore = group.spacerBefore == true
+	group.combineSubcategories = group.combineSubcategories == true
+	group.hidden = group.hidden == true
 	return group
 end
 
@@ -1469,6 +1577,7 @@ local function sanitizeCategory(settings, category, index, validGroupLookup)
 	end
 	category.groupID = validGroupLookup and validGroupLookup[tostring(category.groupID or "")] and tostring(category.groupID) or nil
 	category.groupName = nil
+	category.hidden = category.hidden == true
 	category.itemIDs = sanitizeItemIDs(category.itemIDs)
 	category.ruleTree = sanitizeGroupNode(settings, category.ruleTree)
 	category.ruleTree.operator = category.ruleTree.operator == "AND" and "AND" or ROOT_GROUP_OPERATOR
@@ -1508,6 +1617,17 @@ local function seedBasicPresetIntoModeState(modeState)
 						return buildPresetRuleGroup(counterState, "AND", {
 							buildPresetRule(counterState, "recommendedForClass", "EQUALS", true),
 							buildPresetRule(counterState, "isUpgrade", "EQUALS", true),
+						})
+					end,
+				},
+				{
+					name = L["basicPresetCategoryEquipmentSets"] or "Equipment Sets",
+					priority = 96,
+					sortMode = "itemLevel",
+					color = { 0.6, 0.76, 1 },
+					ruleTree = function(counterState)
+						return buildPresetRuleGroup(counterState, "AND", {
+							buildPresetRule(counterState, "isEquipmentSet", "EQUALS", true),
 						})
 					end,
 				},
@@ -1649,13 +1769,35 @@ local function seedBasicPresetIntoModeState(modeState)
 					end,
 				},
 				{
-					name = L["basicPresetCategoryKeystones"] or "Keystones",
+					name = L["basicPresetCategoryTeleporting"] or "Teleporting",
 					priority = 91,
+					sortMode = "quality",
+					color = { 0.58, 0.86, 1 },
+					ruleTree = function(counterState)
+						return buildPresetRuleGroup(counterState, "AND", {
+							buildPresetRule(counterState, "isTeleportItem", "EQUALS", true),
+						})
+					end,
+				},
+				{
+					name = L["basicPresetCategoryKeystones"] or "Keystones",
+					priority = 90,
 					sortMode = "keystoneLevel",
 					color = { 0.82, 0.82, 1 },
 					ruleTree = function(counterState)
 						return buildPresetRuleGroup(counterState, "AND", {
 							buildPresetRule(counterState, "isKeystone", "EQUALS", true),
+						})
+					end,
+				},
+				{
+					name = L["basicPresetCategoryTransmogSets"] or "Transmog Sets",
+					priority = 83,
+					sortMode = "name",
+					color = { 0.86, 0.62, 1 },
+					ruleTree = function(counterState)
+						return buildPresetRuleGroup(counterState, "AND", {
+							buildPresetRule(counterState, "isTransmogSet", "EQUALS", true),
 						})
 					end,
 				},
@@ -1761,6 +1903,40 @@ local function seedBasicPresetIntoModeState(modeState)
 			color = { 1, 0.9, 0.44 },
 			categories = {
 				{
+					name = L["basicPresetCategoryMounts"] or "Mounts",
+					priority = 34,
+					sortMode = "quality",
+					color = { 0.72, 0.86, 1 },
+					ruleTree = function(counterState)
+						return buildPresetRuleGroup(counterState, "AND", {
+							buildPresetRule(counterState, "subClassKey", "EQUALS", "15:5"),
+						})
+					end,
+				},
+				{
+					name = L["basicPresetCategoryPets"] or "Pets",
+					priority = 33,
+					sortMode = "quality",
+					color = { 0.95, 0.7, 1 },
+					ruleTree = function(counterState)
+						return buildPresetRuleGroup(counterState, "OR", {
+							buildPresetRule(counterState, "subClassKey", "EQUALS", "15:2"),
+							buildPresetRule(counterState, "classID", "EQUALS", 17),
+						})
+					end,
+				},
+				{
+					name = L["basicPresetCategoryToys"] or "Toys",
+					priority = 33,
+					sortMode = "quality",
+					color = { 0.5, 0.86, 1 },
+					ruleTree = function(counterState)
+						return buildPresetRuleGroup(counterState, "AND", {
+							buildPresetRule(counterState, "isToy", "EQUALS", true),
+						})
+					end,
+				},
+				{
 					name = L["basicPresetCategoryBags"] or "Bags",
 					priority = 32,
 					sortMode = "quality",
@@ -1772,8 +1948,30 @@ local function seedBasicPresetIntoModeState(modeState)
 					end,
 				},
 				{
-					name = L["basicPresetCategoryQuest"] or "Quest",
+					name = getHousingClassLabel(),
+					priority = 31,
+					sortMode = "quality",
+					color = { 0.9, 0.82, 0.98 },
+					ruleTree = function(counterState)
+						return buildPresetRuleGroup(counterState, "AND", {
+							buildPresetRule(counterState, "classID", "EQUALS", HOUSING_CLASS_ID),
+						})
+					end,
+				},
+				{
+					name = getItemEnhancementsClassLabel(),
 					priority = 30,
+					sortMode = "quality",
+					color = { 0.98, 0.88, 0.6 },
+					ruleTree = function(counterState)
+						return buildPresetRuleGroup(counterState, "AND", {
+							buildPresetRule(counterState, "classID", "EQUALS", ITEM_ENHANCEMENTS_CLASS_ID),
+						})
+					end,
+				},
+				{
+					name = L["basicPresetCategoryQuest"] or "Quest",
+					priority = 29,
 					sortMode = "quality",
 					color = { 1, 0.9, 0.44 },
 					ruleTree = function(counterState)
@@ -2022,7 +2220,11 @@ local function parseItemID(input)
 		return nil
 	end
 
-	local itemID = value:match("item:(%d+)") or value:match("|Hitem:(%d+)") or value:match("^(%d+)$")
+	local itemID = value:match("|Hitem:(%d+)")
+		or value:match("item:(%d+)")
+		or value:match("|Hkeystone:(%d+)")
+		or value:match("keystone:(%d+)")
+		or value:match("^(%d+)$")
 	itemID = tonumber(itemID)
 	if itemID and itemID > 0 then
 		return itemID
@@ -2361,6 +2563,14 @@ function addon.GetCategorySectionDefinitions()
 	return cachedCategorySectionDefinitions
 end
 
+function addon.IsCategorySectionHidden(sectionID)
+	ensureCustomCategoryState()
+	return customCategoryCompiledState
+		and customCategoryCompiledState.hiddenSectionIDs
+		and customCategoryCompiledState.hiddenSectionIDs[sectionID] == true
+		or false
+end
+
 function addon.GetCategorySortModeOptions()
 	local options = {}
 	for _, definition in ipairs(CATEGORY_SORT_MODE_DEFINITIONS) do
@@ -2560,6 +2770,22 @@ function addon.SetCustomCategorySortOrder(categoryID, sortOrder)
 	return true
 end
 
+function addon.SetCustomCategoryHidden(categoryID, hidden)
+	local category = findCategoryByID(categoryID)
+	if not category then
+		return false
+	end
+
+	hidden = hidden == true
+	if category.hidden == hidden then
+		return false
+	end
+
+	category.hidden = hidden
+	markCustomCategoryStateDirty()
+	return true
+end
+
 function addon.SetCustomCategoryGroupSortOrder(groupID, sortOrder)
 	local group = findGroupByID(groupID)
 	if not group then
@@ -2578,6 +2804,22 @@ function addon.SetCustomCategoryGroupSortOrder(groupID, sortOrder)
 	end
 
 	group.sortOrder = sortOrder
+	markCustomCategoryStateDirty()
+	return true
+end
+
+function addon.SetCustomCategoryGroupHidden(groupID, hidden)
+	local group = findGroupByID(groupID)
+	if not group then
+		return false
+	end
+
+	hidden = hidden == true
+	if group.hidden == hidden then
+		return false
+	end
+
+	group.hidden = hidden
 	markCustomCategoryStateDirty()
 	return true
 end
@@ -2658,6 +2900,38 @@ function addon.SetCustomCategoryGroupColor(groupID, color)
 	return false
 end
 
+function addon.SetCustomCategoryGroupSpacerBefore(groupID, enabled)
+	local group = findGroupByID(groupID)
+	if not group then
+		return false
+	end
+
+	enabled = enabled == true
+	if group.spacerBefore == enabled then
+		return false
+	end
+
+	group.spacerBefore = enabled
+	markCustomCategoryStateDirty()
+	return true
+end
+
+function addon.SetCustomCategoryGroupCombineSubcategories(groupID, enabled)
+	local group = findGroupByID(groupID)
+	if not group then
+		return false
+	end
+
+	enabled = enabled == true
+	if group.combineSubcategories == enabled then
+		return false
+	end
+
+	group.combineSubcategories = enabled
+	markCustomCategoryStateDirty()
+	return true
+end
+
 function addon.SetCustomCategoryParentGroup(categoryID, groupID)
 	local category = findCategoryByID(categoryID)
 	if not category then
@@ -2684,9 +2958,24 @@ function addon.AddCustomCategoryItemID(categoryID, itemInput)
 		return false
 	end
 
+	local changed = false
+	for _, otherCategory in ipairs(getCustomCategoriesTable() or {}) do
+		if otherCategory.id ~= category.id then
+			for index = #(otherCategory.itemIDs or {}), 1, -1 do
+				if otherCategory.itemIDs[index] == itemID then
+					table.remove(otherCategory.itemIDs, index)
+					changed = true
+				end
+			end
+		end
+	end
+
 	for _, assignedItemID in ipairs(category.itemIDs or {}) do
 		if assignedItemID == itemID then
-			return false
+			if changed then
+				markCustomCategoryStateDirty()
+			end
+			return changed
 		end
 	end
 
@@ -2868,21 +3157,39 @@ end
 
 function addon.RemoveCustomCategoryNode(categoryID, nodeID)
 	local category = findCategoryByID(categoryID)
-	if not category or category.ruleTree.id == nodeID then
+	if not category or not category.ruleTree then
 		return false
 	end
 
-	local _, parentNode = findNodeRecursive(category.ruleTree, nodeID)
-	if not parentNode or parentNode.nodeType ~= "group" then
+	nodeID = tostring(nodeID or "")
+	if nodeID == "" then
 		return false
 	end
 
-	for index, child in ipairs(parentNode.children or {}) do
-		if child.id == nodeID then
-			table.remove(parentNode.children, index)
-			markCustomCategoryStateDirty()
-			return true
+	local function removeChildNode(parentNode)
+		if not parentNode or parentNode.nodeType ~= "group" then
+			return false
 		end
+
+		for index, child in ipairs(parentNode.children or {}) do
+			if tostring(child.id or "") == nodeID then
+				table.remove(parentNode.children, index)
+				return true
+			end
+		end
+
+		for _, child in ipairs(parentNode.children or {}) do
+			if child.nodeType == "group" and removeChildNode(child) then
+				return true
+			end
+		end
+
+		return false
+	end
+
+	if removeChildNode(category.ruleTree) then
+		markCustomCategoryStateDirty()
+		return true
 	end
 
 	return false

@@ -1387,6 +1387,7 @@ local function clearBagButtonInfo(itemButton)
 end
 
 local function shouldUpdateBagButtonInfo()
+	if addon.db and addon.db["enableBagsModule"] == true then return false end
 	if addon.filterFrame then return true end
 	if not addon.db then return false end
 	return addon.db["showIlvlOnBagItems"] or addon.db["showBindOnBagItems"] or addon.db["showUpgradeArrowOnBagItems"] or addon.db["showUpgradeTrackOnBagItems"] or addon.db["enhancedRarityGlow"]
@@ -2001,6 +2002,19 @@ local function InitializeFilterUI()
 end
 
 function addon.functions.updateBags(frame)
+	if addon.db and addon.db["enableBagsModule"] == true then
+		if addon.filterFrame then
+			addon.filterFrame:SetParent(nil)
+			addon.filterFrame:Hide()
+			addon.filterFrame = nil
+			addon.itemBagFilters = {}
+			addon.itemBagFiltersQuality = {}
+			addon.itemBagFiltersBound = {}
+			addon.itemBagFiltersUpgrade = {}
+		end
+		return
+	end
+
 	if addon.db["showBagFilterMenu"] then
 		InitializeFilterUI()
 	elseif addon.filterFrame then

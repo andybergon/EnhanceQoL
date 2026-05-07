@@ -1,4 +1,4 @@
--- luacheck: globals GetItemButtonIconTexture ColorManager
+-- luacheck: globals GetItemButtonIconTexture SetItemButtonTextureVertexColor ColorManager
 local addonName, addon = ...
 addon = addon or {}
 _G[addonName] = addon
@@ -7,6 +7,7 @@ addon.Bags = addon.Bags or {}
 addon.Bags.functions = addon.Bags.functions or {}
 addon.Bags.variables = addon.Bags.variables or {}
 
+local Bags = addon.Bags
 local L = addon.L or {}
 
 local SKIN_PRESET_ORDER = {
@@ -41,6 +42,8 @@ local DEFAULT_PUSHED_TEXTURE = "Interface\\Buttons\\UI-Quickslot-Depress"
 local DEFAULT_HIGHLIGHT_TEXTURE = "Interface\\Buttons\\ButtonHilight-Square"
 local ROUND_MASK_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local HEXAGON_MASK_TEXTURE = "Interface\\AddOns\\Blizzard_SharedTalentUI\\talents-hexagon-mask.png"
+local FRAME_BORDER_SKIN_VALUE = "__skin__"
+local DEFAULT_FRAME_BORDER_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 
 local ITEM_ICON_MASK_KEYS = {
 	"icon",
@@ -62,6 +65,43 @@ local ITEM_FRAME_MASK_KEYS = {
 	"BagIndicator",
 	"ExtendedSlot",
 }
+
+Bags.functions.IsRecipeUnusableByPlayer = Bags.functions.IsRecipeUnusableByPlayer
+	or function(itemID, itemLink)
+		local numericItemID = tonumber(itemID)
+		local itemRef = itemLink or numericItemID
+		if not numericItemID or not itemRef or not C_PlayerInfo or not C_PlayerInfo.CanUseItem then
+			return false
+		end
+
+		local classID = select(6, GetItemInfoInstant(itemRef))
+		if classID ~= (Enum and Enum.ItemClass and Enum.ItemClass.Recipe) then
+			return false
+		end
+
+		return C_PlayerInfo.CanUseItem(numericItemID) == false
+	end
+
+Bags.functions.ApplyRecipeUsabilityVisual = Bags.functions.ApplyRecipeUsabilityVisual
+	or function(button, isUnusableRecipe)
+		if not button then
+			return
+		end
+
+		local r, g, b = 1, 1, 1
+		if isUnusableRecipe then
+			r, g, b = 1, 0.18, 0.18
+		end
+
+		if SetItemButtonTextureVertexColor then
+			SetItemButtonTextureVertexColor(button, r, g, b)
+		else
+			local icon = button.Icon or button.icon
+			if icon and icon.SetVertexColor then
+				icon:SetVertexColor(r, g, b)
+			end
+		end
+	end
 
 local function copyColor(color)
 	return {
@@ -261,6 +301,53 @@ local function normalizeFrameBackgroundID(value)
 	return nil
 end
 
+local function normalizeFrameBorderTexture(value)
+	if type(value) ~= "string" or value == "" then
+		return FRAME_BORDER_SKIN_VALUE
+	end
+	return value
+end
+
+local function normalizeFrameBorderSize(value)
+	value = math.floor((tonumber(value) or 1) + 0.5)
+	if value < 0 then
+		value = 0
+	elseif value > 64 then
+		value = 64
+	end
+	return value
+end
+
+local function normalizeFrameBorderOffset(value)
+	value = math.floor((tonumber(value) or 0) + 0.5)
+	if value < -32 then
+		value = -32
+	elseif value > 32 then
+		value = 32
+	end
+	return value
+end
+
+local function normalizeFrameBorderColor(color)
+	if type(color) ~= "table" then
+		return nil
+	end
+
+	local r = tonumber(color[1]) or tonumber(color.r)
+	local g = tonumber(color[2]) or tonumber(color.g)
+	local b = tonumber(color[3]) or tonumber(color.b)
+	local a = tonumber(color[4]) or tonumber(color.a) or 1
+	if not r or not g or not b then
+		return nil
+	end
+
+	r = math.max(0, math.min(1, r))
+	g = math.max(0, math.min(1, g))
+	b = math.max(0, math.min(1, b))
+	a = math.max(0, math.min(1, a))
+	return { r, g, b, a }
+end
+
 local function unpackColor(color, defaultAlpha)
 	return color and color[1] or 1,
 		color and color[2] or 1,
@@ -344,6 +431,20 @@ local function clearTextureMask(texture)
 
 	texture:RemoveMaskTexture(texture._bagsAppliedMaskTexture)
 	texture._bagsAppliedMaskTexture = nil
+end
+
+local function hideTextureRegion(texture)
+	if not texture then
+		return
+	end
+
+	if texture.SetAtlas then
+		texture:SetAtlas(nil)
+	end
+	texture:SetTexture(nil)
+	texture:SetAlpha(0)
+	texture:Hide()
+	clearTextureMask(texture)
 end
 
 local function applyCooldownRegionMask(button, maskTexture)
@@ -763,13 +864,14 @@ local function applyCustomItemButtonShape(button, skinDefinition, shapeDefinitio
 			button:ClearNormalTexture()
 			normalTexture = button.GetNormalTexture and button:GetNormalTexture() or nil
 		else
-			normalTexture:SetTexture(nil)
-			normalTexture:SetAlpha(0)
-			normalTexture:Hide()
+			hideTextureRegion(normalTexture)
 		end
 	end
 	if normalTexture then
-		clearTextureMask(normalTexture)
+		hideTextureRegion(normalTexture)
+	end
+	if button.NormalTexture and button.NormalTexture ~= normalTexture then
+		hideTextureRegion(button.NormalTexture)
 	end
 
 	if renderTexture then
@@ -936,6 +1038,48 @@ function addon.GetFrameBackgroundColor()
 	return color
 end
 
+function addon.GetFrameBorderTexture()
+	local settings = getSettings()
+	if not settings then
+		return FRAME_BORDER_SKIN_VALUE
+	end
+	settings.frameBorderTexture = normalizeFrameBorderTexture(settings.frameBorderTexture)
+	return settings.frameBorderTexture
+end
+
+function addon.GetFrameBorderSize()
+	local settings = getSettings()
+	if not settings then
+		return 1
+	end
+	settings.frameBorderSize = normalizeFrameBorderSize(settings.frameBorderSize)
+	return settings.frameBorderSize
+end
+
+function addon.GetFrameBorderOffset()
+	local settings = getSettings()
+	if not settings then
+		return 0
+	end
+	settings.frameBorderOffset = normalizeFrameBorderOffset(settings.frameBorderOffset)
+	return settings.frameBorderOffset
+end
+
+function addon.HasCustomFrameBorderColor()
+	local settings = getSettings()
+	return normalizeFrameBorderColor(settings and settings.frameBorderColor) ~= nil
+end
+
+function addon.GetFrameBorderColor(fallbackColor)
+	local settings = getSettings()
+	local color = normalizeFrameBorderColor(settings and settings.frameBorderColor)
+	if color then
+		settings.frameBorderColor = color
+		return color
+	end
+	return copyColor(fallbackColor or { 0.35, 0.35, 0.42, 1 })
+end
+
 function addon.SetIconShape(value)
 	local shapeID = normalizeIconShapeID(value)
 	if not shapeID then
@@ -1032,6 +1176,86 @@ function addon.SetFrameBackgroundColor(r, g, b)
 	return true
 end
 
+function addon.SetFrameBorderTexture(value)
+	local settings = getSettings()
+	if not settings then
+		return false
+	end
+
+	value = normalizeFrameBorderTexture(value)
+	if settings.frameBorderTexture == value then
+		return false
+	end
+
+	settings.frameBorderTexture = value
+	return true
+end
+
+function addon.SetFrameBorderSize(value)
+	local settings = getSettings()
+	if not settings then
+		return false
+	end
+
+	value = normalizeFrameBorderSize(value)
+	if tonumber(settings.frameBorderSize) == value then
+		return false
+	end
+
+	settings.frameBorderSize = value
+	return true
+end
+
+function addon.SetFrameBorderOffset(value)
+	local settings = getSettings()
+	if not settings then
+		return false
+	end
+
+	value = normalizeFrameBorderOffset(value)
+	if tonumber(settings.frameBorderOffset) == value then
+		return false
+	end
+
+	settings.frameBorderOffset = value
+	return true
+end
+
+function addon.SetFrameBorderColor(r, g, b, a)
+	local settings = getSettings()
+	if not settings then
+		return false
+	end
+
+	local color = normalizeFrameBorderColor({ r, g, b, a or 1 })
+	if not color then
+		return false
+	end
+
+	local current = normalizeFrameBorderColor(settings.frameBorderColor)
+	if current
+		and math.abs((current[1] or 0) - color[1]) < 0.001
+		and math.abs((current[2] or 0) - color[2]) < 0.001
+		and math.abs((current[3] or 0) - color[3]) < 0.001
+		and math.abs((current[4] or 1) - color[4]) < 0.001
+	then
+		return false
+	end
+
+	settings.frameBorderColor = color
+	return true
+end
+
+function addon.ClearFrameBorderColor()
+	local settings = getSettings()
+	if not settings or settings.frameBorderColor == nil then
+		return false
+	end
+
+	settings.frameBorderColor = nil
+	return true
+end
+
 function addon.GetIconShapeOptions()
 	local options = {}
 	for index, shapeID in ipairs(ICON_SHAPE_ORDER) do
@@ -1062,6 +1286,26 @@ function addon.GetFrameBackgroundOptions()
 		}
 	end
 
+	return options
+end
+
+function addon.GetFrameBorderTextureOptions()
+	local options = {
+		{
+			value = FRAME_BORDER_SKIN_VALUE,
+			label = L["settingsFrameBorderTextureSkin"] or "Follow skin",
+		},
+	}
+	local names = addon.functions and addon.functions.GetLSMMediaNames and addon.functions.GetLSMMediaNames("border") or {}
+	for i = 1, #names do
+		local name = names[i]
+		if type(name) == "string" and name ~= "" then
+			options[#options + 1] = {
+				value = name,
+				label = name,
+			}
+		end
+	end
 	return options
 end
 
@@ -1132,6 +1376,11 @@ function addon.GetSkinSignature()
 		addon.GetFrameBackground and addon.GetFrameBackground() or "solid",
 		colorToSignature(addon.GetFrameBackgroundColor and addon.GetFrameBackgroundColor() or {}),
 		tostring(addon.GetFrameBackgroundOpacity and addon.GetFrameBackgroundOpacity() or 60),
+		addon.GetFrameBorderTexture and addon.GetFrameBorderTexture() or FRAME_BORDER_SKIN_VALUE,
+		tostring(addon.GetFrameBorderSize and addon.GetFrameBorderSize() or 1),
+		tostring(addon.GetFrameBorderOffset and addon.GetFrameBorderOffset() or 0),
+		(addon.HasCustomFrameBorderColor and addon.HasCustomFrameBorderColor()) and "custom" or "skin",
+		colorToSignature(addon.GetFrameBorderColor and addon.GetFrameBorderColor(frame.borderColor) or frame.borderColor or {}),
 		frame.backdropAtlas or "",
 		colorToSignature(frame.backdropColor or {}),
 		frame.borderAtlas or "",
@@ -1181,6 +1430,8 @@ function addon.ApplyFrameBackgroundSkin(frame, skin)
 	}, requestedOpacity)
 
 	frame:SetBackdropColor(backdropR, backdropG, backdropB, backdropBaseAlpha * opacityScale)
+	local borderColor = addon.GetFrameBorderColor and addon.GetFrameBorderColor(skin.borderColor) or skin.borderColor
+	frame:SetBackdropBorderColor(unpackColor(borderColor, 1))
 
 	local texture = frame.BackgroundTexture
 	if texture then
@@ -1222,6 +1473,32 @@ function addon.ApplyFrameBackgroundSkin(frame, skin)
 		else
 			shade:SetColorTexture(0, 0, 0, 0)
 			shade:Hide()
+		end
+	end
+
+	local border = frame.CustomBorderFrame
+	if border then
+		local borderTextureSetting = addon.GetFrameBorderTexture and addon.GetFrameBorderTexture() or FRAME_BORDER_SKIN_VALUE
+		local borderSize = addon.GetFrameBorderSize and addon.GetFrameBorderSize() or 1
+		if borderTextureSetting == FRAME_BORDER_SKIN_VALUE then
+			borderTextureSetting = DEFAULT_FRAME_BORDER_TEXTURE
+		elseif addon.functions and addon.functions.ResolveLSMMedia then
+			borderTextureSetting = addon.functions.ResolveLSMMedia("border", borderTextureSetting, DEFAULT_FRAME_BORDER_TEXTURE, true) or DEFAULT_FRAME_BORDER_TEXTURE
+		end
+
+		if borderSize <= 0 then
+			border:Hide()
+		else
+			local borderOffset = addon.GetFrameBorderOffset and addon.GetFrameBorderOffset() or 0
+			border:ClearAllPoints()
+			border:SetPoint("TOPLEFT", frame, "TOPLEFT", -borderOffset, borderOffset)
+			border:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", borderOffset, -borderOffset)
+			border:SetBackdrop({
+				edgeFile = borderTextureSetting,
+				edgeSize = borderSize,
+			})
+			border:SetBackdropBorderColor(unpackColor(borderColor, 1))
+			border:Show()
 		end
 	end
 end

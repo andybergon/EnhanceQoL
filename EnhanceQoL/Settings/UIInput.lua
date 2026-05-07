@@ -238,6 +238,16 @@ local function applyUIScalePreset()
 end
 addon.functions.applyUIScalePreset = applyUIScalePreset
 
+local function isEQoLPlayerFrameEnabled()
+	local uf = addon.Aura and addon.Aura.UF
+	if uf and uf.GetConfig then
+		local cfg = uf.GetConfig("player")
+		return cfg and cfg.enabled == true
+	end
+	local cfg = addon.db and addon.db.ufFrames and addon.db.ufFrames.player
+	return cfg and cfg.enabled == true
+end
+
 local function EQOL_UpdateStatusBars(container, height, width, scale)
 	if not container then return end
 
@@ -279,13 +289,17 @@ function addon.functions.SettingsCreateClassSpecificResourceBars(category, paren
 	if not classTag then return end
 
 	local data = {}
+	local function isBlizzardClassResourceControlEnabled() return not isEQoLPlayerFrameEnabled() end
+	local blizzardClassResourceControlDesc = L["visibilityRule_lockedByUF"] or "Visibility is controlled by Enhanced Unit Frames. Disable them to change this setting."
 
 	local function addTotemCheckbox(dbKey)
 		table.insert(data, {
 			var = dbKey,
 			text = L["shaman_HideTotem"],
+			desc = blizzardClassResourceControlDesc,
 			func = function(value) addon.db[dbKey] = value end,
 			get = function() return addon.db[dbKey] end,
+			isEnabled = isBlizzardClassResourceControlEnabled,
 			parentSection = parentSection,
 		})
 	end
@@ -294,10 +308,12 @@ function addon.functions.SettingsCreateClassSpecificResourceBars(category, paren
 		table.insert(data, {
 			var = "deathknight_HideRuneFrame",
 			text = L["deathknight_HideRuneFrame"],
+			desc = blizzardClassResourceControlDesc,
 			func = function(value)
 				addon.db["deathknight_HideRuneFrame"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
 			end,
+			isEnabled = isBlizzardClassResourceControlEnabled,
 			parentSection = parentSection,
 		})
 		addTotemCheckbox("deathknight_HideTotemBar")
@@ -306,20 +322,24 @@ function addon.functions.SettingsCreateClassSpecificResourceBars(category, paren
 		table.insert(data, {
 			var = "druid_HideComboPoint",
 			text = L["Hide Combopointbar"],
+			desc = blizzardClassResourceControlDesc,
 			func = function(value)
 				addon.db["druid_HideComboPoint"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
 			end,
+			isEnabled = isBlizzardClassResourceControlEnabled,
 			parentSection = parentSection,
 		})
 	elseif classTag == "EVOKER" then
 		table.insert(data, {
 			var = "evoker_HideEssence",
 			text = L["evoker_HideEssence"],
+			desc = blizzardClassResourceControlDesc,
 			func = function(value)
 				addon.db["evoker_HideEssence"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
 			end,
+			isEnabled = isBlizzardClassResourceControlEnabled,
 			parentSection = parentSection,
 		})
 	elseif classTag == "MAGE" then
@@ -328,10 +348,12 @@ function addon.functions.SettingsCreateClassSpecificResourceBars(category, paren
 		table.insert(data, {
 			var = "monk_HideHarmonyBar",
 			text = L["monk_HideHarmonyBar"],
+			desc = blizzardClassResourceControlDesc,
 			func = function(value)
 				addon.db["monk_HideHarmonyBar"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
 			end,
+			isEnabled = isBlizzardClassResourceControlEnabled,
 			parentSection = parentSection,
 		})
 		addTotemCheckbox("monk_HideTotemBar")
@@ -343,10 +365,12 @@ function addon.functions.SettingsCreateClassSpecificResourceBars(category, paren
 		table.insert(data, {
 			var = "rogue_HideComboPoint",
 			text = L["Hide Combopointbar"],
+			desc = blizzardClassResourceControlDesc,
 			func = function(value)
 				addon.db["rogue_HideComboPoint"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
 			end,
+			isEnabled = isBlizzardClassResourceControlEnabled,
 			parentSection = parentSection,
 		})
 	elseif classTag == "PALADIN" then
@@ -354,20 +378,24 @@ function addon.functions.SettingsCreateClassSpecificResourceBars(category, paren
 		table.insert(data, {
 			var = "paladin_HideHolyPower",
 			text = L["paladin_HideHolyPower"],
+			desc = blizzardClassResourceControlDesc,
 			func = function(value)
 				addon.db["paladin_HideHolyPower"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
 			end,
+			isEnabled = isBlizzardClassResourceControlEnabled,
 			parentSection = parentSection,
 		})
 	elseif classTag == "WARLOCK" then
 		table.insert(data, {
 			var = "warlock_HideSoulShardBar",
 			text = L["warlock_HideSoulShardBar"],
+			desc = blizzardClassResourceControlDesc,
 			func = function(value)
 				addon.db["warlock_HideSoulShardBar"] = value
 				if addon.functions and addon.functions.UpdateClassResourceVisibility then addon.functions.UpdateClassResourceVisibility() end
 			end,
+			isEnabled = isBlizzardClassResourceControlEnabled,
 			parentSection = parentSection,
 		})
 		addTotemCheckbox("warlock_HideTotemBar")

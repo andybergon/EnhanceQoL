@@ -115,8 +115,8 @@ end
 
 local function FinishTooltipInspectRequest()
 	ClearTooltipInspectState()
-	if C_Timer and C_Timer.After and ClearInspectPlayer and not IsInspectUIBusy() then
-		C_Timer.After(0, function()
+	if ClearInspectPlayer and not IsInspectUIBusy() then
+		RunNextFrame(function()
 			if ClearInspectPlayer and not IsInspectUIBusy() then ClearInspectPlayer() end
 		end)
 	end
@@ -164,6 +164,7 @@ end
 addon.functions.UpdateInspectEventRegistration = UpdateInspectEventRegistration
 
 local function IsValidSpellIdentifier(id)
+	if isSecret(id) then return false end
 	local idType = type(id)
 	return idType == "number" or idType == "string"
 end
@@ -500,7 +501,7 @@ local function checkSpell(tooltip, id, name, isSpell)
 	if not db then return end
 
 	local first = true
-	local showSpellID = db["TooltipShowSpellID"]
+	local showSpellID = db["TooltipShowSpellID"] and not isSecret(id)
 	local canResolveSpellIcon = isSpell and IsValidSpellIdentifier(id)
 	local showSpellIconInline = canResolveSpellIcon and db["TooltipShowSpellIconInline"]
 	local showSpellIcon = canResolveSpellIcon and db["TooltipShowSpellIcon"]
@@ -1407,7 +1408,7 @@ local function registerTooltipHooks()
 	end
 
 	-- Apply initial tooltip scale once the UI is ready
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		if addon.Tooltip and addon.Tooltip.ApplyScale then addon.Tooltip.ApplyScale() end
 	end)
 

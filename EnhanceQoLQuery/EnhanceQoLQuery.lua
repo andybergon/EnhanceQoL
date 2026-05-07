@@ -296,10 +296,88 @@ local function qualityText(q)
 	return string.format("%s (%d)", names[n] or tostring(n), n)
 end
 
+local function formatTooltipColor(color)
+	if type(color) ~= "table" then return tostring(color) end
+	local r, g, b
+	if type(color.GetRGB) == "function" then
+		r, g, b = color:GetRGB()
+	else
+		r, g, b = color.r, color.g, color.b
+	end
+	if r and g and b then return string.format("rgb(%.3f, %.3f, %.3f)", r, g, b) end
+	return tostring(color)
+end
+
+local function formatTooltipValue(value)
+	if type(value) == "table" then return formatTooltipColor(value) end
+	return tostring(value)
+end
+
+local function addTooltipField(lines, key, value)
+	if value ~= nil then table.insert(lines, string.format("%s: %s", key, formatTooltipValue(value))) end
+end
+
+local function addTooltipArgLines(lines, prefix, arg)
+	if type(arg) ~= "table" then
+		addTooltipField(lines, prefix, arg)
+		return
+	end
+	addTooltipField(lines, prefix .. ".field", arg.field)
+	addTooltipField(lines, prefix .. ".stringVal", arg.stringVal)
+	addTooltipField(lines, prefix .. ".intVal", arg.intVal)
+	addTooltipField(lines, prefix .. ".floatVal", arg.floatVal)
+	addTooltipField(lines, prefix .. ".boolVal", arg.boolVal)
+	addTooltipField(lines, prefix .. ".colorVal", arg.colorVal)
+	addTooltipField(lines, prefix .. ".guidVal", arg.guidVal)
+end
+
+local function appendTooltipInfoFollowups(lines, itemLink)
+	if not (addon.db and addon.db.queryFollowupEnabled) then return end
+	table.insert(lines, "")
+	table.insert(lines, "C_TooltipInfo.GetHyperlink")
+	if not itemLink or itemLink == "" then
+		table.insert(lines, "hyperlink: nil")
+		return
+	end
+	if not (C_TooltipInfo and C_TooltipInfo.GetHyperlink) then
+		table.insert(lines, "available: false")
+		return
+	end
+	local tooltipData = C_TooltipInfo.GetHyperlink(itemLink)
+	if not tooltipData then
+		table.insert(lines, "data: nil")
+		return
+	end
+
+	addTooltipField(lines, "data.id", tooltipData.id)
+	addTooltipField(lines, "data.type", tooltipData.type)
+	addTooltipField(lines, "data.hyperlink", tooltipData.hyperlink)
+	addTooltipField(lines, "data.guid", tooltipData.guid)
+	addTooltipField(lines, "data.dataInstanceID", tooltipData.dataInstanceID)
+	addTooltipField(lines, "data.lines", tooltipData.lines and #tooltipData.lines or nil)
+
+	for lineIndex, lineData in ipairs(tooltipData.lines or {}) do
+		local linePrefix = string.format("line[%d]", lineIndex)
+		addTooltipField(lines, linePrefix .. ".type", lineData.type)
+		addTooltipField(lines, linePrefix .. ".leftText", lineData.leftText)
+		addTooltipField(lines, linePrefix .. ".rightText", lineData.rightText)
+		addTooltipField(lines, linePrefix .. ".leftColor", lineData.leftColor)
+		addTooltipField(lines, linePrefix .. ".rightColor", lineData.rightColor)
+		addTooltipField(lines, linePrefix .. ".wrapText", lineData.wrapText)
+		addTooltipField(lines, linePrefix .. ".leftOffset", lineData.leftOffset)
+		for argIndex, arg in ipairs(lineData.args or {}) do
+			addTooltipArgLines(lines, string.format("%s.args[%d]", linePrefix, argIndex), arg)
+		end
+	end
+end
+
+local lastInspectedItemLink = nil
+
 -- Public inspector function used by AceUI and Shift+Click when in inspector
 function addon.Query.showItem(itemLink)
 	local itemName, itemLink2, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc, itemTexture, sellPrice, classID, subclassID, bindType, expansionID, setID, isCraftingReagent =
 		C_Item.GetItemInfo(itemLink)
+	lastInspectedItemLink = itemLink2 or itemLink
 
 	local function coinText(c)
 		c = tonumber(c or 0) or 0
@@ -356,6 +434,8 @@ function addon.Query.showItem(itemLink)
 	if expansionID ~= nil then add("expansionID", expansionFriendly(expansionID)) end
 	add("setID", setID)
 	if isCraftingReagent ~= nil then add("isCraftingReagent", isCraftingReagent) end
+
+	appendTooltipInfoFollowups(lines, itemLink2 or itemLink)
 
 	if addon.Query.ui and addon.Query.ui.inspectorOutput then addon.Query.ui.inspectorOutput:SetText(table.concat(lines, "\n")) end
 end
@@ -755,7 +835,10 @@ local function BuildAceWindow()
 		follow:SetLabel("Enable follow-up calls (experimental)")
 		addon.functions.InitDBValue("queryFollowupEnabled", false)
 		follow:SetValue(addon.db.queryFollowupEnabled)
-		follow:SetCallback("OnValueChanged", function(_, _, v) addon.db.queryFollowupEnabled = v and true or false end)
+		follow:SetCallback("OnValueChanged", function(_, _, v)
+			addon.db.queryFollowupEnabled = v and true or false
+			if lastInspectedItemLink then addon.Query.showItem(lastInspectedItemLink) end
+		end)
 		outer:AddChild(follow)
 	end
 
@@ -1094,7 +1177,7 @@ addon.Query.frame = eventFrame
 -- 	if v.OnSpellActivationOverlayGlowShowEvent then
 -- 		hooksecurefunc(v, "OnSpellActivationOverlayGlowShowEvent", function(self)
 -- 			-- print("Hide Glow on ", v:GetSpellID())
--- 			-- C_Timer.After(0, function() ActionButtonSpellAlertManager:HideAlert(self) end)
+-- 			-- RunNextFrame(function() ActionButtonSpellAlertManager:HideAlert(self) end)
 -- 		end)
 -- 	end
 -- end

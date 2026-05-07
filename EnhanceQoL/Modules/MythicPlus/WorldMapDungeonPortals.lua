@@ -494,7 +494,7 @@ local function EnsurePanel(parent)
 
 	anchorPanel()
 	-- In case layout isn't ready on first tick, re-anchor shortly after
-	C_Timer.After(0, anchorPanel)
+	RunNextFrame(anchorPanel)
 	C_Timer.After(0.1, anchorPanel)
 	-- Ensure our panel is on top of Blizzard content frames
 	if QuestMapFrame then
@@ -1127,7 +1127,7 @@ function f:TryInit()
 
 	-- If WorldQuestTab is enabled but its tab isn't created yet, try re-anchoring shortly after
 	if C_AddOns and C_AddOns.GetAddOnEnableState and pcall(C_AddOns.GetAddOnEnableState, "WorldQuestTab") and C_AddOns.GetAddOnEnableState("WorldQuestTab") == 2 then
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			local wqt = _G and _G["WQT_QuestMapTab"]
 			if wqt then
 				EnsureTab(parent, wqt)
@@ -1273,7 +1273,7 @@ local function worldMapEventHandler(self, event, arg1, arg2, arg3)
 			f._pendingOpen = nil
 			if addon.MythicPlus and addon.MythicPlus.functions and addon.MythicPlus.functions.OpenWorldMapTeleportPanel then addon.MythicPlus.functions.OpenWorldMapTeleportPanel(true) end
 		end
-		if hasPendingReequip() then C_Timer.After(0, tryRestorePendingReequip) end
+		if hasPendingReequip() then RunNextFrame(tryRestorePendingReequip) end
 		if WorldMapFrame and WorldMapFrame:IsShown() and addon.db and addon.db["teleportsWorldMapEnabled"] then QueuePanelRefresh({ delay = 0, invalidate = true }) end
 		-- fall through to allow refresh if map is visible
 	elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
@@ -1284,7 +1284,7 @@ local function worldMapEventHandler(self, event, arg1, arg2, arg3)
 		end
 		if arg2 ~= RESTRICTION_STATE_INACTIVE or not WorldMapFrame or not WorldMapFrame:IsShown() then return end
 
-		C_Timer.After(0, function()
+		RunNextFrame(function()
 			if not addon.db or not addon.db["teleportsWorldMapEnabled"] then return end
 			if not WorldMapFrame or not WorldMapFrame:IsShown() then return end
 			if IsPanelSuppressed() then
@@ -1300,7 +1300,7 @@ local function worldMapEventHandler(self, event, arg1, arg2, arg3)
 		end)
 		return
 	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-		if arg1 == "player" and hasPendingReequip() and isPendingReequipSpell(arg3) then C_Timer.After(0, tryRestorePendingReequip) end
+		if arg1 == "player" and hasPendingReequip() and isPendingReequipSpell(arg3) then RunNextFrame(tryRestorePendingReequip) end
 	elseif event == "LOADING_SCREEN_DISABLED" or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" or event == "ZONE_CHANGED_INDOORS" then
 		if hasPendingReequip() then C_Timer.After(0.1, tryRestorePendingReequip) end
 	end

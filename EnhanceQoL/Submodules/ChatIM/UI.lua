@@ -728,7 +728,7 @@ function ChatIM:FocusConversation(sender, focusEdit)
 
 	if self.tabGroup then self.tabGroup:SelectTab(sender) end
 
-	if focusEdit then C_Timer.After(0, function()
+	if focusEdit then RunNextFrame(function()
 		local tab = ChatIM.tabs and ChatIM.tabs[sender]
 		if tab and tab.edit and tab.edit:IsShown() then tab.edit:SetFocus() end
 	end) end

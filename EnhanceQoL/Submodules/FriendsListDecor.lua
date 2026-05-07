@@ -292,7 +292,7 @@ local function AdjustFavoriteAnchor(button)
 	end
 	if button._eqolFavoriteAdjustPending then return end
 	button._eqolFavoriteAdjustPending = true
-	C_Timer.After(0, function()
+	RunNextFrame(function()
 		button._eqolFavoriteAdjustPending = nil
 		AdjustFavoriteAnchorNow(button)
 	end)
