@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.13.2] - 2026-05-06
+
+### 🐛 Fixed
+
+- Group Frames / Healer Buff Placement: Fixed Priest healer-buff availability so Discipline and Holy buffs are not offered while playing Shadow.
+
+---
+
 ## [10.13.1] - 2026-05-05
 
 ### 🐛 Fixed
