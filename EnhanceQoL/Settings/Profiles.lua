@@ -18,7 +18,9 @@ local IMPORT_PROTECTION = {
 	DUNGEON_COMBAT = "dungeonCombat",
 	HBP = "hbp",
 	INSTANCE_DIFFICULTY = "instanceDifficulty",
+	MOUSE_ACCESSIBILITY = "mouseAccessibility",
 	MOVER = "mover",
+	QUICK_ACCEPT = "quickAccept",
 	RESOURCE_BARS = "resourceBars",
 	UNIT_FRAMES = "unitFrames",
 }
@@ -31,7 +33,9 @@ local IMPORT_PROTECTION_DEFS = {
 	{ key = IMPORT_PROTECTION.DUNGEON_COMBAT, labelKey = "ProfileImportProtectionDungeonCombat", fallback = "Dungeon & Combat Tools" },
 	{ key = IMPORT_PROTECTION.HBP, labelKey = "ProfileImportProtectionHBP", fallback = "Healer Buff Placement" },
 	{ key = IMPORT_PROTECTION.INSTANCE_DIFFICULTY, labelKey = "ProfileImportProtectionInstanceDifficulty", fallback = "Instance Difficulty" },
+	{ key = IMPORT_PROTECTION.MOUSE_ACCESSIBILITY, labelKey = "ProfileImportProtectionMouseAccessibility", fallback = "Mouse & Accessibility" },
 	{ key = IMPORT_PROTECTION.MOVER, labelKey = "ProfileImportProtectionMover", fallback = "Mover" },
+	{ key = IMPORT_PROTECTION.QUICK_ACCEPT, labelKey = "ProfileImportProtectionQuickAccept", fallback = "Quick Accept" },
 	{ key = IMPORT_PROTECTION.RESOURCE_BARS, labelKey = "ProfileImportProtectionResourceBars", fallback = "Resource Bars" },
 	{ key = IMPORT_PROTECTION.UNIT_FRAMES, labelKey = "ProfileImportProtectionUnitFrames", fallback = "Unit Frames" },
 }
@@ -758,6 +762,31 @@ local function isInstanceDifficultyProfileKey(key)
 	return profileKeyStartsWith(key, "instanceDifficulty")
 end
 
+local function isMouseAccessibilityProfileKey(key)
+	return profileKeyStartsWith(key, "mouse")
+end
+
+local function isQuickAcceptProfileKey(key)
+	return key == "autoAcceptGroupInvite"
+		or key == "autoAcceptGroupInviteFriendOnly"
+		or key == "autoAcceptGroupInviteGuildOnly"
+		or key == "autoAcceptResurrection"
+		or key == "autoAcceptResurrectionExcludeAfterlife"
+		or key == "autoAcceptResurrectionExcludeCombat"
+		or key == "autoAcceptSummon"
+		or key == "autoChooseQuest"
+		or key == "autoChooseQuestModifier"
+		or key == "autoQuickLoot"
+		or key == "autoQuickLootWithShift"
+		or key == "groupfinderSkipRoleSelect"
+		or key == "groupfinderSkipRoleSelectOption"
+		or key == "ignoreDailyQuests"
+		or key == "ignoreTrivialQuests"
+		or key == "ignoreWarbandCompleted"
+		or key == "persistSignUpNote"
+		or key == "skipSignUpDialog"
+end
+
 local function isResourceBarsProfileKey(key)
 	return key == "enableResourceFrame"
 		or key == "personalResourceBarSettings"
@@ -829,6 +858,8 @@ local function applyImportProtection(imported, current)
 	if isImportSectionProtected(IMPORT_PROTECTION.DATA_PANELS) then preserveProtectedKeys(imported, current, isDataPanelsProfileKey) end
 	if isImportSectionProtected(IMPORT_PROTECTION.DUNGEON_COMBAT) then preserveProtectedKeys(imported, current, isDungeonCombatProfileKey) end
 	if isImportSectionProtected(IMPORT_PROTECTION.INSTANCE_DIFFICULTY) then preserveProtectedKeys(imported, current, isInstanceDifficultyProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.MOUSE_ACCESSIBILITY) then preserveProtectedKeys(imported, current, isMouseAccessibilityProfileKey) end
+	if isImportSectionProtected(IMPORT_PROTECTION.QUICK_ACCEPT) then preserveProtectedKeys(imported, current, isQuickAcceptProfileKey) end
 	if isImportSectionProtected(IMPORT_PROTECTION.RESOURCE_BARS) then preserveProtectedKeys(imported, current, isResourceBarsProfileKey) end
 	if isImportSectionProtected(IMPORT_PROTECTION.UNIT_FRAMES) then preserveProtectedKeys(imported, current, isUnitFramesProfileKey) end
 	if isImportSectionProtected(IMPORT_PROTECTION.HBP) then copyHealerBuffPlacement(imported, current) end

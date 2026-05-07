@@ -1,6 +1,10 @@
 # Changelog
 
-## [10.13.2] - 2026-05-06
+## [10.14.0] - 2026-05-06
+
+### ✨ Added
+
+- Profiles: Added protected import sections for Mouse & Accessibility settings and quick accept automation settings.
 
 ### 🐛 Fixed
 
