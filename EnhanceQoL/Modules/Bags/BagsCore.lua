@@ -174,6 +174,9 @@ end
 if state.manualVisible == nil then
 	state.manualVisible = false
 end
+if state.pendingContextOpenedBagToggleSync == nil then
+	state.pendingContextOpenedBagToggleSync = false
+end
 if state.awaitingRuleItemData == nil then
 	state.awaitingRuleItemData = false
 end
@@ -6470,6 +6473,13 @@ local function syncFromNativeBagState(requestRefresh, requestRebuild)
 	end
 
 	local nativeOpen = isNativeStandardBagOpen()
+	local synchronizeContextOpenedBags = state.pendingContextOpenedBagToggleSync == true
+	state.pendingContextOpenedBagToggleSync = false
+	if nativeOpen and synchronizeContextOpenedBags and Bags.functions.SynchronizeContextOpenedBagToggleState then
+		Bags.functions.SynchronizeContextOpenedBagToggleState()
+		nativeOpen = isNativeStandardBagOpen()
+	end
+
 	if nativeOpen then
 		state.explicitToggleVisible = true
 	else
@@ -6555,6 +6565,9 @@ installVisibilityHooks = function()
 		local hookName = functionName
 		if type(_G[hookName]) == "function" then
 			hooksecurefunc(hookName, function()
+				if hookName == "OpenAllBagsMatchingContext" then
+					state.pendingContextOpenedBagToggleSync = true
+				end
 				scheduleNativeBagStateSync(true, false)
 			end)
 		end

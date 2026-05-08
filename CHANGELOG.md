@@ -4,6 +4,7 @@
 
 ### 🐛 Fixed
 
+- Bags: Fixed the bag toggle sometimes needing to be pressed twice after upgrade or item-related windows opened the bags automatically.
 - Unit Frames: Fixed custom health bar textures losing their original colors when using a white health color.
 - Resource Bars: Fixed borders and backgrounds sometimes disappearing when separated stack styling was enabled but the bar had no stacks to split.
 
