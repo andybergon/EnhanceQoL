@@ -1371,26 +1371,101 @@ local function registerTooltipHooks()
 	end
 
 	local function installSafeWidgetGetRect(frame)
-		if not frame or frame._eqolSafeWidgetGetRect then return end
-		local originalGetRect = frame.GetRect
-		if not originalGetRect then return end
-		frame._eqolSafeWidgetGetRect = true
-		frame._eqolOriginalGetRect = originalGetRect
-		frame.GetRect = function(self, ...)
-			local ok, left, bottom, width, height = pcall(originalGetRect, self, ...)
-			if
-				ok
-				and left ~= nil
-				and bottom ~= nil
-				and width ~= nil
-				and height ~= nil
-				and not (issecretvalue and (issecretvalue(left) or issecretvalue(bottom) or issecretvalue(width) or issecretvalue(height)))
-			then
-				return left, bottom, width, height
+		if not frame then return end
+		local function installRectMethod(methodName, flagName, originalName)
+			if frame[flagName] or not frame[methodName] then return end
+			local originalMethod = frame[methodName]
+			frame[flagName] = true
+			frame[originalName] = originalMethod
+			frame[methodName] = function(self, ...)
+				local ok, left, bottom, width, height = pcall(originalMethod, self, ...)
+				if
+					ok
+					and left ~= nil
+					and bottom ~= nil
+					and width ~= nil
+					and height ~= nil
+					and not (issecretvalue and (issecretvalue(left) or issecretvalue(bottom) or issecretvalue(width) or issecretvalue(height)))
+				then
+					return left, bottom, width, height
+				end
+				return 0, 0, safeFrameNumber(self, "GetWidth", 0), safeFrameNumber(self, "GetHeight", 0)
 			end
-			return 0, 0, safeFrameNumber(self, "GetWidth", 0), safeFrameNumber(self, "GetHeight", 0)
+		end
+		installRectMethod("GetRect", "_eqolSafeWidgetGetRect", "_eqolOriginalGetRect")
+		installRectMethod("GetScaledRect", "_eqolSafeWidgetGetScaledRect", "_eqolOriginalGetScaledRect")
+	end
+
+	local function makeSafeFrameNumberGetter(frame, methodName, fallback)
+		if not frame or not frame[methodName] then return nil end
+		local original = frame[methodName]
+		return function(self, ...)
+			local ok, value = pcall(original, self, ...)
+			if not ok or value == nil or (issecretvalue and issecretvalue(value)) then return fallback or 0 end
+			return value
 		end
 	end
+
+	local function installTemporarySafeFrameNumberGetters(frame, backups)
+		if not frame then return end
+		for _, methodName in ipairs({ "GetWidth", "GetHeight", "GetStringWidth", "GetStringHeight" }) do
+			if frame[methodName] then
+				backups[#backups + 1] = { frame = frame, methodName = methodName, original = frame[methodName] }
+				frame[methodName] = makeSafeFrameNumberGetter(frame, methodName, 0)
+			end
+		end
+	end
+
+	local function restoreTemporaryFrameMethods(backups)
+		for i = #backups, 1, -1 do
+			local backup = backups[i]
+			if backup.frame then backup.frame[backup.methodName] = backup.original end
+		end
+	end
+
+	local function wrapWidgetSetupForSafeRect(mixin)
+		if not mixin or not mixin.Setup or mixin._eqolSafeRectSetup then return end
+		local originalSetup = mixin.Setup
+		mixin._eqolSafeRectSetup = true
+		mixin.Setup = function(self, ...)
+			local ok, err = pcall(originalSetup, self, ...)
+			installSafeWidgetGetRect(self)
+			if not ok and isSecretError(err) then return end
+			if not ok then error(err, 0) end
+		end
+	end
+
+	local function installSafeWidgetRectsFromValue(value, seen)
+		if type(value) ~= "table" or seen[value] then return end
+		seen[value] = true
+		if value.GetRect or value.GetScaledRect then installSafeWidgetGetRect(value) end
+		if type(value.widgetContainer) == "table" then installSafeWidgetRectsFromValue(value.widgetContainer, seen) end
+		if type(value.widgetFrames) == "table" then
+			for _, widgetFrame in pairs(value.widgetFrames) do
+				installSafeWidgetRectsFromValue(widgetFrame, seen)
+			end
+		end
+	end
+
+	local function installSafeWidgetRectsFromArgs(...)
+		local seen = {}
+		for i = 1, select("#", ...) do
+			installSafeWidgetRectsFromValue(select(i, ...), seen)
+		end
+	end
+
+	local function hookWidgetManagerProcessWidget(manager)
+		if not manager or not manager.ProcessWidget or manager._eqolSafeProcessWidgetHook then return end
+		manager._eqolSafeProcessWidgetHook = true
+		pcall(hooksecurefunc, manager, "ProcessWidget", function(...)
+			installSafeWidgetRectsFromArgs(...)
+		end)
+	end
+
+	wrapWidgetSetupForSafeRect(UIWidgetTemplateTextWithStateMixin)
+	wrapWidgetSetupForSafeRect(UIWidgetTemplateHorizontalCurrenciesMixin)
+	hookWidgetManagerProcessWidget(UIWidgetManagerMixin)
+	hookWidgetManagerProcessWidget(UIWidgetManager)
 
 	-- StatusBar widgets in AreaPOI/event tooltips can finish Setup successfully, then fail
 	-- later in DefaultWidgetLayout -> GetUnscaledFrameRect because frame:GetRect() returns
@@ -1426,10 +1501,13 @@ local function registerTooltipHooks()
 		end
 
 		UIWidgetTemplateItemDisplayMixin.Setup = function(self, ...)
+			local temporaryBackups = {}
 			local itemNameGetStringHeight = self.ItemName and self.ItemName.GetStringHeight
 			local itemNameGetStringWidth = self.ItemName and self.ItemName.GetStringWidth
 			local infoTextGetStringHeight = self.InfoText and self.InfoText.GetStringHeight
 			local infoTextGetStringWidth = self.InfoText and self.InfoText.GetStringWidth
+			installTemporarySafeFrameNumberGetters(self, temporaryBackups)
+			installTemporarySafeFrameNumberGetters(self.Tooltip, temporaryBackups)
 			if self.ItemName then
 				self.ItemName.GetStringHeight = makeSafeFontDimensionGetter(self.ItemName, "GetStringHeight")
 				self.ItemName.GetStringWidth = makeSafeFontDimensionGetter(self.ItemName, "GetStringWidth")
@@ -1439,6 +1517,7 @@ local function registerTooltipHooks()
 				self.InfoText.GetStringWidth = makeSafeFontDimensionGetter(self.InfoText, "GetStringWidth")
 			end
 			local ok, err = pcall(origItemSetup, self, ...)
+			installSafeWidgetGetRect(self)
 			if self.ItemName then
 				self.ItemName.GetStringHeight = itemNameGetStringHeight
 				self.ItemName.GetStringWidth = itemNameGetStringWidth
@@ -1447,6 +1526,7 @@ local function registerTooltipHooks()
 				self.InfoText.GetStringHeight = infoTextGetStringHeight
 				self.InfoText.GetStringWidth = infoTextGetStringWidth
 			end
+			restoreTemporaryFrameMethods(temporaryBackups)
 			if not ok and isSecretError(err) then return end
 			if not ok then error(err, 0) end
 		end
