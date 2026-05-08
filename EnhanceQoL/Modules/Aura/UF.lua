@@ -8786,6 +8786,12 @@ end
 
 local refreshNameAndLevelSoon
 
+function UF.ShouldDesaturateHealthTexture(hc)
+	hc = hc or {}
+	local textureKey = hc.texture
+	return hc.useClassColor == true or textureKey == nil or textureKey == "" or textureKey == "DEFAULT"
+end
+
 local function ensureFrames(unit)
 	local info = UNITS[unit]
 	if not info then return end
@@ -8848,7 +8854,8 @@ local function ensureFrames(unit)
 	st.healthContainer = st.healthContainer or CreateFrame("Frame", nil, st.barGroup, "BackdropTemplate")
 	st.health = _G[info.healthName] or CreateFrame("StatusBar", info.healthName, st.barGroup, "BackdropTemplate")
 	if st.health.GetParent and st.health:GetParent() ~= st.healthContainer then st.health:SetParent(st.healthContainer) end
-	if st.health.SetStatusBarDesaturated then st.health:SetStatusBarDesaturated(true) end
+	local initialCfg = ensureDB(unit)
+	if st.health.SetStatusBarDesaturated then st.health:SetStatusBarDesaturated(UF.ShouldDesaturateHealthTexture(initialCfg and initialCfg.health)) end
 	st.tempMaxHealthLoss = st.tempMaxHealthLoss or CreateFrame("StatusBar", info.healthName .. "TempMaxHealthLoss", st.healthContainer, "BackdropTemplate")
 	if st.tempMaxHealthLoss.SetStatusBarDesaturated then st.tempMaxHealthLoss:SetStatusBarDesaturated(false) end
 	st.power = _G[info.powerName] or CreateFrame("StatusBar", info.powerName, st.barGroup, "BackdropTemplate")
@@ -9063,7 +9070,7 @@ local function applyBars(cfg, unit)
 	end
 	local healthHeight = cfg.healthHeight or def.healthHeight or (st.health.GetHeight and st.health:GetHeight()) or 0
 	st.health:SetStatusBarTexture(UFHelper.resolveTexture(hc.texture))
-	if st.health.SetStatusBarDesaturated then st.health:SetStatusBarDesaturated(true) end
+	if st.health.SetStatusBarDesaturated then st.health:SetStatusBarDesaturated(UF.ShouldDesaturateHealthTexture(hc)) end
 	UFHelper.configureSpecialTexture(st.health, "HEALTH", hc.texture, hc)
 	local reverseHealth = hc.reverseFill
 	if reverseHealth == nil then reverseHealth = defH.reverseFill == true end

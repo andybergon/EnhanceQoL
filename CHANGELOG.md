@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.14.1] - 2026-05-08
+
+### 🐛 Fixed
+
+- Unit Frames: Fixed custom health bar textures losing their original colors when using a white health color.
+- Resource Bars: Fixed borders and backgrounds sometimes disappearing when separated stack styling was enabled but the bar had no stacks to split.
+
+---
+
 ## [10.14.0] - 2026-05-08
 
 ### ✨ Added

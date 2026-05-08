@@ -2937,6 +2937,18 @@ function ResourceBars.SyncHealAbsorbBarAppearance(bar, cfg)
 	end
 end
 
+function ResourceBars.ShouldHideParentBackdropForSeparated(frame, cfg)
+	local separatedOffset = tonumber(cfg and cfg.separatedOffset) or 0
+	if separatedOffset <= 0 or not frame or not frame._rbType then return false end
+
+	local pType = frame._rbType
+	local count = getSeparatorSegmentCount and getSeparatorSegmentCount(pType, cfg) or 0
+	if not count or count < 2 then return false end
+
+	if pType == "RUNES" or pType == "ESSENCE" then return true end
+	return shouldUseDiscreteSeparatorSegments and shouldUseDiscreteSeparatorSegments(pType, cfg) == true
+end
+
 local function applyBackdrop(frame, cfg)
 	if not frame then return end
 	cfg = cfg or {}
@@ -2959,10 +2971,7 @@ local function applyBackdrop(frame, cfg)
 	state.insets = copyInsetValues(contentInset, state.insets)
 	applyStatusBarInsets(frame, state.insets, true)
 
-	local separatedOffset = tonumber(cfg and cfg.separatedOffset) or 0
-	local hideParentBackdropForSeparated = separatedOffset > 0
-		and frame._rbType
-		and (frame._rbType == "RUNES" or frame._rbType == "ESSENCE" or (shouldUseDiscreteSeparatorSegments and shouldUseDiscreteSeparatorSegments(frame._rbType, cfg)))
+	local hideParentBackdropForSeparated = ResourceBars.ShouldHideParentBackdropForSeparated(frame, cfg)
 	if hideParentBackdropForSeparated then
 		if bgFrame:IsShown() then bgFrame:Hide() end
 		if borderFrame:IsShown() then borderFrame:Hide() end
