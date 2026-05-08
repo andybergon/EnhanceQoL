@@ -242,17 +242,19 @@ local FRAME_BACKGROUND_DEFINITIONS = {
 	parchment = {
 		label = "Parchment",
 		labelKey = "settingsFrameBackgroundParchment",
+		backdropColor = { 0.24, 0.16, 0.07, 1 },
 		texture = "Interface\\AchievementFrame\\UI-Achievement-Parchment-Horizontal",
 		textureColor = { 1, 1, 1, 1 },
-		textureAlpha = 0.92,
+		textureAlpha = 1,
 		shadeColor = { 0.08, 0.05, 0.02, 0.24 },
 	},
 	warwithin = {
 		label = "The War Within",
 		labelKey = "settingsFrameBackgroundTheWarWithin",
+		backdropColor = { 0.02, 0.02, 0.03, 1 },
 		texture = "Interface\\Credits\\CreditsScreenBackground10TheWarWithin.blp",
 		textureColor = { 1, 1, 1, 1 },
-		textureAlpha = 0.9,
+		textureAlpha = 1,
 		shadeColor = { 0.02, 0.02, 0.03, 0.34 },
 	},
 }
@@ -1407,9 +1409,12 @@ function addon.ApplyFrameBackgroundSkin(frame, skin)
 
 	local definition = FRAME_BACKGROUND_DEFINITIONS[addon.GetFrameBackground and addon.GetFrameBackground() or "solid"] or FRAME_BACKGROUND_DEFINITIONS.solid
 	local backdropR, backdropG, backdropB, backdropA = unpackColor(skin.backdropColor, 0.94)
+	local backingR, backingG, backingB, backingA = backdropR, backdropG, backdropB, 0
 	if definition == FRAME_BACKGROUND_DEFINITIONS.solid and addon.GetFrameBackgroundColor then
 		local color = addon.GetFrameBackgroundColor()
 		backdropR, backdropG, backdropB = color[1] or backdropR, color[2] or backdropG, color[3] or backdropB
+	elseif definition and definition.texture and definition.backdropColor then
+		backingR, backingG, backingB, backingA = unpackColor(definition.backdropColor, 1)
 	end
 	local requestedOpacity = (addon.GetFrameBackgroundOpacity and addon.GetFrameBackgroundOpacity() or 60) / 100
 	local textureBaseAlpha = 0
@@ -1422,8 +1427,11 @@ function addon.ApplyFrameBackgroundSkin(frame, skin)
 		shadeBaseAlpha = resolvedShadeAlpha or 0
 	end
 
-	local backdropBaseAlpha = definition.backdropAlpha or backdropA
+	local hasTextureBackground = definition and definition.texture
+	local backdropBaseAlpha = hasTextureBackground and 0 or (definition.backdropAlpha or backdropA)
+	local backingBaseAlpha = hasTextureBackground and backingA or 0
 	local opacityScale = resolveBackgroundOpacityScale({
+		backingBaseAlpha,
 		backdropBaseAlpha,
 		textureBaseAlpha,
 		shadeBaseAlpha,
@@ -1432,6 +1440,24 @@ function addon.ApplyFrameBackgroundSkin(frame, skin)
 	frame:SetBackdropColor(backdropR, backdropG, backdropB, backdropBaseAlpha * opacityScale)
 	local borderColor = addon.GetFrameBorderColor and addon.GetFrameBorderColor(skin.borderColor) or skin.borderColor
 	frame:SetBackdropBorderColor(unpackColor(borderColor, 1))
+
+	local backing = frame.BackgroundBackingTexture
+	if not backing and hasTextureBackground then
+		backing = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+		frame.BackgroundBackingTexture = backing
+	end
+	if backing then
+		backing:ClearAllPoints()
+		backing:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+		backing:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+		if hasTextureBackground then
+			backing:SetColorTexture(backingR, backingG, backingB, backingBaseAlpha * opacityScale)
+			backing:Show()
+		else
+			backing:SetColorTexture(0, 0, 0, 0)
+			backing:Hide()
+		end
+	end
 
 	local texture = frame.BackgroundTexture
 	if texture then

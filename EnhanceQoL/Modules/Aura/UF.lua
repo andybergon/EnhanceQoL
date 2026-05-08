@@ -2115,6 +2115,7 @@ local focusAuraKinds = createAuraKindState()
 local playerAuraKinds = createAuraKindState()
 local bossAuraStates = {}
 local AURA_FILTER_HELPFUL = "HELPFUL|INCLUDE_NAME_PLATE_ONLY"
+local AURA_FILTER_HELPFUL_PLAYER = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 local AURA_FILTER_HARMFUL = "HARMFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 local AURA_FILTER_HARMFUL_ALL = "HARMFUL|INCLUDE_NAME_PLATE_ONLY"
 local SAMPLE_BUFF_ICONS = { 136243, 135940, 136085, 136097, 136116, 136048, 135932, 136108 }
@@ -2202,12 +2203,14 @@ end
 
 function AuraUtil.getUnitAuraFilters(unit, auraRuntime)
 	if unit == UNIT.PLAYER or unit == "player" then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
+	if isBossUnit(unit) and UnitIsFriend and unit and UnitIsFriend("player", unit) then return AURA_FILTER_HELPFUL_PLAYER, AURA_FILTER_HARMFUL_ALL end
 	if UnitIsFriend and unit and UnitIsFriend("player", unit) then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
 	return AURA_FILTER_HELPFUL, auraRuntime and auraRuntime.enemyHarmfulFilter or AURA_FILTER_HARMFUL
 end
 
 function AuraUtil.getAuraFilters(unit, ac, defAc)
 	if unit == UNIT.PLAYER or unit == "player" then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
+	if isBossUnit(unit) and UnitIsFriend and unit and UnitIsFriend("player", unit) then return AURA_FILTER_HELPFUL_PLAYER, AURA_FILTER_HARMFUL_ALL end
 	if UnitIsFriend and unit and UnitIsFriend("player", unit) then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
 
 	local harmfulFilter = AURA_FILTER_HARMFUL

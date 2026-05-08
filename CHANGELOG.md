@@ -9,7 +9,9 @@
 ### 🐛 Fixed
 
 - Cooldown Panels / Layout Edit: Fixed cursor-anchored panels leaving a visible fake cursor behind after switching between cursor panels during Layout Edit and pressing Done.
+- Data Panels / Durability: Fixed the durability stream not refreshing reliably after repairs by listening to the dedicated inventory durability update event.
 - Group Frames / Healer Buff Placement: Fixed Priest healer-buff availability so Discipline and Holy buffs are not offered while playing Shadow.
+- Unit Frames / Boss Frames: Fixed friendly boss frames showing too many raid buffs, so player HoTs are no longer pushed out by unrelated buffs.
 
 ---
 

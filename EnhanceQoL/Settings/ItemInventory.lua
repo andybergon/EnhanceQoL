@@ -2582,9 +2582,6 @@ local eventHandlers = {
 			C_Timer.After(1, function() setIlvlText(addon.variables.itemSlots[arg2.equipmentSlotIndex], arg2.equipmentSlotIndex) end)
 		end
 	end,
-	["GUILDBANK_UPDATE_MONEY"] = function()
-		requestDurabilityUpdate()
-	end,
 	["INSPECT_READY"] = function(arg1)
 		if AnyInspectEnabled() then onInspect(arg1) end
 	end,
@@ -2606,11 +2603,7 @@ local eventHandlers = {
 		end
 		requestDurabilityUpdate()
 	end,
-	["PLAYER_MONEY"] = function()
-		requestDurabilityUpdate()
-	end,
 	["PLAYER_REGEN_ENABLED"] = function()
-		requestDurabilityUpdate()
 		if addon.variables and addon.variables.pendingCharFrameUpdate and isPaperDollFrameVisible() then
 			addon.variables.pendingCharFrameUpdate = nil
 			setCharFrame()
@@ -2621,6 +2614,9 @@ local eventHandlers = {
 	end,
 	["SOCKET_INFO_UPDATE"] = function()
 		if isPaperDollFrameVisible() and CharOpt("gems") then C_Timer.After(0.5, function() setCharFrame() end) end
+	end,
+	["UPDATE_INVENTORY_DURABILITY"] = function()
+		requestDurabilityUpdate()
 	end,
 }
 

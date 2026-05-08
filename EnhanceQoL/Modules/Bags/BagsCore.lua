@@ -2707,6 +2707,12 @@ local function createMainFrame()
 	frame:SetSize(Core.MIN_FRAME_WIDTH, 1)
 	frame:Hide()
 
+	local backgroundBackingTexture = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+	backgroundBackingTexture:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+	backgroundBackingTexture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+	backgroundBackingTexture:Hide()
+	frame.BackgroundBackingTexture = backgroundBackingTexture
+
 	local backgroundTexture = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
 	backgroundTexture:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
 	backgroundTexture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
