@@ -7982,6 +7982,13 @@ local function buildUnitSettings(unit)
 	if isPlayer or unit == "target" or unit == "focus" then
 		local ciDef = statusDef.combatIndicator or {}
 		local function isCombatIndicatorEnabled() return getValue(unit, { "status", "combatIndicator", "enabled" }, ciDef.enabled ~= false) ~= false end
+		local function getCombatIndicatorIconValue()
+			return getValue(unit, { "status", "combatIndicator", "icon" }, ciDef.icon or UF.COMBAT_INDICATOR_DEFAULT_ICON or "DEFAULT") or UF.COMBAT_INDICATOR_DEFAULT_ICON or "DEFAULT"
+		end
+		local function getCombatIndicatorIconLabel(value)
+			if UF.GetCombatIndicatorIconMarkup then return UF.GetCombatIndicatorIconMarkup(value, 18) end
+			return tostring(value or "")
+		end
 		local combatIndicatorToggle = checkbox(
 			L["UFCombatIndicator"] or "Show combat indicator",
 			function() return getValue(unit, { "status", "combatIndicator", "enabled" }, ciDef.enabled ~= false) end,
@@ -7994,6 +8001,28 @@ local function buildUnitSettings(unit)
 			"unitStatus"
 		)
 		list[#list + 1] = combatIndicatorToggle
+
+		local combatIndicatorIcon = {
+			name = L["Icon"] or "Icon",
+			kind = UF.ui.settingType.Dropdown,
+			height = 180,
+			parentId = "unitStatus",
+			default = ciDef.icon or UF.COMBAT_INDICATOR_DEFAULT_ICON or "DEFAULT",
+			generator = function(_, root)
+				local options = UF.COMBAT_INDICATOR_ICONS or {}
+				for _, option in ipairs(options) do
+					local value = option.value
+					local label = getCombatIndicatorIconLabel(value)
+					root:CreateRadio(label, function() return getCombatIndicatorIconValue() == value end, function()
+						setValue(unit, { "status", "combatIndicator", "icon" }, value or UF.COMBAT_INDICATOR_DEFAULT_ICON or "DEFAULT")
+						refresh()
+						refreshSettingsUI()
+					end)
+				end
+			end,
+		}
+		combatIndicatorIcon.isEnabled = isCombatIndicatorEnabled
+		list[#list + 1] = combatIndicatorIcon
 
 		local combatIndicatorSize = slider(
 			L["UFCombatIndicatorSize"] or "Combat indicator size",

@@ -6,6 +6,7 @@
 
 - Bags: Added an automatic category rule for gear item levels relative to the currently equipped average, with plus/minus offsets and filtering limited to real armor and weapon items.
 - Bags: Added an option to desaturate item icons per custom category or category group; the Basic Junk category now uses this automatically so junk items are easier to spot at a glance.
+- Unit Frames: Added several visual choices for the combat indicator, so Player, Target, and Focus frames can use an icon style that better fits your layout.
 
 ### 🐛 Fixed
 
