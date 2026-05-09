@@ -1561,7 +1561,7 @@ local function getCurrentCategoryRulesRevision()
 end
 
 local function doesRuleUsageDependOnPlayerState(usage)
-	return usage and (usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade) and true or false
+	return usage and (usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade or usage.equippedAverageItemLevel) and true or false
 end
 
 local function bumpPlayerRuleRevision()
@@ -1708,6 +1708,29 @@ local function createRuleRuntimeContext(usage)
 	end
 
 	return runtimeContext
+end
+
+function Bags.functions.GetRuleEquippedAverageItemLevel(runtimeContext)
+	if not runtimeContext then
+		return nil
+	end
+
+	local equippedItemLevel = runtimeContext.equippedAverageItemLevel
+	if equippedItemLevel == nil then
+		if type(GetAverageItemLevel) == "function" then
+			equippedItemLevel = select(2, GetAverageItemLevel())
+		end
+
+		equippedItemLevel = tonumber(equippedItemLevel)
+		runtimeContext.equippedAverageItemLevel = equippedItemLevel and equippedItemLevel > 0 and equippedItemLevel or false
+		equippedItemLevel = runtimeContext.equippedAverageItemLevel
+	end
+
+	if not equippedItemLevel then
+		return nil
+	end
+
+	return equippedItemLevel
 end
 
 local function getEquippedItemLevel(runtimeContext, inventorySlot)
@@ -2541,10 +2564,10 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 
 			local resolvedItemLevel
 			local itemLocation
-			if usage.itemLevel or usage.isUpgrade or usage.canAuctionHouseSell then
+			if usage.itemLevel or usage.equippedAverageItemLevel or usage.isUpgrade or usage.canAuctionHouseSell then
 				itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotID)
 			end
-			if usage.itemLevel or usage.isUpgrade then
+			if usage.itemLevel or usage.equippedAverageItemLevel or usage.isUpgrade then
 				resolvedItemLevel = ruleItemInfo and ruleItemInfo.itemLevel or nil
 
 				if itemLocation and C_Item.DoesItemExist(itemLocation) and C_Item.GetCurrentItemLevel then
@@ -2627,6 +2650,15 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.itemDescription = ruleItemInfo and ruleItemInfo.itemDescription or nil
 			itemContext.quality = (ruleItemInfo and ruleItemInfo.itemQuality) or (info and info.quality)
 			itemContext.itemLevel = resolvedItemLevel
+			itemContext.equippedAverageItemLevel = usage.equippedAverageItemLevel
+				and equipLoc
+				and not IGNORED_ITEM_LEVEL_EQUIP_LOCS[equipLoc]
+				and (
+					tonumber(classID) == (Enum and Enum.ItemClass and Enum.ItemClass.Armor or 4)
+					or tonumber(classID) == (Enum and Enum.ItemClass and Enum.ItemClass.Weapon or 2)
+				)
+				and Bags.functions.GetRuleEquippedAverageItemLevel(ruleRuntimeContext)
+				or nil
 			itemContext.itemMinLevel = ruleItemInfo and ruleItemInfo.itemMinLevel or nil
 			itemContext.itemType = ruleItemInfo and ruleItemInfo.itemType or nil
 			itemContext.itemSubType = ruleItemInfo and ruleItemInfo.itemSubType or nil

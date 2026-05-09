@@ -112,6 +112,14 @@ local OPERATOR_DEFINITIONS = {
 		id = "GREATER_OR_EQUAL",
 		label = ">=",
 	},
+	AVERAGE_MINUS = {
+		id = "AVERAGE_MINUS",
+		label = "-",
+	},
+	AVERAGE_PLUS = {
+		id = "AVERAGE_PLUS",
+		label = "+",
+	},
 	IN = {
 		id = "IN",
 		labelKey = "settingsCategoryRuleOperatorIn",
@@ -704,6 +712,17 @@ local FIELD_DEFINITIONS = {
 		contextKey = "isUpgrade",
 		buildOptions = buildBooleanOptions,
 	},
+	itemLevelRelativeToEquippedAverage = {
+		labelKey = "settingsRuleFieldItemLevelRelativeToEquippedAverage",
+		groupID = "smart",
+		valueType = "number",
+		operators = { "AVERAGE_MINUS", "AVERAGE_PLUS" },
+		defaultOperator = "AVERAGE_MINUS",
+		defaultValue = 20,
+		contextKey = "itemLevel",
+		comparisonContextKey = "equippedAverageItemLevel",
+		comparisonValueMode = "equippedAverageOffset",
+	},
 	upgradeTrackKey = {
 		labelKey = "settingsRuleFieldUpgradeTrack",
 		groupID = "smart",
@@ -1165,6 +1184,9 @@ local function sanitizeRuleNode(settings, node)
 	node = type(node) == "table" and node or {}
 
 	local fieldID = node.field or LEGACY_RULE_TYPE_MAP[node.ruleType] or "defaultCategory"
+	if fieldID == "itemLevelBelowEquipped" then
+		fieldID = "itemLevelRelativeToEquippedAverage"
+	end
 	node.nodeType = "rule"
 	node.id = tostring(node.id or allocateNodeID(settings))
 	node.field = FIELD_DEFINITIONS[fieldID] and fieldID or "defaultCategory"
@@ -1199,12 +1221,17 @@ local function buildCompiledRuleNode(node, usage)
 	if definition.contextKey then
 		usage[definition.contextKey] = true
 	end
+	if definition.comparisonContextKey then
+		usage[definition.comparisonContextKey] = true
+	end
 
 	local compiledNode = {
 		nodeType = "rule",
 		field = node.field,
 		operator = node.operator,
 		contextKey = definition.contextKey,
+		comparisonContextKey = definition.comparisonContextKey,
+		comparisonValueMode = definition.comparisonValueMode,
 		valueType = definition.valueType,
 	}
 
@@ -1264,25 +1291,40 @@ local function evaluateCompiledRuleNode(node, itemContext)
 	end
 
 	local operatorID = node.operator
+	local expectedValue = node.value
+	if node.comparisonContextKey and node.comparisonValueMode == "equippedAverageOffset" then
+		local comparisonBase = tonumber(itemContext[node.comparisonContextKey])
+		local offsetValue = tonumber(node.value)
+		if comparisonBase and offsetValue then
+			expectedValue = node.operator == "AVERAGE_PLUS" and comparisonBase + offsetValue or comparisonBase - offsetValue
+		else
+			expectedValue = nil
+		end
+		if expectedValue == nil then
+			return false
+		end
+		return tonumber(actualValue) and tonumber(actualValue) >= expectedValue or false
+	end
+
 	if operatorID == "IN" then
 		return node.valueSet and node.valueSet[actualValue] == true or false
 	elseif operatorID == "NOT_EQUALS" then
-		return actualValue ~= node.value
+		return actualValue ~= expectedValue
 	elseif operatorID == "LESS_THAN" then
 		local actualNumber = tonumber(actualValue)
-		return actualNumber and actualNumber < node.value or false
+		return actualNumber and actualNumber < expectedValue or false
 	elseif operatorID == "LESS_OR_EQUAL" then
 		local actualNumber = tonumber(actualValue)
-		return actualNumber and actualNumber <= node.value or false
+		return actualNumber and actualNumber <= expectedValue or false
 	elseif operatorID == "GREATER_THAN" then
 		local actualNumber = tonumber(actualValue)
-		return actualNumber and actualNumber > node.value or false
+		return actualNumber and actualNumber > expectedValue or false
 	elseif operatorID == "GREATER_OR_EQUAL" then
 		local actualNumber = tonumber(actualValue)
-		return actualNumber and actualNumber >= node.value or false
+		return actualNumber and actualNumber >= expectedValue or false
 	end
 
-	return actualValue == node.value
+	return actualValue == expectedValue
 end
 
 local sanitizeGroupName
@@ -2311,7 +2353,22 @@ local function evaluateRuleNode(node, itemContext)
 		return false
 	end
 
-	return compareRuleValue(actualValue, node.operator, node.value)
+	local expectedValue = node.value
+	if definition.comparisonContextKey and definition.comparisonValueMode == "equippedAverageOffset" then
+		local comparisonBase = tonumber(itemContext[definition.comparisonContextKey])
+		local offsetValue = tonumber(node.value)
+		if comparisonBase and offsetValue then
+			expectedValue = node.operator == "AVERAGE_PLUS" and comparisonBase + offsetValue or comparisonBase - offsetValue
+		else
+			expectedValue = nil
+		end
+		if expectedValue == nil then
+			return false
+		end
+		return tonumber(actualValue) and tonumber(actualValue) >= expectedValue or false
+	end
+
+	return compareRuleValue(actualValue, node.operator, expectedValue)
 end
 
 local function collectRuleContextUsage(node, usage)
@@ -2329,6 +2386,9 @@ local function collectRuleContextUsage(node, usage)
 	local definition = getFieldDefinition(node.field)
 	if definition.contextKey then
 		usage[definition.contextKey] = true
+	end
+	if definition.comparisonContextKey then
+		usage[definition.comparisonContextKey] = true
 	end
 end
 
