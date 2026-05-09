@@ -2620,8 +2620,29 @@ local function createCategoriesPage(parent)
 	end
 	page.HideInBags = hideInBags
 
+	local desaturateItems = createInlineCheckbox(
+		detailContent,
+		L["settingsCategoryDesaturateItems"] or "Desaturate items in this category or group",
+		L["settingsCategoryDesaturateItemsTooltip"] or "Shows matching item icons in grayscale in bag and bank views.",
+		function(value)
+			local selection = getCategoryPageSelection()
+			if selection.selectedType == "group" and selection.selectedGroup and addon.SetCustomCategoryGroupDesaturateItems then
+				addon.SetCustomCategoryGroupDesaturateItems(selection.selectedGroup.id, value)
+				requestCategoryRefresh()
+			elseif selection.selectedCategory and addon.SetCustomCategoryDesaturateItems then
+				addon.SetCustomCategoryDesaturateItems(selection.selectedCategory.id, value)
+				requestCategoryRefresh()
+			end
+		end
+	)
+	desaturateItems:SetPoint("TOPLEFT", hideInBags, "BOTTOMLEFT", 0, -8)
+	if desaturateItems.Label then
+		desaturateItems.Label:SetPoint("RIGHT", detailContent, "RIGHT", -14, 0)
+	end
+	page.DesaturateItems = desaturateItems
+
 	local priorityLabel = detailContent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	priorityLabel:SetPoint("TOPLEFT", hideInBags, "BOTTOMLEFT", 4, -16)
+	priorityLabel:SetPoint("TOPLEFT", desaturateItems, "BOTTOMLEFT", 4, -16)
 	priorityLabel:SetText(L["settingsCategoryPriorityLabel"] or "Priority")
 	page.PriorityLabel = priorityLabel
 
@@ -3108,6 +3129,10 @@ refreshCategoriesPage = function(page)
 	if page.HideInBags.Label then
 		page.HideInBags.Label:SetShown(hasSelection)
 	end
+	page.DesaturateItems:SetShown(hasSelection)
+	if page.DesaturateItems.Label then
+		page.DesaturateItems.Label:SetShown(hasSelection)
+	end
 	page.PriorityHint:SetShown(hasSelection)
 	page.GroupSpacerBefore:SetShown(isGroupSelection)
 	if page.GroupSpacerBefore.Label then
@@ -3142,10 +3167,13 @@ refreshCategoriesPage = function(page)
 	if page.HideInBags then
 		page.HideInBags:SetChecked((selectedCategory and selectedCategory.hidden == true) or (selectedGroup and selectedGroup.hidden == true) or false)
 	end
+	if page.DesaturateItems then
+		page.DesaturateItems:SetChecked((selectedCategory and selectedCategory.desaturateItems == true) or (selectedGroup and selectedGroup.desaturateItems == true) or false)
+	end
 
 	if isGroupSelection then
 		page.PriorityLabel:ClearAllPoints()
-		page.PriorityLabel:SetPoint("TOPLEFT", page.HideInBags, "BOTTOMLEFT", 4, -16)
+		page.PriorityLabel:SetPoint("TOPLEFT", page.DesaturateItems, "BOTTOMLEFT", 4, -16)
 		page.PriorityLabel:SetText(L["settingsCategoryOrderLabel"] or "Display order")
 		page.CategoryColorLabel:ClearAllPoints()
 		page.CategoryColorLabel:SetPoint("LEFT", page.PriorityUpButton, "RIGHT", 20, 0)
@@ -3184,7 +3212,7 @@ refreshCategoriesPage = function(page)
 	end
 
 	page.PriorityLabel:ClearAllPoints()
-	page.PriorityLabel:SetPoint("TOPLEFT", page.HideInBags, "BOTTOMLEFT", 4, -16)
+	page.PriorityLabel:SetPoint("TOPLEFT", page.DesaturateItems, "BOTTOMLEFT", 4, -16)
 	page.PriorityLabel:SetText(L["settingsCategoryOrderLabel"] or "Display order")
 	page.CategoryColorLabel:ClearAllPoints()
 	page.CategoryColorLabel:SetPoint("LEFT", page.PriorityUpButton, "RIGHT", 20, 0)

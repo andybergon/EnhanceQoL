@@ -2270,6 +2270,7 @@ local function buildSectionDefinitions()
 			groupCollapseID = definition.groupCollapseID,
 			groupSpacerBefore = definition.groupSpacerBefore == true,
 			groupCombineSubcategories = definition.groupCombineSubcategories == true,
+			desaturateItems = definition.desaturateItems == true,
 			collapsible = definition.collapsible ~= false,
 			forceHeader = definition.forceHeader == true,
 		}
@@ -2492,6 +2493,7 @@ local function ensureSection(layoutData, sectionID)
 		groupCollapseID = definition.groupCollapseID,
 		groupSpacerBefore = definition.groupSpacerBefore == true,
 		groupCombineSubcategories = definition.groupCombineSubcategories == true,
+		desaturateItems = definition.desaturateItems == true,
 		collapsible = definition.collapsible ~= false,
 		forceHeader = definition.forceHeader == true,
 		slotIndices = {},
@@ -2704,6 +2706,7 @@ local function addSlotMapping(layoutData, sectionID, bagID, slotID, extraData)
 	mapping.itemCount = extraData and extraData.itemCount or nil
 	mapping.itemInfo = extraData and extraData.itemInfo or nil
 	mapping.questInfo = extraData and extraData.questInfo or nil
+	mapping.desaturateItem = section.desaturateItems == true and mapping.itemInfo ~= nil or nil
 	state.slotMappings[index] = mapping
 
 	layoutData.requiredButtonCount = index
@@ -3026,6 +3029,7 @@ local function hasMatchingButtonRenderState(
 	texture,
 	displayCount,
 	locked,
+	desaturated,
 	quality,
 	readable,
 	itemLink,
@@ -3046,6 +3050,7 @@ local function hasMatchingButtonRenderState(
 		and button._bagsWarbandRenderTexture == texture
 		and button._bagsWarbandRenderDisplayCount == displayCount
 		and button._bagsWarbandRenderLocked == locked
+		and button._bagsWarbandRenderDesaturated == desaturated
 		and button._bagsWarbandRenderQuality == quality
 		and button._bagsWarbandRenderReadable == readable
 		and button._bagsWarbandRenderItemLink == itemLink
@@ -3074,6 +3079,7 @@ local function storeButtonRenderState(
 	texture,
 	displayCount,
 	locked,
+	desaturated,
 	quality,
 	readable,
 	itemLink,
@@ -3095,6 +3101,7 @@ local function storeButtonRenderState(
 	button._bagsWarbandRenderTexture = texture
 	button._bagsWarbandRenderDisplayCount = displayCount
 	button._bagsWarbandRenderLocked = locked
+	button._bagsWarbandRenderDesaturated = desaturated
 	button._bagsWarbandRenderQuality = quality
 	button._bagsWarbandRenderReadable = readable
 	button._bagsWarbandRenderItemLink = itemLink
@@ -3168,6 +3175,8 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	local displayItemCount = mapping and mapping.itemCount
 	local freeSlotCount = mapping and mapping.freeSlotCount
 	local locked = info and info.isLocked
+	local desaturateItem = texture and mapping and mapping.desaturateItem == true or false
+	local desaturated = locked or desaturateItem
 	local quality = info and info.quality
 	local readable = info and (info.IsReadable or info.isReadable)
 	local itemLink = info and info.hyperlink
@@ -3198,6 +3207,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		texture,
 		displayCount,
 		locked,
+		desaturated,
 		quality,
 		readable,
 		itemLink,
@@ -3246,7 +3256,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	button:SetItemButtonTexture(texture)
 	SetItemButtonQuality(button, quality, itemLink, false, isBound)
 	SetItemButtonCount(button, displayCount)
-	SetItemButtonDesaturated(button, locked)
+	SetItemButtonDesaturated(button, desaturated)
 	button:UpdateExtended()
 	button:UpdateQuestItem(questIsQuestItem, questID, questIsActive)
 	button:UpdateNewItem(quality)
@@ -3286,6 +3296,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		texture,
 		displayCount,
 		locked,
+		desaturated,
 		quality,
 		readable,
 		itemLink,

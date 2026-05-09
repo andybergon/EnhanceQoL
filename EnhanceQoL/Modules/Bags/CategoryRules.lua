@@ -177,7 +177,7 @@ local customCategoryStateHiddenBuiltIn
 local customCategoryCompiledState
 local cachedCategoryRuleContextUsage
 local cachedCategorySectionDefinitions
-local BASIC_PRESET_VERSION = 21
+local BASIC_PRESET_VERSION = 22
 local HOUSING_CLASS_ID = 20
 local ITEM_ENHANCEMENTS_CLASS_ID = 8
 local CATEGORY_MODE_IDS = {
@@ -1389,6 +1389,7 @@ local function buildCompiledCustomCategoryState(categories, groups)
 						groupCollapseID = string.format("group:%s", group.id),
 						groupSpacerBefore = group.spacerBefore == true,
 						groupCombineSubcategories = group.combineSubcategories == true,
+						desaturateItems = category.desaturateItems == true or group.desaturateItems == true,
 						collapsible = false,
 					}
 				end
@@ -1402,6 +1403,7 @@ local function buildCompiledCustomCategoryState(categories, groups)
 					color = category.color,
 					sortMode = category.sortMode,
 					isCustom = true,
+					desaturateItems = category.desaturateItems == true,
 				}
 			end
 		end
@@ -1526,6 +1528,7 @@ local function sanitizeCustomGroup(settings, group, index)
 	group.color = sanitizeColor(group.color, getDefaultCategoryColor(index))
 	group.spacerBefore = group.spacerBefore == true
 	group.combineSubcategories = group.combineSubcategories == true
+	group.desaturateItems = group.desaturateItems == true
 	group.hidden = group.hidden == true
 	return group
 end
@@ -1578,6 +1581,7 @@ local function sanitizeCategory(settings, category, index, validGroupLookup)
 	category.groupID = validGroupLookup and validGroupLookup[tostring(category.groupID or "")] and tostring(category.groupID) or nil
 	category.groupName = nil
 	category.hidden = category.hidden == true
+	category.desaturateItems = category.desaturateItems == true
 	category.itemIDs = sanitizeItemIDs(category.itemIDs)
 	category.ruleTree = sanitizeGroupNode(settings, category.ruleTree)
 	category.ruleTree.operator = category.ruleTree.operator == "AND" and "AND" or ROOT_GROUP_OPERATOR
@@ -1890,6 +1894,7 @@ local function seedBasicPresetIntoModeState(modeState)
 					priority = 85,
 					sortMode = "sellPrice",
 					color = { 0.72, 0.72, 0.72 },
+					desaturateItems = true,
 					ruleTree = function(counterState)
 						return buildPresetRuleGroup(counterState, "AND", {
 							buildPresetRule(counterState, "quality", "EQUALS", 0),
@@ -2786,6 +2791,22 @@ function addon.SetCustomCategoryHidden(categoryID, hidden)
 	return true
 end
 
+function addon.SetCustomCategoryDesaturateItems(categoryID, enabled)
+	local category = findCategoryByID(categoryID)
+	if not category then
+		return false
+	end
+
+	enabled = enabled == true
+	if category.desaturateItems == enabled then
+		return false
+	end
+
+	category.desaturateItems = enabled
+	markCustomCategoryStateDirty()
+	return true
+end
+
 function addon.SetCustomCategoryGroupSortOrder(groupID, sortOrder)
 	local group = findGroupByID(groupID)
 	if not group then
@@ -2820,6 +2841,22 @@ function addon.SetCustomCategoryGroupHidden(groupID, hidden)
 	end
 
 	group.hidden = hidden
+	markCustomCategoryStateDirty()
+	return true
+end
+
+function addon.SetCustomCategoryGroupDesaturateItems(groupID, enabled)
+	local group = findGroupByID(groupID)
+	if not group then
+		return false
+	end
+
+	enabled = enabled == true
+	if group.desaturateItems == enabled then
+		return false
+	end
+
+	group.desaturateItems = enabled
 	markCustomCategoryStateDirty()
 	return true
 end

@@ -1,6 +1,10 @@
 # Changelog
 
-## [10.14.1] - 2026-05-08
+## [10.15.0] - 2026-05-09
+
+### ✨ Added
+
+- Bags: Added an option to desaturate item icons per custom category or category group; the Basic Junk category now uses this automatically so junk items are easier to spot at a glance.
 
 ### 🐛 Fixed
 
