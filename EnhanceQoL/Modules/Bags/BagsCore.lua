@@ -2158,7 +2158,7 @@ local function showFooterMoneyTooltip(owner)
 	end
 
 	GameTooltip:AddLine(" ")
-	GameTooltip:AddDoubleLine(TOTAL or "Total", formatFooterMoneyString(totalMoney), 1, 1, 1, 1, 1, 1)
+	GameTooltip:AddDoubleLine(TOTAL or "Total", formatFooterMoneyString(totalMoney + warbandGold), 1, 1, 1, 1, 1, 1)
 	GameTooltip:Show()
 end
 
