@@ -1,38 +1,18 @@
 # Changelog
 
-## [10.15.0-beta4] - 2026-05-10
-
-### 🐛 Fixed
-
-- Instant Chats: Added Blizzard-compatible player menu context for EIM player links, allowing addons such as CraftScan to inject quick response actions into the right-click menu. Battle.net contacts now resolve to their active WoW character for those responses.
-
----
-
-## [10.15.0-beta3] - 2026-05-10
+## [10.15.0] - 2026-05-10
 
 ### ✨ Added
 
+- Bags: Added an automatic category rule for gear item levels relative to the currently equipped average, with plus/minus offsets and filtering limited to real armor and weapon items.
+- Bags: Added an option to desaturate item icons per custom category or category group; the Basic Junk category now uses this automatically so junk items are easier to spot at a glance.
+- Bags: Added an Advanced setting to choose where stack counts are anchored on item icons.
 - Bags: Added a new rule option to group PvP gear separately.
 - Class Buff Reminder: Added pet reminders with passive and defensive stance tracking.
 - Item Inventory: Added a movable low durability warning with blink, threshold, ready check, font, color, and anchor options.
 - Mythic Plus / Bloodlust Tracker: Added another preset icon option for the tracker icon selection.
-
-### 🐛 Fixed
-
-- Vendor: Fixed automatic selling so low item-level tabards are skipped by the item-level autosell filter.
-
-### ⚡ Performance
-
-- Bags / Vendor: Improved Baganator integration and reduced unnecessary background work during bag updates.
-
----
-
-## [10.15.0-beta2] - 2026-05-10
-
-### ✨ Added
-
-- Bags: Added an Advanced setting to choose where stack counts are anchored on item icons.
 - Profiles: Added a Profile global action to apply the default profile to all known characters, plus main profile switching from the minimap menu.
+- Unit Frames: Added several visual choices for the combat indicator, so Player, Target, and Focus frames can use an icon style that better fits your layout.
 - Unit Frames: Added cooldown text position and offset controls for normal unit frame auras, matching the existing Group Frames aura options.
 
 ### 🔄 Changed
@@ -40,24 +20,21 @@
 - Profiles: Renamed Global profile to Default profile and clarified how active and default profiles are used.
 - Settings: Removed duplicate CVar options that are already available in Blizzard's own settings.
 
----
-
-## [10.15.0-beta1] - 2026-05-10
-
-### ✨ Added
-
-- Bags: Added an automatic category rule for gear item levels relative to the currently equipped average, with plus/minus offsets and filtering limited to real armor and weapon items.
-- Bags: Added an option to desaturate item icons per custom category or category group; the Basic Junk category now uses this automatically so junk items are easier to spot at a glance.
-- Unit Frames: Added several visual choices for the combat indicator, so Player, Target, and Focus frames can use an icon style that better fits your layout.
-
 ### 🐛 Fixed
 
 - Bags: Fixed automatic category rules so boolean values such as Recommended for class = No are saved correctly.
 - Bags: Fixed Recommended for class/spec automatic category rules to use EQoL's class/spec item type filters instead of broad item recommendation or usability checks, preventing profession gear and other usable non-combat items from matching as recommended gear.
 - Bags: Fixed the bag toggle sometimes needing to be pressed twice after upgrade or item-related windows opened the bags automatically.
+- Instant Chats: Added Blizzard-compatible player menu context for EIM player links, allowing addons such as CraftScan to inject quick response actions into the right-click menu. Battle.net contacts now resolve to their active WoW character for those responses.
+- Resource Bars: Fixed borders and backgrounds sometimes disappearing when separated stack styling was enabled but the bar had no stacks to split.
+- Tooltips: Fixed specialization and item level lines not loading on direct player mouseover tooltips unless the player was targeted or hovered through a unit frame.
 - Unit Frames: Fixed custom health bar textures losing their original colors when using a white health color.
 - Unit Frames / Boss Frames: Fixed boss frame spacing so negative values can remove the remaining gap when name or status text is enabled.
-- Resource Bars: Fixed borders and backgrounds sometimes disappearing when separated stack styling was enabled but the bar had no stacks to split.
+- Vendor: Fixed automatic selling so low item-level tabards are skipped by the item-level autosell filter.
+
+### ⚡ Performance
+
+- Bags / Vendor: Improved Baganator integration and reduced unnecessary background work during bag updates.
 
 ---
 
