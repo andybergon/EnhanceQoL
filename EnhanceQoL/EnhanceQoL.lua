@@ -6198,15 +6198,23 @@ local function CreateUI()
 			end
 		end
 
+		local addonProfileNames = {}
 		if EnhanceQoLDB and type(EnhanceQoLDB.profiles) == "table" then
-			local names = {}
 			for profileName in pairs(EnhanceQoLDB.profiles) do
-				if type(profileName) == "string" and profileName ~= "" then names[#names + 1] = profileName end
+				if type(profileName) == "string" and profileName ~= "" then addonProfileNames[#addonProfileNames + 1] = profileName end
 			end
-			table.sort(names)
+			table.sort(addonProfileNames)
+		end
 
-			if #names > 0 then
-				DoDevider()
+		local ufProfiles = addon.Aura and addon.Aura.UF and addon.Aura.UF.Profiles
+		local ufProfileNames = {}
+		if ufProfiles and ufProfiles.GetSortedNames then ufProfileNames = ufProfiles.GetSortedNames() end
+
+		if #addonProfileNames > 0 or #ufProfileNames > 0 then
+			DoDevider()
+			root:CreateTitle(L["Profiles"] or "Profiles")
+
+			if #addonProfileNames > 0 then
 				local menu = root:CreateButton(L["ProfileMenuTitle"] or "Addon profile")
 				local guid = UnitGUID("player")
 				local activeName = guid and EnhanceQoLDB.profileKeys and EnhanceQoLDB.profileKeys[guid] or EnhanceQoLDB.profileGlobal
@@ -6216,7 +6224,7 @@ local function CreateUI()
 					if activeButton and activeButton.SetEnabled then activeButton:SetEnabled(false) end
 					if menu.CreateDivider then menu:CreateDivider() end
 				end
-				for _, profileName in ipairs(names) do
+				for _, profileName in ipairs(addonProfileNames) do
 					menu:CreateRadio(profileName, function()
 						local currentGUID = UnitGUID("player")
 						local currentName = currentGUID and EnhanceQoLDB.profileKeys and EnhanceQoLDB.profileKeys[currentGUID] or EnhanceQoLDB.profileGlobal
@@ -6233,13 +6241,8 @@ local function CreateUI()
 					end)
 				end
 			end
-		end
 
-		local ufProfiles = addon.Aura and addon.Aura.UF and addon.Aura.UF.Profiles
-		if ufProfiles and ufProfiles.GetSortedNames then
-			local names = ufProfiles.GetSortedNames()
-			if #names > 0 then
-				DoDevider()
+			if #ufProfileNames > 0 then
 				local menu = root:CreateButton(L["UFProfileMenuTitle"] or "Unit Frames profile")
 				local activeName = ufProfiles.GetActiveName and ufProfiles.GetActiveName()
 				if activeName and activeName ~= "" then
@@ -6248,7 +6251,7 @@ local function CreateUI()
 					if activeButton and activeButton.SetEnabled then activeButton:SetEnabled(false) end
 					if menu.CreateDivider then menu:CreateDivider() end
 				end
-				for _, profileName in ipairs(names) do
+				for _, profileName in ipairs(ufProfileNames) do
 					menu:CreateRadio(profileName, function() return (ufProfiles.GetActiveName and ufProfiles.GetActiveName()) == profileName end, function()
 						local ok = ufProfiles.SetActiveName and ufProfiles.SetActiveName(profileName, "MINIMAP_MENU")
 						if not ok then print("|cff00ff98Enhance QoL|r: " .. tostring(L["UFProfileSetActiveFailed"] or "Could not switch the active Unit Frames profile.")) end
