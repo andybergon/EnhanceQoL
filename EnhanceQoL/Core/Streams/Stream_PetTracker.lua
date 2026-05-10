@@ -181,6 +181,9 @@ local function createAceWindow()
 end
 
 local function isPetExpected()
+	local reminder = addon.ClassBuffReminder
+	if reminder and reminder.IsPetExpectedForPlayer then return reminder:IsPetExpectedForPlayer() end
+
 	local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
 	if specIndex and C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
 		local specID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
@@ -197,6 +200,7 @@ local function isPetExpected()
 	return false
 end
 
+
 local function hasActivePet()
 	if not UnitExists or not UnitExists("pet") then return false end
 	if UnitIsDeadOrGhost and UnitIsDeadOrGhost("pet") then return false end
@@ -204,6 +208,9 @@ local function hasActivePet()
 end
 
 local function isPetSuppressed()
+	local reminder = addon.ClassBuffReminder
+	if reminder and reminder.IsPetReminderSuppressed then return reminder:IsPetReminderSuppressed() end
+
 	if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then return true end
 	if IsMounted and IsMounted() then return true end
 	if UnitHasVehicleUI and UnitHasVehicleUI("player") then return true end
@@ -211,6 +218,29 @@ local function isPetSuppressed()
 	if UnitOnTaxi and UnitOnTaxi("player") then return true end
 	if IsFlying and IsFlying() then return true end
 	return false
+end
+
+local function getPetReminderState()
+	local reminder = addon.ClassBuffReminder
+	if reminder and reminder.IsPetExpectedForPlayer and not reminder:IsPetExpectedForPlayer() then return nil end
+	if reminder and reminder.IsPetReminderSuppressed and reminder:IsPetReminderSuppressed() then return nil end
+
+
+	if not hasActivePet() then
+		return "missing", L["ClassBuffReminderPetMissing"] or L["Pet Missing"] or "Pet Missing", reminder and reminder.GetPetReminderIcon and reminder:GetPetReminderIcon("missing") or DEFAULT_PET_ICON
+	end
+
+	if reminder and reminder.GetPetStance and reminder.petTracking then
+		local stance = reminder:GetPetStance()
+		if stance == reminder.petTracking.stancePassive then
+			return "passive", L["ClassBuffReminderPetPassive"] or "Pet Passive", reminder:GetPetReminderIcon("passive")
+		end
+		if stance == reminder.petTracking.stanceDefensive then
+			return "defensive", L["ClassBuffReminderPetDefensive"] or "Pet Defensive", reminder:GetPetReminderIcon("defensive")
+		end
+	end
+
+	return nil
 end
 
 local floor = math.floor
@@ -385,7 +415,8 @@ local function update(stream)
 		return
 	end
 
-	if not editModeActive and (hasActivePet() or isPetSuppressed()) then
+	local state, text, icon = getPetReminderState()
+	if not editModeActive and (not state or isPetSuppressed()) then
 		hideSnapshot(stream.snapshot)
 		resetBlink(stream)
 		return
@@ -407,11 +438,11 @@ local function update(stream)
 		resetBlink(stream)
 	end
 
-	local text = L["Pet Missing"] or "Pet Missing"
+	text = text or L["Pet Missing"] or "Pet Missing"
 	local hex = colorToHex(db.textColor)
 	local coloredText = format("|cff%s%s|r", hex, text)
 	if db.showIcon then
-		local partsPayload = buildReminderParts(coloredText, getReminderIconTexture(), db.fontSize or 14)
+		local partsPayload = buildReminderParts(coloredText, icon or DEFAULT_PET_ICON, db.fontSize or 14)
 		stream.snapshot.parts = partsPayload.parts
 		stream.snapshot.partsLayout = partsPayload.partsLayout
 		stream.snapshot.partSpacing = partsPayload.partSpacing

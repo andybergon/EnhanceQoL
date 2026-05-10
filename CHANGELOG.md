@@ -5,6 +5,7 @@
 ### ✨ Added
 
 - Bags: Added a new rule option to group PvP gear separately.
+- Class Buff Reminder: Added pet reminders with passive and defensive stance tracking.
 - Mythic Plus / Bloodlust Tracker: Added another preset icon option for the tracker icon selection.
 
 ### 🐛 Fixed
