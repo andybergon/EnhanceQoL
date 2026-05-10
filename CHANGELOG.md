@@ -2,6 +2,10 @@
 
 ## [10.15.0-beta3] - 2026-05-10
 
+### ✨ Added
+
+- Mythic Plus / Bloodlust Tracker: Added another preset icon option for the tracker icon selection.
+
 ### 🐛 Fixed
 
 - Vendor: Fixed automatic selling so low item-level tabards are skipped by the item-level autosell filter.
