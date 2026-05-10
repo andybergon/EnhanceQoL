@@ -6,11 +6,16 @@
 
 - Bags: Added a new rule option to group PvP gear separately.
 - Class Buff Reminder: Added pet reminders with passive and defensive stance tracking.
+- Item Inventory: Added a movable low durability warning with blink, threshold, ready check, font, color, and anchor options.
 - Mythic Plus / Bloodlust Tracker: Added another preset icon option for the tracker icon selection.
 
 ### 🐛 Fixed
 
 - Vendor: Fixed automatic selling so low item-level tabards are skipped by the item-level autosell filter.
+
+### ⚡ Performance
+
+- Bags / Vendor: Improved Baganator integration and reduced unnecessary background work during bag updates.
 
 ---
 
