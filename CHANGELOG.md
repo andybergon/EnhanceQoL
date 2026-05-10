@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.15.0-beta4] - 2026-05-10
+
+### 🐛 Fixed
+
+- Instant Chats: Added Blizzard-compatible player menu context for EIM player links, allowing addons such as CraftScan to inject quick response actions into the right-click menu. Battle.net contacts now resolve to their active WoW character for those responses.
+
+---
+
 ## [10.15.0-beta3] - 2026-05-10
 
 ### ✨ Added

@@ -297,7 +297,20 @@ local function ensureClearPopups()
 	end
 end
 
-local function showPlayerMenu(owner, rawName, isBN, bnetID)
+local function tagPlayerMenu(root, targetName, unit, isBN, bnetID, lineID, chatType, chatTarget, chatFrame)
+	if not (root and root.SetTag and unit) then return end
+
+	root:SetTag("MENU_UNIT_FRIEND", {
+		name = unit,
+		lineID = tonumber(lineID) or 0,
+		chatType = chatType or (isBN and "BN_WHISPER" or "WHISPER"),
+		chatTarget = chatTarget or unit or targetName,
+		chatFrame = chatFrame,
+		bnetIDAccount = bnetID,
+	})
+end
+
+local function showPlayerMenu(owner, rawName, isBN, bnetID, lineID, chatType, chatTarget)
 	if not rawName then return false end
 	local name = Ambiguate and Ambiguate(rawName, "none") or rawName
 	if MU and MU.CreateContextMenu then
@@ -325,6 +338,7 @@ local function showPlayerMenu(owner, rawName, isBN, bnetID)
 			else
 				if unit and not unit:match("%-") then unit = unit .. "-" .. sanitizeRealm(GetRealmName() or "") end
 			end
+			tagPlayerMenu(root, target, unit, isBN, accountID, lineID, chatType, chatTarget, owner)
 
 			if unit then root:CreateButton(INVITE, function(u) C_PartyInfo.InviteUnit(u) end, unit) end
 			local function toggleIgnore(unitName)
@@ -3094,10 +3108,14 @@ function ChannelHistory:EnsureLogFrame()
 		if button == "RightButton" then
 			local linkType, payload = link:match("^(%a+):(.+)$")
 			if payload and (linkType == "player" or linkType == "BNplayer") then
-				local namePart = payload:match("^[^:]+")
-				local accountID
-				if linkType == "BNplayer" then accountID = tonumber(select(2, strsplit(":", payload))) end
-				if namePart and showPlayerMenu(frame, namePart, linkType == "BNplayer", accountID) then return end
+				local namePart, accountID, lineID, chatType, chatTarget
+				if linkType == "BNplayer" then
+					namePart, accountID, lineID, chatType, chatTarget = strsplit(":", payload)
+					accountID = tonumber(accountID)
+				else
+					namePart, lineID, chatType, chatTarget = strsplit(":", payload)
+				end
+				if namePart and showPlayerMenu(frame, namePart, linkType == "BNplayer", accountID, lineID, chatType, chatTarget) then return end
 			end
 		end
 		if link and link:match("^url:") then
