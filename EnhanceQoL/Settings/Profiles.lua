@@ -256,6 +256,50 @@ local function markReloadRequired()
 	if addon.functions and addon.functions.checkReloadFrame then addon.functions.checkReloadFrame() end
 end
 
+local function applyDefaultProfileToAllCharacters()
+	if type(EnhanceQoLDB) ~= "table" then return 0 end
+	local profileName = EnhanceQoLDB.profileGlobal
+	if type(profileName) ~= "string" or profileName == "" then return 0 end
+
+	EnhanceQoLDB.profileKeys = type(EnhanceQoLDB.profileKeys) == "table" and EnhanceQoLDB.profileKeys or {}
+	local keys = EnhanceQoLDB.profileKeys
+	local applied = 0
+	for guid in pairs(keys) do
+		keys[guid] = profileName
+		applied = applied + 1
+	end
+
+	local currentGUID = UnitGUID("player")
+	if currentGUID and keys[currentGUID] ~= profileName then
+		keys[currentGUID] = profileName
+		applied = applied + 1
+	end
+
+	markReloadRequired()
+	return applied
+end
+
+local function showApplyDefaultProfileToAllPopup()
+	local profileName = EnhanceQoLDB and EnhanceQoLDB.profileGlobal
+	if type(profileName) ~= "string" or profileName == "" then return end
+
+	StaticPopupDialogs["EQOL_APPLY_DEFAULT_PROFILE_TO_ALL"] = StaticPopupDialogs["EQOL_APPLY_DEFAULT_PROFILE_TO_ALL"]
+		or {
+			button1 = ACCEPT,
+			button2 = CANCEL,
+			timeout = 0,
+			whileDead = true,
+			hideOnEscape = true,
+			preferredIndex = 3,
+		}
+	StaticPopupDialogs["EQOL_APPLY_DEFAULT_PROFILE_TO_ALL"].text = (L["ProfileApplyDefaultToAllConfirm"] or 'Apply default profile "%s" to all known characters?'):format(profileName)
+	StaticPopupDialogs["EQOL_APPLY_DEFAULT_PROFILE_TO_ALL"].OnAccept = function()
+		local applied = applyDefaultProfileToAllCharacters()
+		print("|cff00ff98Enhance QoL|r: " .. (L["ProfileApplyDefaultToAllDone"] or "Applied default profile to %d characters. Reload required."):format(applied))
+	end
+	StaticPopup_Show("EQOL_APPLY_DEFAULT_PROFILE_TO_ALL")
+end
+
 local function showOverwriteProfileFontSettingsPopup(mode)
 	local popupKey = "EQOL_OVERWRITE_GLOBAL_FONT_SETTINGS"
 	local text
@@ -1224,6 +1268,7 @@ local data = {
 	listFunc = function() return buildSortedProfileList(profileOrderActive) end,
 	order = profileOrderActive,
 	text = L["Active profile"],
+	desc = L["ProfileActiveDesc"] or "Profile used by this character. This overrides the default profile.",
 	get = function() return EnhanceQoLDB.profileKeys[UnitGUID("player")] or EnhanceQoLDB.profileGlobal end,
 	set = function(value)
 		EnhanceQoLDB.profileKeys[UnitGUID("player")] = value
@@ -1241,6 +1286,7 @@ data = {
 	listFunc = function() return buildSortedProfileList(profileOrderGlobal) end,
 	order = profileOrderGlobal,
 	text = L["Global profile"],
+	desc = L["ProfileDefaultDesc"] or "Profile used for new characters that do not have an active profile assigned yet.",
 	get = function() return EnhanceQoLDB.profileGlobal end,
 	set = function(value) EnhanceQoLDB.profileGlobal = value end,
 	default = "",
@@ -1250,6 +1296,13 @@ data = {
 
 addon.functions.SettingsCreateDropdown(cProfiles, data)
 addon.functions.SettingsCreateText(cProfiles, L["ProfileUseGlobalDesc"], { parentSection = expandable })
+addon.functions.SettingsCreateButton(cProfiles, {
+	var = "profileApplyDefaultToAll",
+	text = L["ProfileApplyDefaultToAll"] or "Apply default profile to all characters",
+	desc = L["ProfileApplyDefaultToAllDesc"] or "Sets the active profile of every known character to the default profile. Reload required.",
+	func = showApplyDefaultProfileToAllPopup,
+	parentSection = expandable,
+})
 
 data = {
 	listFunc = function()

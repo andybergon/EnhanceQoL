@@ -6198,6 +6198,43 @@ local function CreateUI()
 			end
 		end
 
+		if EnhanceQoLDB and type(EnhanceQoLDB.profiles) == "table" then
+			local names = {}
+			for profileName in pairs(EnhanceQoLDB.profiles) do
+				if type(profileName) == "string" and profileName ~= "" then names[#names + 1] = profileName end
+			end
+			table.sort(names)
+
+			if #names > 0 then
+				DoDevider()
+				local menu = root:CreateButton(L["ProfileMenuTitle"] or "Addon profile")
+				local guid = UnitGUID("player")
+				local activeName = guid and EnhanceQoLDB.profileKeys and EnhanceQoLDB.profileKeys[guid] or EnhanceQoLDB.profileGlobal
+				if activeName and activeName ~= "" then
+					local activeLabel = (L["UFProfileMenuActive"] or "Active: %s"):format(activeName)
+					local activeButton = menu:CreateButton(activeLabel)
+					if activeButton and activeButton.SetEnabled then activeButton:SetEnabled(false) end
+					if menu.CreateDivider then menu:CreateDivider() end
+				end
+				for _, profileName in ipairs(names) do
+					menu:CreateRadio(profileName, function()
+						local currentGUID = UnitGUID("player")
+						local currentName = currentGUID and EnhanceQoLDB.profileKeys and EnhanceQoLDB.profileKeys[currentGUID] or EnhanceQoLDB.profileGlobal
+						return currentName == profileName
+					end, function()
+						local currentGUID = UnitGUID("player")
+						if currentGUID then
+							EnhanceQoLDB.profileKeys = EnhanceQoLDB.profileKeys or {}
+							EnhanceQoLDB.profileKeys[currentGUID] = profileName
+							print("|cff00ff98Enhance QoL|r: " .. (L["ProfileSetActiveReload"] or "Switched addon profile to %s. Reloading UI..."):format(profileName))
+							ReloadUI()
+						end
+						return MenuResponse and MenuResponse.Close
+					end)
+				end
+			end
+		end
+
 		local ufProfiles = addon.Aura and addon.Aura.UF and addon.Aura.UF.Profiles
 		if ufProfiles and ufProfiles.GetSortedNames then
 			local names = ufProfiles.GetSortedNames()

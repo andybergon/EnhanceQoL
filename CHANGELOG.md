@@ -5,10 +5,12 @@
 ### ✨ Added
 
 - Bags: Added an Advanced setting to choose where stack counts are anchored on item icons.
+- Profiles: Added a Profile global action to apply the default profile to all known characters, plus main profile switching from the minimap menu.
 - Unit Frames: Added cooldown text position and offset controls for normal unit frame auras, matching the existing Group Frames aura options.
 
 ### 🔄 Changed
 
+- Profiles: Renamed Global profile to Default profile and clarified how active and default profiles are used.
 - Settings: Removed duplicate CVar options that are already available in Blizzard's own settings.
 
 ---
