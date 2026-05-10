@@ -363,7 +363,7 @@ end
 
 local function getCachedItemInfo(cached, itemID, itemLink)
 	if not cached.itemInfoLoaded then
-		local itemName, _, quality, _, _, _, _, _, _, _, sellPrice, classID, subclassID, bindType, expansionID = C_Item.GetItemInfo(itemLink)
+		local itemName, _, quality, _, _, _, _, _, itemEquipLoc, _, sellPrice, classID, subclassID, bindType, expansionID = C_Item.GetItemInfo(itemLink)
 		if not itemName then
 			if itemID then C_Item.RequestLoadItemDataByID(itemID) end
 			return nil
@@ -376,8 +376,9 @@ local function getCachedItemInfo(cached, itemID, itemLink)
 		cached.subclassID = subclassID
 		cached.bindType = bindType
 		cached.expansionID = expansionID
+		cached.itemEquipLoc = itemEquipLoc
 	end
-	return cached.itemName, cached.quality, cached.sellPrice, cached.classID, cached.subclassID, cached.bindType, cached.expansionID
+	return cached.itemName, cached.quality, cached.sellPrice, cached.classID, cached.subclassID, cached.bindType, cached.expansionID, cached.itemEquipLoc
 end
 
 local function getCachedDetailedItemLevel(cached, itemLink)
@@ -1398,7 +1399,7 @@ local function lookupItems()
 				end
 
 				if not processed then
-					local itemName, quality, sellPrice, classID, subclassID, bindType, expansionID = getCachedItemInfo(cached, itemID, itemLink)
+					local itemName, quality, sellPrice, classID, subclassID, bindType, expansionID, itemEquipLoc = getCachedItemInfo(cached, itemID, itemLink)
 					if not itemName then
 						-- Item data is still loading. Keep the slot cache warm so the next refresh
 						-- can reuse any unchanged slot state instead of rebuilding from scratch.
@@ -1433,6 +1434,8 @@ local function lookupItems()
 						elseif sellPrice and sellPrice > 0 then
 							if isItemInEquipmentSet(bag, slot, quality) then
 								-- Keep items that are assigned to an equipment set.
+							elseif itemEquipLoc == "INVTYPE_TABARD" then
+								-- Tabards often have very low item levels but should not be auto-vendored.
 							elseif quality == 0 and addon.Vendor.variables.itemQualityFilter[quality] then
 								local effectiveBindType = bindType or 0
 								if shouldReadTooltipInfo(quality, bindType) then
