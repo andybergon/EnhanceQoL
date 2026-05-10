@@ -804,6 +804,15 @@ local FIELD_DEFINITIONS = {
 		contextKey = "isKeystone",
 		buildOptions = buildBooleanOptions,
 	},
+	isPvpItem = {
+		labelKey = "settingsRuleFieldPvpItem",
+		groupID = "smart",
+		valueType = "enum",
+		operators = { "EQUALS" },
+		defaultOperator = "EQUALS",
+		contextKey = "isPvpItem",
+		buildOptions = buildBooleanOptions,
+	},
 	itemLevel = {
 		labelKey = "settingsRuleFieldItemLevel",
 		groupID = "numbers",

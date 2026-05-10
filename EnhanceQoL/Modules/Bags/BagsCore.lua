@@ -1,4 +1,4 @@
--- luacheck: globals BagsItemButton_OnLoad ItemButtonUtil ContainerFrameItemButtonMixin ScrollFrameTemplate_OnMouseWheel IsAnyStandardHeldBagOpen BackpackTokenFrame BagItemAutoSortButton ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar UIPanelScrollFrame_OnLoad ClearItemButtonOverlay SetItemButtonQuality SetItemButtonCount SetItemButtonDesaturated SetItemButtonTextureVertexColor ContainerFrame_AllowedToOpenBags C_Cursor COPPER_PER_GOLD COPPER_PER_SILVER NUM_BAG_SLOTS NUM_REAGENTBAG_SLOTS GetInventoryItemTexture GetInventoryItemID GetInventoryItemQuality GetInventorySlotInfo PickupBagFromSlot PutItemInBackpack PutItemInBag CloseAllBags BAGS EQUIP_CONTAINER EQUIP_CONTAINER_REAGENT
+-- luacheck: globals BagsItemButton_OnLoad ItemButtonUtil ContainerFrameItemButtonMixin ScrollFrameTemplate_OnMouseWheel IsAnyStandardHeldBagOpen BackpackTokenFrame BagItemAutoSortButton ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar UIPanelScrollFrame_OnLoad ClearItemButtonOverlay SetItemButtonQuality SetItemButtonCount SetItemButtonDesaturated SetItemButtonTextureVertexColor ContainerFrame_AllowedToOpenBags C_Cursor COPPER_PER_GOLD COPPER_PER_SILVER NUM_BAG_SLOTS NUM_REAGENTBAG_SLOTS GetInventoryItemTexture GetInventoryItemID GetInventoryItemQuality GetInventorySlotInfo PickupBagFromSlot PutItemInBackpack PutItemInBag CloseAllBags BAGS EQUIP_CONTAINER EQUIP_CONTAINER_REAGENT PVP_ITEM_LEVEL_TOOLTIP
 local addonName, addon = ...
 addon = addon or {}
 _G[addonName] = addon
@@ -195,6 +195,11 @@ local markOpenSessionNewItemAcknowledged
 local installFrameDropReceiver
 local receiveCursorItemIntoBags
 local itemLevelEligibilityCache = {}
+Core.PVP_ITEM_TOOLTIP_PATTERN = PVP_ITEM_LEVEL_TOOLTIP
+	and addon.functions
+	and addon.functions.fmtToPattern
+	and addon.functions.fmtToPattern(PVP_ITEM_LEVEL_TOOLTIP)
+	or nil
 local BagSlotPanel = {}
 
 function Core.GetFooterRegions(side)
@@ -4427,6 +4432,7 @@ function Core.GetTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 	flags.isToy = false
 	flags.isKnownToy = false
 	flags.isTransmogSet = false
+	flags.isPvpItem = false
 	flags.hasUsageRequirement = false
 
 	local toyText = _G.TOY
@@ -4449,6 +4455,8 @@ function Core.GetTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 				flags.isTransmogSet = true
 			elseif toyText and lineType == Core.TOY_TOOLTIP_LINE_TYPE and line.leftText == toyText then
 				hasToyLine = true
+			elseif Core.PVP_ITEM_TOOLTIP_PATTERN and lineType == 0 and line.leftText and line.leftText:match(Core.PVP_ITEM_TOOLTIP_PATTERN) then
+				flags.isPvpItem = true
 			elseif lineType == Core.KNOWN_SPELL_TOOLTIP_LINE_TYPE then
 				if knownText and line.leftText == knownText then
 					hasKnownLine = true
@@ -4897,7 +4905,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local needsTransmogTooltip = usage.isTransmogSet
 				and tonumber(classID) == Core.CONSUMABLE_CLASS_ID
 				and tonumber(subClassID) == Core.CONSUMABLE_OTHER_SUBCLASS_ID
-			if usage.isToy or needsTransmogTooltip then
+			if usage.isToy or usage.isPvpItem or needsTransmogTooltip then
 				tooltipFlags = Core.GetTooltipDerivedItemFlags(bagID, slotID, info, ruleRuntimeContext)
 			end
 
@@ -4909,6 +4917,11 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local isToy
 			if usage.isToy then
 				isToy = tooltipFlags and tooltipFlags.isToy or false
+			end
+
+			local isPvpItem
+			if usage.isPvpItem then
+				isPvpItem = tooltipFlags and tooltipFlags.isPvpItem or false
 			end
 
 			local resolvedBindType = ruleItemInfo and ruleItemInfo.bindType or nil
@@ -4973,6 +4986,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.isEquipmentSet = not not isEquipmentSet
 			itemContext.isTransmogSet = not not isTransmogSet
 			itemContext.isToy = not not isToy
+			itemContext.isPvpItem = not not isPvpItem
 			itemContext.isTeleportItem = addon.MythicPlus
 				and addon.MythicPlus.functions
 				and addon.MythicPlus.functions.IsTeleportItem

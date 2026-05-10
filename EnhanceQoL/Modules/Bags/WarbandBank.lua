@@ -1,4 +1,4 @@
--- luacheck: globals ACCOUNT_BANK_TITLE ACCOUNT_BANK_DEPOSIT_BUTTON_LABEL CHARACTER_BANK_DEPOSIT_BUTTON_LABEL C_Bank C_Cursor ItemUtil ScrollFrameTemplate_OnMouseWheel BANK_DEPOSIT_INCLUDE_REAGENTS_CHECKBOX_LABEL ClearItemButtonOverlay SetItemButtonQuality SetItemButtonTextureVertexColor ItemButtonUtil PanelTemplates_TabResize ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar BankPanelIncludeReagentsCheckboxMixin BankPanelPurchaseTabButtonMixin UIPanelScrollFrame_OnLoad COPPER_PER_GOLD COPPER_PER_SILVER WHITE_FONT_COLOR COSTS
+-- luacheck: globals ACCOUNT_BANK_TITLE ACCOUNT_BANK_DEPOSIT_BUTTON_LABEL CHARACTER_BANK_DEPOSIT_BUTTON_LABEL C_Bank C_Cursor ItemUtil ScrollFrameTemplate_OnMouseWheel BANK_DEPOSIT_INCLUDE_REAGENTS_CHECKBOX_LABEL ClearItemButtonOverlay SetItemButtonQuality SetItemButtonTextureVertexColor ItemButtonUtil PanelTemplates_TabResize ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar BankPanelIncludeReagentsCheckboxMixin BankPanelPurchaseTabButtonMixin UIPanelScrollFrame_OnLoad COPPER_PER_GOLD COPPER_PER_SILVER WHITE_FONT_COLOR COSTS PVP_ITEM_LEVEL_TOOLTIP
 local addonName, addon = ...
 addon = addon or {}
 _G[addonName] = addon
@@ -174,6 +174,11 @@ if state.playerRuleRevision == nil then
 end
 
 local itemLevelEligibilityCache = {}
+state.pvpItemTooltipPattern = PVP_ITEM_LEVEL_TOOLTIP
+	and addon.functions
+	and addon.functions.fmtToPattern
+	and addon.functions.fmtToPattern(PVP_ITEM_LEVEL_TOOLTIP)
+	or nil
 local cachedOverlayRuntimeConfig
 local scheduleUpdate
 local applyActiveSkin
@@ -1929,6 +1934,7 @@ local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 	flags.isToy = false
 	flags.isKnownToy = false
 	flags.isTransmogSet = false
+	flags.isPvpItem = false
 	flags.hasUsageRequirement = false
 
 	local toyText = _G.TOY
@@ -1951,6 +1957,8 @@ local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 				flags.isTransmogSet = true
 			elseif toyText and lineType == TOY_TOOLTIP_LINE_TYPE and line.leftText == toyText then
 				hasToyLine = true
+			elseif state.pvpItemTooltipPattern and lineType == 0 and line.leftText and line.leftText:match(state.pvpItemTooltipPattern) then
+				flags.isPvpItem = true
 			elseif lineType == KNOWN_SPELL_TOOLTIP_LINE_TYPE then
 				if knownText and line.leftText == knownText then
 					hasKnownLine = true
@@ -2615,7 +2623,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local needsTransmogTooltip = usage.isTransmogSet
 				and tonumber(classID) == CONSUMABLE_CLASS_ID
 				and tonumber(subClassID) == CONSUMABLE_OTHER_SUBCLASS_ID
-			if usage.isToy or needsTransmogTooltip then
+			if usage.isToy or usage.isPvpItem or needsTransmogTooltip then
 				tooltipFlags = getTooltipDerivedItemFlags(bagID, slotID, info, ruleRuntimeContext)
 			end
 
@@ -2627,6 +2635,11 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local isToy
 			if usage.isToy then
 				isToy = tooltipFlags and tooltipFlags.isToy or false
+			end
+
+			local isPvpItem
+			if usage.isPvpItem then
+				isPvpItem = tooltipFlags and tooltipFlags.isPvpItem or false
 			end
 
 			local resolvedBindType = ruleItemInfo and ruleItemInfo.bindType or nil
@@ -2684,6 +2697,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.isEquipmentSet = not not isEquipmentSet
 			itemContext.isTransmogSet = not not isTransmogSet
 			itemContext.isToy = not not isToy
+			itemContext.isPvpItem = not not isPvpItem
 			itemContext.isTeleportItem = addon.MythicPlus
 				and addon.MythicPlus.functions
 				and addon.MythicPlus.functions.IsTeleportItem

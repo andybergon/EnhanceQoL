@@ -3457,6 +3457,7 @@ L["settingsRuleFieldCanAuctionHouseSell"] = "Можно продать на ау
 L["settingsRuleFieldEquipmentSet"] = "В комплекте экипировки"
 L["settingsRuleFieldHearthstone"] = "Камень возвращения"
 L["settingsRuleFieldKeystone"] = "Ключ"
+L["settingsRuleFieldPvpItem"] = "PvP-предмет"
 L["settingsRuleFieldTeleportItem"] = "Предмет телепортации"
 L["settingsRuleFieldTransmogSet"] = "Комплект трансмогрификации"
 L["settingsRuleFieldToy"] = "Игрушка"

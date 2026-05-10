@@ -3457,6 +3457,7 @@ L["settingsRuleFieldCanAuctionHouseSell"] = "Se puede vender en la casa de subas
 L["settingsRuleFieldEquipmentSet"] = "En conjunto de equipo"
 L["settingsRuleFieldHearthstone"] = "Piedra de hogar"
 L["settingsRuleFieldKeystone"] = "Piedra angular"
+L["settingsRuleFieldPvpItem"] = "Objeto JcJ"
 L["settingsRuleFieldTeleportItem"] = "Objeto de teletransporte"
 L["settingsRuleFieldTransmogSet"] = "Conjunto de transfiguracion"
 L["settingsRuleFieldToy"] = "Juguete"

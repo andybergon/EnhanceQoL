@@ -3457,6 +3457,7 @@ L["settingsRuleFieldCanAuctionHouseSell"] = "Peut être vendu à l'hôtel des ve
 L["settingsRuleFieldEquipmentSet"] = "Dans un ensemble d équipement"
 L["settingsRuleFieldHearthstone"] = "Pierre de foyer"
 L["settingsRuleFieldKeystone"] = "Clé mythique"
+L["settingsRuleFieldPvpItem"] = "Objet JcJ"
 L["settingsRuleFieldTeleportItem"] = "Objet de teleportation"
 L["settingsRuleFieldTransmogSet"] = "Ensemble de transmogrification"
 L["settingsRuleFieldToy"] = "Jouet"

@@ -4,6 +4,7 @@
 
 ### ✨ Added
 
+- Bags: Added a new rule option to group PvP gear separately.
 - Mythic Plus / Bloodlust Tracker: Added another preset icon option for the tracker icon selection.
 
 ### 🐛 Fixed
