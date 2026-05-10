@@ -4648,6 +4648,7 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("BANKFRAME_OPENED")
 eventFrame:RegisterEvent("BANKFRAME_CLOSED")
+eventFrame:RegisterEvent("EQUIPMENT_SETS_CHANGED")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
 	if event == "PLAYER_LOGIN" then
 		if addon.Bags and addon.Bags.IsEnabled and addon.Bags.IsEnabled() then
@@ -4696,6 +4697,12 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
 		clearTooltipDerivedItemFlagsCache()
 		scheduleUpdate(true, false)
+	elseif event == "EQUIPMENT_SETS_CHANGED" then
+		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
+		if usage and usage.isEquipmentSet then
+			wipeTable(state.slotCategoryCache)
+			scheduleUpdate(true, true)
+		end
 	elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED" then
 		scheduleUpdate(true, false)
 	elseif event == "BANK_TABS_CHANGED" or event == "BANK_TAB_SETTINGS_UPDATED" then

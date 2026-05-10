@@ -80,6 +80,7 @@ Core.PASSIVE_BAG_EVENTS = {
 	"BAG_UPDATE",
 	"BAG_UPDATE_DELAYED",
 	"BAG_NEW_ITEMS_UPDATED",
+	"EQUIPMENT_SETS_CHANGED",
 	"ITEM_DATA_LOAD_RESULT",
 	"TOYS_UPDATED",
 	"NEW_TOY_ADDED",
@@ -6749,6 +6750,12 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
 		Core.ClearTooltipDerivedItemFlagsCache()
 		scheduleUpdate(true, false)
+	elseif event == "EQUIPMENT_SETS_CHANGED" then
+		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
+		if usage and usage.isEquipmentSet then
+			wipeTable(state.slotCategoryCache)
+			scheduleUpdate(true, true)
+		end
 	elseif event == "UNIT_INVENTORY_CHANGED" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
 		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
 		if doesRuleUsageDependOnPlayerState(usage) then
