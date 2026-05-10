@@ -1133,6 +1133,14 @@ local function getItemButtonTextAppearanceSignature(appearance)
 	return getTextAppearanceSignature(appearance or getResolvedTextAppearance("overlays")) .. ":" .. getTextAppearanceSignature(stackAppearance)
 end
 
+local function getStackCountLayoutSignature()
+	if addon.GetStackCountLayoutSignature then
+		return addon.GetStackCountLayoutSignature()
+	end
+
+	return addon.GetStackCountAnchor and addon.GetStackCountAnchor() or "BOTTOMRIGHT"
+end
+
 local function getMaxFrameHeight()
 	local parentHeight = UIParent and UIParent:GetHeight() or nil
 	local screenHeight = (parentHeight and parentHeight > 0) and parentHeight or 900
@@ -3468,6 +3476,7 @@ local function hasMatchingButtonRenderState(
 	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
+	stackCountLayoutSignature,
 	freeSlotSignature
 )
 	return button._bagsRenderBagID == bagID
@@ -3489,6 +3498,7 @@ local function hasMatchingButtonRenderState(
 		and button._bagsRenderUnusableRecipe == isUnusableRecipe
 		and button._bagsRenderOverlayVersion == overlayVersion
 		and button._bagsRenderFontSignature == fontSignature
+		and button._bagsRenderStackCountLayoutSignature == stackCountLayoutSignature
 		and button._bagsRenderFreeSlotSignature == freeSlotSignature
 end
 
@@ -3519,6 +3529,7 @@ local function storeButtonRenderState(
 	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
+	stackCountLayoutSignature,
 	freeSlotSignature
 )
 	button._bagsRenderBagID = bagID
@@ -3541,6 +3552,7 @@ local function storeButtonRenderState(
 	button._bagsRenderUnusableRecipe = isUnusableRecipe
 	button._bagsRenderOverlayVersion = overlayVersion
 	button._bagsRenderFontSignature = fontSignature
+	button._bagsRenderStackCountLayoutSignature = stackCountLayoutSignature
 	button._bagsRenderFreeSlotSignature = freeSlotSignature
 end
 
@@ -3604,6 +3616,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	overlayRuntime = overlayRuntime or getOverlayRuntimeConfig()
 	fontSignature = fontSignature or getTextAppearanceSignature(textAppearance)
 	local overlayVersion = overlayRuntime and overlayRuntime.version or 0
+	local stackCountLayoutSignature = getStackCountLayoutSignature()
 
 	if hasMatchingButtonRenderState(
 		button,
@@ -3626,12 +3639,16 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
+		stackCountLayoutSignature,
 		freeSlotSignature
 	) then
 		if not button:IsShown() then
 			button:Show()
 		end
 		applyItemButtonSkinIfNeeded(button, quality)
+		if addon.ApplyStackCountLayout then
+			addon.ApplyStackCountLayout(button)
+		end
 		updateReagentBagVisuals(button)
 		applyConfiguredOverlayAnchors(button, overlayRuntime)
 		Core.UpdateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
@@ -3691,6 +3708,9 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	end
 	updateReagentBagVisuals(button)
 	applyConfiguredItemButtonFonts(button, textAppearance, fontSignature)
+	if addon.ApplyStackCountLayout then
+		addon.ApplyStackCountLayout(button)
+	end
 	applyConfiguredOverlayAnchors(button, overlayRuntime)
 	updateItemLevelText(button, itemLink, itemID, quality, overlayRuntime)
 	updateItemUpgradeText(button, itemLink, itemID, overlayRuntime)
@@ -3718,6 +3738,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
+		stackCountLayoutSignature,
 		freeSlotSignature
 	)
 	button._bagsPendingRenderTexture = nil

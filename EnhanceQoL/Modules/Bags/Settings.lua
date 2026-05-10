@@ -4310,6 +4310,22 @@ local function createLayoutPage(parent)
 		end)
 		row.OutlineButton = outline
 
+		local stackAnchor = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+		stackAnchor:SetSize(104, 22)
+		stackAnchor:SetPoint("RIGHT", outline, "LEFT", -6, 0)
+		stackAnchor:SetShown(elementID == "stackCount")
+		setButtonFontObject(stackAnchor, GameFontNormalSmall)
+		stackAnchor:SetScript("OnClick", function(self)
+			openSimpleRadioMenu(self, addon.GetStackCountAnchorOptions and addon.GetStackCountAnchorOptions() or {}, addon.GetStackCountAnchor and addon.GetStackCountAnchor() or "BOTTOMRIGHT", function(value)
+				if addon.SetStackCountAnchor and addon.SetStackCountAnchor(value) then
+					addon.RefreshSettingsFrame("layout")
+					requestBagRefresh(false, true)
+				end
+			end)
+		end)
+		setTooltipScripts(stackAnchor, L["settingsOverlayAnchorLabel"] or "Anchor", nil)
+		row.StackAnchorButton = stackAnchor
+
 		local case = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
 		case:SetSize(78, 22)
 		case:SetPoint("RIGHT", outline, "LEFT", -6, 0)
@@ -4329,7 +4345,7 @@ local function createLayoutPage(parent)
 		local sizeStepper = CreateFrame("Frame", nil, row)
 		sizeStepper:SetSize(74, 22)
 		if elementID == "stackCount" then
-			sizeStepper:SetPoint("RIGHT", outline, "LEFT", -6, 0)
+			sizeStepper:SetPoint("RIGHT", stackAnchor, "LEFT", -6, 0)
 		else
 			sizeStepper:SetPoint("RIGHT", case, "LEFT", -6, 0)
 		end
@@ -4679,6 +4695,14 @@ refreshLayoutPage = function(page)
 		if row.CaseButton then
 			row.CaseButton:SetShown(elementID ~= "stackCount")
 			row.CaseButton:SetText(getOptionLabel(addon.GetTextCaseOptions and addon.GetTextCaseOptions() or {}, elementAppearance.case or "default", L["settingsTextCaseLabel"] or "Case"))
+		end
+		if row.StackAnchorButton then
+			row.StackAnchorButton:SetShown(elementID == "stackCount")
+			row.StackAnchorButton:SetText(getOptionLabel(
+				addon.GetStackCountAnchorOptions and addon.GetStackCountAnchorOptions() or {},
+				addon.GetStackCountAnchor and addon.GetStackCountAnchor() or "BOTTOMRIGHT",
+				L["settingsOverlayAnchorLabel"] or "Anchor"
+			))
 		end
 		if row.OutlineButton then
 			row.OutlineButton:SetText(getOptionLabel(addon.GetTextElementOutlineOptions and addon.GetTextElementOutlineOptions() or {}, elementAppearance.outline, L["settingsTextElementOutlineLabel"] or "Element outline"))

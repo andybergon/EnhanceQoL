@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.15.0-beta2] - 2026-05-10
+
+### ✨ Added
+
+- Bags: Added an Advanced setting to choose where stack counts are anchored on item icons.
+
+---
+
 ## [10.15.0-beta1] - 2026-05-10
 
 ### ✨ Added

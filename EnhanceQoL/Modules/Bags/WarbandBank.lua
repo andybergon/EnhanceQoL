@@ -3074,6 +3074,7 @@ local function hasMatchingButtonRenderState(
 	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
+	stackCountLayoutSignature,
 	freeSlotSignature
 )
 	return button._bagsWarbandRenderBagID == bagID
@@ -3095,6 +3096,7 @@ local function hasMatchingButtonRenderState(
 		and button._bagsWarbandRenderUnusableRecipe == isUnusableRecipe
 		and button._bagsWarbandRenderOverlayVersion == overlayVersion
 		and button._bagsWarbandRenderFontSignature == fontSignature
+		and button._bagsWarbandRenderStackCountLayoutSignature == stackCountLayoutSignature
 		and button._bagsWarbandRenderFreeSlotSignature == freeSlotSignature
 end
 
@@ -3125,6 +3127,7 @@ local function storeButtonRenderState(
 	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
+	stackCountLayoutSignature,
 	freeSlotSignature
 )
 	button._bagsWarbandRenderBagID = bagID
@@ -3147,6 +3150,7 @@ local function storeButtonRenderState(
 	button._bagsWarbandRenderUnusableRecipe = isUnusableRecipe
 	button._bagsWarbandRenderOverlayVersion = overlayVersion
 	button._bagsWarbandRenderFontSignature = fontSignature
+	button._bagsWarbandRenderStackCountLayoutSignature = stackCountLayoutSignature
 	button._bagsWarbandRenderFreeSlotSignature = freeSlotSignature
 end
 
@@ -3230,6 +3234,8 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	overlayRuntime = overlayRuntime or getOverlayRuntimeConfig()
 	fontSignature = fontSignature or getTextAppearanceSignature(textAppearance)
 	local overlayVersion = overlayRuntime and overlayRuntime.version or 0
+	local stackCountLayoutSignature = addon.GetStackCountLayoutSignature and addon.GetStackCountLayoutSignature()
+		or (addon.GetStackCountAnchor and addon.GetStackCountAnchor() or "BOTTOMRIGHT")
 
 	if hasMatchingButtonRenderState(
 		button,
@@ -3252,12 +3258,16 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
+		stackCountLayoutSignature,
 		freeSlotSignature
 	) then
 		if not button:IsShown() then
 			button:Show()
 		end
 		Bags.functions.ApplyWarbandItemButtonSkinIfNeeded(button, quality)
+		if addon.ApplyStackCountLayout then
+			addon.ApplyStackCountLayout(button)
+		end
 		applyConfiguredOverlayAnchors(button, overlayRuntime)
 		updateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
 		updateBindStatusOverlay(button, bagID, slotID, info, overlayRuntime)
@@ -3315,6 +3325,9 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		addon.RefreshItemButtonCooldownMask(button)
 	end
 	applyConfiguredItemButtonFonts(button, textAppearance, fontSignature)
+	if addon.ApplyStackCountLayout then
+		addon.ApplyStackCountLayout(button)
+	end
 	applyConfiguredOverlayAnchors(button, overlayRuntime)
 	updateItemLevelText(button, itemLink, itemID, quality, overlayRuntime)
 	updateItemUpgradeText(button, itemLink, itemID, overlayRuntime)
@@ -3342,6 +3355,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
+		stackCountLayoutSignature,
 		freeSlotSignature
 	)
 	button._bagsWarbandPendingRenderTexture = nil
