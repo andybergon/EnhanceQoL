@@ -646,6 +646,17 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		{ value = "BOTTOMRIGHT", label = L["Bottom right"] or "Bottom right" },
 		{ value = "CENTER", label = L["Center"] or "Center" },
 	}
+	local cooldownAnchorOptions = {
+		{ value = "TOPLEFT", label = L["Top left"] or "Top left" },
+		{ value = "TOP", label = DIRECTION_TOP_LABEL },
+		{ value = "TOPRIGHT", label = L["Top right"] or "Top right" },
+		{ value = "LEFT", label = DIRECTION_LEFT_LABEL },
+		{ value = "CENTER", label = L["Center"] or "Center" },
+		{ value = "RIGHT", label = DIRECTION_RIGHT_LABEL },
+		{ value = "BOTTOMLEFT", label = L["Bottom left"] or "Bottom left" },
+		{ value = "BOTTOM", label = DIRECTION_BOTTOM_LABEL },
+		{ value = "BOTTOMRIGHT", label = L["Bottom right"] or "Bottom right" },
+	}
 
 	local leftLabel = DIRECTION_LEFT_LABEL
 	local rightLabel = DIRECTION_RIGHT_LABEL
@@ -969,6 +980,51 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 			refreshSelf()
 		end, auraDef.showCooldown ~= false, parentId)
 		list[#list].isEnabled = isSectionEnabled
+
+		list[#list + 1] = radioDropdown(
+			L["Cooldown text anchor"] or "Cooldown text anchor",
+			cooldownAnchorOptions,
+			function() return getAuraSectionValue(sectionKey, { "cooldownAnchor" }, auraDef.cooldownAnchor or "CENTER") end,
+			function(val)
+				setAuraSectionValue(sectionKey, { "cooldownAnchor" }, val or "CENTER")
+				refreshSelf()
+			end,
+			auraDef.cooldownAnchor or "CENTER",
+			parentId
+		)
+		list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
+
+		list[#list + 1] = slider(
+			L["Cooldown text offset X"] or "Cooldown text offset X",
+			-OFFSET_RANGE,
+			OFFSET_RANGE,
+			1,
+			function() return getAuraSectionValue(sectionKey, { "cooldownOffset", "x" }, (auraDef.cooldownOffset and auraDef.cooldownOffset.x) or 0) end,
+			function(val)
+				setAuraSectionValue(sectionKey, { "cooldownOffset", "x" }, val or 0)
+				refreshSelf()
+			end,
+			(auraDef.cooldownOffset and auraDef.cooldownOffset.x) or 0,
+			parentId,
+			true
+		)
+		list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
+
+		list[#list + 1] = slider(
+			L["Cooldown text offset Y"] or "Cooldown text offset Y",
+			-OFFSET_RANGE,
+			OFFSET_RANGE,
+			1,
+			function() return getAuraSectionValue(sectionKey, { "cooldownOffset", "y" }, (auraDef.cooldownOffset and auraDef.cooldownOffset.y) or 0) end,
+			function(val)
+				setAuraSectionValue(sectionKey, { "cooldownOffset", "y" }, val or 0)
+				refreshSelf()
+			end,
+			(auraDef.cooldownOffset and auraDef.cooldownOffset.y) or 0,
+			parentId,
+			true
+		)
+		list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
 
 		list[#list + 1] = slider(L["Cooldown text size"] or "Cooldown text size", 1, 32, 1, function()
 			local fallback = auraDef.cooldownFontSize or 14

@@ -5,6 +5,7 @@
 ### ✨ Added
 
 - Bags: Added an Advanced setting to choose where stack counts are anchored on item icons.
+- Unit Frames: Added cooldown text position and offset controls for normal unit frame auras, matching the existing Group Frames aura options.
 
 ### 🔄 Changed
 
