@@ -264,6 +264,7 @@ UF.ui.getPlayerClassFrameSupportFlags = getPlayerClassFrameSupportFlags
 
 local maxBossFrames = (UF and UF.GetSupportedBossFrameCount and UF.GetSupportedBossFrameCount()) or 8
 local defaultBossFrames = (UF and UF.GetDefaultBossFrameCount and UF.GetDefaultBossFrameCount()) or (MAX_BOSS_FRAMES or 5)
+local bossSpacingMin = (UF and UF.BOSS_SPACING_MIN) or -50
 local bossUnitLookup = { boss = true }
 for i = 1, maxBossFrames do
 	bossUnitLookup["boss" .. i] = true
@@ -1893,7 +1894,7 @@ local function appendBossLayoutSettings(list, unit, def, refreshSelf)
 		"layout"
 	)
 
-	list[#list + 1] = slider(L["UFBossSpacing"] or "Boss spacing", 0, 100, 1, function() return getValue(unit, { "spacing" }, def.spacing or 4) end, function(val)
+	list[#list + 1] = slider(L["UFBossSpacing"] or "Boss spacing", bossSpacingMin, 100, 1, function() return getValue(unit, { "spacing" }, def.spacing or 4) end, function(val)
 		setValue(unit, { "spacing" }, val or def.spacing or 4)
 		refreshSelf()
 	end, def.spacing or 4, "layout", true)

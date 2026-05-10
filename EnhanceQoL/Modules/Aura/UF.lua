@@ -65,6 +65,8 @@ function UF.ToggleEditModeSample(unit)
 	UF.SetEditModeSampleEnabled(unit, not (UF._editModeSample and UF._editModeSample[unit] == true))
 end
 local maxBossFrames = 8
+UF.BOSS_SPACING_MIN = -50
+local BOSS_SPACING_MIN = UF.BOSS_SPACING_MIN
 local UF_PROFILE_SHARE_KIND = "EQOL_UF_PROFILE"
 local smoothFill = Enum.StatusBarInterpolation.ExponentialEaseOut
 local TEXT_UPDATE_INTERVAL = 0.1
@@ -9667,6 +9669,8 @@ local function layoutBossFrames(cfg)
 	local spacing = cfg.spacing
 	if spacing == nil and def then spacing = def.spacing end
 	if spacing == nil then spacing = 4 end
+	spacing = tonumber(spacing) or 4
+	if spacing < BOSS_SPACING_MIN then spacing = BOSS_SPACING_MIN end
 	local growth = (cfg.growth or (def and def.growth) or "DOWN"):upper()
 	local last
 	local shown = 0
@@ -9699,6 +9703,7 @@ local function layoutBossFrames(cfg)
 	end
 	if shown > 0 then
 		local totalHeight = frameHeight * shown + spacing * (shown - 1)
+		if totalHeight < frameHeight then totalHeight = frameHeight end
 		bossContainer:SetHeight(totalHeight)
 		bossContainer:SetWidth(maxWidth)
 	end

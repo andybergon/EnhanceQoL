@@ -14,6 +14,7 @@
 - Bags: Fixed Recommended for class/spec automatic category rules to use EQoL's class/spec item type filters instead of broad item recommendation or usability checks, preventing profession gear and other usable non-combat items from matching as recommended gear.
 - Bags: Fixed the bag toggle sometimes needing to be pressed twice after upgrade or item-related windows opened the bags automatically.
 - Unit Frames: Fixed custom health bar textures losing their original colors when using a white health color.
+- Unit Frames / Boss Frames: Fixed boss frame spacing so negative values can remove the remaining gap when name or status text is enabled.
 - Resource Bars: Fixed borders and backgrounds sometimes disappearing when separated stack styling was enabled but the bar had no stacks to split.
 
 ---
