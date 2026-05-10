@@ -58,9 +58,14 @@ local baganatorCornerWidgetRegistered = false
 local baganatorUpgradeCornerWidgetRegistered = false
 local pendingBaganatorWidgetRefresh = false
 local pendingBaganatorLayoutUpdate = false
+local pendingBaganatorOverlaySweep = false
 local baganatorDestroyRegionLastShown = nil
 local baganatorDestroyRegionLastWidth = nil
 local baganatorInitialFrameScanCompleted = false
+local baganatorCornerWidgetActiveCache = {}
+local baganatorOverlayContext = { useCornerIcons = false }
+local vendorMarksRevision = 0
+local lastBaganatorSellDestroyWidgetRefreshRevision = -1
 
 local function ensureDestroyListFrame()
 	if destroyState.list and destroyState.list:IsObjectType("Frame") then return destroyState.list end
@@ -248,16 +253,32 @@ local function requestBaganatorLayoutUpdateForDestroyRegion(force)
 	end
 end
 
-local function isBaganatorCornerWidgetActive()
+local function invalidateBaganatorCornerWidgetActiveCache()
+	if wipe then
+		wipe(baganatorCornerWidgetActiveCache)
+	else
+		for key in pairs(baganatorCornerWidgetActiveCache) do
+			baganatorCornerWidgetActiveCache[key] = nil
+		end
+	end
+end
+
+local function isBaganatorCornerWidgetActiveCached(widgetID)
+	local cached = baganatorCornerWidgetActiveCache[widgetID]
+	if cached ~= nil then return cached end
 	local api = _G.Baganator and _G.Baganator.API
-	if not (api and api.IsCornerWidgetActive) then return false end
-	return api.IsCornerWidgetActive(BAGANATOR_CORNER_WIDGET_ID) == true
+	local active = api and api.IsCornerWidgetActive and api.IsCornerWidgetActive(widgetID) == true or false
+	baganatorCornerWidgetActiveCache[widgetID] = active
+	return active
+end
+
+local function isBaganatorCornerWidgetActive()
+	return isBaganatorCornerWidgetActiveCached(BAGANATOR_CORNER_WIDGET_ID)
 end
 
 local function getBaganatorOverlayContext()
-	return {
-		useCornerIcons = isBaganatorCornerWidgetActive(),
-	}
+	baganatorOverlayContext.useCornerIcons = isBaganatorCornerWidgetActiveCached(BAGANATOR_CORNER_WIDGET_ID)
+	return baganatorOverlayContext
 end
 
 local function shouldUseBaganatorSellDestroyIntegration()
@@ -295,6 +316,27 @@ local function requestBaganatorItemWidgetRefresh()
 	RunNextFrame(function()
 		pendingBaganatorWidgetRefresh = false
 		api.RequestItemButtonsRefresh({ constants.RefreshReason.ItemWidgets })
+	end)
+end
+
+local function bumpVendorMarksRevision()
+	vendorMarksRevision = vendorMarksRevision + 1
+end
+
+local function requestBaganatorSellDestroyWidgetRefreshIfNeeded()
+	if not baganatorCornerWidgetRegistered then return end
+	if not isBaganatorCornerWidgetActiveCached(BAGANATOR_CORNER_WIDGET_ID) then return end
+	if lastBaganatorSellDestroyWidgetRefreshRevision == vendorMarksRevision then return end
+	lastBaganatorSellDestroyWidgetRefreshRevision = vendorMarksRevision
+	requestBaganatorItemWidgetRefresh()
+end
+
+local function requestBaganatorOverlaySweep()
+	if pendingBaganatorOverlaySweep then return end
+	pendingBaganatorOverlaySweep = true
+	RunNextFrame(function()
+		pendingBaganatorOverlaySweep = false
+		applySellDestroyOverlaysToBaganatorButtons()
 	end)
 end
 
@@ -835,6 +877,21 @@ applySellDestroyOverlaysToBaganatorButtons = function()
 	end
 end
 
+local function applyCurrentVendorMarksToVisibleUI()
+	local overlaySell = addon.db["vendorShowSellOverlay"]
+	local overlayDestroy = addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"]
+	local frames = ContainerFrameContainer and ContainerFrameContainer.ContainerFrames or {}
+
+	applySellDestroyOverlaysToFrame(ContainerFrameCombinedBags)
+	for _, frame in ipairs(frames) do
+		applySellDestroyOverlaysToFrame(frame)
+	end
+	if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
+		addon.Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy)
+	end
+	requestBaganatorOverlaySweep()
+end
+
 local function refreshSellDestroyOverlaySearchStateForBaganatorButtons()
 	for button in pairs(baganatorTrackedItemButtons) do
 		refreshSellDestroyOverlaySearchState(button)
@@ -981,19 +1038,31 @@ ensureBaganatorIntegration = function(existingButton)
 		local callbackRegistry = _G.Baganator.CallbackRegistry
 		callbackRegistry:RegisterCallback("BagShow", function()
 			RunNextFrame(function()
-				updateSellMarks(nil, false)
+				if vendorMarksActive then
+					applyCurrentVendorMarksToVisibleUI()
+				else
+					updateSellMarks(nil, false)
+				end
 				if addon.db and addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 			end)
 		end)
 		callbackRegistry:RegisterCallback("BackpackFrameChanged", function()
 			RunNextFrame(function()
-				updateSellMarks(nil, false)
+				if vendorMarksActive then
+					applyCurrentVendorMarksToVisibleUI()
+				else
+					updateSellMarks(nil, false)
+				end
 				if addon.db and addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 			end)
 		end)
 		callbackRegistry:RegisterCallback("ViewComplete", function()
-			applySellDestroyOverlaysToBaganatorButtons()
+			requestBaganatorOverlaySweep()
 			if destroyState.button and not baganatorRegionRegistered and (not InCombatLockdown or not InCombatLockdown()) then anchorDestroyButton(destroyState.button) end
+		end)
+		callbackRegistry:RegisterCallback("SettingChanged", function()
+			invalidateBaganatorCornerWidgetActiveCache()
+			requestBaganatorOverlaySweep()
 		end)
 		callbackRegistry:RegisterCallback("BagHide", function()
 			destroyHideList()
@@ -2208,10 +2277,13 @@ local function performUpdateSellMarks(resetCache)
 		if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
 			addon.Bags.functions.ApplyVendorMarks(false, false)
 		end
-		applySellDestroyOverlaysToBaganatorButtons()
-		if baganatorCornerWidgetRegistered then requestBaganatorItemWidgetRefresh() end
+		requestBaganatorOverlaySweep()
 		wipe(sellMarkLookup)
 		wipe(destroyMarkLookup)
+		if vendorMarksActive then
+			bumpVendorMarksRevision()
+			requestBaganatorSellDestroyWidgetRefreshIfNeeded()
+		end
 		vendorMarksActive = false
 		return
 	end
@@ -2231,16 +2303,10 @@ local function performUpdateSellMarks(resetCache)
 	for _, v in ipairs(itemsToDestroy) do
 		destroyMarkLookup[v.bag .. "_" .. v.slot] = v
 	end
+	bumpVendorMarksRevision()
 
-	applySellDestroyOverlaysToFrame(ContainerFrameCombinedBags)
-	for _, frame in ipairs(frames) do
-		applySellDestroyOverlaysToFrame(frame)
-	end
-	if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
-		addon.Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy)
-	end
-	applySellDestroyOverlaysToBaganatorButtons()
-	requestBaganatorItemWidgetRefresh()
+	applyCurrentVendorMarksToVisibleUI()
+	requestBaganatorSellDestroyWidgetRefreshIfNeeded()
 end
 
 function updateSellMarks(_, resetCache)
