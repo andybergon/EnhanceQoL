@@ -6,6 +6,10 @@
 
 - Bags: Added an Advanced setting to choose where stack counts are anchored on item icons.
 
+### 🔄 Changed
+
+- Settings: Removed duplicate CVar options that are already available in Blizzard's own settings.
+
 ---
 
 ## [10.15.0-beta1] - 2026-05-10

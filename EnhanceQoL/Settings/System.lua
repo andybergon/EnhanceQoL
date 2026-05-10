@@ -28,13 +28,6 @@ local movementData = {
 		func = function(value) setCVarOptionState("autoDismount", value) end,
 		default = false,
 	},
-	{
-		var = "autoDismountFlying",
-		text = L["autoDismountFlying"],
-		get = function() return getCVarOptionState("autoDismountFlying") end,
-		func = function(value) setCVarOptionState("autoDismountFlying", value) end,
-		default = false,
-	},
 }
 
 table.sort(movementData, function(a, b) return a.text < b.text end)
@@ -276,13 +269,6 @@ local systemData = {
 		text = L["scriptErrors"],
 		get = function() return getCVarOptionState("scriptErrors") end,
 		func = function(value) setCVarOptionState("scriptErrors", value) end,
-		default = false,
-	},
-	{
-		var = "showTutorials",
-		text = L["showTutorials"],
-		get = function() return getCVarOptionState("showTutorials") end,
-		func = function(value) setCVarOptionState("showTutorials", value) end,
 		default = false,
 	},
 	{

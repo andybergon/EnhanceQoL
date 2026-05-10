@@ -858,12 +858,6 @@ addon.variables.cvarOptions = {
 		description = addon.L["autoDismount"],
 		category = "cvarCategoryMovementInput",
 	},
-	["autoDismountFlying"] = {
-		trueValue = "1",
-		falseValue = "0",
-		description = addon.L["autoDismountFlying"],
-		category = "cvarCategoryMovementInput",
-	},
 	["chatMouseScroll"] = {
 		trueValue = "1",
 		falseValue = "0",
@@ -875,18 +869,6 @@ addon.variables.cvarOptions = {
 		falseValue = "0",
 		description = addon.L["WholeChatWindowClickable"],
 		category = "cvarCategoryMovementInput",
-	},
-	["raidFramesDisplayClassColor"] = {
-		trueValue = "1",
-		falseValue = "0",
-		description = addon.L["raidFramesDisplayClassColor"],
-		category = "cvarCategoryDisplay",
-	},
-	["pvpFramesDisplayClassColor"] = {
-		trueValue = "1",
-		falseValue = "0",
-		description = addon.L["pvpFramesDisplayClassColor"],
-		category = "cvarCategoryDisplay",
 	},
 	["UnitNamePlayerGuild"] = {
 		trueValue = "1",
@@ -922,12 +904,6 @@ addon.variables.cvarOptions = {
 		trueValue = "1",
 		falseValue = "0",
 		description = addon.L["scriptErrors"],
-		category = "cvarCategorySystem",
-	},
-	["showTutorials"] = {
-		trueValue = "0",
-		falseValue = "1",
-		description = addon.L["showTutorials"],
 		category = "cvarCategorySystem",
 	},
 	["UberTooltips"] = {
