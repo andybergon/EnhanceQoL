@@ -1198,14 +1198,43 @@ local function checkAdditionalUnit(tt)
 	if showSpec or showIlvl then tt:Show() end
 end
 
+local function ShouldRunTooltipPostCall()
+	local db = addon.db
+	if not db then return false end
+	return db["TooltipShowSpellID"]
+		or db["TooltipShowSpellIcon"]
+		or db["TooltipShowSpellIconInline"]
+		or db["TooltipShowItemID"]
+		or db["TooltipShowItemIcon"]
+		or db["TooltipShowTempEnchant"]
+		or db["TooltipShowItemCount"]
+		or (db["TooltipItemHideType"] and db["TooltipItemHideType"] ~= 1)
+		or db["TooltipItemHideInDungeon"]
+		or db["TooltipShowCurrencyID"]
+		or db["TooltipShowCurrencyAccountWide"]
+		or (db["TooltipUnitHideType"] and db["TooltipUnitHideType"] ~= 1)
+		or db["TooltipUnitHideInCombat"]
+		or db["TooltipUnitHideInDungeon"]
+		or db["TooltipUnitHideHealthBar"]
+		or db["TooltipUnitShowTargetOfTarget"]
+		or db["TooltipUnitShowMount"]
+		or db["TooltipUnitShowSpec"]
+		or db["TooltipUnitShowItemLevel"]
+		or db["TooltipShowMythicScore"]
+		or (db["TooltipBuffHideType"] and db["TooltipBuffHideType"] ~= 1)
+		or db["TooltipBuffHideInDungeon"]
+		or db["TooltipBuffHideInCombat"]
+end
+
 if TooltipDataProcessor then
 	TooltipDataProcessor.AddLinePreCall(Enum.TooltipDataLineType.SellPrice, function(tooltip, lineData)
+		if not ShouldRunTooltipPostCall() then return end
 		tooltip:AddLine(SELL_PRICE .. ": " .. GetMoneyString(lineData.price), WHITE_FONT_COLOR:GetRGB())
 		return true
 	end)
 
 	TooltipDataProcessor.AddTooltipPostCall(TooltipDataProcessor.AllTypes, function(tooltip, data)
-		if not addon.db then return end
+		if not ShouldRunTooltipPostCall() then return end
 		if not data or not data.type then return end
 		if not IsTooltipMutable(tooltip) then return end
 
