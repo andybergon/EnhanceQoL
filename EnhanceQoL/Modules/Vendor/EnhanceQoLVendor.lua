@@ -227,6 +227,12 @@ local function isBaganatorCornerWidgetActive()
 	return api.IsCornerWidgetActive(BAGANATOR_CORNER_WIDGET_ID) == true
 end
 
+local function getBaganatorOverlayContext()
+	return {
+		useCornerIcons = isBaganatorCornerWidgetActive(),
+	}
+end
+
 local function requestBaganatorItemWidgetRefresh()
 	local api = _G.Baganator and _G.Baganator.API
 	local constants = _G.Baganator and _G.Baganator.Constants
@@ -598,7 +604,7 @@ local function destroyHideList()
 	if destroyState.list and destroyState.list:IsShown() then destroyState.list:Hide() end
 end
 
-applySellDestroyOverlayToItemButton = function(itemButton, overlaySell, overlayDestroy)
+applySellDestroyOverlayToItemButton = function(itemButton, overlaySell, overlayDestroy, baganatorContext)
 	if not itemButton or not itemButton.CreateTexture then return end
 	overlaySell = overlaySell == nil and addon.db["vendorShowSellOverlay"] or overlaySell
 	overlayDestroy = overlayDestroy == nil and (addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"]) or overlayDestroy
@@ -615,7 +621,14 @@ applySellDestroyOverlayToItemButton = function(itemButton, overlaySell, overlayD
 	local showDestroy = overlayDestroy and isDestroy
 	local overlayKind = showDestroy and "destroy" or (showSell and "sell" or nil)
 	local matchesSearch = itemButtonMatchesSearch(itemButton)
-	local useBaganatorCornerIcons = itemButton.BGR ~= nil and isBaganatorCornerWidgetActive()
+	local useBaganatorCornerIcons = false
+	if itemButton.BGR ~= nil then
+		if baganatorContext ~= nil then
+			useBaganatorCornerIcons = baganatorContext.useCornerIcons == true
+		else
+			useBaganatorCornerIcons = isBaganatorCornerWidgetActive()
+		end
+	end
 	local hasDefaultJunkMark = false
 	if showSell and not useBaganatorCornerIcons then
 		hasDefaultJunkMark = itemButtonHasDefaultJunkMark(itemButton, bag, slot)
@@ -758,8 +771,14 @@ end
 applySellDestroyOverlaysToBaganatorButtons = function()
 	local overlaySell = addon.db["vendorShowSellOverlay"]
 	local overlayDestroy = addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"]
-	for button in pairs(baganatorTrackedItemButtons) do
-		applySellDestroyOverlayToItemButton(button, overlaySell, overlayDestroy)
+	local context = getBaganatorOverlayContext()
+	for button in pairs(baganatorVisibleItemButtons) do
+		if button and button.IsShown and button:IsShown() and isBaganatorBackpackItemButton(button) then
+			applySellDestroyOverlayToItemButton(button, overlaySell, overlayDestroy, context)
+		else
+			baganatorVisibleItemButtons[button] = nil
+			baganatorVisibleBackpackButtonCount = math.max(0, baganatorVisibleBackpackButtonCount - 1)
+		end
 	end
 end
 
