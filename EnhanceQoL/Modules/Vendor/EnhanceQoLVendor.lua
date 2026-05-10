@@ -57,6 +57,9 @@ local ICON_TEXTURE_UPGRADE = "Interface\\AddOns\\EnhanceQoL\\Icons\\upgradeilvl.
 local baganatorCornerWidgetRegistered = false
 local baganatorUpgradeCornerWidgetRegistered = false
 local pendingBaganatorWidgetRefresh = false
+local pendingBaganatorLayoutUpdate = false
+local baganatorDestroyRegionLastShown = nil
+local baganatorDestroyRegionLastWidth = nil
 local baganatorInitialFrameScanCompleted = false
 
 local function ensureDestroyListFrame()
@@ -218,7 +221,30 @@ end
 
 local function requestBaganatorLayoutUpdate()
 	local api = _G.Baganator and _G.Baganator.API
-	if api and api.RequestLayoutUpdate then api.RequestLayoutUpdate() end
+	if not (api and api.RequestLayoutUpdate) then return end
+	if pendingBaganatorLayoutUpdate then return end
+	pendingBaganatorLayoutUpdate = true
+	RunNextFrame(function()
+		pendingBaganatorLayoutUpdate = false
+		api.RequestLayoutUpdate()
+	end)
+end
+
+local function requestBaganatorLayoutUpdateForDestroyRegion(force)
+	if not baganatorRegionRegistered then return end
+	if InCombatLockdown and InCombatLockdown() then return end
+	local button = destroyState.button
+	if not button then return end
+
+	local shown = button.IsShown and button:IsShown() == true or false
+	local width = 0
+	if shown and button.GetWidth then width = button:GetWidth() or 0 end
+
+	if force or shown ~= baganatorDestroyRegionLastShown or width ~= baganatorDestroyRegionLastWidth then
+		baganatorDestroyRegionLastShown = shown
+		baganatorDestroyRegionLastWidth = width
+		requestBaganatorLayoutUpdate()
+	end
 end
 
 local function isBaganatorCornerWidgetActive()
@@ -502,7 +528,6 @@ end
 local function anchorDestroyButton(button)
 	if not button then return end
 	if baganatorRegionRegistered then
-		requestBaganatorLayoutUpdate()
 		return
 	end
 	local customBagAnchor = addon.Bags and addon.Bags.functions and addon.Bags.functions.GetVendorDestroyButtonAnchor and addon.Bags.functions.GetVendorDestroyButtonAnchor() or nil
@@ -826,7 +851,7 @@ local function setDestroyButtonVisibility(button, visible)
 		end
 		destroyHideList()
 	end
-	if baganatorRegionRegistered and not inCombat and wasShown ~= button:IsShown() then requestBaganatorLayoutUpdate() end
+	if baganatorRegionRegistered and not inCombat then requestBaganatorLayoutUpdateForDestroyRegion(false) end
 end
 
 local function hookBaganatorItemButton(itemButton)
@@ -923,19 +948,19 @@ ensureBaganatorIntegration = function(existingButton)
 		local callbackRegistry = _G.Baganator.CallbackRegistry
 		callbackRegistry:RegisterCallback("BagShow", function()
 			RunNextFrame(function()
-				updateSellMarks(nil, true)
+				updateSellMarks(nil, false)
 				if addon.db and addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 			end)
 		end)
 		callbackRegistry:RegisterCallback("BackpackFrameChanged", function()
 			RunNextFrame(function()
-				updateSellMarks(nil, true)
+				updateSellMarks(nil, false)
 				if addon.db and addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 			end)
 		end)
 		callbackRegistry:RegisterCallback("ViewComplete", function()
 			applySellDestroyOverlaysToBaganatorButtons()
-			if destroyState.button and (not InCombatLockdown or not InCombatLockdown()) then anchorDestroyButton(destroyState.button) end
+			if destroyState.button and not baganatorRegionRegistered and (not InCombatLockdown or not InCombatLockdown()) then anchorDestroyButton(destroyState.button) end
 		end)
 		callbackRegistry:RegisterCallback("BagHide", function()
 			destroyHideList()
@@ -960,7 +985,7 @@ ensureBaganatorIntegration = function(existingButton)
 		api.RegisterRegion(BAGANATOR_REGION_LABEL, BAGANATOR_REGION_ID, "backpack", "bottom_left", button)
 		button._EnhanceQoLVendorBaganatorRegionRegistered = true
 		baganatorRegionRegistered = true
-		requestBaganatorLayoutUpdate()
+		requestBaganatorLayoutUpdateForDestroyRegion(true)
 	end
 end
 
