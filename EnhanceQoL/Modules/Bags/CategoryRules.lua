@@ -1125,7 +1125,10 @@ local function getDefaultFieldValue(fieldID, operatorID)
 	if operatorID == "IN" then
 		return firstOption and { firstOption.value } or {}
 	end
-	return firstOption and firstOption.value or nil
+	if firstOption then
+		return firstOption.value
+	end
+	return nil
 end
 
 local function sanitizeEnumValue(fieldID, operatorID, value)
@@ -1155,7 +1158,10 @@ local function sanitizeEnumValue(fieldID, operatorID, value)
 	end
 
 	local option = lookup[tostring(value)]
-	return option and option.value or options[1].value
+	if option then
+		return option.value
+	end
+	return options[1].value
 end
 
 local function sanitizeNumericValue(fieldID, value)

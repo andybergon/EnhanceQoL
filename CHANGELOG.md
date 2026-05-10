@@ -10,6 +10,8 @@
 
 ### 🐛 Fixed
 
+- Bags: Fixed automatic category rules so boolean values such as Recommended for class = No are saved correctly.
+- Bags: Fixed Recommended for class/spec automatic category rules to use EQoL's class/spec item type filters instead of broad item recommendation or usability checks, preventing profession gear and other usable non-combat items from matching as recommended gear.
 - Bags: Fixed the bag toggle sometimes needing to be pressed twice after upgrade or item-related windows opened the bags automatically.
 - Unit Frames: Fixed custom health bar textures losing their original colors when using a white health color.
 - Resource Bars: Fixed borders and backgrounds sometimes disappearing when separated stack styling was enabled but the bar had no stacks to split.

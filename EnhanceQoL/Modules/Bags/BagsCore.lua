@@ -73,6 +73,7 @@ Core.ACTIVE_BAG_EVENTS = {
 	"ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED",
 	"INVENTORY_SEARCH_UPDATE",
 	"MODIFIER_STATE_CHANGED",
+	"ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
 	"PLAYER_LEVEL_UP",
 }
 Core.PASSIVE_BAG_EVENTS = {
@@ -86,10 +87,6 @@ Core.PASSIVE_BAG_EVENTS = {
 Core.ACTIVE_BAG_UNIT_EVENTS = {
 	{
 		name = "UNIT_INVENTORY_CHANGED",
-		unit = "player",
-	},
-	{
-		name = "PLAYER_SPECIALIZATION_CHANGED",
 		unit = "player",
 	},
 }
@@ -4176,10 +4173,12 @@ local function createRuleRuntimeContext(usage)
 	}
 
 	if hasPlayerStateUsage then
-		local _, _, classID = UnitClass("player")
+		local _, classToken, classID = UnitClass("player")
+		runtimeContext.playerClassToken = classToken
 		runtimeContext.playerClassID = classID
 
 		local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
+		runtimeContext.playerSpecIndex = specIndex
 		if specIndex and specIndex > 0 and C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
 			runtimeContext.playerSpecID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
 		end
@@ -4556,8 +4555,8 @@ local function getRuleUpgradeTrackKey(itemRef, runtimeContext)
 	return trackKey
 end
 
-local function getRecommendationFlags(itemRef, itemID, runtimeContext)
-	if not itemRef or not runtimeContext or not runtimeContext.playerClassID then
+local function getRecommendationFlags(itemRef, equipLoc, classID, subClassID, runtimeContext)
+	if not itemRef or not runtimeContext then
 		return false, false
 	end
 
@@ -4567,10 +4566,6 @@ local function getRecommendationFlags(itemRef, itemID, runtimeContext)
 		return cachedFlags.recommendedForClass, cachedFlags.recommendedForSpec
 	end
 
-	local recommendedForClass = false
-	local recommendedForSpec = false
-	local hasSpecData = false
-
 	if C_Item and C_Item.IsEquippableItem and not C_Item.IsEquippableItem(itemRef) then
 		runtimeContext.recommendationCache[cacheKey] = {
 			recommendedForClass = false,
@@ -4579,31 +4574,35 @@ local function getRecommendationFlags(itemRef, itemID, runtimeContext)
 		return false, false
 	end
 
-	local specTable = C_Item and C_Item.GetItemSpecInfo and C_Item.GetItemSpecInfo(itemRef)
-	hasSpecData = type(specTable) == "table" and next(specTable) ~= nil
+	if not equipLoc or classID == nil or subClassID == nil then
+		local _, _, _, instantEquipLoc, _, instantClassID, instantSubClassID = GetItemInfoInstant(itemRef)
+		equipLoc = equipLoc or instantEquipLoc
+		classID = classID or instantClassID
+		subClassID = subClassID or instantSubClassID
+	end
 
-	if hasSpecData then
-		for _, specID in ipairs(specTable) do
-			if runtimeContext.playerSpecID and specID == runtimeContext.playerSpecID then
-				recommendedForSpec = true
-			end
-			if C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID and C_SpecializationInfo.GetClassIDFromSpecID(specID) == runtimeContext.playerClassID then
+	local recommendedForClass = false
+	local recommendedForSpec = false
+	if equipLoc == "INVTYPE_CLOAK" then
+		recommendedForClass = true
+		recommendedForSpec = true
+	elseif equipLoc ~= "INVTYPE_TABARD" then
+		local classFilters = addon.itemBagFilterTypes and addon.itemBagFilterTypes[runtimeContext.playerClassToken or (addon.variables and addon.variables.unitClass)]
+		local specIndex = runtimeContext.playerSpecIndex or (addon.variables and addon.variables.unitSpec)
+		local numericClassID = tonumber(classID)
+		local numericSubClassID = tonumber(subClassID)
+		local specFilters = classFilters and classFilters[specIndex]
+		local specClassEntry = specFilters and numericClassID and specFilters[numericClassID]
+		local specValue = specClassEntry and numericSubClassID and specClassEntry[numericSubClassID]
+		recommendedForSpec = specValue ~= nil and specValue ~= false
+		for _, specFilters in pairs(classFilters or {}) do
+			local classEntry = numericClassID and specFilters[numericClassID]
+			local value = classEntry and numericSubClassID and classEntry[numericSubClassID]
+			if value ~= nil and value ~= false then
 				recommendedForClass = true
+				break
 			end
 		end
-	else
-		if C_Item and C_Item.DoesItemContainSpec then
-			recommendedForClass = C_Item.DoesItemContainSpec(itemRef, runtimeContext.playerClassID, 0)
-			if runtimeContext.playerSpecID then
-				recommendedForSpec = C_Item.DoesItemContainSpec(itemRef, runtimeContext.playerClassID, runtimeContext.playerSpecID)
-			end
-		end
-
-		if not recommendedForClass and itemID and C_PlayerInfo and C_PlayerInfo.CanUseItem then
-			recommendedForClass = C_PlayerInfo.CanUseItem(itemID)
-		end
-
-		recommendedForSpec = recommendedForClass
 	end
 
 	recommendedForClass = not not recommendedForClass
@@ -4851,7 +4850,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local recommendedForClass
 			local recommendedForSpec
 			if usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade then
-				recommendedForClass, recommendedForSpec = getRecommendationFlags(itemRef, info and info.itemID, ruleRuntimeContext)
+				recommendedForClass, recommendedForSpec = getRecommendationFlags(itemRef, equipLoc, classID, subClassID, ruleRuntimeContext)
 			end
 
 			local upgradeTrackKey
@@ -6715,7 +6714,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
 		Core.ClearTooltipDerivedItemFlagsCache()
 		scheduleUpdate(true, false)
-	elseif event == "UNIT_INVENTORY_CHANGED" or event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
+	elseif event == "UNIT_INVENTORY_CHANGED" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
 		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
 		if doesRuleUsageDependOnPlayerState(usage) then
 			bumpPlayerRuleRevision()
