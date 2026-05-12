@@ -59,7 +59,6 @@ local DB_HIDE_FOR_TANK = "classBuffReminderHideForTank"
 local DB_HIDE_FOR_DAMAGER = "classBuffReminderHideForDamager"
 local DB_HIDE_FOR_NONE = "classBuffReminderHideForNoRole"
 local DB_SHOW_IF_ONLY_PROVIDER = "classBuffReminderShowIfOnlyProvider"
-local DB_DEBUG_SYMBIOTIC = "classBuffReminderDebugSymbiotic"
 local DB_GLOW = "classBuffReminderGlow"
 local DB_GLOW_STYLE = "classBuffReminderGlowStyle"
 local DB_GLOW_INSET = "classBuffReminderGlowInset"
@@ -672,18 +671,18 @@ local function getValue(key, fallback)
 	return value
 end
 
-local function debugBool(value)
+function Reminder.DebugBool(value)
 	if value == nil then return "nil" end
 	return value and "true" or "false"
 end
 
-local function debugText(value)
+function Reminder.DebugText(value)
 	if value == nil then return "nil" end
 	return tostring(value)
 end
 
 function Reminder:IsSymbioticDebugEnabled()
-	return addon.db and addon.db[DB_DEBUG_SYMBIOTIC] == true
+	return addon.db and addon.db.classBuffReminderDebugSymbiotic == true
 end
 
 function Reminder:DebugLog(message, force)
@@ -3003,12 +3002,12 @@ local function druidRestorationGetSelfStatus(provider, reminder)
 		local eligibleUnits = reminder:CollectOtherEligibleUnits(reminder.runtimeEligibleUnits, nil, true)
 		reminder:DebugLog(
 			("symbiotic eval: context=%s known=%s aura=%s eligible=%d nearbyOnly=%s responsibilities=%s"):format(
-				debugText(reminder:GetGroupContext()),
-				debugBool(trackSymbiotic),
-				debugBool(reminder:UnitHasAnyAuraSpellId("player", provider.symbioticSpellIds)),
+				Reminder.DebugText(reminder:GetGroupContext()),
+				Reminder.DebugBool(trackSymbiotic),
+				Reminder.DebugBool(reminder:UnitHasAnyAuraSpellId("player", provider.symbioticSpellIds)),
 				#eligibleUnits,
-				debugBool(reminder:IsNearbyOnlyEnabled()),
-				debugBool(shouldEvaluateGroupResponsibilities)
+				Reminder.DebugBool(reminder:IsNearbyOnlyEnabled()),
+				Reminder.DebugBool(shouldEvaluateGroupResponsibilities)
 			)
 		)
 		if #eligibleUnits > 0 then
@@ -6153,18 +6152,6 @@ function Reminder.EditModeRefreshRuntimeAfterTrackingChange()
 	end
 end
 
-local function editModeSetTrackFlasks(value)
-	if addon.db then addon.db[DB_TRACK_FLASKS] = value == true end
-	Reminder:InvalidateFlaskCache()
-	Reminder.EditModeRefreshRuntimeAfterTrackingChange()
-end
-
-local function editModeSetTrackFood(value)
-	if addon.db then addon.db[DB_TRACK_FOOD] = value == true end
-	Reminder:InvalidateFoodCache()
-	Reminder.EditModeRefreshRuntimeAfterTrackingChange()
-end
-
 local function editModeSetRoleFilterContext(value)
 	if addon.db then addon.db[DB_ROLE_FILTER_CONTEXT] = normalizeRoleFilterContext(value) end
 	Reminder:RequestUpdate(true)
@@ -6421,7 +6408,11 @@ function editModeSettingsBuilders.buildConsumables()
 			parentId = "flasks",
 			default = defaults.trackFlasks == true,
 			get = function() return getValue(DB_TRACK_FLASKS, defaults.trackFlasks) == true end,
-			set = function(_, value) editModeSetTrackFlasks(value) end,
+			set = function(_, value)
+				if addon.db then addon.db[DB_TRACK_FLASKS] = value == true end
+				Reminder:InvalidateFlaskCache()
+				Reminder.EditModeRefreshRuntimeAfterTrackingChange()
+			end,
 		},
 		{
 			name = L["ClassBuffReminderTrackingContent"] or "Active in content",
@@ -6449,7 +6440,11 @@ function editModeSettingsBuilders.buildConsumables()
 			parentId = "food",
 			default = defaults.trackFood == true,
 			get = function() return getValue(DB_TRACK_FOOD, defaults.trackFood) == true end,
-			set = function(_, value) editModeSetTrackFood(value) end,
+			set = function(_, value)
+				if addon.db then addon.db[DB_TRACK_FOOD] = value == true end
+				Reminder:InvalidateFoodCache()
+				Reminder.EditModeRefreshRuntimeAfterTrackingChange()
+			end,
 		},
 		{
 			name = L["ClassBuffReminderTrackingContent"] or "Active in content",
@@ -7076,44 +7071,44 @@ function Reminder:DebugSymbioticState(reason)
 
 	self:DebugLog(("diag%s: class=%s spec=%s context=%s enabled=%s groupAllowed=%s runtimeBlocked=%s playerOk=%s"):format(
 		reason and (" " .. tostring(reason)) or "",
-		debugText(classToken),
-		debugText(specId),
-		debugText(context),
-		debugBool(enabled),
-		debugBool(groupAllowed),
-		debugBool(runtimeBlocked),
-		debugBool(playerOk)
+		Reminder.DebugText(classToken),
+		Reminder.DebugText(specId),
+		Reminder.DebugText(context),
+		Reminder.DebugBool(enabled),
+		Reminder.DebugBool(groupAllowed),
+		Reminder.DebugBool(runtimeBlocked),
+		Reminder.DebugBool(playerOk)
 	), true)
 	self:DebugLog(("diag: provider=%s scope=%s known474750=%s trackSymbiotic=%s aura474754=%s responsibilities=%s nearbyOnly=%s missing=%s total=%s"):format(
-		debugBool(provider ~= nil),
-		debugText(provider and provider.scope),
-		debugBool(knownCast),
-		debugBool(trackKnown),
-		debugBool(hasAura),
-		debugBool(responsibilities),
-		debugBool(self:IsNearbyOnlyEnabled()),
-		debugText(missing),
-		debugText(total)
+		Reminder.DebugBool(provider ~= nil),
+		Reminder.DebugText(provider and provider.scope),
+		Reminder.DebugBool(knownCast),
+		Reminder.DebugBool(trackKnown),
+		Reminder.DebugBool(hasAura),
+		Reminder.DebugBool(responsibilities),
+		Reminder.DebugBool(self:IsNearbyOnlyEnabled()),
+		Reminder.DebugText(missing),
+		Reminder.DebugText(total)
 	), true)
 	self:DebugLog(("diag: eligibleUnits=%d showParty=%s showRaid=%s showSolo=%s onlyOOC=%s restedHide=%s rested=%s"):format(
 		#eligibleUnits,
-		debugBool(getValue(DB_SHOW_PARTY, defaults.showParty) == true),
-		debugBool(getValue(DB_SHOW_RAID, defaults.showRaid) == true),
-		debugBool(getValue(DB_SHOW_SOLO, defaults.showSolo) == true),
-		debugBool(self:IsOnlyOutOfCombatEnabled()),
-		debugBool(self:IsHideInRestedAreaEnabled()),
-		debugBool(self:IsPlayerInRestedArea())
+		Reminder.DebugBool(getValue(DB_SHOW_PARTY, defaults.showParty) == true),
+		Reminder.DebugBool(getValue(DB_SHOW_RAID, defaults.showRaid) == true),
+		Reminder.DebugBool(getValue(DB_SHOW_SOLO, defaults.showSolo) == true),
+		Reminder.DebugBool(self:IsOnlyOutOfCombatEnabled()),
+		Reminder.DebugBool(self:IsHideInRestedAreaEnabled()),
+		Reminder.DebugBool(self:IsPlayerInRestedArea())
 	), true)
 	for i = 1, math.min(#eligibleUnits, 8) do
 		local unit = eligibleUnits[i]
 		self:DebugLog(("diag unit%d: %s exists=%s connected=%s dead=%s visible=%s ai=%s"):format(
 			i,
-			debugText(unit),
-			debugBool(UnitExists and UnitExists(unit)),
-			debugBool(UnitIsConnected and UnitIsConnected(unit)),
-			debugBool(UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)),
-			debugBool(not UnitIsVisible or UnitIsVisible(unit)),
-			debugBool(isAIFollowerUnit(unit))
+			Reminder.DebugText(unit),
+			Reminder.DebugBool(UnitExists and UnitExists(unit)),
+			Reminder.DebugBool(UnitIsConnected and UnitIsConnected(unit)),
+			Reminder.DebugBool(UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)),
+			Reminder.DebugBool(not UnitIsVisible or UnitIsVisible(unit)),
+			Reminder.DebugBool(isAIFollowerUnit(unit))
 		), true)
 	end
 end
@@ -7127,16 +7122,16 @@ function Reminder:RegisterDebugSlashCommands()
 		msg = type(msg) == "string" and msg:lower():match("^%s*(.-)%s*$") or ""
 		addon.db = addon.db or {}
 		if msg == "on" then
-			addon.db[DB_DEBUG_SYMBIOTIC] = true
+			addon.db["classBuffReminderDebugSymbiotic"] = true
 		elseif msg == "off" then
-			addon.db[DB_DEBUG_SYMBIOTIC] = false
+			addon.db["classBuffReminderDebugSymbiotic"] = false
 		elseif msg == "diag" then
 			Reminder:DebugSymbioticState("slash")
 			return
 		else
-			addon.db[DB_DEBUG_SYMBIOTIC] = addon.db[DB_DEBUG_SYMBIOTIC] ~= true
+			addon.db["classBuffReminderDebugSymbiotic"] = addon.db["classBuffReminderDebugSymbiotic"] ~= true
 		end
-		Reminder:DebugLog("symbiotic debug " .. (addon.db[DB_DEBUG_SYMBIOTIC] and "on" or "off"), true)
+		Reminder:DebugLog("symbiotic debug " .. (addon.db["classBuffReminderDebugSymbiotic"] and "on" or "off"), true)
 		Reminder:RequestUpdate(true)
 	end
 
