@@ -2368,19 +2368,53 @@ local function isNewItemAtSlot(bagID, slotID)
 	return C_NewItems and C_NewItems.IsNewItem and C_NewItems.IsNewItem(bagID, slotID) or false
 end
 
-isOpenSessionNewItem = function(bagID, slotID, info)
-	local identity = false
-	if info and info.iconFileID then
-		if ItemLocation and C_Item and C_Item.DoesItemExist and C_Item.GetItemGUID then
-			local itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotID)
-			if itemLocation and C_Item.DoesItemExist(itemLocation) then
-				identity = C_Item.GetItemGUID(itemLocation) or false
-			end
-		end
-		identity = identity or info.hyperlink or info.itemID or false
+state.bumpBankPerfCounter = state.bumpBankPerfCounter or function(name)
+	local perf = state.getPerfBucket and state.getPerfBucket() or nil
+	if not perf then
+		return
+	end
+	perf[name] = (perf[name] or 0) + 1
+end
+
+state.getOpenSessionNewItemIdentity = state.getOpenSessionNewItemIdentity or function(bagID, slotID, info)
+	if not (info and info.iconFileID) then
+		return false
 	end
 
+	if ItemLocation and C_Item and C_Item.DoesItemExist and C_Item.GetItemGUID then
+		local itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotID)
+		if itemLocation and C_Item.DoesItemExist(itemLocation) then
+			local itemGUID = C_Item.GetItemGUID(itemLocation)
+			if itemGUID then
+				return itemGUID
+			end
+		end
+	end
+
+	return info.hyperlink or info.itemID or false
+end
+
+isOpenSessionNewItem = function(bagID, slotID, info)
+	state.bumpBankPerfCounter("openSessionNewItemChecks")
 	local bucket = state.openSessionNewItems[bagID]
+	local storedIdentity = bucket and bucket[slotID] or nil
+
+	if not (info and info.iconFileID) then
+		if bucket then
+			bucket[slotID] = nil
+			state.bumpBankPerfCounter("openSessionNewItemClearedEmpty")
+		end
+		return false
+	end
+
+	local liveNewItem = isNewItemAtSlot(bagID, slotID)
+	if not liveNewItem and storedIdentity == nil then
+		state.bumpBankPerfCounter("openSessionNewItemFastFalse")
+		return false
+	end
+
+	state.bumpBankPerfCounter("openSessionNewItemIdentityReads")
+	local identity = state.getOpenSessionNewItemIdentity(bagID, slotID, info)
 	if not identity then
 		if bucket then
 			bucket[slotID] = nil
@@ -2388,20 +2422,22 @@ isOpenSessionNewItem = function(bagID, slotID, info)
 		return false
 	end
 
-	local storedIdentity = bucket and bucket[slotID]
 	if storedIdentity ~= nil then
 		if storedIdentity == identity then
+			state.bumpBankPerfCounter("openSessionNewItemSessionHit")
 			return true
 		end
 		bucket[slotID] = nil
+		state.bumpBankPerfCounter("openSessionNewItemIdentityMismatch")
 	end
 
-	if isNewItemAtSlot(bagID, slotID) then
+	if liveNewItem then
 		if not bucket then
 			bucket = {}
 			state.openSessionNewItems[bagID] = bucket
 		end
 		bucket[slotID] = identity
+		state.bumpBankPerfCounter("openSessionNewItemLiveHit")
 		return true
 	end
 

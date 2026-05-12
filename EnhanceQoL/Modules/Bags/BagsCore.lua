@@ -467,6 +467,12 @@ local function getOpenSessionNewItemIdentity(bagID, slotID, info)
 	return info.hyperlink or info.itemID or false
 end
 
+state.bumpCorePerfCounter = state.bumpCorePerfCounter or function(name)
+	addon.BagsPerf = addon.BagsPerf or {}
+	addon.BagsPerf.core = addon.BagsPerf.core or {}
+	addon.BagsPerf.core[name] = (addon.BagsPerf.core[name] or 0) + 1
+end
+
 local function getOpenSessionNewItemsBucket(bagID, create)
 	local bucket = state.openSessionNewItems[bagID]
 	if not bucket and create then
@@ -539,8 +545,26 @@ local function clearAcknowledgedOpenSessionNewItems()
 end
 
 local function isOpenSessionNewItem(bagID, slotID, info)
-	local identity = getOpenSessionNewItemIdentity(bagID, slotID, info)
+	state.bumpCorePerfCounter("openSessionNewItemChecks")
 	local bucket = getOpenSessionNewItemsBucket(bagID, false)
+	local storedIdentity = bucket and bucket[slotID] or nil
+
+	if not (info and info.iconFileID) then
+		if bucket then
+			bucket[slotID] = nil
+			state.bumpCorePerfCounter("openSessionNewItemClearedEmpty")
+		end
+		return false
+	end
+
+	local liveNewItem = isNewItemAtSlot(bagID, slotID)
+	if not liveNewItem and storedIdentity == nil then
+		state.bumpCorePerfCounter("openSessionNewItemFastFalse")
+		return false
+	end
+
+	state.bumpCorePerfCounter("openSessionNewItemIdentityReads")
+	local identity = getOpenSessionNewItemIdentity(bagID, slotID, info)
 	if not identity then
 		if bucket then
 			bucket[slotID] = nil
@@ -548,16 +572,18 @@ local function isOpenSessionNewItem(bagID, slotID, info)
 		return false
 	end
 
-	local storedIdentity = bucket and bucket[slotID]
 	if storedIdentity ~= nil then
 		if storedIdentity == identity then
+			state.bumpCorePerfCounter("openSessionNewItemSessionHit")
 			return true
 		end
 		bucket[slotID] = nil
+		state.bumpCorePerfCounter("openSessionNewItemIdentityMismatch")
 	end
 
-	if isNewItemAtSlot(bagID, slotID) then
+	if liveNewItem then
 		getOpenSessionNewItemsBucket(bagID, true)[slotID] = identity
+		state.bumpCorePerfCounter("openSessionNewItemLiveHit")
 		return true
 	end
 
