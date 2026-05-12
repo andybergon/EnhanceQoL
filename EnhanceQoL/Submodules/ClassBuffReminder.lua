@@ -59,6 +59,7 @@ local DB_HIDE_FOR_TANK = "classBuffReminderHideForTank"
 local DB_HIDE_FOR_DAMAGER = "classBuffReminderHideForDamager"
 local DB_HIDE_FOR_NONE = "classBuffReminderHideForNoRole"
 local DB_SHOW_IF_ONLY_PROVIDER = "classBuffReminderShowIfOnlyProvider"
+local DB_DEBUG_SYMBIOTIC = "classBuffReminderDebugSymbiotic"
 local DB_GLOW = "classBuffReminderGlow"
 local DB_GLOW_STYLE = "classBuffReminderGlowStyle"
 local DB_GLOW_INSET = "classBuffReminderGlowInset"
@@ -669,6 +670,40 @@ local function getValue(key, fallback)
 	local value = addon.db[key]
 	if value == nil then return fallback end
 	return value
+end
+
+local function debugBool(value)
+	if value == nil then return "nil" end
+	return value and "true" or "false"
+end
+
+local function debugText(value)
+	if value == nil then return "nil" end
+	return tostring(value)
+end
+
+function Reminder:IsSymbioticDebugEnabled()
+	return addon.db and addon.db[DB_DEBUG_SYMBIOTIC] == true
+end
+
+function Reminder:DebugLog(message, force)
+	if force ~= true and not self:IsSymbioticDebugEnabled() then return end
+	if type(message) ~= "string" or message == "" then return end
+
+	local now = GetTime and GetTime() or 0
+	self.debugLogThrottle = self.debugLogThrottle or {}
+	if force ~= true and now > 0 then
+		local last = self.debugLogThrottle[message]
+		if last and (now - last) < 1.5 then return end
+		self.debugLogThrottle[message] = now
+	end
+
+	local line = "|cff00ff98EQOL CBR|r " .. message
+	if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+		DEFAULT_CHAT_FRAME:AddMessage(line)
+	else
+		print(line)
+	end
 end
 
 function Reminder.GetTrackingContentSelection(dbKey, legacyKey, defaultSelection)
@@ -2966,6 +3001,16 @@ local function druidRestorationGetSelfStatus(provider, reminder)
 		-- Symbiotic Relationship cannot be cast while shapeshifted, so spell-range checks can
 		-- report false even when group members are valid reminder targets.
 		local eligibleUnits = reminder:CollectOtherEligibleUnits(reminder.runtimeEligibleUnits, nil, true)
+		reminder:DebugLog(
+			("symbiotic eval: context=%s known=%s aura=%s eligible=%d nearbyOnly=%s responsibilities=%s"):format(
+				debugText(reminder:GetGroupContext()),
+				debugBool(trackSymbiotic),
+				debugBool(reminder:UnitHasAnyAuraSpellId("player", provider.symbioticSpellIds)),
+				#eligibleUnits,
+				debugBool(reminder:IsNearbyOnlyEnabled()),
+				debugBool(shouldEvaluateGroupResponsibilities)
+			)
+		)
 		if #eligibleUnits > 0 then
 			totalRequirements = totalRequirements + 1
 			if not reminder:UnitHasAnyAuraSpellId("player", provider.symbioticSpellIds) then
@@ -7010,3 +7055,95 @@ function Reminder:OnSettingChanged()
 
 	if EditMode and EditMode.RefreshFrame then EditMode:RefreshFrame(EDITMODE_ID) end
 end
+
+function Reminder:DebugSymbioticState(reason)
+	local classToken = self:GetClassToken()
+	local specId = self:GetCurrentSpecId()
+	local provider = self:GetProvider()
+	local context = self:GetGroupContext()
+	local enabled = getValue(DB_ENABLED, defaults.enabled) == true
+	local groupAllowed = self:IsGroupModeAllowed()
+	local runtimeBlocked = self:IsRuntimeEvaluationBlockedByCombat()
+	local playerOk = canEvaluateUnit("player")
+	local knownCast = safeIsPlayerSpell(474750)
+	local hasAura = self:UnitHasAnyAuraSpellId("player", DRUID_SYMBIOTIC_RELATIONSHIP_SELF_IDS)
+	local trackKnown = provider and hasKnownSpellInList(provider.symbioticKnownSpellIds or provider.symbioticSpellIds) or false
+	local responsibilities = provider and self:ShouldEvaluateGroupResponsibilities(provider) or nil
+	local eligibleUnits = {}
+	if provider then self:CollectOtherEligibleUnits(eligibleUnits, nil, true) end
+	local missing, total = 0, 0
+	if provider then missing, total = self:ComputeMissing(provider) end
+
+	self:DebugLog(("diag%s: class=%s spec=%s context=%s enabled=%s groupAllowed=%s runtimeBlocked=%s playerOk=%s"):format(
+		reason and (" " .. tostring(reason)) or "",
+		debugText(classToken),
+		debugText(specId),
+		debugText(context),
+		debugBool(enabled),
+		debugBool(groupAllowed),
+		debugBool(runtimeBlocked),
+		debugBool(playerOk)
+	), true)
+	self:DebugLog(("diag: provider=%s scope=%s known474750=%s trackSymbiotic=%s aura474754=%s responsibilities=%s nearbyOnly=%s missing=%s total=%s"):format(
+		debugBool(provider ~= nil),
+		debugText(provider and provider.scope),
+		debugBool(knownCast),
+		debugBool(trackKnown),
+		debugBool(hasAura),
+		debugBool(responsibilities),
+		debugBool(self:IsNearbyOnlyEnabled()),
+		debugText(missing),
+		debugText(total)
+	), true)
+	self:DebugLog(("diag: eligibleUnits=%d showParty=%s showRaid=%s showSolo=%s onlyOOC=%s restedHide=%s rested=%s"):format(
+		#eligibleUnits,
+		debugBool(getValue(DB_SHOW_PARTY, defaults.showParty) == true),
+		debugBool(getValue(DB_SHOW_RAID, defaults.showRaid) == true),
+		debugBool(getValue(DB_SHOW_SOLO, defaults.showSolo) == true),
+		debugBool(self:IsOnlyOutOfCombatEnabled()),
+		debugBool(self:IsHideInRestedAreaEnabled()),
+		debugBool(self:IsPlayerInRestedArea())
+	), true)
+	for i = 1, math.min(#eligibleUnits, 8) do
+		local unit = eligibleUnits[i]
+		self:DebugLog(("diag unit%d: %s exists=%s connected=%s dead=%s visible=%s ai=%s"):format(
+			i,
+			debugText(unit),
+			debugBool(UnitExists and UnitExists(unit)),
+			debugBool(UnitIsConnected and UnitIsConnected(unit)),
+			debugBool(UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit)),
+			debugBool(not UnitIsVisible or UnitIsVisible(unit)),
+			debugBool(isAIFollowerUnit(unit))
+		), true)
+	end
+end
+
+function Reminder:RegisterDebugSlashCommands()
+	if self.debugSlashRegistered then return end
+	self.debugSlashRegistered = true
+
+	SLASH_EQOLCBRDEBUG1 = "/eqolcbrdebug"
+	SlashCmdList.EQOLCBRDEBUG = function(msg)
+		msg = type(msg) == "string" and msg:lower():match("^%s*(.-)%s*$") or ""
+		addon.db = addon.db or {}
+		if msg == "on" then
+			addon.db[DB_DEBUG_SYMBIOTIC] = true
+		elseif msg == "off" then
+			addon.db[DB_DEBUG_SYMBIOTIC] = false
+		elseif msg == "diag" then
+			Reminder:DebugSymbioticState("slash")
+			return
+		else
+			addon.db[DB_DEBUG_SYMBIOTIC] = addon.db[DB_DEBUG_SYMBIOTIC] ~= true
+		end
+		Reminder:DebugLog("symbiotic debug " .. (addon.db[DB_DEBUG_SYMBIOTIC] and "on" or "off"), true)
+		Reminder:RequestUpdate(true)
+	end
+
+	SLASH_EQOLCBRDIAG1 = "/eqolcbrdiag"
+	SlashCmdList.EQOLCBRDIAG = function()
+		Reminder:DebugSymbioticState("slash")
+	end
+end
+
+Reminder:RegisterDebugSlashCommands()
