@@ -113,6 +113,7 @@ local EQUIP_LOCATION_COMPARISON_SLOTS = {
 }
 
 local ACTIVE_EVENTS = {
+	"BAG_UPDATE",
 	"BAG_UPDATE_DELAYED",
 	"BAG_NEW_ITEMS_UPDATED",
 	"ITEM_LOCK_CHANGED",
@@ -167,6 +168,10 @@ state.tooltipDerivedItemFlagsCache = state.tooltipDerivedItemFlagsCache or {}
 state.overlayBindStatusCache = state.overlayBindStatusCache or {}
 state.slotCategoryCache = state.slotCategoryCache or {}
 state.openSessionNewItems = state.openSessionNewItems or {}
+state.dirtyBags = state.dirtyBags or {}
+state.dirtyBagCount = state.dirtyBagCount or 0
+state.pendingRebuildReasons = state.pendingRebuildReasons or {}
+state.pendingRefreshReasons = state.pendingRefreshReasons or {}
 state.activeContextID = state.activeContextID or nil
 state.forceDynamicRefresh = false
 if state.playerRuleRevision == nil then
@@ -208,6 +213,46 @@ local function wipeTable(tbl)
 	for key in pairs(tbl) do
 		tbl[key] = nil
 	end
+end
+
+state.getPerfBucket = state.getPerfBucket or function()
+	addon.BagsPerf = addon.BagsPerf or {}
+	addon.BagsPerf.bank = addon.BagsPerf.bank or {
+		schedule = {},
+		rebuildRequests = {},
+		refreshRequests = {},
+		rebuilds = {},
+		refreshes = {},
+		skips = {},
+		crossBackpackRefreshRequests = 0,
+		dirtyBagsMarked = 0,
+		dirtyBagsIgnored = 0,
+		dirtyBagDelayedEvents = 0,
+		newItemEvents = 0,
+		newItemEventsSkippedNoBankNewItems = 0,
+	}
+	return addon.BagsPerf.bank
+end
+
+state.countReason = state.countReason or function(bucket, reason)
+	if type(bucket) ~= "table" then return end
+	reason = reason or "unknown"
+	bucket[reason] = (bucket[reason] or 0) + 1
+end
+
+state.addPendingReason = state.addPendingReason or function(target, reason)
+	if type(target) ~= "table" or not reason then return end
+	target[reason] = true
+end
+
+state.consumeReasons = state.consumeReasons or function(target)
+	if type(target) ~= "table" then return "unknown" end
+	local text
+	for reason in pairs(target) do
+		text = text and (text .. "," .. reason) or reason
+		target[reason] = nil
+	end
+	return text or "unknown"
 end
 
 local function clearTooltipDerivedItemFlagsCache()
@@ -698,7 +743,7 @@ local function receiveCursorItemIntoVisibleBank()
 	end
 
 	C_Container.PickupContainerItem(targetBagID, targetSlotID)
-	scheduleUpdate(true, true, true)
+	scheduleUpdate(true, true, true, "DropReceiver")
 	if Bags.functions and Bags.functions.RequestLayoutUpdate then
 		Bags.functions.RequestLayoutUpdate(true, true)
 	end
@@ -3887,6 +3932,71 @@ getVisibleContext = function()
 	return context, contexts
 end
 
+state.isBagInContext = state.isBagInContext or function(context, bagID)
+	if not context or type(bagID) ~= "number" then
+		return false
+	end
+	for _, contextBagID in ipairs(context.bagIDs or {}) do
+		if contextBagID == bagID then
+			return true
+		end
+	end
+	return false
+end
+
+state.markBankBagDirty = state.markBankBagDirty or function(bagID)
+	if type(bagID) ~= "number" then
+		return false
+	end
+
+	local context = getVisibleContext()
+	local perf = state.getPerfBucket()
+	if not state.isBagInContext(context, bagID) then
+		perf.dirtyBagsIgnored = (perf.dirtyBagsIgnored or 0) + 1
+		return false
+	end
+
+	if not state.dirtyBags[bagID] then
+		state.dirtyBags[bagID] = true
+		state.dirtyBagCount = (state.dirtyBagCount or 0) + 1
+		perf.dirtyBagsMarked = (perf.dirtyBagsMarked or 0) + 1
+	end
+
+	return true
+end
+
+state.hasDirtyBankBagsForContext = state.hasDirtyBankBagsForContext or function(context)
+	if not context or (state.dirtyBagCount or 0) <= 0 then
+		return false
+	end
+	for bagID in pairs(state.dirtyBags) do
+		if state.isBagInContext(context, bagID) then
+			return true
+		end
+	end
+	return false
+end
+
+state.clearDirtyBankBags = state.clearDirtyBankBags or function()
+	wipeTable(state.dirtyBags)
+	state.dirtyBagCount = 0
+end
+
+state.contextHasNewItems = state.contextHasNewItems or function(context)
+	if not context or not C_NewItems or not C_NewItems.IsNewItem then
+		return false
+	end
+	for _, bagID in ipairs(context.bagIDs or {}) do
+		local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
+		for slotID = 1, slotCount do
+			if C_NewItems.IsNewItem(bagID, slotID) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function isCustomBankContextVisible()
 	return state.frame ~= nil
 		and state.frame:IsShown()
@@ -4230,7 +4340,7 @@ local function createMainFrame()
 				syncBlizzardBankStateForContextID(self.contextID)
 				notifyItemContextChanged()
 				if scheduleUpdate then
-					scheduleUpdate(true, true, true)
+					scheduleUpdate(true, true, true, "BankTabClick")
 				end
 			end
 		end)
@@ -4533,9 +4643,12 @@ local function processUpdate()
 	local shouldBeVisible = shouldShowFrame(context)
 	local wasVisible = state.frame and state.frame:IsShown()
 	local openingFrame = shouldBeVisible and not wasVisible
+	local previousContextSignature = state.contextSignature
+	local currentContextSignature = getContextSignature(context)
+	local contextChanged = previousContextSignature ~= currentContextSignature
 	local needsRebuild = state.pendingRebuild
 		or state.layoutData == nil
-		or state.contextSignature ~= getContextSignature(context)
+		or contextChanged
 		or state.currentTotalSlotCount ~= getTotalSlotCount(context)
 		or openingFrame
 	local needsRefresh = state.pendingRefresh or state.forceDynamicRefresh
@@ -4549,11 +4662,17 @@ local function processUpdate()
 		syncBlizzardBankState(context)
 		if needsRebuild then
 			updateApplied = rebuildLayout(context, contexts)
+			if updateApplied then state.countReason(state.getPerfBucket().rebuilds, state.consumeReasons(state.pendingRebuildReasons)) end
 		elseif needsRefresh then
 			updateApplied = refreshButtons(context, contexts)
+			if updateApplied then state.countReason(state.getPerfBucket().refreshes, state.consumeReasons(state.pendingRefreshReasons)) end
 		else
 			refreshActionBar(context)
 		end
+	end
+
+	if updateApplied and needsRebuild then
+		state.clearDirtyBankBags()
 	end
 
 	if shouldBeVisible then
@@ -4563,7 +4682,9 @@ local function processUpdate()
 		if state.frame then
 			state.frame:Show()
 		end
-		if Bags.functions.RequestLayoutUpdate then
+		if (openingFrame or contextChanged) and Bags.functions.RequestLayoutUpdate then
+			local perf = state.getPerfBucket()
+			perf.crossBackpackRefreshRequests = (perf.crossBackpackRefreshRequests or 0) + 1
 			Bags.functions.RequestLayoutUpdate(false, true)
 		end
 	else
@@ -4575,19 +4696,27 @@ local function processUpdate()
 	setActiveEventRegistration(shouldBeVisible)
 end
 
-scheduleUpdate = function(requestRefresh, requestRebuild, forceWhenHidden)
+scheduleUpdate = function(requestRefresh, requestRebuild, forceWhenHidden, reason)
+	local perf = state.getPerfBucket()
+	state.countReason(perf.schedule, reason)
 	if requestRebuild then
 		state.pendingRebuild = true
+		state.addPendingReason(state.pendingRebuildReasons, reason)
+		state.countReason(perf.rebuildRequests, reason)
 	end
 	if requestRefresh then
 		state.pendingRefresh = true
+		state.addPendingReason(state.pendingRefreshReasons, reason)
+		state.countReason(perf.refreshRequests, reason)
 	end
 
 	if not forceWhenHidden and not shouldProcessVisibleUpdates() then
+		state.countReason(perf.skips, "hidden:" .. tostring(reason or "unknown"))
 		return
 	end
 
 	if state.updateScheduled then
+		state.countReason(perf.skips, "alreadyScheduled:" .. tostring(reason or "unknown"))
 		return
 	end
 	state.updateScheduled = true
@@ -4598,7 +4727,7 @@ scheduleUpdate = function(requestRefresh, requestRebuild, forceWhenHidden)
 end
 
 function Bags.functions.RequestBankLayoutUpdate(requestRebuild, forceWhenHidden)
-	scheduleUpdate(true, requestRebuild, forceWhenHidden)
+	scheduleUpdate(true, requestRebuild, forceWhenHidden, requestRebuild and "api:rebuild" or "api:refresh")
 end
 
 Bags.functions.RequestWarbandBankLayoutUpdate = Bags.functions.RequestBankLayoutUpdate
@@ -4639,7 +4768,7 @@ function Bags.functions.EnableBank()
 	state.initialized = true
 	state.pendingRebuild = true
 	setActiveEventRegistration(shouldProcessVisibleUpdates())
-	scheduleUpdate(true, true, true)
+	scheduleUpdate(true, true, true, "EnableBank")
 end
 
 local eventFrame = state.eventFrame or CreateFrame("Frame")
@@ -4663,7 +4792,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 	end
 
 	if event == "PLAYER_REGEN_ENABLED" then
-		scheduleUpdate(state.pendingRefresh, state.pendingRebuild)
+		scheduleUpdate(state.pendingRefresh, state.pendingRebuild, false, "PLAYER_REGEN_ENABLED")
 	elseif event == "BANKFRAME_OPENED" then
 		clearTooltipDerivedItemFlagsCache()
 		detachDefaultBankFrames()
@@ -4671,24 +4800,44 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 		local context = getVisibleContext()
 		syncBlizzardBankState(context, true)
 		notifyItemContextChanged()
-		scheduleUpdate(true, true, true)
+		scheduleUpdate(true, true, true, "BANKFRAME_OPENED")
 	elseif event == "BANKFRAME_CLOSED" then
+		state.clearDirtyBankBags()
 		StaticPopup_Hide("ACCOUNT_BANK_DEPOSIT_ALL_NO_REFUND_CONFIRM")
 		StaticPopup_Hide("BANK_MONEY_DEPOSIT")
 		StaticPopup_Hide("BANK_MONEY_WITHDRAW")
 		notifyItemContextChanged()
-		scheduleUpdate(true, true, true)
+		scheduleUpdate(true, true, true, "BANKFRAME_CLOSED")
+	elseif event == "BAG_UPDATE" then
+		state.markBankBagDirty(...)
 	elseif event == "BAG_UPDATE_DELAYED" then
-		scheduleUpdate(true, true)
+		local perf = state.getPerfBucket()
+		perf.dirtyBagDelayedEvents = (perf.dirtyBagDelayedEvents or 0) + 1
+		local context = getVisibleContext()
+		if state.hasDirtyBankBagsForContext(context) then
+			scheduleUpdate(true, true, false, "BAG_UPDATE_DELAYED:dirtyBankBag")
+		else
+			state.countReason(perf.skips, "BAG_UPDATE_DELAYED:noActiveBankDirtyBag")
+		end
 	elseif event == "BAG_NEW_ITEMS_UPDATED" then
-		scheduleUpdate(true, true)
+		local perf = state.getPerfBucket()
+		perf.newItemEvents = (perf.newItemEvents or 0) + 1
+		local context = getVisibleContext()
+		if state.pendingRebuild then
+			scheduleUpdate(true, false, false, "BAG_NEW_ITEMS_UPDATED:alreadyPendingRebuild")
+		elseif state.contextHasNewItems(context) then
+			scheduleUpdate(true, true, false, "BAG_NEW_ITEMS_UPDATED:bankContextHasNewItems")
+		else
+			perf.newItemEventsSkippedNoBankNewItems = (perf.newItemEventsSkippedNoBankNewItems or 0) + 1
+			state.countReason(perf.skips, "BAG_NEW_ITEMS_UPDATED:noBankContextNewItems")
+		end
 	elseif event == "UNIT_INVENTORY_CHANGED" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
 		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
 		if doesRuleUsageDependOnPlayerState(usage) then
 			bumpPlayerRuleRevision()
-			scheduleUpdate(true, true)
+			scheduleUpdate(true, true, false, event)
 		else
-			scheduleUpdate(true, false)
+			scheduleUpdate(true, false, false, event)
 		end
 	elseif event == "INVENTORY_SEARCH_UPDATE" then
 		if Bags.functions.RefreshWarbandBankSearchState then
@@ -4696,27 +4845,27 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 		end
 	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
 		clearTooltipDerivedItemFlagsCache()
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, event)
 	elseif event == "EQUIPMENT_SETS_CHANGED" then
 		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
 		if usage and usage.isEquipmentSet then
 			wipeTable(state.slotCategoryCache)
-			scheduleUpdate(true, true)
+			scheduleUpdate(true, true, false, "EQUIPMENT_SETS_CHANGED")
 		end
 	elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED" then
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, event)
 	elseif event == "BANK_TABS_CHANGED" or event == "BANK_TAB_SETTINGS_UPDATED" then
 		notifyItemContextChanged()
-		scheduleUpdate(true, true)
+		scheduleUpdate(true, true, false, event)
 	elseif event == "PLAYER_MONEY" then
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, "PLAYER_MONEY")
 	elseif event == "ACCOUNT_MONEY" then
 		addon.UpdateWarbandGold()
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, "ACCOUNT_MONEY")
 	elseif event == "ITEM_LOCK_CHANGED" or event == "BAG_UPDATE_COOLDOWN" then
 		if event == "BAG_UPDATE_COOLDOWN" then
 			state.forceDynamicRefresh = true
 		end
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, event)
 	end
 end)
