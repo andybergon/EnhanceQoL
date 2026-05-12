@@ -2963,10 +2963,9 @@ local function druidRestorationGetSelfStatus(provider, reminder)
 	local trackSymbiotic = hasKnownSpellInList(provider.symbioticKnownSpellIds or provider.symbioticSpellIds)
 	if trackSymbiotic and reminder:GetGroupContext() ~= GROUP_CONTEXT_SOLO then
 		reminder.runtimeEligibleUnits = reminder.runtimeEligibleUnits or {}
-		local symbioticRangeSpellId = normalizeSpellId(provider.symbioticKnownSpellIds and provider.symbioticKnownSpellIds[1])
-			or normalizeSpellId(provider.symbioticDisplaySpellId)
-			or normalizeSpellId(provider.symbioticSpellIds and provider.symbioticSpellIds[1])
-		local eligibleUnits = reminder:CollectOtherEligibleUnits(reminder.runtimeEligibleUnits, symbioticRangeSpellId, true)
+		-- Symbiotic Relationship cannot be cast while shapeshifted, so spell-range checks can
+		-- report false even when group members are valid reminder targets.
+		local eligibleUnits = reminder:CollectOtherEligibleUnits(reminder.runtimeEligibleUnits, nil, true)
 		if #eligibleUnits > 0 then
 			totalRequirements = totalRequirements + 1
 			if not reminder:UnitHasAnyAuraSpellId("player", provider.symbioticSpellIds) then
