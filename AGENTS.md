@@ -73,4 +73,3 @@
 - Druid Symbiotic Relationship uses different IDs for different checks: 474750 is the cast/known spell, while 474754 is the player aura that indicates the druid has an active bond.
 - Symbiotic Relationship reminders should run in any non-solo group, including raids. Do not gate it to `GROUP_CONTEXT_PARTY` only.
 - Do not use Symbiotic Relationship's cast spell for nearby-only range checks; shapeshift forms can make Blizzard's spell-range API report false even when group members are valid reminder targets.
-- In-game diagnostics: `/eqolcbrdiag` prints a one-shot Symbiotic state dump, and `/eqolcbrdebug` toggles automatic Symbiotic evaluation logs.
