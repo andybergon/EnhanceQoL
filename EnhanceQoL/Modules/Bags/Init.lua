@@ -79,6 +79,21 @@ local TEXT_ELEMENT_DEFINITIONS = {
 		size = 13,
 	},
 }
+local STACK_COUNT_ANCHOR_ORDER = {
+	"TOPLEFT",
+	"TOP",
+	"TOPRIGHT",
+	"LEFT",
+	"CENTER",
+	"RIGHT",
+	"BOTTOMLEFT",
+	"BOTTOM",
+	"BOTTOMRIGHT",
+}
+local STACK_COUNT_ANCHOR_LOOKUP = {}
+for _, anchorID in ipairs(STACK_COUNT_ANCHOR_ORDER) do
+	STACK_COUNT_ANCHOR_LOOKUP[anchorID] = true
+end
 
 local defaultSettings = {
 	manualVisible = false,
@@ -163,6 +178,7 @@ local defaultSettings = {
 				size = TEXT_ELEMENT_DEFINITIONS.stackCount.size,
 				case = "default",
 				outline = TEXT_ELEMENT_INHERIT_KEY,
+				anchor = "BOTTOMRIGHT",
 			},
 		},
 	},
@@ -334,6 +350,11 @@ local function ensureTextAppearanceDefaults(appearance)
 			end
 			if not TEXT_CASE_LOOKUP[element.case] then
 				element.case = "default"
+			end
+			if elementID == "stackCount" then
+				if not STACK_COUNT_ANCHOR_LOOKUP[element.anchor] then
+					element.anchor = defaultSettings.textAppearance.elements.stackCount.anchor
+				end
 			end
 		end
 		textAppearanceDefaultsCache.table = appearance
@@ -1614,6 +1635,47 @@ function addon.SetTextElementOutline(elementID, outlineID)
 	end
 	element.outline = outlineID
 	invalidateResolvedTextAppearanceCache()
+	return true
+end
+
+function addon.GetStackCountAnchorOptions()
+	local options = {}
+	local order = addon.GetOverlayAnchorOrder and addon.GetOverlayAnchorOrder() or STACK_COUNT_ANCHOR_ORDER
+	for _, anchorID in ipairs(order) do
+		if STACK_COUNT_ANCHOR_LOOKUP[anchorID] then
+			local anchorInfo = addon.GetOverlayAnchorInfo and addon.GetOverlayAnchorInfo(anchorID) or nil
+			options[#options + 1] = {
+				value = anchorID,
+				label = addon.L and anchorInfo and addon.L[anchorInfo.labelKey] or anchorInfo and anchorInfo.labelKey or anchorID,
+			}
+		end
+	end
+	return options
+end
+
+function addon.GetStackCountAnchor()
+	local element = addon.GetTextElementAppearance("stackCount")
+	if not element then
+		return defaultSettings.textAppearance.elements.stackCount.anchor
+	end
+	if not STACK_COUNT_ANCHOR_LOOKUP[element.anchor] then
+		element.anchor = defaultSettings.textAppearance.elements.stackCount.anchor
+	end
+	return element.anchor
+end
+
+function addon.SetStackCountAnchor(anchorID)
+	if not STACK_COUNT_ANCHOR_LOOKUP[anchorID] then
+		return false
+	end
+	local element = addon.GetTextElementAppearance("stackCount")
+	if not element then
+		return false
+	end
+	if element.anchor == anchorID then
+		return false
+	end
+	element.anchor = anchorID
 	return true
 end
 

@@ -1,4 +1,4 @@
--- luacheck: globals BagsItemButton_OnLoad ItemButtonUtil ContainerFrameItemButtonMixin ScrollFrameTemplate_OnMouseWheel IsAnyStandardHeldBagOpen BackpackTokenFrame BagItemAutoSortButton ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar UIPanelScrollFrame_OnLoad ClearItemButtonOverlay SetItemButtonQuality SetItemButtonCount SetItemButtonDesaturated SetItemButtonTextureVertexColor ContainerFrame_AllowedToOpenBags C_Cursor COPPER_PER_GOLD COPPER_PER_SILVER NUM_BAG_SLOTS NUM_REAGENTBAG_SLOTS GetInventoryItemTexture GetInventoryItemID GetInventoryItemQuality GetInventorySlotInfo PickupBagFromSlot PutItemInBackpack PutItemInBag CloseAllBags BAGS EQUIP_CONTAINER EQUIP_CONTAINER_REAGENT
+-- luacheck: globals BagsItemButton_OnLoad ItemButtonUtil ContainerFrameItemButtonMixin ScrollFrameTemplate_OnMouseWheel IsAnyStandardHeldBagOpen BackpackTokenFrame BagItemAutoSortButton ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar UIPanelScrollFrame_OnLoad ClearItemButtonOverlay SetItemButtonQuality SetItemButtonCount SetItemButtonDesaturated SetItemButtonTextureVertexColor ContainerFrame_AllowedToOpenBags C_Cursor COPPER_PER_GOLD COPPER_PER_SILVER NUM_BAG_SLOTS NUM_REAGENTBAG_SLOTS GetInventoryItemTexture GetInventoryItemID GetInventoryItemQuality GetInventorySlotInfo PickupBagFromSlot PutItemInBackpack PutItemInBag CloseAllBags BAGS EQUIP_CONTAINER EQUIP_CONTAINER_REAGENT PVP_ITEM_LEVEL_TOOLTIP
 local addonName, addon = ...
 addon = addon or {}
 _G[addonName] = addon
@@ -73,12 +73,14 @@ Core.ACTIVE_BAG_EVENTS = {
 	"ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED",
 	"INVENTORY_SEARCH_UPDATE",
 	"MODIFIER_STATE_CHANGED",
+	"ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
 	"PLAYER_LEVEL_UP",
 }
 Core.PASSIVE_BAG_EVENTS = {
 	"BAG_UPDATE",
 	"BAG_UPDATE_DELAYED",
 	"BAG_NEW_ITEMS_UPDATED",
+	"EQUIPMENT_SETS_CHANGED",
 	"ITEM_DATA_LOAD_RESULT",
 	"TOYS_UPDATED",
 	"NEW_TOY_ADDED",
@@ -86,10 +88,6 @@ Core.PASSIVE_BAG_EVENTS = {
 Core.ACTIVE_BAG_UNIT_EVENTS = {
 	{
 		name = "UNIT_INVENTORY_CHANGED",
-		unit = "player",
-	},
-	{
-		name = "PLAYER_SPECIALIZATION_CHANGED",
 		unit = "player",
 	},
 }
@@ -174,6 +172,9 @@ end
 if state.manualVisible == nil then
 	state.manualVisible = false
 end
+if state.pendingContextOpenedBagToggleSync == nil then
+	state.pendingContextOpenedBagToggleSync = false
+end
 if state.awaitingRuleItemData == nil then
 	state.awaitingRuleItemData = false
 end
@@ -195,6 +196,11 @@ local markOpenSessionNewItemAcknowledged
 local installFrameDropReceiver
 local receiveCursorItemIntoBags
 local itemLevelEligibilityCache = {}
+Core.PVP_ITEM_TOOLTIP_PATTERN = PVP_ITEM_LEVEL_TOOLTIP
+	and addon.functions
+	and addon.functions.fmtToPattern
+	and addon.functions.fmtToPattern(PVP_ITEM_LEVEL_TOOLTIP)
+	or nil
 local BagSlotPanel = {}
 
 function Core.GetFooterRegions(side)
@@ -461,6 +467,12 @@ local function getOpenSessionNewItemIdentity(bagID, slotID, info)
 	return info.hyperlink or info.itemID or false
 end
 
+state.bumpCorePerfCounter = state.bumpCorePerfCounter or function(name)
+	addon.BagsPerf = addon.BagsPerf or {}
+	addon.BagsPerf.core = addon.BagsPerf.core or {}
+	addon.BagsPerf.core[name] = (addon.BagsPerf.core[name] or 0) + 1
+end
+
 local function getOpenSessionNewItemsBucket(bagID, create)
 	local bucket = state.openSessionNewItems[bagID]
 	if not bucket and create then
@@ -533,8 +545,26 @@ local function clearAcknowledgedOpenSessionNewItems()
 end
 
 local function isOpenSessionNewItem(bagID, slotID, info)
-	local identity = getOpenSessionNewItemIdentity(bagID, slotID, info)
+	state.bumpCorePerfCounter("openSessionNewItemChecks")
 	local bucket = getOpenSessionNewItemsBucket(bagID, false)
+	local storedIdentity = bucket and bucket[slotID] or nil
+
+	if not (info and info.iconFileID) then
+		if bucket then
+			bucket[slotID] = nil
+			state.bumpCorePerfCounter("openSessionNewItemClearedEmpty")
+		end
+		return false
+	end
+
+	local liveNewItem = isNewItemAtSlot(bagID, slotID)
+	if not liveNewItem and storedIdentity == nil then
+		state.bumpCorePerfCounter("openSessionNewItemFastFalse")
+		return false
+	end
+
+	state.bumpCorePerfCounter("openSessionNewItemIdentityReads")
+	local identity = getOpenSessionNewItemIdentity(bagID, slotID, info)
 	if not identity then
 		if bucket then
 			bucket[slotID] = nil
@@ -542,16 +572,18 @@ local function isOpenSessionNewItem(bagID, slotID, info)
 		return false
 	end
 
-	local storedIdentity = bucket and bucket[slotID]
 	if storedIdentity ~= nil then
 		if storedIdentity == identity then
+			state.bumpCorePerfCounter("openSessionNewItemSessionHit")
 			return true
 		end
 		bucket[slotID] = nil
+		state.bumpCorePerfCounter("openSessionNewItemIdentityMismatch")
 	end
 
-	if isNewItemAtSlot(bagID, slotID) then
+	if liveNewItem then
 		getOpenSessionNewItemsBucket(bagID, true)[slotID] = identity
+		state.bumpCorePerfCounter("openSessionNewItemLiveHit")
 		return true
 	end
 
@@ -1131,6 +1163,14 @@ end
 local function getItemButtonTextAppearanceSignature(appearance)
 	local stackAppearance = getResolvedTextAppearance("stackCount")
 	return getTextAppearanceSignature(appearance or getResolvedTextAppearance("overlays")) .. ":" .. getTextAppearanceSignature(stackAppearance)
+end
+
+local function getStackCountLayoutSignature()
+	if addon.GetStackCountLayoutSignature then
+		return addon.GetStackCountLayoutSignature()
+	end
+
+	return addon.GetStackCountAnchor and addon.GetStackCountAnchor() or "BOTTOMRIGHT"
 end
 
 local function getMaxFrameHeight()
@@ -2158,7 +2198,7 @@ local function showFooterMoneyTooltip(owner)
 	end
 
 	GameTooltip:AddLine(" ")
-	GameTooltip:AddDoubleLine(TOTAL or "Total", formatFooterMoneyString(totalMoney), 1, 1, 1, 1, 1, 1)
+	GameTooltip:AddDoubleLine(TOTAL or "Total", formatFooterMoneyString(totalMoney + warbandGold), 1, 1, 1, 1, 1, 1)
 	GameTooltip:Show()
 end
 
@@ -2706,6 +2746,12 @@ local function createMainFrame()
 	frame:SetBackdropBorderColor(0.35, 0.35, 0.42, 1)
 	frame:SetSize(Core.MIN_FRAME_WIDTH, 1)
 	frame:Hide()
+
+	local backgroundBackingTexture = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+	backgroundBackingTexture:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+	backgroundBackingTexture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+	backgroundBackingTexture:Hide()
+	frame.BackgroundBackingTexture = backgroundBackingTexture
 
 	local backgroundTexture = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
 	backgroundTexture:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
@@ -3448,6 +3494,7 @@ local function hasMatchingButtonRenderState(
 	texture,
 	displayCount,
 	locked,
+	desaturated,
 	quality,
 	readable,
 	itemLink,
@@ -3461,6 +3508,7 @@ local function hasMatchingButtonRenderState(
 	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
+	stackCountLayoutSignature,
 	freeSlotSignature
 )
 	return button._bagsRenderBagID == bagID
@@ -3468,6 +3516,7 @@ local function hasMatchingButtonRenderState(
 		and button._bagsRenderTexture == texture
 		and button._bagsRenderDisplayCount == displayCount
 		and button._bagsRenderLocked == locked
+		and button._bagsRenderDesaturated == desaturated
 		and button._bagsRenderQuality == quality
 		and button._bagsRenderReadable == readable
 		and button._bagsRenderItemLink == itemLink
@@ -3481,6 +3530,7 @@ local function hasMatchingButtonRenderState(
 		and button._bagsRenderUnusableRecipe == isUnusableRecipe
 		and button._bagsRenderOverlayVersion == overlayVersion
 		and button._bagsRenderFontSignature == fontSignature
+		and button._bagsRenderStackCountLayoutSignature == stackCountLayoutSignature
 		and button._bagsRenderFreeSlotSignature == freeSlotSignature
 end
 
@@ -3496,6 +3546,7 @@ local function storeButtonRenderState(
 	texture,
 	displayCount,
 	locked,
+	desaturated,
 	quality,
 	readable,
 	itemLink,
@@ -3510,6 +3561,7 @@ local function storeButtonRenderState(
 	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
+	stackCountLayoutSignature,
 	freeSlotSignature
 )
 	button._bagsRenderBagID = bagID
@@ -3517,6 +3569,7 @@ local function storeButtonRenderState(
 	button._bagsRenderTexture = texture
 	button._bagsRenderDisplayCount = displayCount
 	button._bagsRenderLocked = locked
+	button._bagsRenderDesaturated = desaturated
 	button._bagsRenderQuality = quality
 	button._bagsRenderReadable = readable
 	button._bagsRenderItemLink = itemLink
@@ -3531,6 +3584,7 @@ local function storeButtonRenderState(
 	button._bagsRenderUnusableRecipe = isUnusableRecipe
 	button._bagsRenderOverlayVersion = overlayVersion
 	button._bagsRenderFontSignature = fontSignature
+	button._bagsRenderStackCountLayoutSignature = stackCountLayoutSignature
 	button._bagsRenderFreeSlotSignature = freeSlotSignature
 end
 
@@ -3552,7 +3606,23 @@ applyItemButtonSkinIfNeeded = function(button, quality, force)
 	button._bagsAppliedSkinSignature = skinSignature
 end
 
-local function updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate)
+state.applyStackCountLayoutIfNeeded = state.applyStackCountLayoutIfNeeded or function(button, signature)
+	if not (button and addon.ApplyStackCountLayout) then
+		return
+	end
+
+	local count = button.Count
+	if count and count._bagsStackCountLayoutSignature == signature then
+		return
+	end
+
+	addon.ApplyStackCountLayout(button)
+	if count then
+		count._bagsStackCountLayoutSignature = signature
+	end
+end
+
+local function updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate, stackCountLayoutSignature)
 	if not button then
 		return
 	end
@@ -3569,6 +3639,8 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	local itemCount = info and info.stackCount
 	local displayItemCount = mapping and mapping.itemCount
 	local locked = info and info.isLocked
+	local desaturateItem = texture and mapping and mapping.desaturateItem == true or false
+	local desaturated = locked or desaturateItem
 	local quality = info and info.quality
 	local readable = info and (info.IsReadable or info.isReadable)
 	local itemLink = info and info.hyperlink
@@ -3592,6 +3664,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	overlayRuntime = overlayRuntime or getOverlayRuntimeConfig()
 	fontSignature = fontSignature or getTextAppearanceSignature(textAppearance)
 	local overlayVersion = overlayRuntime and overlayRuntime.version or 0
+	stackCountLayoutSignature = stackCountLayoutSignature or getStackCountLayoutSignature()
 
 	if hasMatchingButtonRenderState(
 		button,
@@ -3600,6 +3673,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		texture,
 		displayCount,
 		locked,
+		desaturated,
 		quality,
 		readable,
 		itemLink,
@@ -3613,12 +3687,14 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
+		stackCountLayoutSignature,
 		freeSlotSignature
 	) then
 		if not button:IsShown() then
 			button:Show()
 		end
 		applyItemButtonSkinIfNeeded(button, quality)
+		state.applyStackCountLayoutIfNeeded(button, stackCountLayoutSignature)
 		updateReagentBagVisuals(button)
 		applyConfiguredOverlayAnchors(button, overlayRuntime)
 		Core.UpdateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
@@ -3649,7 +3725,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	button:SetItemButtonTexture(texture)
 	SetItemButtonQuality(button, quality, itemLink, false, isBound)
 	SetItemButtonCount(button, displayCount)
-	SetItemButtonDesaturated(button, locked)
+	SetItemButtonDesaturated(button, desaturated)
 	button:UpdateExtended()
 	button:UpdateQuestItem(questIsQuestItem, questID, questIsActive)
 	button:UpdateNewItem(quality)
@@ -3678,6 +3754,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	end
 	updateReagentBagVisuals(button)
 	applyConfiguredItemButtonFonts(button, textAppearance, fontSignature)
+	state.applyStackCountLayoutIfNeeded(button, stackCountLayoutSignature)
 	applyConfiguredOverlayAnchors(button, overlayRuntime)
 	updateItemLevelText(button, itemLink, itemID, quality, overlayRuntime)
 	updateItemUpgradeText(button, itemLink, itemID, overlayRuntime)
@@ -3690,6 +3767,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		texture,
 		displayCount,
 		locked,
+		desaturated,
 		quality,
 		readable,
 		itemLink,
@@ -3704,6 +3782,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
+		stackCountLayoutSignature,
 		freeSlotSignature
 	)
 	button._bagsPendingRenderTexture = nil
@@ -3784,6 +3863,7 @@ local function buildSectionDefinitions()
 			groupCollapseID = definition.groupCollapseID,
 			groupSpacerBefore = definition.groupSpacerBefore == true,
 			groupCombineSubcategories = definition.groupCombineSubcategories == true,
+			desaturateItems = definition.desaturateItems == true,
 			collapsible = definition.collapsible ~= false,
 			forceHeader = definition.forceHeader == true,
 		}
@@ -4019,7 +4099,7 @@ local function getCurrentCategoryRulesRevision()
 end
 
 local function doesRuleUsageDependOnPlayerState(usage)
-	return usage and (usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade) and true or false
+	return usage and (usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade or usage.equippedAverageItemLevel) and true or false
 end
 
 local function bumpPlayerRuleRevision()
@@ -4158,16 +4238,41 @@ local function createRuleRuntimeContext(usage)
 	}
 
 	if hasPlayerStateUsage then
-		local _, _, classID = UnitClass("player")
+		local _, classToken, classID = UnitClass("player")
+		runtimeContext.playerClassToken = classToken
 		runtimeContext.playerClassID = classID
 
 		local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
+		runtimeContext.playerSpecIndex = specIndex
 		if specIndex and specIndex > 0 and C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
 			runtimeContext.playerSpecID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
 		end
 	end
 
 	return runtimeContext
+end
+
+function Bags.functions.GetRuleEquippedAverageItemLevel(runtimeContext)
+	if not runtimeContext then
+		return nil
+	end
+
+	local equippedItemLevel = runtimeContext.equippedAverageItemLevel
+	if equippedItemLevel == nil then
+		if type(GetAverageItemLevel) == "function" then
+			equippedItemLevel = select(2, GetAverageItemLevel())
+		end
+
+		equippedItemLevel = tonumber(equippedItemLevel)
+		runtimeContext.equippedAverageItemLevel = equippedItemLevel and equippedItemLevel > 0 and equippedItemLevel or false
+		equippedItemLevel = runtimeContext.equippedAverageItemLevel
+	end
+
+	if not equippedItemLevel then
+		return nil
+	end
+
+	return equippedItemLevel
 end
 
 local function getEquippedItemLevel(runtimeContext, inventorySlot)
@@ -4366,6 +4471,7 @@ function Core.GetTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 	flags.isToy = false
 	flags.isKnownToy = false
 	flags.isTransmogSet = false
+	flags.isPvpItem = false
 	flags.hasUsageRequirement = false
 
 	local toyText = _G.TOY
@@ -4388,6 +4494,8 @@ function Core.GetTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 				flags.isTransmogSet = true
 			elseif toyText and lineType == Core.TOY_TOOLTIP_LINE_TYPE and line.leftText == toyText then
 				hasToyLine = true
+			elseif Core.PVP_ITEM_TOOLTIP_PATTERN and lineType == 0 and line.leftText and line.leftText:match(Core.PVP_ITEM_TOOLTIP_PATTERN) then
+				flags.isPvpItem = true
 			elseif lineType == Core.KNOWN_SPELL_TOOLTIP_LINE_TYPE then
 				if knownText and line.leftText == knownText then
 					hasKnownLine = true
@@ -4515,8 +4623,8 @@ local function getRuleUpgradeTrackKey(itemRef, runtimeContext)
 	return trackKey
 end
 
-local function getRecommendationFlags(itemRef, itemID, runtimeContext)
-	if not itemRef or not runtimeContext or not runtimeContext.playerClassID then
+local function getRecommendationFlags(itemRef, equipLoc, classID, subClassID, runtimeContext)
+	if not itemRef or not runtimeContext then
 		return false, false
 	end
 
@@ -4526,10 +4634,6 @@ local function getRecommendationFlags(itemRef, itemID, runtimeContext)
 		return cachedFlags.recommendedForClass, cachedFlags.recommendedForSpec
 	end
 
-	local recommendedForClass = false
-	local recommendedForSpec = false
-	local hasSpecData = false
-
 	if C_Item and C_Item.IsEquippableItem and not C_Item.IsEquippableItem(itemRef) then
 		runtimeContext.recommendationCache[cacheKey] = {
 			recommendedForClass = false,
@@ -4538,31 +4642,35 @@ local function getRecommendationFlags(itemRef, itemID, runtimeContext)
 		return false, false
 	end
 
-	local specTable = C_Item and C_Item.GetItemSpecInfo and C_Item.GetItemSpecInfo(itemRef)
-	hasSpecData = type(specTable) == "table" and next(specTable) ~= nil
+	if not equipLoc or classID == nil or subClassID == nil then
+		local _, _, _, instantEquipLoc, _, instantClassID, instantSubClassID = GetItemInfoInstant(itemRef)
+		equipLoc = equipLoc or instantEquipLoc
+		classID = classID or instantClassID
+		subClassID = subClassID or instantSubClassID
+	end
 
-	if hasSpecData then
-		for _, specID in ipairs(specTable) do
-			if runtimeContext.playerSpecID and specID == runtimeContext.playerSpecID then
-				recommendedForSpec = true
-			end
-			if C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID and C_SpecializationInfo.GetClassIDFromSpecID(specID) == runtimeContext.playerClassID then
+	local recommendedForClass = false
+	local recommendedForSpec = false
+	if equipLoc == "INVTYPE_CLOAK" then
+		recommendedForClass = true
+		recommendedForSpec = true
+	elseif equipLoc ~= "INVTYPE_TABARD" then
+		local classFilters = addon.itemBagFilterTypes and addon.itemBagFilterTypes[runtimeContext.playerClassToken or (addon.variables and addon.variables.unitClass)]
+		local specIndex = runtimeContext.playerSpecIndex or (addon.variables and addon.variables.unitSpec)
+		local numericClassID = tonumber(classID)
+		local numericSubClassID = tonumber(subClassID)
+		local specFilters = classFilters and classFilters[specIndex]
+		local specClassEntry = specFilters and numericClassID and specFilters[numericClassID]
+		local specValue = specClassEntry and numericSubClassID and specClassEntry[numericSubClassID]
+		recommendedForSpec = specValue ~= nil and specValue ~= false
+		for _, specFilters in pairs(classFilters or {}) do
+			local classEntry = numericClassID and specFilters[numericClassID]
+			local value = classEntry and numericSubClassID and classEntry[numericSubClassID]
+			if value ~= nil and value ~= false then
 				recommendedForClass = true
+				break
 			end
 		end
-	else
-		if C_Item and C_Item.DoesItemContainSpec then
-			recommendedForClass = C_Item.DoesItemContainSpec(itemRef, runtimeContext.playerClassID, 0)
-			if runtimeContext.playerSpecID then
-				recommendedForSpec = C_Item.DoesItemContainSpec(itemRef, runtimeContext.playerClassID, runtimeContext.playerSpecID)
-			end
-		end
-
-		if not recommendedForClass and itemID and C_PlayerInfo and C_PlayerInfo.CanUseItem then
-			recommendedForClass = C_PlayerInfo.CanUseItem(itemID)
-		end
-
-		recommendedForSpec = recommendedForClass
 	end
 
 	recommendedForClass = not not recommendedForClass
@@ -4725,6 +4833,7 @@ local function ensureSection(layoutData, sectionID)
 		groupCollapseID = definition.groupCollapseID,
 		groupSpacerBefore = definition.groupSpacerBefore == true,
 		groupCombineSubcategories = definition.groupCombineSubcategories == true,
+		desaturateItems = definition.desaturateItems == true,
 		collapsible = definition.collapsible ~= false,
 		columnCount = tonumber(definition.columnCount) or nil,
 		forceHeader = definition.forceHeader == true,
@@ -4781,10 +4890,10 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 
 			local resolvedItemLevel
 			local itemLocation
-			if usage.itemLevel or usage.isUpgrade or usage.canAuctionHouseSell then
+			if usage.itemLevel or usage.equippedAverageItemLevel or usage.isUpgrade or usage.canAuctionHouseSell then
 				itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotID)
 			end
-			if usage.itemLevel or usage.isUpgrade then
+			if usage.itemLevel or usage.equippedAverageItemLevel or usage.isUpgrade then
 				resolvedItemLevel = ruleItemInfo and ruleItemInfo.itemLevel or nil
 
 				if itemLocation and C_Item.DoesItemExist(itemLocation) and C_Item.GetCurrentItemLevel then
@@ -4795,7 +4904,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 					resolvedItemLevel = C_Item.GetDetailedItemLevelInfo(itemRef) or resolvedItemLevel
 				end
 
-				if usage.itemLevel or usage.isUpgrade then
+				if usage.itemLevel or usage.equippedAverageItemLevel or usage.isUpgrade then
 					resolvedItemLevel = tonumber(resolvedItemLevel) or nil
 					if not resolvedItemLevel or resolvedItemLevel <= 0 then
 						stable = false
@@ -4809,7 +4918,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local recommendedForClass
 			local recommendedForSpec
 			if usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade then
-				recommendedForClass, recommendedForSpec = getRecommendationFlags(itemRef, info and info.itemID, ruleRuntimeContext)
+				recommendedForClass, recommendedForSpec = getRecommendationFlags(itemRef, equipLoc, classID, subClassID, ruleRuntimeContext)
 			end
 
 			local upgradeTrackKey
@@ -4835,7 +4944,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local needsTransmogTooltip = usage.isTransmogSet
 				and tonumber(classID) == Core.CONSUMABLE_CLASS_ID
 				and tonumber(subClassID) == Core.CONSUMABLE_OTHER_SUBCLASS_ID
-			if usage.isToy or needsTransmogTooltip then
+			if usage.isToy or usage.isPvpItem or needsTransmogTooltip then
 				tooltipFlags = Core.GetTooltipDerivedItemFlags(bagID, slotID, info, ruleRuntimeContext)
 			end
 
@@ -4847,6 +4956,11 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local isToy
 			if usage.isToy then
 				isToy = tooltipFlags and tooltipFlags.isToy or false
+			end
+
+			local isPvpItem
+			if usage.isPvpItem then
+				isPvpItem = tooltipFlags and tooltipFlags.isPvpItem or false
 			end
 
 			local resolvedBindType = ruleItemInfo and ruleItemInfo.bindType or nil
@@ -4869,6 +4983,12 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.itemDescription = ruleItemInfo and ruleItemInfo.itemDescription or nil
 			itemContext.quality = (ruleItemInfo and ruleItemInfo.itemQuality) or (info and info.quality)
 			itemContext.itemLevel = resolvedItemLevel
+			itemContext.equippedAverageItemLevel = usage.equippedAverageItemLevel
+				and equipLoc
+				and not Core.IGNORED_ITEM_LEVEL_EQUIP_LOCS[equipLoc]
+				and (tonumber(classID) == Core.ITEM_CLASS.Armor or tonumber(classID) == Core.ITEM_CLASS.Weapon)
+				and Bags.functions.GetRuleEquippedAverageItemLevel(ruleRuntimeContext)
+				or nil
 			itemContext.itemMinLevel = ruleItemInfo and ruleItemInfo.itemMinLevel or nil
 			itemContext.itemType = ruleItemInfo and ruleItemInfo.itemType or nil
 			itemContext.itemSubType = ruleItemInfo and ruleItemInfo.itemSubType or nil
@@ -4905,6 +5025,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.isEquipmentSet = not not isEquipmentSet
 			itemContext.isTransmogSet = not not isTransmogSet
 			itemContext.isToy = not not isToy
+			itemContext.isPvpItem = not not isPvpItem
 			itemContext.isTeleportItem = addon.MythicPlus
 				and addon.MythicPlus.functions
 				and addon.MythicPlus.functions.IsTeleportItem
@@ -4958,6 +5079,7 @@ local function addSlotMapping(layoutData, sectionID, bagID, slotID, extraData)
 	mapping.itemCount = extraData and extraData.itemCount or nil
 	mapping.itemInfo = extraData and extraData.itemInfo or nil
 	mapping.questInfo = extraData and extraData.questInfo or nil
+	mapping.desaturateItem = section.desaturateItems == true and mapping.itemInfo ~= nil or nil
 	state.slotMappings[index] = mapping
 
 	layoutData.requiredButtonCount = index
@@ -6062,6 +6184,7 @@ local function rebuildLayout()
 	local fontSignature = getItemButtonTextAppearanceSignature(textAppearance)
 	local tooltipOwner = GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() or nil
 	local forceDynamicUpdate = state.forceDynamicRefresh
+	local stackCountLayoutSignature = getStackCountLayoutSignature()
 
 	for index = 1, layoutData.requiredButtonCount do
 		local mapping = state.slotMappings[index]
@@ -6071,7 +6194,7 @@ local function rebuildLayout()
 			button._bagsBagID = mapping.bagID
 			button._bagsSlotID = mapping.slotID
 		end
-		updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate)
+		updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate, stackCountLayoutSignature)
 		mapping.itemInfo = nil
 		mapping.questInfo = nil
 	end
@@ -6130,6 +6253,7 @@ local function refreshButtons()
 	end
 	local tooltipOwner = GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() or nil
 	local forceDynamicUpdate = state.forceDynamicRefresh
+	local stackCountLayoutSignature = getStackCountLayoutSignature()
 
 	for index = 1, state.currentLayoutCount or 0 do
 		updateButtonData(
@@ -6139,7 +6263,8 @@ local function refreshButtons()
 			textAppearance,
 			fontSignature,
 			tooltipOwner,
-			forceDynamicUpdate
+			forceDynamicUpdate,
+			stackCountLayoutSignature
 		)
 	end
 
@@ -6464,6 +6589,13 @@ local function syncFromNativeBagState(requestRefresh, requestRebuild)
 	end
 
 	local nativeOpen = isNativeStandardBagOpen()
+	local synchronizeContextOpenedBags = state.pendingContextOpenedBagToggleSync == true
+	state.pendingContextOpenedBagToggleSync = false
+	if nativeOpen and synchronizeContextOpenedBags and Bags.functions.SynchronizeContextOpenedBagToggleState then
+		Bags.functions.SynchronizeContextOpenedBagToggleState()
+		nativeOpen = isNativeStandardBagOpen()
+	end
+
 	if nativeOpen then
 		state.explicitToggleVisible = true
 	else
@@ -6549,6 +6681,9 @@ installVisibilityHooks = function()
 		local hookName = functionName
 		if type(_G[hookName]) == "function" then
 			hooksecurefunc(hookName, function()
+				if hookName == "OpenAllBagsMatchingContext" then
+					state.pendingContextOpenedBagToggleSync = true
+				end
 				scheduleNativeBagStateSync(true, false)
 			end)
 		end
@@ -6656,7 +6791,13 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
 		Core.ClearTooltipDerivedItemFlagsCache()
 		scheduleUpdate(true, false)
-	elseif event == "UNIT_INVENTORY_CHANGED" or event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
+	elseif event == "EQUIPMENT_SETS_CHANGED" then
+		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
+		if usage and usage.isEquipmentSet then
+			wipeTable(state.slotCategoryCache)
+			scheduleUpdate(true, true)
+		end
+	elseif event == "UNIT_INVENTORY_CHANGED" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
 		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
 		if doesRuleUsageDependOnPlayerState(usage) then
 			bumpPlayerRuleRevision()

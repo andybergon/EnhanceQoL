@@ -63,3 +63,8 @@
 - If the user asks to prepare a release changelog while a beta changelog should remain available, keep the beta-gated section separate and place the release section below it, outside the beta gate.
 - Do not merge beta-only changelog entries into a release section unless the user explicitly says those beta items are shipping in that release.
 - After changing packaging gates, verify `scripts/prepare_packager_gates.sh` with at least `bash -n`, and make sure the release workflow still runs Luacheck after the gate step.
+
+## Class Buff Reminder
+
+- Druid Symbiotic Relationship uses different IDs for different checks: 474750 is the cast/known/range spell, while 474754 is the player aura that indicates the druid has an active bond.
+- Symbiotic Relationship reminders should run in any non-solo group, including raids. Do not gate it to `GROUP_CONTEXT_PARTY` only.

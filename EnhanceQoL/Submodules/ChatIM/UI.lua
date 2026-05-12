@@ -23,7 +23,25 @@ local MU = MenuUtil -- global ab 11.0+
 local regionTable = { "US", "KR", "EU", "TW", "CN" }
 local regionKey = regionTable[GetCurrentRegion()] or "EU" -- or EU for PTR because that is region 90+
 
-local function PlayerMenuGenerator(_, root, targetName, isBN, bnetID)
+local function sanitizeRealm(realm)
+	if not realm or realm == "" then realm = GetRealmName() or "Unknown" end
+	return realm:gsub("%s+", "")
+end
+
+local function TagPlayerMenu(root, targetName, unit, isBN, bnetID, lineID, chatType, chatTarget, chatFrame)
+	if not (root and root.SetTag and unit) then return end
+
+	root:SetTag("MENU_UNIT_FRIEND", {
+		name = unit,
+		lineID = tonumber(lineID) or 0,
+		chatType = chatType or (isBN and "BN_WHISPER" or "WHISPER"),
+		chatTarget = chatTarget or unit or targetName,
+		chatFrame = chatFrame,
+		bnetIDAccount = bnetID,
+	})
+end
+
+local function PlayerMenuGenerator(owner, root, targetName, isBN, bnetID, lineID, chatType, chatTarget)
 	root:CreateTitle(targetName)
 
 	local unit, riolink, wclLink
@@ -37,7 +55,7 @@ local function PlayerMenuGenerator(_, root, targetName, isBN, bnetID)
 				and BNET_CLIENT_WOW == info.gameAccountInfo.clientProgram
 				and info.gameAccountInfo.regionID == GetCurrentRegion()
 			then
-				unit = info.gameAccountInfo.characterName .. "-" .. info.gameAccountInfo.realmName
+				unit = info.gameAccountInfo.characterName .. "-" .. sanitizeRealm(info.gameAccountInfo.realmName)
 				riolink = "https://raider.io/characters/"
 					.. string.lower(regionKey)
 					.. "/"
@@ -66,6 +84,7 @@ local function PlayerMenuGenerator(_, root, targetName, isBN, bnetID)
 			end
 		end
 	end
+	TagPlayerMenu(root, targetName, unit, isBN, bnetID, lineID, chatType, chatTarget, owner)
 	if unit then
 		root:CreateDivider()
 		root:CreateTitle(UNIT_FRAME_DROPDOWN_SUBSECTION_TITLE_INTERACT)
@@ -391,9 +410,17 @@ function ChatIM:CreateTab(sender, isBN, bnetID, battleTag)
 
 		if linkType == "player" or linkType == "BNplayer" then
 			if button == "RightButton" then
-				local name = Ambiguate(payload:match("^[^:]+"), "none")
+				local name, lineID, chatType, chatTarget
+				local parsedBnetID
+				if linkType == "BNplayer" then
+					name, parsedBnetID, lineID, chatType, chatTarget = strsplit(":", payload)
+					parsedBnetID = tonumber(parsedBnetID) or bnetID
+				else
+					name, lineID, chatType, chatTarget = strsplit(":", payload)
+				end
+				name = Ambiguate(name, "none")
 				local bn = linkType == "BNplayer"
-				MU.CreateContextMenu(frame, PlayerMenuGenerator, name, bn, bnetID)
+				MU.CreateContextMenu(frame, PlayerMenuGenerator, name, bn, parsedBnetID, lineID, chatType, chatTarget)
 			end
 			return
 		end
@@ -541,7 +568,7 @@ function ChatIM:AddMessage(partner, text, outbound, isBN, bnetID)
 	local storeText = formattedText:gsub("%%", "%%%%")
 	local nameLink, colorInfo
 	if isBN then
-		nameLink = string.format("|HBNplayer:%s|h[%s]|h", partner, shortName)
+		nameLink = string.format("|HBNplayer:%s:%s|h[%s]|h", partner, tostring(bnetID or ""), shortName)
 		colorInfo = outbound and ChatTypeInfo.BN_WHISPER_INFORM or ChatTypeInfo.BN_WHISPER
 	else
 		nameLink = string.format("|Hplayer:%s|h[%s]|h", partner, shortName)
@@ -557,9 +584,9 @@ function ChatIM:AddMessage(partner, text, outbound, isBN, bnetID)
 	if isBN then
 		local nameLinkFmt
 		if outbound then
-			nameLinkFmt = "|HBNplayer:%s|h[" .. AUCTION_HOUSE_SELLER_YOU .. "]|h"
+			nameLinkFmt = "|HBNplayer:%s:" .. tostring(bnetID or "") .. "|h[" .. AUCTION_HOUSE_SELLER_YOU .. "]|h"
 		else
-			nameLinkFmt = "|HBNplayer:%s|h[%s]|h"
+			nameLinkFmt = "|HBNplayer:%s:" .. tostring(bnetID or "") .. "|h[%s]|h"
 		end
 		storeLine = string.format("%s |cff%s%s|r: |cff%s%s|r", prefix, cHex, nameLinkFmt, cHex, storeText)
 	else

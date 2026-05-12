@@ -101,6 +101,7 @@ end
 
 local pendingGUID, pendingUnit, pendingRequestedAt
 local EnsureUnitData -- forward declaration
+local ResolveTooltipUnit -- forward declaration
 local fInspect = CreateFrame("Frame")
 
 local function IsInspectUIBusy()
@@ -182,7 +183,7 @@ end
 local function RefreshTooltipForGUID(guid)
 	if not GameTooltip or not GameTooltip:IsShown() then return end
 	local tt = GameTooltip
-	local unit = GetUnitTokenFromTooltip(tt)
+	local unit = ResolveTooltipUnit and ResolveTooltipUnit(tt) or GetUnitTokenFromTooltip(tt)
 	if not unit then return end
 	local uGuid = UnitGUID(unit)
 	if not safeEquals(uGuid, guid) then return end
@@ -275,7 +276,7 @@ fInspect:SetScript("OnEvent", function(_, ev, arg1, arg2)
 		if not DoesKeyMatchConfiguredModifier(key) then return end
 		if not IsConfiguredModifierDown() then return end
 		if not GameTooltip or not GameTooltip:IsShown() then return end
-		local unit = GetUnitTokenFromTooltip(GameTooltip)
+		local unit = ResolveTooltipUnit and ResolveTooltipUnit(GameTooltip) or GetUnitTokenFromTooltip(GameTooltip)
 		if not unit or not UnitIsPlayer(unit) then return end
 		EnsureUnitData(unit)
 		local guid = UnitGUID(unit)
@@ -550,7 +551,7 @@ local function checkSpell(tooltip, id, name, isSpell)
 	tooltip:Hide()
 end
 
-local function ResolveTooltipUnit(tooltip)
+ResolveTooltipUnit = function(tooltip)
 	local unit, hadTooltipUnit = GetUnitTokenFromTooltip(tooltip)
 	if unit and UnitExists(unit) then return unit end
 	if hadTooltipUnit then return nil end
@@ -735,7 +736,7 @@ local function checkAdditionalTooltip(tooltip)
 	local showMythic = addon.db["TooltipShowMythicScore"] and unit and UnitExists(unit) and UnitCanAttack("player", unit) == false and addon.Tooltip.variables.maxLevel == UnitLevel(unit)
 	if showMythic and addon.db["TooltipMythicScoreRequireModifier"] and not IsConfiguredModifierDown() then showMythic = false end
 	if showMythic then
-		local _, _, timeLimit
+		local timeLimit
 		local rating = C_PlayerInfo.GetPlayerMythicPlusRatingSummary(unit)
 		if rating then
 			local r, g, b
@@ -763,7 +764,7 @@ local function checkAdditionalTooltip(tooltip)
 				end
 
 				for _, key in pairs(C_ChallengeMode.GetMapTable()) do
-					_, _, timeLimit = C_ChallengeMode.GetMapUIInfo(key)
+					timeLimit = select(3, C_ChallengeMode.GetMapUIInfo(key))
 					r, g, b = 0.5, 0.5, 0.5
 
 					local data = key
@@ -818,7 +819,7 @@ local function checkAdditionalTooltip(tooltip)
 					})
 				end
 				if wantBest and bestDungeon and bestDungeon.mapScore > 0 then
-					_, _, timeLimit = C_ChallengeMode.GetMapUIInfo(bestDungeon.challengeModeID)
+					timeLimit = select(3, C_ChallengeMode.GetMapUIInfo(bestDungeon.challengeModeID))
 					r, g, b = 1, 1, 1
 					local stars = ""
 					local hexColor = string.format("|cff%02x%02x%02x", r * 255, g * 255, b * 255)
@@ -1174,7 +1175,7 @@ local function checkAdditionalUnit(tt)
 	if not (addon.db["TooltipUnitShowSpec"] or addon.db["TooltipUnitShowItemLevel"]) then return end
 	if isTooltipRestricted() then return end
 
-	local unit = GetUnitTokenFromTooltip(tt)
+	local unit = ResolveTooltipUnit(tt)
 	if not unit or not UnitIsPlayer(unit) then return end
 
 	EnsureUnitData(unit)
@@ -1198,8 +1199,37 @@ local function checkAdditionalUnit(tt)
 	if showSpec or showIlvl then tt:Show() end
 end
 
+local function ShouldRunTooltipPostCall()
+	local db = addon.db
+	if not db then return false end
+	return db["TooltipShowSpellID"]
+		or db["TooltipShowSpellIcon"]
+		or db["TooltipShowSpellIconInline"]
+		or db["TooltipShowItemID"]
+		or db["TooltipShowItemIcon"]
+		or db["TooltipShowTempEnchant"]
+		or db["TooltipShowItemCount"]
+		or (db["TooltipItemHideType"] and db["TooltipItemHideType"] ~= 1)
+		or db["TooltipItemHideInDungeon"]
+		or db["TooltipShowCurrencyID"]
+		or db["TooltipShowCurrencyAccountWide"]
+		or (db["TooltipUnitHideType"] and db["TooltipUnitHideType"] ~= 1)
+		or db["TooltipUnitHideInCombat"]
+		or db["TooltipUnitHideInDungeon"]
+		or db["TooltipUnitHideHealthBar"]
+		or db["TooltipUnitShowTargetOfTarget"]
+		or db["TooltipUnitShowMount"]
+		or db["TooltipUnitShowSpec"]
+		or db["TooltipUnitShowItemLevel"]
+		or db["TooltipShowMythicScore"]
+		or (db["TooltipBuffHideType"] and db["TooltipBuffHideType"] ~= 1)
+		or db["TooltipBuffHideInDungeon"]
+		or db["TooltipBuffHideInCombat"]
+end
+
 if TooltipDataProcessor then
 	TooltipDataProcessor.AddLinePreCall(Enum.TooltipDataLineType.SellPrice, function(tooltip, lineData)
+		if not ShouldRunTooltipPostCall() then return end
 		tooltip:AddLine(SELL_PRICE .. ": " .. GetMoneyString(lineData.price), WHITE_FONT_COLOR:GetRGB())
 		return true
 	end)
@@ -1211,6 +1241,7 @@ if TooltipDataProcessor then
 	-- numbers in tainted contexts). Specific-type registration avoids taint for unhandled types.
 	local function tooltipPostCall(tooltip, data)
 		if not addon.db then return end
+		if not ShouldRunTooltipPostCall() then return end
 		if not data or not data.type then return end
 		if not IsTooltipMutable(tooltip) then return end
 

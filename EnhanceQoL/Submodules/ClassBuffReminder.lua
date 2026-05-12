@@ -19,6 +19,7 @@ local issecretvalue = _G.issecretvalue
 local UnitInPartyIsAI = _G.UnitInPartyIsAI
 local UnitGUID = _G.UnitGUID
 local GetTimePreciseSec = _G.GetTimePreciseSec
+local C_PetBar = _G.C_PetBar
 
 local EDITMODE_ID = "classBuffReminder"
 local ICON_MISSING = "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -123,6 +124,7 @@ TRACKING_CONTENT.db = {
 	FOOD = "classBuffReminderTrackFoodContent",
 	RUNES = "classBuffReminderTrackRunesContent",
 	WEAPON_BUFFS = "classBuffReminderTrackWeaponBuffsContent",
+	PETS = "classBuffReminderTrackPetsContent",
 }
 
 TRACKING_CONTENT.order = {
@@ -288,6 +290,10 @@ Reminder.defaults = Reminder.defaults
 		trackWeaponBuffs = false,
 		trackWeaponBuffsContent = Reminder.CreateDefaultTrackingContentSelection(),
 		trackWeaponBuffsInstanceOnly = false,
+		trackPets = false,
+		trackPetsContent = Reminder.CreateDefaultTrackingContentSelection(),
+		trackPetsInstanceOnly = false,
+		hidePetReminderText = false,
 		scale = 1,
 		iconSize = 64,
 		fontSize = 13,
@@ -332,6 +338,10 @@ if defaults.trackTrinkets == nil then defaults.trackTrinkets = false end
 if defaults.trackTrinketsInstanceOnly == nil then defaults.trackTrinketsInstanceOnly = false end
 if defaults.instanceOnly == nil then defaults.instanceOnly = false end
 if defaults.nearbyOnly == nil then defaults.nearbyOnly = false end
+if defaults.trackPets == nil then defaults.trackPets = false end
+if defaults.trackPetsInstanceOnly == nil then defaults.trackPetsInstanceOnly = false end
+if type(defaults.trackPetsContent) ~= "table" then defaults.trackPetsContent = Reminder.CreateDefaultTrackingContentSelection() end
+if defaults.hidePetReminderText == nil then defaults.hidePetReminderText = false end
 if defaults.borderEnabled == nil then defaults.borderEnabled = false end
 if defaults.borderTexture == nil or defaults.borderTexture == "" then defaults.borderTexture = "DEFAULT" end
 if defaults.borderSize == nil then defaults.borderSize = 1 end
@@ -349,6 +359,32 @@ local GROUP_CONTEXT_RAID = "RAID"
 local ROLE_FILTER_CONTEXT_ANY_GROUP = "ANY_GROUP"
 local ROLE_FILTER_CONTEXT_PARTY_ONLY = "PARTY_ONLY"
 local ROLE_FILTER_CONTEXT_RAID_ONLY = "RAID_ONLY"
+
+Reminder.petTracking = Reminder.petTracking or {
+	petSpecs = {
+		[252] = true,
+		[253] = true,
+		[255] = true,
+		[265] = true,
+		[266] = true,
+		[267] = true,
+	},
+	specMarksman = 254,
+	marksPetTalent = 1223323,
+	specFrostMage = 64,
+	magePetTalent = 31687,
+	grimoireOfSacrifice = 108503,
+	grimoireOfSacrificeBuff = 196099,
+	callPet = 883,
+	raiseDead = 46584,
+	summonImp = 688,
+	petPassive = 26179,
+	petDefensive = 61679,
+	petAssist = 61680,
+	stanceAssist = 1,
+	stanceDefensive = 2,
+	stancePassive = 3,
+}
 
 local EVOKER_BLESSING_OF_BRONZE_IDS = {
 	381732,
@@ -1091,7 +1127,7 @@ local function setProviderDisplaySpellId(provider, spellId)
 	provider._presentationAttempted = nil
 end
 
-local function makeSelfMissingEntry(spellId, label, countMissing, countTotal, sourceKind, icon)
+local function makeSelfMissingEntry(spellId, label, countMissing, countTotal, sourceKind, icon, shortText)
 	return {
 		spellId = normalizeSpellId(spellId),
 		label = label,
@@ -1099,6 +1135,7 @@ local function makeSelfMissingEntry(spellId, label, countMissing, countTotal, so
 		countTotal = tonumber(countTotal),
 		sourceKind = sourceKind,
 		icon = Reminder.NormalizeIconTexture(icon),
+		shortText = shortText,
 	}
 end
 
@@ -1288,6 +1325,17 @@ end
 function Reminder:SetWeaponBuffTrackingContentSelection(selection)
 	if addon.db then addon.db[TRACKING_CONTENT.db.WEAPON_BUFFS] = select(1, Reminder.NormalizeTrackingContentSelection(selection, nil, defaults.trackWeaponBuffsContent)) end
 	self:InvalidateWeaponBuffCache()
+	self:RequestUpdate(true)
+end
+
+function Reminder:IsPetTrackingEnabled() return getValue("classBuffReminderTrackPets", defaults.trackPets) == true end
+
+function Reminder:GetPetTrackingContentSelection()
+	return Reminder.GetTrackingContentSelection(TRACKING_CONTENT.db.PETS, "classBuffReminderTrackPetsInstanceOnly", defaults.trackPetsContent)
+end
+
+function Reminder:SetPetTrackingContentSelection(selection)
+	if addon.db then addon.db[TRACKING_CONTENT.db.PETS] = select(1, Reminder.NormalizeTrackingContentSelection(selection, nil, defaults.trackPetsContent)) end
 	self:RequestUpdate(true)
 end
 
@@ -1491,6 +1539,11 @@ function Reminder:CanCheckWeaponBuffReminder()
 	return self:IsTrackingContentSelected(self:GetWeaponBuffTrackingContentSelection(), true)
 end
 
+function Reminder:CanCheckPetReminder()
+	if not self:IsPetTrackingEnabled() then return false end
+	return self:IsTrackingContentSelected(self:GetPetTrackingContentSelection(), true)
+end
+
 function Reminder:CanEvaluateFoodReminderNow()
 	if not self:CanCheckFoodReminder() then return false end
 	return true
@@ -1571,6 +1624,11 @@ end
 
 function Reminder:CanEvaluateFlaskReminderNow()
 	if not self:CanCheckFlaskReminder() then return false end
+	return true
+end
+
+function Reminder:CanEvaluatePetReminderNow()
+	if not self:CanCheckPetReminder() then return false end
 	return true
 end
 
@@ -2245,6 +2303,185 @@ function Reminder:GetWeaponBuffMissingEntry(evalContext)
 	return makeSelfMissingEntry(prepared.displaySpellId, prepared.displayLabel, nil, nil, "WEAPON_BUFF", prepared.displayIcon)
 end
 
+function Reminder:IsPetExpectedForPlayer()
+	local pet = Reminder.petTracking
+	local classToken = self:GetClassToken()
+	local specId = self:GetCurrentSpecId()
+
+	if classToken == "MAGE" then return specId == pet.specFrostMage and C_SpellBook and C_SpellBook.IsSpellKnown and C_SpellBook.IsSpellKnown(pet.magePetTalent) == true end
+	if classToken == "HUNTER" then
+		if specId == pet.specMarksman then return C_SpellBook and C_SpellBook.IsSpellKnown and C_SpellBook.IsSpellKnown(pet.marksPetTalent) == true end
+		return pet.petSpecs[specId] == true
+	end
+	if classToken == "DEATHKNIGHT" then return specId == 252 end
+	if classToken == "WARLOCK" then return pet.petSpecs[specId] == true and not self:IsWarlockSacrificePetReminderSuppressed() end
+	return false
+end
+
+function Reminder:IsWarlockSacrificePetReminderSuppressed()
+	if self:GetClassToken() ~= "WARLOCK" then return false end
+	local pet = Reminder.petTracking
+	if C_SpellBook and C_SpellBook.IsSpellKnown and C_SpellBook.IsSpellKnown(pet.grimoireOfSacrifice) == true then return true end
+	if IsPlayerSpell and IsPlayerSpell(pet.grimoireOfSacrifice) == true then return true end
+	if InCombatLockdown and InCombatLockdown() then return false end
+	if UnitAffectingCombat and UnitAffectingCombat("player") then return false end
+	if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID and C_UnitAuras.GetPlayerAuraBySpellID(pet.grimoireOfSacrificeBuff) then return true end
+	if AuraUtil and AuraUtil.FindAuraBySpellID and AuraUtil.FindAuraBySpellID(pet.grimoireOfSacrificeBuff, "player", "HELPFUL") then return true end
+	return false
+end
+
+function Reminder:HasActivePet()
+	if not UnitExists or not UnitExists("pet") then return false end
+	if UnitIsDeadOrGhost and UnitIsDeadOrGhost("pet") then return false end
+	return true
+end
+
+function Reminder:IsPetReminderSuppressed()
+	if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then return true end
+	if IsMounted and IsMounted() then return true end
+	if UnitHasVehicleUI and UnitHasVehicleUI("player") then return true end
+	if UnitInVehicle and UnitInVehicle("player") then return true end
+	if UnitOnTaxi and UnitOnTaxi("player") then return true end
+	if IsFlying and IsFlying() then return true end
+	return false
+end
+
+function Reminder:ClassifyPetStanceName(name)
+	if name == "PET_MODE_ASSIST" or name == "PET_ACTION_ASSIST" then return Reminder.petTracking.stanceAssist end
+	if name == "PET_MODE_DEFENSIVEASSIST" or name == "PET_ACTION_DEFENSIVE" then return Reminder.petTracking.stanceDefensive end
+	if name == "PET_MODE_PASSIVE" or name == "PET_ACTION_MODE_PASSIVE" then return Reminder.petTracking.stancePassive end
+	return nil
+end
+
+function Reminder:TryGetPetStanceWith(getInfoFunc)
+	local inactiveStances = {}
+	for i = 1, (_G.NUM_PET_ACTION_SLOTS or 10) do
+		local name, _, _, isActive = getInfoFunc(i)
+		if type(name) == "table" then
+			isActive = name.isActive
+			name = name.name
+		end
+		local stance = self:ClassifyPetStanceName(name)
+		if stance then
+			if isActive then return stance end
+			inactiveStances[stance] = true
+		end
+	end
+
+	local inactiveCount = 0
+	for _ in pairs(inactiveStances) do inactiveCount = inactiveCount + 1 end
+	if inactiveCount == 2 then
+		local pet = Reminder.petTracking
+		if not inactiveStances[pet.stanceAssist] then return pet.stanceAssist end
+		if not inactiveStances[pet.stanceDefensive] then return pet.stanceDefensive end
+		if not inactiveStances[pet.stancePassive] then return pet.stancePassive end
+	end
+	return nil
+end
+
+function Reminder:GetPetStance()
+	local pet = Reminder.petTracking
+	if not self:HasActivePet() then
+		pet.cachedStance = nil
+		return nil
+	end
+	if pet.cachedStance and GetTime and ((GetTime() - (pet.cachedStanceTime or 0)) < 0.5) then return pet.cachedStance end
+
+	local apis = {}
+	if C_PetBar and C_PetBar.GetPetActionInfo then apis[#apis + 1] = C_PetBar.GetPetActionInfo end
+	if C_ActionBar and C_ActionBar.GetPetActionInfo then apis[#apis + 1] = C_ActionBar.GetPetActionInfo end
+	if GetPetActionInfo then apis[#apis + 1] = GetPetActionInfo end
+	for i = 1, #apis do
+		local ok, stance = pcall(function() return Reminder:TryGetPetStanceWith(apis[i]) end)
+		if ok and stance then
+			pet.cachedStance = stance
+			pet.cachedStanceTime = GetTime and GetTime() or 0
+			return stance
+		end
+	end
+	return pet.cachedStance
+end
+
+function Reminder:SetupPetTrackingHooks()
+	local pet = Reminder.petTracking
+	if pet.hooksInstalled then return end
+	pet.hooksInstalled = true
+
+	local function updateCachedStance(stance)
+		pet.cachedStance = stance
+		pet.cachedStanceTime = GetTime and GetTime() or 0
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0, function()
+				if Reminder:IsPetTrackingEnabled() then Reminder:RequestUpdate(false, Reminder.RUNTIME_UPDATE_DELAY, true) end
+			end)
+		elseif Reminder:IsPetTrackingEnabled() then
+			Reminder:RequestUpdate(false, Reminder.RUNTIME_UPDATE_DELAY, true)
+		end
+	end
+
+	local hooks = {
+		{ func = "PetPassiveMode", stance = pet.stancePassive },
+		{ func = "PetDefensiveMode", stance = pet.stanceDefensive },
+		{ func = "PetAssistMode", stance = pet.stanceAssist },
+	}
+	for i = 1, #hooks do
+		if _G[hooks[i].func] then
+			local stance = hooks[i].stance
+			pcall(hooksecurefunc, hooks[i].func, function() updateCachedStance(stance) end)
+		end
+	end
+end
+
+function Reminder:GetPetReminderIcon(state)
+	local pet = Reminder.petTracking
+	local spellId
+	if state == "passive" then
+		return 132311
+	elseif state == "defensive" then
+		return 132110
+	else
+		local classToken = self:GetClassToken()
+		local specId = self:GetCurrentSpecId()
+		if classToken == "MAGE" then
+			spellId = pet.magePetTalent
+		elseif classToken == "DEATHKNIGHT" then
+			spellId = pet.raiseDead
+		elseif classToken == "HUNTER" then
+			spellId = pet.callPet
+		elseif classToken == "WARLOCK" then
+			spellId = pet.summonImp
+		elseif specId == pet.specFrostMage then
+			spellId = pet.magePetTalent
+		end
+	end
+	return spellId and safeGetSpellIcon(spellId) or "Interface\\Icons\\Ability_Hunter_BeastCall"
+end
+
+function Reminder:GetPetReminderShortText(state)
+	if getValue("classBuffReminderHidePetReminderText", defaults.hidePetReminderText) == true then return nil end
+	if state == "passive" then return L["ClassBuffReminderPetPassiveShort"] or "Pet\nPassive" end
+	if state == "defensive" then return L["ClassBuffReminderPetDefensiveShort"] or "Pet\nDefensive" end
+	return nil
+end
+
+function Reminder:GetPetMissingEntry()
+	if not self:IsPetExpectedForPlayer() then return nil end
+	if self:IsPetReminderSuppressed() then return nil end
+
+	if not self:HasActivePet() then
+		return makeSelfMissingEntry(nil, L["ClassBuffReminderPetMissing"] or L["Pet Missing"] or "Pet Missing", nil, nil, "PET", self:GetPetReminderIcon("missing"))
+	end
+
+	local stance = self:GetPetStance()
+	if stance == Reminder.petTracking.stancePassive then
+		return makeSelfMissingEntry(nil, L["ClassBuffReminderPetPassive"] or "Pet Passive", nil, nil, "PET", self:GetPetReminderIcon("passive"), self:GetPetReminderShortText("passive"))
+	end
+	if stance == Reminder.petTracking.stanceDefensive then
+		return makeSelfMissingEntry(nil, L["ClassBuffReminderPetDefensive"] or "Pet Defensive", nil, nil, "PET", self:GetPetReminderIcon("defensive"), self:GetPetReminderShortText("defensive"))
+	end
+	return nil
+end
+
 function Reminder:GetSupplementalMissingEntries(evalContext)
 	if not canEvaluateUnit("player") then return nil end
 
@@ -2271,6 +2508,10 @@ function Reminder:GetSupplementalMissingEntries(evalContext)
 		if trinketEntries then
 			for _, e in ipairs(trinketEntries) do entries[#entries + 1] = e end
 		end
+	end
+	if self:CanEvaluatePetReminderNow() then
+		local petEntry = self:GetPetMissingEntry()
+		if petEntry then entries[#entries + 1] = petEntry end
 	end
 	if #entries <= 0 then return nil end
 	return entries
@@ -2720,9 +2961,12 @@ local function druidRestorationGetSelfStatus(provider, reminder)
 	end
 
 	local trackSymbiotic = hasKnownSpellInList(provider.symbioticKnownSpellIds or provider.symbioticSpellIds)
-	if trackSymbiotic and reminder:GetGroupContext() == GROUP_CONTEXT_PARTY then
+	if trackSymbiotic and reminder:GetGroupContext() ~= GROUP_CONTEXT_SOLO then
 		reminder.runtimeEligibleUnits = reminder.runtimeEligibleUnits or {}
-		local eligibleUnits = reminder:CollectOtherEligibleUnits(reminder.runtimeEligibleUnits, true)
+		local symbioticRangeSpellId = normalizeSpellId(provider.symbioticKnownSpellIds and provider.symbioticKnownSpellIds[1])
+			or normalizeSpellId(provider.symbioticDisplaySpellId)
+			or normalizeSpellId(provider.symbioticSpellIds and provider.symbioticSpellIds[1])
+		local eligibleUnits = reminder:CollectOtherEligibleUnits(reminder.runtimeEligibleUnits, symbioticRangeSpellId, true)
 		if #eligibleUnits > 0 then
 			totalRequirements = totalRequirements + 1
 			if not reminder:UnitHasAnyAuraSpellId("player", provider.symbioticSpellIds) then
@@ -3226,6 +3470,18 @@ function Reminder:GetWeaponBuffOnlyProvider()
 		isSupplementalOnly = true,
 	}
 	return self.weaponBuffOnlyProvider
+end
+
+function Reminder:GetPetOnlyProvider()
+	self.petOnlyProvider = self.petOnlyProvider or {
+		scope = PROVIDER_SCOPE_SELF,
+		spellIds = { 1 },
+		fallbackName = L["ClassBuffReminderSectionPets"] or "Pets",
+		displaySpellId = 1,
+		displayIcon = "Interface\\Icons\\Ability_Hunter_BeastCall",
+		isSupplementalOnly = true,
+	}
+	return self.petOnlyProvider
 end
 
 local function finalizeResolvedProvider(provider)
@@ -4651,6 +4907,7 @@ function Reminder:GetSelfMissingSummaryText(entries)
 		if type(label) ~= "string" or label == "" then label = L["ClassBuffReminderMissing"] or "Missing" end
 		local cm = type(entry) == "table" and tonumber(entry.countMissing) or nil
 		local ct = type(entry) == "table" and tonumber(entry.countTotal) or nil
+			local shortText = type(entry) == "table" and entry.shortText or nil
 		if cm and ct and ct > 0 then
 			cm = math.max(0, math.floor(cm + 0.5))
 			ct = math.max(0, math.floor(ct + 0.5))
@@ -4816,10 +5073,14 @@ function Reminder:RenderSelfMissingIcons(missingEntries)
 			iconFrame.countText:SetPoint("CENTER", iconFrame, "CENTER", scaledXYOffsetX, scaledXYOffsetY)
 			local cm = type(entry) == "table" and tonumber(entry.countMissing) or nil
 			local ct = type(entry) == "table" and tonumber(entry.countTotal) or nil
+			local shortText = type(entry) == "table" and entry.shortText or nil
+			if iconFrame.countText.SetWidth then iconFrame.countText:SetWidth(scaledIconSize + 2) end
 			if cm and ct and ct > 0 then
 				cm = math.max(0, math.floor(cm + 0.5))
 				ct = math.max(0, math.floor(ct + 0.5))
 				iconFrame.countText:SetText(string.format("%d/%d", cm, ct))
+			elseif type(shortText) == "string" and shortText ~= "" then
+				iconFrame.countText:SetText(shortText)
 			else
 				iconFrame.countText:SetText("")
 			end
@@ -5270,7 +5531,12 @@ function Reminder:ShouldRegisterRuntimeEvents()
 	if getValue(DB_ENABLED, defaults.enabled) ~= true then return false end
 	if self.runtimeProviderValid ~= true then self:RefreshProviderCache(false) end
 	if self.hasProviderCached == true then return true end
-	return self:IsFlaskTrackingEnabled() or self:IsFoodTrackingEnabled() or self:IsRuneTrackingEnabled() or self:IsWeaponBuffTrackingEnabled() or self:IsTrinketTrackingEnabled()
+	return self:IsFlaskTrackingEnabled()
+		or self:IsFoodTrackingEnabled()
+		or self:IsRuneTrackingEnabled()
+		or self:IsWeaponBuffTrackingEnabled()
+		or self:IsTrinketTrackingEnabled()
+		or self:CanCheckPetReminder()
 end
 
 function Reminder:Render(provider, missing, total, supplementalEntries, effectiveMissing)
@@ -5441,6 +5707,8 @@ function Reminder:UpdateDisplay()
 			provider = self:GetRuneOnlyProvider()
 		elseif self:CanCheckWeaponBuffReminder() then
 			provider = self:GetWeaponBuffOnlyProvider()
+		elseif self:CanCheckPetReminder() then
+			provider = self:GetPetOnlyProvider()
 		else
 			self:SetGlowShown(false)
 			self.missingActive = false
@@ -5468,6 +5736,8 @@ function Reminder:UpdateDisplay()
 			provider = self:GetWeaponBuffOnlyProvider() or provider
 		elseif primarySupplementalEntry.sourceKind == "TRINKET" then
 			provider = self:GetWeaponBuffOnlyProvider() or provider
+		elseif primarySupplementalEntry.sourceKind == "PET" then
+			provider = self:GetPetOnlyProvider() or provider
 		end
 		if provider then
 			local entrySpellId = normalizeSpellId(primarySupplementalEntry.spellId)
@@ -5666,10 +5936,17 @@ function Reminder:HandleEvent(event, unit, updateInfo)
 		return
 	end
 
+	if event == "UNIT_PET" or event == "PET_BAR_UPDATE" or event == "PET_BAR_UPDATE_USABLE" or event == "PLAYER_MOUNT_DISPLAY_CHANGED" or (event == "UNIT_FLAGS" and unit == "pet") then
+		Reminder.petTracking.cachedStance = nil
+		self:RequestUpdate(false, Reminder.RUNTIME_UPDATE_DELAY, true)
+		return
+	end
+
 	if event == "UNIT_AURA" then
 		if not isTrackedUnit(unit) then return end
 		if self:IsRuntimeEvaluationBlockedByCombat() then return end
 		local playerUnit = isPlayerUnit(unit)
+		if playerUnit and self:IsPetTrackingEnabled() then self:RequestUpdate(false, Reminder.AURA_UPDATE_DELAY) end
 		local provider = self:GetProvider()
 		local supplementalTouches = playerUnit and self:SupplementalAuraUpdateTouchesPlayer(updateInfo) or false
 		if provider and provider.scope == PROVIDER_SCOPE_GROUP and self:ShouldEvaluateGroupResponsibilities(provider) ~= true then
@@ -5757,9 +6034,15 @@ function Reminder:RegisterEvents()
 	self.eventFrame:RegisterEvent("PLAYER_DEAD")
 	self.eventFrame:RegisterEvent("PLAYER_ALIVE")
 	self.eventFrame:RegisterEvent("PLAYER_UNGHOST")
+	self.eventFrame:RegisterEvent("PET_BAR_UPDATE")
+	self.eventFrame:RegisterEvent("PET_BAR_UPDATE_USABLE")
+	self.eventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+	self.eventFrame:RegisterUnitEvent("UNIT_PET", "player")
+	self.eventFrame:RegisterUnitEvent("UNIT_FLAGS", "pet")
 	self.eventFrame:SetScript("OnEvent", function(_, event, ...) Reminder:HandleEvent(event, ...) end)
 
 	self.eventsRegistered = true
+	self:SetupPetTrackingHooks()
 	self:ScheduleInitialSoundSync()
 end
 
@@ -5971,7 +6254,7 @@ function editModeSettingsBuilders.buildFilters()
 			name = L["ClassBuffReminderSectionFilters"] or "Tracking Filters",
 			kind = SettingType.Collapsible,
 			id = "filters",
-			defaultCollapsed = false,
+			defaultCollapsed = true,
 		},
 		{
 			name = L["ClassBuffReminderOnlyOutOfCombat"] or "Only show out of combat",
@@ -6086,7 +6369,7 @@ function editModeSettingsBuilders.buildConsumables()
 			name = L["ClassBuffReminderSectionFlasks"] or "Flasks",
 			kind = SettingType.Collapsible,
 			id = "flasks",
-			defaultCollapsed = false,
+			defaultCollapsed = true,
 		},
 		{
 			name = L["ClassBuffReminderTrackFlasks"] or "Track missing flask buff",
@@ -6114,7 +6397,7 @@ function editModeSettingsBuilders.buildConsumables()
 			name = L["ClassBuffReminderSectionFood"] or "Food",
 			kind = SettingType.Collapsible,
 			id = "food",
-			defaultCollapsed = false,
+			defaultCollapsed = true,
 		},
 		{
 			name = L["ClassBuffReminderTrackFood"] or "Track missing food buff",
@@ -6142,7 +6425,7 @@ function editModeSettingsBuilders.buildConsumables()
 			name = L["ClassBuffReminderSectionRunes"] or "Augment Runes",
 			kind = SettingType.Collapsible,
 			id = "runes",
-			defaultCollapsed = false,
+			defaultCollapsed = true,
 		},
 		{
 			name = L["ClassBuffReminderTrackRunes"] or "Track missing augment rune",
@@ -6174,7 +6457,7 @@ function editModeSettingsBuilders.buildConsumables()
 			name = L["ClassBuffReminderSectionWeaponBuffs"] or "Weapon Buffs",
 			kind = SettingType.Collapsible,
 			id = "weaponBuffs",
-			defaultCollapsed = false,
+			defaultCollapsed = true,
 		},
 		{
 			name = L["ClassBuffReminderTrackWeaponBuffs"] or "Track missing weapon oil/stone",
@@ -6224,6 +6507,49 @@ function editModeSettingsBuilders.buildConsumables()
 			get = function() return getValue("classBuffReminderTrackTrinketsInstanceOnly", defaults.trackTrinketsInstanceOnly) == true end,
 			set = function(_, value) editModeSetBool("classBuffReminderTrackTrinketsInstanceOnly", value) end,
 			isShown = function() return getValue("classBuffReminderTrackTrinkets", defaults.trackTrinkets) == true end,
+		},
+		{
+			name = L["ClassBuffReminderSectionPets"] or "Pets",
+			kind = SettingType.Collapsible,
+			id = "pets",
+			defaultCollapsed = true,
+		},
+		{
+			name = L["ClassBuffReminderTrackPets"] or "Track pet reminders",
+			kind = SettingType.Checkbox,
+			parentId = "pets",
+			default = defaults.trackPets == true,
+			get = function() return getValue("classBuffReminderTrackPets", defaults.trackPets) == true end,
+			set = function(_, value)
+				if addon.db then addon.db["classBuffReminderTrackPets"] = value == true end
+				Reminder.EditModeRefreshRuntimeAfterTrackingChange()
+			end,
+		},
+		{
+			name = L["ClassBuffReminderHidePetReminderText"] or "Hide pet reminder text",
+			kind = SettingType.Checkbox,
+			parentId = "pets",
+			default = defaults.hidePetReminderText,
+			get = function() return getValue("classBuffReminderHidePetReminderText", defaults.hidePetReminderText) == true end,
+			set = function(_, value)
+				if addon.db then addon.db["classBuffReminderHidePetReminderText"] = value == true end
+				Reminder:RequestUpdate(true, 0, true)
+			end,
+			isShown = function() return getValue("classBuffReminderTrackPets", defaults.trackPets) == true end,
+		},
+		{
+			name = L["ClassBuffReminderTrackingContent"] or "Active in content",
+			kind = SettingType.MultiDropdown,
+			parentId = "pets",
+			height = 260,
+			default = defaults.trackPetsContent,
+			options = Reminder:GetTrackingContentOptions(),
+			get = function() return Reminder:GetPetTrackingContentSelection() end,
+			set = function(_, value) Reminder:SetPetTrackingContentSelection(value) end,
+			tooltip = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+			customDefaultText = _G.NONE or "None",
+			hideSummary = true,
+			isShown = function() return getValue("classBuffReminderTrackPets", defaults.trackPets) == true end,
 		},
 	}
 end
@@ -6635,6 +6961,7 @@ function Reminder:RegisterEditMode()
 		end,
 		isEnabled = function() return addon.db and addon.db[DB_ENABLED] == true end,
 		settings = settings,
+		collapseExclusive = true,
 		-- Runtime visibility is controlled by UpdateDisplay/Render.
 		-- Keep this false so EditMode doesn't force-show the frame on login.
 		showOutsideEditMode = false,

@@ -57,7 +57,15 @@ local ICON_TEXTURE_UPGRADE = "Interface\\AddOns\\EnhanceQoL\\Icons\\upgradeilvl.
 local baganatorCornerWidgetRegistered = false
 local baganatorUpgradeCornerWidgetRegistered = false
 local pendingBaganatorWidgetRefresh = false
+local pendingBaganatorLayoutUpdate = false
+local pendingBaganatorOverlaySweep = false
+local baganatorDestroyRegionLastShown = nil
+local baganatorDestroyRegionLastWidth = nil
 local baganatorInitialFrameScanCompleted = false
+local baganatorCornerWidgetActiveCache = {}
+local baganatorOverlayContext = { useCornerIcons = false }
+local vendorMarksRevision = 0
+local lastBaganatorSellDestroyWidgetRefreshRevision = -1
 
 local function ensureDestroyListFrame()
 	if destroyState.list and destroyState.list:IsObjectType("Frame") then return destroyState.list end
@@ -105,6 +113,7 @@ local destroyProtected = {
 local pendingSellMarksUpdate = false
 local pendingSellMarksReset = false
 local sellMarksDirty = true
+local vendorMarksActive = false
 local autoSellInProgress = false
 local autoSellNeedsRefresh = false
 local pendingDestroyButtonUpdate = false
@@ -218,13 +227,84 @@ end
 
 local function requestBaganatorLayoutUpdate()
 	local api = _G.Baganator and _G.Baganator.API
-	if api and api.RequestLayoutUpdate then api.RequestLayoutUpdate() end
+	if not (api and api.RequestLayoutUpdate) then return end
+	if pendingBaganatorLayoutUpdate then return end
+	pendingBaganatorLayoutUpdate = true
+	RunNextFrame(function()
+		pendingBaganatorLayoutUpdate = false
+		api.RequestLayoutUpdate()
+	end)
+end
+
+local function requestBaganatorLayoutUpdateForDestroyRegion(force)
+	if not baganatorRegionRegistered then return end
+	if InCombatLockdown and InCombatLockdown() then return end
+	local button = destroyState.button
+	if not button then return end
+
+	local shown = button.IsShown and button:IsShown() == true or false
+	local width = 0
+	if shown and button.GetWidth then width = button:GetWidth() or 0 end
+
+	if force or shown ~= baganatorDestroyRegionLastShown or width ~= baganatorDestroyRegionLastWidth then
+		baganatorDestroyRegionLastShown = shown
+		baganatorDestroyRegionLastWidth = width
+		requestBaganatorLayoutUpdate()
+	end
+end
+
+local function invalidateBaganatorCornerWidgetActiveCache()
+	if wipe then
+		wipe(baganatorCornerWidgetActiveCache)
+	else
+		for key in pairs(baganatorCornerWidgetActiveCache) do
+			baganatorCornerWidgetActiveCache[key] = nil
+		end
+	end
+end
+
+local function isBaganatorCornerWidgetActiveCached(widgetID)
+	local cached = baganatorCornerWidgetActiveCache[widgetID]
+	if cached ~= nil then return cached end
+	local api = _G.Baganator and _G.Baganator.API
+	local active = api and api.IsCornerWidgetActive and api.IsCornerWidgetActive(widgetID) == true or false
+	baganatorCornerWidgetActiveCache[widgetID] = active
+	return active
 end
 
 local function isBaganatorCornerWidgetActive()
-	local api = _G.Baganator and _G.Baganator.API
-	if not (api and api.IsCornerWidgetActive) then return false end
-	return api.IsCornerWidgetActive(BAGANATOR_CORNER_WIDGET_ID) == true
+	return isBaganatorCornerWidgetActiveCached(BAGANATOR_CORNER_WIDGET_ID)
+end
+
+local function getBaganatorOverlayContext()
+	baganatorOverlayContext.useCornerIcons = isBaganatorCornerWidgetActiveCached(BAGANATOR_CORNER_WIDGET_ID)
+	return baganatorOverlayContext
+end
+
+local function shouldUseBaganatorSellDestroyIntegration()
+	if not addon.db then return false end
+	return addon.db["vendorShowSellOverlay"]
+		or addon.db["vendorAltClickInclude"]
+		or (addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"])
+end
+
+local function shouldUseBaganatorDestroyRegion()
+	return addon.db and addon.db["vendorDestroyEnable"] == true
+end
+
+local function shouldUseBaganatorUpgradeIntegration()
+	return addon.db and addon.db["showUpgradeArrowOnBagItems"] == true
+end
+
+local function shouldUseBaganatorIntegration()
+	return shouldUseBaganatorSellDestroyIntegration() or shouldUseBaganatorDestroyRegion() or shouldUseBaganatorUpgradeIntegration()
+end
+
+local function shouldUseVendorMarkUpdates()
+	if not addon.db then return false end
+	return addon.db["vendorShowSellOverlay"]
+		or addon.db["vendorShowSellTooltip"]
+		or addon.db["vendorDestroyEnable"]
 end
 
 local function requestBaganatorItemWidgetRefresh()
@@ -236,6 +316,27 @@ local function requestBaganatorItemWidgetRefresh()
 	RunNextFrame(function()
 		pendingBaganatorWidgetRefresh = false
 		api.RequestItemButtonsRefresh({ constants.RefreshReason.ItemWidgets })
+	end)
+end
+
+local function bumpVendorMarksRevision()
+	vendorMarksRevision = vendorMarksRevision + 1
+end
+
+local function requestBaganatorSellDestroyWidgetRefreshIfNeeded()
+	if not baganatorCornerWidgetRegistered then return end
+	if not isBaganatorCornerWidgetActiveCached(BAGANATOR_CORNER_WIDGET_ID) then return end
+	if lastBaganatorSellDestroyWidgetRefreshRevision == vendorMarksRevision then return end
+	lastBaganatorSellDestroyWidgetRefreshRevision = vendorMarksRevision
+	requestBaganatorItemWidgetRefresh()
+end
+
+local function requestBaganatorOverlaySweep()
+	if pendingBaganatorOverlaySweep then return end
+	pendingBaganatorOverlaySweep = true
+	RunNextFrame(function()
+		pendingBaganatorOverlaySweep = false
+		applySellDestroyOverlaysToBaganatorButtons()
 	end)
 end
 
@@ -260,6 +361,7 @@ local function shouldShowBaganatorUpgradeCornerWidget(itemLocation)
 end
 
 function addon.Vendor.functions.refreshBaganatorWidgets()
+	if not shouldUseBaganatorIntegration() then return end
 	ensureBaganatorIntegration()
 	requestBaganatorItemWidgetRefresh()
 end
@@ -363,7 +465,7 @@ end
 
 local function getCachedItemInfo(cached, itemID, itemLink)
 	if not cached.itemInfoLoaded then
-		local itemName, _, quality, _, _, _, _, _, _, _, sellPrice, classID, subclassID, bindType, expansionID = C_Item.GetItemInfo(itemLink)
+		local itemName, _, quality, _, _, _, _, _, itemEquipLoc, _, sellPrice, classID, subclassID, bindType, expansionID = C_Item.GetItemInfo(itemLink)
 		if not itemName then
 			if itemID then C_Item.RequestLoadItemDataByID(itemID) end
 			return nil
@@ -376,8 +478,9 @@ local function getCachedItemInfo(cached, itemID, itemLink)
 		cached.subclassID = subclassID
 		cached.bindType = bindType
 		cached.expansionID = expansionID
+		cached.itemEquipLoc = itemEquipLoc
 	end
-	return cached.itemName, cached.quality, cached.sellPrice, cached.classID, cached.subclassID, cached.bindType, cached.expansionID
+	return cached.itemName, cached.quality, cached.sellPrice, cached.classID, cached.subclassID, cached.bindType, cached.expansionID, cached.itemEquipLoc
 end
 
 local function getCachedDetailedItemLevel(cached, itemLink)
@@ -495,7 +598,6 @@ end
 local function anchorDestroyButton(button)
 	if not button then return end
 	if baganatorRegionRegistered then
-		requestBaganatorLayoutUpdate()
 		return
 	end
 	local customBagAnchor = addon.Bags and addon.Bags.functions and addon.Bags.functions.GetVendorDestroyButtonAnchor and addon.Bags.functions.GetVendorDestroyButtonAnchor() or nil
@@ -597,7 +699,7 @@ local function destroyHideList()
 	if destroyState.list and destroyState.list:IsShown() then destroyState.list:Hide() end
 end
 
-applySellDestroyOverlayToItemButton = function(itemButton, overlaySell, overlayDestroy)
+applySellDestroyOverlayToItemButton = function(itemButton, overlaySell, overlayDestroy, baganatorContext)
 	if not itemButton or not itemButton.CreateTexture then return end
 	overlaySell = overlaySell == nil and addon.db["vendorShowSellOverlay"] or overlaySell
 	overlayDestroy = overlayDestroy == nil and (addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"]) or overlayDestroy
@@ -614,7 +716,14 @@ applySellDestroyOverlayToItemButton = function(itemButton, overlaySell, overlayD
 	local showDestroy = overlayDestroy and isDestroy
 	local overlayKind = showDestroy and "destroy" or (showSell and "sell" or nil)
 	local matchesSearch = itemButtonMatchesSearch(itemButton)
-	local useBaganatorCornerIcons = itemButton.BGR ~= nil and isBaganatorCornerWidgetActive()
+	local useBaganatorCornerIcons = false
+	if itemButton.BGR ~= nil then
+		if baganatorContext ~= nil then
+			useBaganatorCornerIcons = baganatorContext.useCornerIcons == true
+		else
+			useBaganatorCornerIcons = isBaganatorCornerWidgetActive()
+		end
+	end
 	local hasDefaultJunkMark = false
 	if showSell and not useBaganatorCornerIcons then
 		hasDefaultJunkMark = itemButtonHasDefaultJunkMark(itemButton, bag, slot)
@@ -757,9 +866,30 @@ end
 applySellDestroyOverlaysToBaganatorButtons = function()
 	local overlaySell = addon.db["vendorShowSellOverlay"]
 	local overlayDestroy = addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"]
-	for button in pairs(baganatorTrackedItemButtons) do
-		applySellDestroyOverlayToItemButton(button, overlaySell, overlayDestroy)
+	local context = getBaganatorOverlayContext()
+	for button in pairs(baganatorVisibleItemButtons) do
+		if button and button.IsShown and button:IsShown() and isBaganatorBackpackItemButton(button) then
+			applySellDestroyOverlayToItemButton(button, overlaySell, overlayDestroy, context)
+		else
+			baganatorVisibleItemButtons[button] = nil
+			baganatorVisibleBackpackButtonCount = math.max(0, baganatorVisibleBackpackButtonCount - 1)
+		end
 	end
+end
+
+local function applyCurrentVendorMarksToVisibleUI()
+	local overlaySell = addon.db["vendorShowSellOverlay"]
+	local overlayDestroy = addon.db["vendorDestroyEnable"] and addon.db["vendorShowDestroyOverlay"]
+	local frames = ContainerFrameContainer and ContainerFrameContainer.ContainerFrames or {}
+
+	applySellDestroyOverlaysToFrame(ContainerFrameCombinedBags)
+	for _, frame in ipairs(frames) do
+		applySellDestroyOverlaysToFrame(frame)
+	end
+	if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
+		addon.Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy)
+	end
+	requestBaganatorOverlaySweep()
 end
 
 local function refreshSellDestroyOverlaySearchStateForBaganatorButtons()
@@ -806,7 +936,7 @@ local function setDestroyButtonVisibility(button, visible)
 		end
 		destroyHideList()
 	end
-	if baganatorRegionRegistered and not inCombat and wasShown ~= button:IsShown() then requestBaganatorLayoutUpdate() end
+	if baganatorRegionRegistered and not inCombat then requestBaganatorLayoutUpdateForDestroyRegion(false) end
 end
 
 local function hookBaganatorItemButton(itemButton)
@@ -842,8 +972,13 @@ end
 ensureBaganatorIntegration = function(existingButton)
 	local api = _G.Baganator and _G.Baganator.API
 	if not api then return end
+	if not shouldUseBaganatorIntegration() then return end
 
-	if not baganatorCornerWidgetRegistered and api.RegisterCornerWidget then
+	local useSellDestroy = shouldUseBaganatorSellDestroyIntegration()
+	local useDestroyRegion = shouldUseBaganatorDestroyRegion()
+	local useUpgrade = shouldUseBaganatorUpgradeIntegration()
+
+	if useSellDestroy and not baganatorCornerWidgetRegistered and api.RegisterCornerWidget then
 		local ok = pcall(api.RegisterCornerWidget, BAGANATOR_CORNER_WIDGET_LABEL, BAGANATOR_CORNER_WIDGET_ID, function(cornerFrame, details)
 			local itemLocation = details and details.itemLocation
 			if not (itemLocation and itemLocation.bagID ~= nil and itemLocation.slotIndex ~= nil and C_Item.DoesItemExist(itemLocation)) then return false end
@@ -871,7 +1006,7 @@ ensureBaganatorIntegration = function(existingButton)
 		end
 	end
 
-	if not baganatorUpgradeCornerWidgetRegistered and api.RegisterCornerWidget then
+	if useUpgrade and not baganatorUpgradeCornerWidgetRegistered and api.RegisterCornerWidget then
 		local ok = pcall(api.RegisterCornerWidget, BAGANATOR_UPGRADE_WIDGET_LABEL, BAGANATOR_UPGRADE_WIDGET_ID, function(cornerFrame, details)
 			local itemLocation = details and details.itemLocation
 			if not shouldShowBaganatorUpgradeCornerWidget(itemLocation) then return false end
@@ -892,30 +1027,42 @@ ensureBaganatorIntegration = function(existingButton)
 		end
 	end
 
-	if not baganatorSkinsListenerRegistered and api.Skins and api.Skins.RegisterListener then
+	if useSellDestroy and not baganatorSkinsListenerRegistered and api.Skins and api.Skins.RegisterListener then
 		api.Skins.RegisterListener(function(details)
 			if details and details.regionType == "ItemButton" and details.region then hookBaganatorItemButton(details.region) end
 		end)
 		baganatorSkinsListenerRegistered = true
 	end
 
-	if not baganatorCallbacksRegistered and _G.Baganator and _G.Baganator.CallbackRegistry and _G.Baganator.CallbackRegistry.RegisterCallback then
+	if (useSellDestroy or useDestroyRegion) and not baganatorCallbacksRegistered and _G.Baganator and _G.Baganator.CallbackRegistry and _G.Baganator.CallbackRegistry.RegisterCallback then
 		local callbackRegistry = _G.Baganator.CallbackRegistry
 		callbackRegistry:RegisterCallback("BagShow", function()
 			RunNextFrame(function()
-				updateSellMarks(nil, true)
+				if vendorMarksActive then
+					applyCurrentVendorMarksToVisibleUI()
+				else
+					updateSellMarks(nil, false)
+				end
 				if addon.db and addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 			end)
 		end)
 		callbackRegistry:RegisterCallback("BackpackFrameChanged", function()
 			RunNextFrame(function()
-				updateSellMarks(nil, true)
+				if vendorMarksActive then
+					applyCurrentVendorMarksToVisibleUI()
+				else
+					updateSellMarks(nil, false)
+				end
 				if addon.db and addon.db["vendorDestroyEnable"] then scheduleDestroyButtonUpdate() end
 			end)
 		end)
 		callbackRegistry:RegisterCallback("ViewComplete", function()
-			applySellDestroyOverlaysToBaganatorButtons()
-			if destroyState.button and (not InCombatLockdown or not InCombatLockdown()) then anchorDestroyButton(destroyState.button) end
+			requestBaganatorOverlaySweep()
+			if destroyState.button and not baganatorRegionRegistered and (not InCombatLockdown or not InCombatLockdown()) then anchorDestroyButton(destroyState.button) end
+		end)
+		callbackRegistry:RegisterCallback("SettingChanged", function()
+			invalidateBaganatorCornerWidgetActiveCache()
+			requestBaganatorOverlaySweep()
 		end)
 		callbackRegistry:RegisterCallback("BagHide", function()
 			destroyHideList()
@@ -924,7 +1071,7 @@ ensureBaganatorIntegration = function(existingButton)
 		baganatorCallbacksRegistered = true
 	end
 
-	if not baganatorInitialFrameScanCompleted and api.Skins and api.Skins.GetAllFrames then
+	if useSellDestroy and not baganatorInitialFrameScanCompleted and api.Skins and api.Skins.GetAllFrames then
 		local allFrames = api.Skins.GetAllFrames()
 		if type(allFrames) == "table" then
 			for _, details in ipairs(allFrames) do
@@ -936,11 +1083,11 @@ ensureBaganatorIntegration = function(existingButton)
 
 	local button = existingButton or destroyState.button
 	if button and button._EnhanceQoLVendorBaganatorRegionRegistered then baganatorRegionRegistered = true end
-	if not baganatorRegionRegistered and button and api.RegisterRegion then
+	if useDestroyRegion and not baganatorRegionRegistered and button and api.RegisterRegion then
 		api.RegisterRegion(BAGANATOR_REGION_LABEL, BAGANATOR_REGION_ID, "backpack", "bottom_left", button)
 		button._EnhanceQoLVendorBaganatorRegionRegistered = true
 		baganatorRegionRegistered = true
-		requestBaganatorLayoutUpdate()
+		requestBaganatorLayoutUpdateForDestroyRegion(true)
 	end
 end
 
@@ -1398,7 +1545,7 @@ local function lookupItems()
 				end
 
 				if not processed then
-					local itemName, quality, sellPrice, classID, subclassID, bindType, expansionID = getCachedItemInfo(cached, itemID, itemLink)
+					local itemName, quality, sellPrice, classID, subclassID, bindType, expansionID, itemEquipLoc = getCachedItemInfo(cached, itemID, itemLink)
 					if not itemName then
 						-- Item data is still loading. Keep the slot cache warm so the next refresh
 						-- can reuse any unchanged slot state instead of rebuilding from scratch.
@@ -1433,6 +1580,8 @@ local function lookupItems()
 						elseif sellPrice and sellPrice > 0 then
 							if isItemInEquipmentSet(bag, slot, quality) then
 								-- Keep items that are assigned to an equipment set.
+							elseif itemEquipLoc == "INVTYPE_TABARD" then
+								-- Tabards often have very low item levels but should not be auto-vendored.
 							elseif quality == 0 and addon.Vendor.variables.itemQualityFilter[quality] then
 								local effectiveBindType = bindType or 0
 								if shouldReadTooltipInfo(quality, bindType) then
@@ -1836,6 +1985,7 @@ local function addDestroyFrame(container)
 
 	local cbEnable = addon.functions.createCheckboxAce(L["vendorDestroyEnable"], addon.db["vendorDestroyEnable"], function(_, _, checked)
 		addon.db["vendorDestroyEnable"] = checked and true or false
+		ensureBaganatorIntegration()
 		updateSellMarks(nil, true)
 		updateDestroyButtonState()
 	end, L["vendorDestroyEnableDesc"])
@@ -1843,6 +1993,7 @@ local function addDestroyFrame(container)
 
 	local cbOverlay = addon.functions.createCheckboxAce(L["vendorShowDestroyOverlay"], addon.db["vendorShowDestroyOverlay"], function(_, _, checked)
 		addon.db["vendorShowDestroyOverlay"] = checked and true or false
+		ensureBaganatorIntegration()
 		updateSellMarks(nil, true)
 	end)
 	groupCore:AddChild(cbOverlay)
@@ -1956,6 +2107,10 @@ local function addGeneralFrame(container)
 			text = L["vendorAltClickInclude"],
 			desc = L["vendorAltClickIncludeDesc"],
 			var = "vendorAltClickInclude",
+			func = function(_, _, checked)
+				addon.db["vendorAltClickInclude"] = checked and true or false
+				ensureBaganatorIntegration()
+			end,
 		},
 	}
 	table.sort(data, function(a, b) return a.text < b.text end)
@@ -1978,6 +2133,7 @@ local function addGeneralFrame(container)
 			var = "vendorShowSellOverlay",
 			func = function(self, _, checked)
 				addon.db["vendorShowSellOverlay"] = checked
+				ensureBaganatorIntegration()
 				if inventoryOpen() then updateSellMarks(nil, true) end
 				container:ReleaseChildren()
 				addGeneralFrame(container)
@@ -2121,13 +2277,18 @@ local function performUpdateSellMarks(resetCache)
 		if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
 			addon.Bags.functions.ApplyVendorMarks(false, false)
 		end
-		applySellDestroyOverlaysToBaganatorButtons()
-		requestBaganatorItemWidgetRefresh()
+		requestBaganatorOverlaySweep()
 		wipe(sellMarkLookup)
 		wipe(destroyMarkLookup)
+		if vendorMarksActive then
+			bumpVendorMarksRevision()
+			requestBaganatorSellDestroyWidgetRefreshIfNeeded()
+		end
+		vendorMarksActive = false
 		return
 	end
 
+	vendorMarksActive = true
 	wipe(sellMarkLookup)
 	wipe(destroyMarkLookup)
 
@@ -2142,19 +2303,14 @@ local function performUpdateSellMarks(resetCache)
 	for _, v in ipairs(itemsToDestroy) do
 		destroyMarkLookup[v.bag .. "_" .. v.slot] = v
 	end
+	bumpVendorMarksRevision()
 
-	applySellDestroyOverlaysToFrame(ContainerFrameCombinedBags)
-	for _, frame in ipairs(frames) do
-		applySellDestroyOverlaysToFrame(frame)
-	end
-	if addon.Bags and addon.Bags.functions and addon.Bags.functions.ApplyVendorMarks then
-		addon.Bags.functions.ApplyVendorMarks(overlaySell, overlayDestroy)
-	end
-	applySellDestroyOverlaysToBaganatorButtons()
-	requestBaganatorItemWidgetRefresh()
+	applyCurrentVendorMarksToVisibleUI()
+	requestBaganatorSellDestroyWidgetRefreshIfNeeded()
 end
 
 function updateSellMarks(_, resetCache)
+	if not shouldUseVendorMarkUpdates() and not vendorMarksActive then return end
 	sellMarksDirty = true
 	if resetCache then pendingSellMarksReset = true end
 	if not inventoryOpen() then return end

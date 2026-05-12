@@ -264,6 +264,7 @@ UF.ui.getPlayerClassFrameSupportFlags = getPlayerClassFrameSupportFlags
 
 local maxBossFrames = (UF and UF.GetSupportedBossFrameCount and UF.GetSupportedBossFrameCount()) or 8
 local defaultBossFrames = (UF and UF.GetDefaultBossFrameCount and UF.GetDefaultBossFrameCount()) or (MAX_BOSS_FRAMES or 5)
+local bossSpacingMin = (UF and UF.BOSS_SPACING_MIN) or -50
 local bossUnitLookup = { boss = true }
 for i = 1, maxBossFrames do
 	bossUnitLookup["boss" .. i] = true
@@ -645,6 +646,17 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 		{ value = "BOTTOMRIGHT", label = L["Bottom right"] or "Bottom right" },
 		{ value = "CENTER", label = L["Center"] or "Center" },
 	}
+	local cooldownAnchorOptions = {
+		{ value = "TOPLEFT", label = L["Top left"] or "Top left" },
+		{ value = "TOP", label = DIRECTION_TOP_LABEL },
+		{ value = "TOPRIGHT", label = L["Top right"] or "Top right" },
+		{ value = "LEFT", label = DIRECTION_LEFT_LABEL },
+		{ value = "CENTER", label = L["Center"] or "Center" },
+		{ value = "RIGHT", label = DIRECTION_RIGHT_LABEL },
+		{ value = "BOTTOMLEFT", label = L["Bottom left"] or "Bottom left" },
+		{ value = "BOTTOM", label = DIRECTION_BOTTOM_LABEL },
+		{ value = "BOTTOMRIGHT", label = L["Bottom right"] or "Bottom right" },
+	}
 
 	local leftLabel = DIRECTION_LEFT_LABEL
 	local rightLabel = DIRECTION_RIGHT_LABEL
@@ -968,6 +980,51 @@ local function appendUnitAuraSettings(list, unit, def, refreshSelf)
 			refreshSelf()
 		end, auraDef.showCooldown ~= false, parentId)
 		list[#list].isEnabled = isSectionEnabled
+
+		list[#list + 1] = radioDropdown(
+			L["Cooldown text anchor"] or "Cooldown text anchor",
+			cooldownAnchorOptions,
+			function() return getAuraSectionValue(sectionKey, { "cooldownAnchor" }, auraDef.cooldownAnchor or "CENTER") end,
+			function(val)
+				setAuraSectionValue(sectionKey, { "cooldownAnchor" }, val or "CENTER")
+				refreshSelf()
+			end,
+			auraDef.cooldownAnchor or "CENTER",
+			parentId
+		)
+		list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
+
+		list[#list + 1] = slider(
+			L["Cooldown text offset X"] or "Cooldown text offset X",
+			-OFFSET_RANGE,
+			OFFSET_RANGE,
+			1,
+			function() return getAuraSectionValue(sectionKey, { "cooldownOffset", "x" }, (auraDef.cooldownOffset and auraDef.cooldownOffset.x) or 0) end,
+			function(val)
+				setAuraSectionValue(sectionKey, { "cooldownOffset", "x" }, val or 0)
+				refreshSelf()
+			end,
+			(auraDef.cooldownOffset and auraDef.cooldownOffset.x) or 0,
+			parentId,
+			true
+		)
+		list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
+
+		list[#list + 1] = slider(
+			L["Cooldown text offset Y"] or "Cooldown text offset Y",
+			-OFFSET_RANGE,
+			OFFSET_RANGE,
+			1,
+			function() return getAuraSectionValue(sectionKey, { "cooldownOffset", "y" }, (auraDef.cooldownOffset and auraDef.cooldownOffset.y) or 0) end,
+			function(val)
+				setAuraSectionValue(sectionKey, { "cooldownOffset", "y" }, val or 0)
+				refreshSelf()
+			end,
+			(auraDef.cooldownOffset and auraDef.cooldownOffset.y) or 0,
+			parentId,
+			true
+		)
+		list[#list].isEnabled = function() return isSectionEnabled() and isShowCooldown() end
 
 		list[#list + 1] = slider(L["Cooldown text size"] or "Cooldown text size", 1, 32, 1, function()
 			local fallback = auraDef.cooldownFontSize or 14
@@ -1893,7 +1950,7 @@ local function appendBossLayoutSettings(list, unit, def, refreshSelf)
 		"layout"
 	)
 
-	list[#list + 1] = slider(L["UFBossSpacing"] or "Boss spacing", 0, 100, 1, function() return getValue(unit, { "spacing" }, def.spacing or 4) end, function(val)
+	list[#list + 1] = slider(L["UFBossSpacing"] or "Boss spacing", bossSpacingMin, 100, 1, function() return getValue(unit, { "spacing" }, def.spacing or 4) end, function(val)
 		setValue(unit, { "spacing" }, val or def.spacing or 4)
 		refreshSelf()
 	end, def.spacing or 4, "layout", true)
@@ -7982,6 +8039,13 @@ local function buildUnitSettings(unit)
 	if isPlayer or unit == "target" or unit == "focus" then
 		local ciDef = statusDef.combatIndicator or {}
 		local function isCombatIndicatorEnabled() return getValue(unit, { "status", "combatIndicator", "enabled" }, ciDef.enabled ~= false) ~= false end
+		local function getCombatIndicatorIconValue()
+			return getValue(unit, { "status", "combatIndicator", "icon" }, ciDef.icon or UF.COMBAT_INDICATOR_DEFAULT_ICON or "DEFAULT") or UF.COMBAT_INDICATOR_DEFAULT_ICON or "DEFAULT"
+		end
+		local function getCombatIndicatorIconLabel(value)
+			if UF.GetCombatIndicatorIconMarkup then return UF.GetCombatIndicatorIconMarkup(value, 18) end
+			return tostring(value or "")
+		end
 		local combatIndicatorToggle = checkbox(
 			L["UFCombatIndicator"] or "Show combat indicator",
 			function() return getValue(unit, { "status", "combatIndicator", "enabled" }, ciDef.enabled ~= false) end,
@@ -7994,6 +8058,28 @@ local function buildUnitSettings(unit)
 			"unitStatus"
 		)
 		list[#list + 1] = combatIndicatorToggle
+
+		local combatIndicatorIcon = {
+			name = L["Icon"] or "Icon",
+			kind = UF.ui.settingType.Dropdown,
+			height = 180,
+			parentId = "unitStatus",
+			default = ciDef.icon or UF.COMBAT_INDICATOR_DEFAULT_ICON or "DEFAULT",
+			generator = function(_, root)
+				local options = UF.COMBAT_INDICATOR_ICONS or {}
+				for _, option in ipairs(options) do
+					local value = option.value
+					local label = getCombatIndicatorIconLabel(value)
+					root:CreateRadio(label, function() return getCombatIndicatorIconValue() == value end, function()
+						setValue(unit, { "status", "combatIndicator", "icon" }, value or UF.COMBAT_INDICATOR_DEFAULT_ICON or "DEFAULT")
+						refresh()
+						refreshSettingsUI()
+					end)
+				end
+			end,
+		}
+		combatIndicatorIcon.isEnabled = isCombatIndicatorEnabled
+		list[#list + 1] = combatIndicatorIcon
 
 		local combatIndicatorSize = slider(
 			L["UFCombatIndicatorSize"] or "Combat indicator size",

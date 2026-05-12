@@ -112,6 +112,14 @@ local OPERATOR_DEFINITIONS = {
 		id = "GREATER_OR_EQUAL",
 		label = ">=",
 	},
+	AVERAGE_MINUS = {
+		id = "AVERAGE_MINUS",
+		label = "-",
+	},
+	AVERAGE_PLUS = {
+		id = "AVERAGE_PLUS",
+		label = "+",
+	},
 	IN = {
 		id = "IN",
 		labelKey = "settingsCategoryRuleOperatorIn",
@@ -177,7 +185,7 @@ local customCategoryStateHiddenBuiltIn
 local customCategoryCompiledState
 local cachedCategoryRuleContextUsage
 local cachedCategorySectionDefinitions
-local BASIC_PRESET_VERSION = 21
+local BASIC_PRESET_VERSION = 22
 local HOUSING_CLASS_ID = 20
 local ITEM_ENHANCEMENTS_CLASS_ID = 8
 local CATEGORY_MODE_IDS = {
@@ -704,6 +712,17 @@ local FIELD_DEFINITIONS = {
 		contextKey = "isUpgrade",
 		buildOptions = buildBooleanOptions,
 	},
+	itemLevelRelativeToEquippedAverage = {
+		labelKey = "settingsRuleFieldItemLevelRelativeToEquippedAverage",
+		groupID = "smart",
+		valueType = "number",
+		operators = { "AVERAGE_MINUS", "AVERAGE_PLUS" },
+		defaultOperator = "AVERAGE_MINUS",
+		defaultValue = 20,
+		contextKey = "itemLevel",
+		comparisonContextKey = "equippedAverageItemLevel",
+		comparisonValueMode = "equippedAverageOffset",
+	},
 	upgradeTrackKey = {
 		labelKey = "settingsRuleFieldUpgradeTrack",
 		groupID = "smart",
@@ -783,6 +802,15 @@ local FIELD_DEFINITIONS = {
 		operators = { "EQUALS" },
 		defaultOperator = "EQUALS",
 		contextKey = "isKeystone",
+		buildOptions = buildBooleanOptions,
+	},
+	isPvpItem = {
+		labelKey = "settingsRuleFieldPvpItem",
+		groupID = "smart",
+		valueType = "enum",
+		operators = { "EQUALS" },
+		defaultOperator = "EQUALS",
+		contextKey = "isPvpItem",
 		buildOptions = buildBooleanOptions,
 	},
 	itemLevel = {
@@ -1106,7 +1134,10 @@ local function getDefaultFieldValue(fieldID, operatorID)
 	if operatorID == "IN" then
 		return firstOption and { firstOption.value } or {}
 	end
-	return firstOption and firstOption.value or nil
+	if firstOption then
+		return firstOption.value
+	end
+	return nil
 end
 
 local function sanitizeEnumValue(fieldID, operatorID, value)
@@ -1136,7 +1167,10 @@ local function sanitizeEnumValue(fieldID, operatorID, value)
 	end
 
 	local option = lookup[tostring(value)]
-	return option and option.value or options[1].value
+	if option then
+		return option.value
+	end
+	return options[1].value
 end
 
 local function sanitizeNumericValue(fieldID, value)
@@ -1165,6 +1199,9 @@ local function sanitizeRuleNode(settings, node)
 	node = type(node) == "table" and node or {}
 
 	local fieldID = node.field or LEGACY_RULE_TYPE_MAP[node.ruleType] or "defaultCategory"
+	if fieldID == "itemLevelBelowEquipped" then
+		fieldID = "itemLevelRelativeToEquippedAverage"
+	end
 	node.nodeType = "rule"
 	node.id = tostring(node.id or allocateNodeID(settings))
 	node.field = FIELD_DEFINITIONS[fieldID] and fieldID or "defaultCategory"
@@ -1199,12 +1236,17 @@ local function buildCompiledRuleNode(node, usage)
 	if definition.contextKey then
 		usage[definition.contextKey] = true
 	end
+	if definition.comparisonContextKey then
+		usage[definition.comparisonContextKey] = true
+	end
 
 	local compiledNode = {
 		nodeType = "rule",
 		field = node.field,
 		operator = node.operator,
 		contextKey = definition.contextKey,
+		comparisonContextKey = definition.comparisonContextKey,
+		comparisonValueMode = definition.comparisonValueMode,
 		valueType = definition.valueType,
 	}
 
@@ -1264,25 +1306,40 @@ local function evaluateCompiledRuleNode(node, itemContext)
 	end
 
 	local operatorID = node.operator
+	local expectedValue = node.value
+	if node.comparisonContextKey and node.comparisonValueMode == "equippedAverageOffset" then
+		local comparisonBase = tonumber(itemContext[node.comparisonContextKey])
+		local offsetValue = tonumber(node.value)
+		if comparisonBase and offsetValue then
+			expectedValue = node.operator == "AVERAGE_PLUS" and comparisonBase + offsetValue or comparisonBase - offsetValue
+		else
+			expectedValue = nil
+		end
+		if expectedValue == nil then
+			return false
+		end
+		return tonumber(actualValue) and tonumber(actualValue) >= expectedValue or false
+	end
+
 	if operatorID == "IN" then
 		return node.valueSet and node.valueSet[actualValue] == true or false
 	elseif operatorID == "NOT_EQUALS" then
-		return actualValue ~= node.value
+		return actualValue ~= expectedValue
 	elseif operatorID == "LESS_THAN" then
 		local actualNumber = tonumber(actualValue)
-		return actualNumber and actualNumber < node.value or false
+		return actualNumber and actualNumber < expectedValue or false
 	elseif operatorID == "LESS_OR_EQUAL" then
 		local actualNumber = tonumber(actualValue)
-		return actualNumber and actualNumber <= node.value or false
+		return actualNumber and actualNumber <= expectedValue or false
 	elseif operatorID == "GREATER_THAN" then
 		local actualNumber = tonumber(actualValue)
-		return actualNumber and actualNumber > node.value or false
+		return actualNumber and actualNumber > expectedValue or false
 	elseif operatorID == "GREATER_OR_EQUAL" then
 		local actualNumber = tonumber(actualValue)
-		return actualNumber and actualNumber >= node.value or false
+		return actualNumber and actualNumber >= expectedValue or false
 	end
 
-	return actualValue == node.value
+	return actualValue == expectedValue
 end
 
 local sanitizeGroupName
@@ -1389,6 +1446,7 @@ local function buildCompiledCustomCategoryState(categories, groups)
 						groupCollapseID = string.format("group:%s", group.id),
 						groupSpacerBefore = group.spacerBefore == true,
 						groupCombineSubcategories = group.combineSubcategories == true,
+						desaturateItems = category.desaturateItems == true or group.desaturateItems == true,
 						collapsible = false,
 					}
 				end
@@ -1402,6 +1460,7 @@ local function buildCompiledCustomCategoryState(categories, groups)
 					color = category.color,
 					sortMode = category.sortMode,
 					isCustom = true,
+					desaturateItems = category.desaturateItems == true,
 				}
 			end
 		end
@@ -1526,6 +1585,7 @@ local function sanitizeCustomGroup(settings, group, index)
 	group.color = sanitizeColor(group.color, getDefaultCategoryColor(index))
 	group.spacerBefore = group.spacerBefore == true
 	group.combineSubcategories = group.combineSubcategories == true
+	group.desaturateItems = group.desaturateItems == true
 	group.hidden = group.hidden == true
 	return group
 end
@@ -1578,6 +1638,7 @@ local function sanitizeCategory(settings, category, index, validGroupLookup)
 	category.groupID = validGroupLookup and validGroupLookup[tostring(category.groupID or "")] and tostring(category.groupID) or nil
 	category.groupName = nil
 	category.hidden = category.hidden == true
+	category.desaturateItems = category.desaturateItems == true
 	category.itemIDs = sanitizeItemIDs(category.itemIDs)
 	category.ruleTree = sanitizeGroupNode(settings, category.ruleTree)
 	category.ruleTree.operator = category.ruleTree.operator == "AND" and "AND" or ROOT_GROUP_OPERATOR
@@ -1890,6 +1951,7 @@ local function seedBasicPresetIntoModeState(modeState)
 					priority = 85,
 					sortMode = "sellPrice",
 					color = { 0.72, 0.72, 0.72 },
+					desaturateItems = true,
 					ruleTree = function(counterState)
 						return buildPresetRuleGroup(counterState, "AND", {
 							buildPresetRule(counterState, "quality", "EQUALS", 0),
@@ -2306,7 +2368,22 @@ local function evaluateRuleNode(node, itemContext)
 		return false
 	end
 
-	return compareRuleValue(actualValue, node.operator, node.value)
+	local expectedValue = node.value
+	if definition.comparisonContextKey and definition.comparisonValueMode == "equippedAverageOffset" then
+		local comparisonBase = tonumber(itemContext[definition.comparisonContextKey])
+		local offsetValue = tonumber(node.value)
+		if comparisonBase and offsetValue then
+			expectedValue = node.operator == "AVERAGE_PLUS" and comparisonBase + offsetValue or comparisonBase - offsetValue
+		else
+			expectedValue = nil
+		end
+		if expectedValue == nil then
+			return false
+		end
+		return tonumber(actualValue) and tonumber(actualValue) >= expectedValue or false
+	end
+
+	return compareRuleValue(actualValue, node.operator, expectedValue)
 end
 
 local function collectRuleContextUsage(node, usage)
@@ -2324,6 +2401,9 @@ local function collectRuleContextUsage(node, usage)
 	local definition = getFieldDefinition(node.field)
 	if definition.contextKey then
 		usage[definition.contextKey] = true
+	end
+	if definition.comparisonContextKey then
+		usage[definition.comparisonContextKey] = true
 	end
 end
 
@@ -2786,6 +2866,22 @@ function addon.SetCustomCategoryHidden(categoryID, hidden)
 	return true
 end
 
+function addon.SetCustomCategoryDesaturateItems(categoryID, enabled)
+	local category = findCategoryByID(categoryID)
+	if not category then
+		return false
+	end
+
+	enabled = enabled == true
+	if category.desaturateItems == enabled then
+		return false
+	end
+
+	category.desaturateItems = enabled
+	markCustomCategoryStateDirty()
+	return true
+end
+
 function addon.SetCustomCategoryGroupSortOrder(groupID, sortOrder)
 	local group = findGroupByID(groupID)
 	if not group then
@@ -2820,6 +2916,22 @@ function addon.SetCustomCategoryGroupHidden(groupID, hidden)
 	end
 
 	group.hidden = hidden
+	markCustomCategoryStateDirty()
+	return true
+end
+
+function addon.SetCustomCategoryGroupDesaturateItems(groupID, enabled)
+	local group = findGroupByID(groupID)
+	if not group then
+		return false
+	end
+
+	enabled = enabled == true
+	if group.desaturateItems == enabled then
+		return false
+	end
+
+	group.desaturateItems = enabled
 	markCustomCategoryStateDirty()
 	return true
 end

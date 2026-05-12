@@ -65,6 +65,8 @@ function UF.ToggleEditModeSample(unit)
 	UF.SetEditModeSampleEnabled(unit, not (UF._editModeSample and UF._editModeSample[unit] == true))
 end
 local maxBossFrames = 8
+UF.BOSS_SPACING_MIN = -50
+local BOSS_SPACING_MIN = UF.BOSS_SPACING_MIN
 local UF_PROFILE_SHARE_KIND = "EQOL_UF_PROFILE"
 local smoothFill = Enum.StatusBarInterpolation.ExponentialEaseOut
 local TEXT_UPDATE_INTERVAL = 0.1
@@ -236,6 +238,37 @@ local SetFrameVisibilityOverride = addon.functions and addon.functions.SetFrameV
 local HasFrameVisibilityOverride = addon.functions and addon.functions.HasFrameVisibilityOverride
 local NormalizeUnitFrameVisibilityConfig = addon.functions and addon.functions.NormalizeUnitFrameVisibilityConfig
 local ApplyFrameVisibilityConfig = addon.functions and addon.functions.ApplyFrameVisibilityConfig
+UF.COMBAT_INDICATOR_DEFAULT_ICON = "DEFAULT"
+UF.COMBAT_INDICATOR_DEFAULT_TEXTURE = "Interface\\Addons\\EnhanceQoL\\Assets\\CombatIndicator.tga"
+UF.COMBAT_INDICATOR_ICONS = {
+	{ value = UF.COMBAT_INDICATOR_DEFAULT_ICON, texture = UF.COMBAT_INDICATOR_DEFAULT_TEXTURE },
+	{ value = "ShipMissionIcon-Combat-Mission", atlas = "ShipMissionIcon-Combat-Mission" },
+	{ value = "GarrMission_MissionIcon-Combat", atlas = "GarrMission_MissionIcon-Combat" },
+	{ value = "Mobile-MechanicIcon-Powerful", atlas = "Mobile-MechanicIcon-Powerful" },
+	{ value = "Mobile-CombatIcon-Desaturated", atlas = "Mobile-CombatIcon-Desaturated" },
+	{ value = "Mobile-CombatBadgeIcon", atlas = "Mobile-CombatBadgeIcon" },
+	{ value = "plunderstorm-pvpqueue-catergory-icon", atlas = "plunderstorm-pvpqueue-catergory-icon" },
+	{ value = "combat_swords-icon", atlas = "combat_swords-icon" },
+}
+
+function UF.GetCombatIndicatorIconDefinition(value)
+	local key = type(value) == "string" and value ~= "" and value or UF.COMBAT_INDICATOR_DEFAULT_ICON
+	local fallback
+	for _, option in ipairs(UF.COMBAT_INDICATOR_ICONS) do
+		if option.value == UF.COMBAT_INDICATOR_DEFAULT_ICON then fallback = option end
+		if option.value == key then return option end
+	end
+	if key ~= UF.COMBAT_INDICATOR_DEFAULT_ICON then return { value = key, atlas = key } end
+	return fallback or UF.COMBAT_INDICATOR_ICONS[1]
+end
+
+function UF.GetCombatIndicatorIconMarkup(value, size)
+	local option = UF.GetCombatIndicatorIconDefinition(value)
+	size = tonumber(size) or 18
+	if option and option.atlas then return ("|A:%s:%d:%d:0:0|a"):format(option.atlas, size, size) end
+	if option and option.texture then return ("|T%s:%d:%d|t"):format(option.texture, size, size) end
+	return tostring(value or "")
+end
 
 local UNIT = {
 	PLAYER = "player",
@@ -1493,12 +1526,12 @@ function UFProfileManager.ApplySpecMapping(source, initializedProfiles)
 	return UFProfileManager.SetActiveName(mappedProfile, source or "SPEC_MAPPING")
 end
 
-local bossUnitLookup = { boss = true }
+UF._bossUnitLookup = UF._bossUnitLookup or { boss = true }
 for i = 1, maxBossFrames do
-	bossUnitLookup["boss" .. i] = true
+	UF._bossUnitLookup["boss" .. i] = true
 end
 
-local function isBossUnit(unit) return type(unit) == "string" and bossUnitLookup[unit] == true end
+local function isBossUnit(unit) return type(unit) == "string" and UF._bossUnitLookup[unit] == true end
 
 local UNITS = {
 	player = {
@@ -1774,8 +1807,9 @@ local defaults = {
 				enabled = false,
 				size = 18,
 				offset = { x = -8, y = 0 },
-				texture = "Interface\\CharacterFrame\\UI-StateIcon",
-				texCoords = { 0.5, 1, 0, 0.5 }, -- combat icon region
+				icon = UF.COMBAT_INDICATOR_DEFAULT_ICON,
+				texture = UF.COMBAT_INDICATOR_DEFAULT_TEXTURE,
+				texCoords = { 0, 1, 0, 1 },
 			},
 			dispelTint = {
 				enabled = true,
@@ -2202,12 +2236,14 @@ end
 
 function AuraUtil.getUnitAuraFilters(unit, auraRuntime)
 	if unit == UNIT.PLAYER or unit == "player" then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
+	if isBossUnit(unit) and UnitIsFriend and unit and UnitIsFriend("player", unit) then return "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY", AURA_FILTER_HARMFUL_ALL end
 	if UnitIsFriend and unit and UnitIsFriend("player", unit) then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
 	return AURA_FILTER_HELPFUL, auraRuntime and auraRuntime.enemyHarmfulFilter or AURA_FILTER_HARMFUL
 end
 
 function AuraUtil.getAuraFilters(unit, ac, defAc)
 	if unit == UNIT.PLAYER or unit == "player" then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
+	if isBossUnit(unit) and UnitIsFriend and unit and UnitIsFriend("player", unit) then return "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY", AURA_FILTER_HARMFUL_ALL end
 	if UnitIsFriend and unit and UnitIsFriend("player", unit) then return AURA_FILTER_HELPFUL, AURA_FILTER_HARMFUL_ALL end
 
 	local harmfulFilter = AURA_FILTER_HARMFUL
@@ -8112,7 +8148,23 @@ local function updateCombatIndicator(cfg, unit)
 		st.combatIcon:Hide()
 		return
 	end
-	st.combatIcon:SetTexture("Interface\\Addons\\EnhanceQoL\\Assets\\CombatIndicator.tga")
+	local option = UF.GetCombatIndicatorIconDefinition((ccfg and ccfg.icon) or UF.COMBAT_INDICATOR_DEFAULT_ICON)
+	local atlas = option and option.atlas
+	local appliedAtlas = false
+	if atlas and st.combatIcon.SetAtlas then
+		if C_Texture and C_Texture.GetAtlasInfo and not C_Texture.GetAtlasInfo(atlas) then
+			appliedAtlas = false
+		else
+			st.combatIcon:SetTexture(nil)
+			local ok, result = pcall(st.combatIcon.SetAtlas, st.combatIcon, atlas, false)
+			appliedAtlas = ok and result ~= false
+		end
+	end
+	if not appliedAtlas then
+		if st.combatIcon.SetAtlas then pcall(st.combatIcon.SetAtlas, st.combatIcon, nil) end
+		st.combatIcon:SetTexture((option and option.texture) or UF.COMBAT_INDICATOR_DEFAULT_TEXTURE)
+		st.combatIcon:SetTexCoord(0, 1, 0, 1)
+	end
 	st.combatIcon:SetSize(ccfg.size or 18, ccfg.size or 18)
 	st.combatIcon:ClearAllPoints()
 	st.combatIcon:SetPoint("TOP", st.status, "TOP", (ccfg.offset and ccfg.offset.x) or -8, (ccfg.offset and ccfg.offset.y) or 0)
@@ -8784,6 +8836,12 @@ end
 
 local refreshNameAndLevelSoon
 
+function UF.ShouldDesaturateHealthTexture(hc)
+	hc = hc or {}
+	local textureKey = hc.texture
+	return hc.useClassColor == true or textureKey == nil or textureKey == "" or textureKey == "DEFAULT"
+end
+
 local function ensureFrames(unit)
 	local info = UNITS[unit]
 	if not info then return end
@@ -8846,7 +8904,8 @@ local function ensureFrames(unit)
 	st.healthContainer = st.healthContainer or CreateFrame("Frame", nil, st.barGroup, "BackdropTemplate")
 	st.health = _G[info.healthName] or CreateFrame("StatusBar", info.healthName, st.barGroup, "BackdropTemplate")
 	if st.health.GetParent and st.health:GetParent() ~= st.healthContainer then st.health:SetParent(st.healthContainer) end
-	if st.health.SetStatusBarDesaturated then st.health:SetStatusBarDesaturated(true) end
+	local initialCfg = ensureDB(unit)
+	if st.health.SetStatusBarDesaturated then st.health:SetStatusBarDesaturated(UF.ShouldDesaturateHealthTexture(initialCfg and initialCfg.health)) end
 	st.tempMaxHealthLoss = st.tempMaxHealthLoss or CreateFrame("StatusBar", info.healthName .. "TempMaxHealthLoss", st.healthContainer, "BackdropTemplate")
 	if st.tempMaxHealthLoss.SetStatusBarDesaturated then st.tempMaxHealthLoss:SetStatusBarDesaturated(false) end
 	st.power = _G[info.powerName] or CreateFrame("StatusBar", info.powerName, st.barGroup, "BackdropTemplate")
@@ -9061,7 +9120,7 @@ local function applyBars(cfg, unit)
 	end
 	local healthHeight = cfg.healthHeight or def.healthHeight or (st.health.GetHeight and st.health:GetHeight()) or 0
 	st.health:SetStatusBarTexture(UFHelper.resolveTexture(hc.texture))
-	if st.health.SetStatusBarDesaturated then st.health:SetStatusBarDesaturated(true) end
+	if st.health.SetStatusBarDesaturated then st.health:SetStatusBarDesaturated(UF.ShouldDesaturateHealthTexture(hc)) end
 	UFHelper.configureSpecialTexture(st.health, "HEALTH", hc.texture, hc)
 	local reverseHealth = hc.reverseFill
 	if reverseHealth == nil then reverseHealth = defH.reverseFill == true end
@@ -9610,6 +9669,8 @@ local function layoutBossFrames(cfg)
 	local spacing = cfg.spacing
 	if spacing == nil and def then spacing = def.spacing end
 	if spacing == nil then spacing = 4 end
+	spacing = tonumber(spacing) or 4
+	if spacing < BOSS_SPACING_MIN then spacing = BOSS_SPACING_MIN end
 	local growth = (cfg.growth or (def and def.growth) or "DOWN"):upper()
 	local last
 	local shown = 0
@@ -9642,6 +9703,7 @@ local function layoutBossFrames(cfg)
 	end
 	if shown > 0 then
 		local totalHeight = frameHeight * shown + spacing * (shown - 1)
+		if totalHeight < frameHeight then totalHeight = frameHeight end
 		bossContainer:SetHeight(totalHeight)
 		bossContainer:SetWidth(maxWidth)
 	end

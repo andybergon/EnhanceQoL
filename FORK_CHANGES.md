@@ -26,6 +26,7 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | [Heal absorb bar for resource bars](#heal-absorb-bar-for-resource-bars) | Brought upstream (partial) | [`d2e220ca`](https://github.com/R41z0r/EnhanceQoL/commit/d2e220ca), [`555b9e63`](https://github.com/R41z0r/EnhanceQoL/commit/555b9e63) (2026-04-29) | [`ef6405f9`](https://github.com/andybergon/EnhanceQoL/commit/ef6405f9) (2026-03-26) | Upstream added heal absorb overlay, custom texture/color, clamp, and overlay height; fork still keeps the opposite-side fill mode |
 | Cooldown panel passive trinket glow fix | Fork-only | — | `main` | `GetItemUseSpellID` checked `C_Item.GetItemSpell` which returns spells for "Equip:" effects too; now verifies "Use:" via tooltip |
 | Class buff reminder "nearby only" filter | Fork-only | — | `main` | Only count group members in buff cast range (`IsSpellInRange`) for missing buff counts; falls back to visibility (~100yd) for AoE buffs like Battle Shout |
+| Druid Symbiotic Relationship raid reminder fix | Fork-only | — | `main` | Tracks missing Symbiotic Relationship in raids as well as parties; nearby filtering uses cast spell 474750 range while player aura detection still checks 474754 |
 | Absorb text on health bar | Likely overlaps upstream | Upstream added `absorbText` (2026-04) | `main` | Shows absorb/heal-absorb amounts as text suffix on health bar; dropdown with None/Absorb/Heal Absorb/Both; taint-safe via `issecretvalue` guard. **Post-2026-04-22 merge:** upstream independently added `absorbText` setting — both implementations coexist in the merged tree; needs in-game audit to decide whether to keep fork or adopt upstream's. |
 | [Tooltip widget taint fixes](#tooltip-widget-taint-fixes) | Fork-only | — | `main` | Replaced broad GameTooltip hooks; added widget-instance `GetRect`/`GetScaledRect` guards for AreaPOI/UIWidget secret-number layout errors |
 | [LFG persistSignUpNote taint fix](#lfg-persistsignupnote-taint-fix) | Fork-only | — | `main` | Replaced `LFGListApplicationDialog_Show` global function replacement with `hooksecurefunc` + `OnTextChanged` HookScript; eliminates `LFGList.lua:1614` (and 1571/3187/4002) cascade |
@@ -115,6 +116,8 @@ Three commits that build on each other to add trinket buff awareness to ClassBuf
 3. **Instance-only setting:** New `instanceOnly` option suppresses all reminders outside dungeons/raids, where buffs are less critical.
 
 **Key gotcha (Emerald Coach's Whistle):** Caster gets spell 389581 "Coaching", target gets spell 386578 "Coached". Check the caster buff (389581) on the player. `GetAuraDataByIndex` may report overridden spell ID 386581, but `GetUnitAuraBySpellID` needs the base ID 389581.
+
+**Druid Symbiotic Relationship:** The cast/known/range spell is 474750. The aura to check on the druid player is 474754. The reminder should evaluate in any non-solo group, including raids, and use 474750 for nearby-only range checks.
 
 **Files changed:** `Submodules/ClassBuffReminder.lua`, `Modules/Aura/CooldownPanels.lua`, `Locales/enUS.lua`.
 

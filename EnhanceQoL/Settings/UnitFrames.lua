@@ -149,28 +149,12 @@ addon.functions.SettingsCreateHeadline(cUnitFrame, (L["UnitFrameUFExplain"]:form
 
 data = {
 	{
-		var = "raidFramesDisplayClassColor",
-		text = L["raidFramesDisplayClassColor"],
-		get = function() return getCVarOptionState("raidFramesDisplayClassColor") end,
-		func = function(value) setCVarOptionState("raidFramesDisplayClassColor", value) end,
-		default = false,
-		parentSection = expandable,
-	},
-	{
 		var = "hidePartyFrameTitle",
 		text = L["hidePartyFrameTitle"],
 		func = function(v)
 			addon.db["hidePartyFrameTitle"] = v
 			addon.functions.togglePartyFrameTitle(v)
 		end,
-		parentSection = expandable,
-	},
-	{
-		var = "pvpFramesDisplayClassColor",
-		text = L["pvpFramesDisplayClassColor"],
-		get = function() return getCVarOptionState("pvpFramesDisplayClassColor") end,
-		func = function(value) setCVarOptionState("pvpFramesDisplayClassColor", value) end,
-		default = false,
 		parentSection = expandable,
 	},
 	{

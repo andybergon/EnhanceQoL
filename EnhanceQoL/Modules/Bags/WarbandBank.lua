@@ -1,4 +1,4 @@
--- luacheck: globals ACCOUNT_BANK_TITLE ACCOUNT_BANK_DEPOSIT_BUTTON_LABEL CHARACTER_BANK_DEPOSIT_BUTTON_LABEL C_Bank C_Cursor ItemUtil ScrollFrameTemplate_OnMouseWheel BANK_DEPOSIT_INCLUDE_REAGENTS_CHECKBOX_LABEL ClearItemButtonOverlay SetItemButtonQuality SetItemButtonTextureVertexColor ItemButtonUtil PanelTemplates_TabResize ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar BankPanelIncludeReagentsCheckboxMixin BankPanelPurchaseTabButtonMixin UIPanelScrollFrame_OnLoad COPPER_PER_GOLD COPPER_PER_SILVER WHITE_FONT_COLOR COSTS
+-- luacheck: globals ACCOUNT_BANK_TITLE ACCOUNT_BANK_DEPOSIT_BUTTON_LABEL CHARACTER_BANK_DEPOSIT_BUTTON_LABEL C_Bank C_Cursor ItemUtil ScrollFrameTemplate_OnMouseWheel BANK_DEPOSIT_INCLUDE_REAGENTS_CHECKBOX_LABEL ClearItemButtonOverlay SetItemButtonQuality SetItemButtonTextureVertexColor ItemButtonUtil PanelTemplates_TabResize ITEM_SEARCHBAR_LIST BagSearch_OnHide BagSearch_OnTextChanged BagSearch_OnChar BankPanelIncludeReagentsCheckboxMixin BankPanelPurchaseTabButtonMixin UIPanelScrollFrame_OnLoad COPPER_PER_GOLD COPPER_PER_SILVER WHITE_FONT_COLOR COSTS PVP_ITEM_LEVEL_TOOLTIP
 local addonName, addon = ...
 addon = addon or {}
 _G[addonName] = addon
@@ -113,6 +113,7 @@ local EQUIP_LOCATION_COMPARISON_SLOTS = {
 }
 
 local ACTIVE_EVENTS = {
+	"BAG_UPDATE",
 	"BAG_UPDATE_DELAYED",
 	"BAG_NEW_ITEMS_UPDATED",
 	"ITEM_LOCK_CHANGED",
@@ -126,16 +127,13 @@ local ACTIVE_EVENTS = {
 	"INVENTORY_SEARCH_UPDATE",
 	"TOYS_UPDATED",
 	"NEW_TOY_ADDED",
+	"ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
 	"PLAYER_LEVEL_UP",
 }
 
 local ACTIVE_UNIT_EVENTS = {
 	{
 		name = "UNIT_INVENTORY_CHANGED",
-		unit = "player",
-	},
-	{
-		name = "PLAYER_SPECIALIZATION_CHANGED",
 		unit = "player",
 	},
 }
@@ -170,6 +168,10 @@ state.tooltipDerivedItemFlagsCache = state.tooltipDerivedItemFlagsCache or {}
 state.overlayBindStatusCache = state.overlayBindStatusCache or {}
 state.slotCategoryCache = state.slotCategoryCache or {}
 state.openSessionNewItems = state.openSessionNewItems or {}
+state.dirtyBags = state.dirtyBags or {}
+state.dirtyBagCount = state.dirtyBagCount or 0
+state.pendingRebuildReasons = state.pendingRebuildReasons or {}
+state.pendingRefreshReasons = state.pendingRefreshReasons or {}
 state.activeContextID = state.activeContextID or nil
 state.forceDynamicRefresh = false
 if state.playerRuleRevision == nil then
@@ -177,6 +179,11 @@ if state.playerRuleRevision == nil then
 end
 
 local itemLevelEligibilityCache = {}
+state.pvpItemTooltipPattern = PVP_ITEM_LEVEL_TOOLTIP
+	and addon.functions
+	and addon.functions.fmtToPattern
+	and addon.functions.fmtToPattern(PVP_ITEM_LEVEL_TOOLTIP)
+	or nil
 local cachedOverlayRuntimeConfig
 local scheduleUpdate
 local applyActiveSkin
@@ -206,6 +213,46 @@ local function wipeTable(tbl)
 	for key in pairs(tbl) do
 		tbl[key] = nil
 	end
+end
+
+state.getPerfBucket = state.getPerfBucket or function()
+	addon.BagsPerf = addon.BagsPerf or {}
+	addon.BagsPerf.bank = addon.BagsPerf.bank or {
+		schedule = {},
+		rebuildRequests = {},
+		refreshRequests = {},
+		rebuilds = {},
+		refreshes = {},
+		skips = {},
+		crossBackpackRefreshRequests = 0,
+		dirtyBagsMarked = 0,
+		dirtyBagsIgnored = 0,
+		dirtyBagDelayedEvents = 0,
+		newItemEvents = 0,
+		newItemEventsSkippedNoBankNewItems = 0,
+	}
+	return addon.BagsPerf.bank
+end
+
+state.countReason = state.countReason or function(bucket, reason)
+	if type(bucket) ~= "table" then return end
+	reason = reason or "unknown"
+	bucket[reason] = (bucket[reason] or 0) + 1
+end
+
+state.addPendingReason = state.addPendingReason or function(target, reason)
+	if type(target) ~= "table" or not reason then return end
+	target[reason] = true
+end
+
+state.consumeReasons = state.consumeReasons or function(target)
+	if type(target) ~= "table" then return "unknown" end
+	local text
+	for reason in pairs(target) do
+		text = text and (text .. "," .. reason) or reason
+		target[reason] = nil
+	end
+	return text or "unknown"
 end
 
 local function clearTooltipDerivedItemFlagsCache()
@@ -696,7 +743,7 @@ local function receiveCursorItemIntoVisibleBank()
 	end
 
 	C_Container.PickupContainerItem(targetBagID, targetSlotID)
-	scheduleUpdate(true, true, true)
+	scheduleUpdate(true, true, true, "DropReceiver")
 	if Bags.functions and Bags.functions.RequestLayoutUpdate then
 		Bags.functions.RequestLayoutUpdate(true, true)
 	end
@@ -1561,7 +1608,7 @@ local function getCurrentCategoryRulesRevision()
 end
 
 local function doesRuleUsageDependOnPlayerState(usage)
-	return usage and (usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade) and true or false
+	return usage and (usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade or usage.equippedAverageItemLevel) and true or false
 end
 
 local function bumpPlayerRuleRevision()
@@ -1698,16 +1745,41 @@ local function createRuleRuntimeContext(usage)
 	}
 
 	if hasPlayerStateUsage then
-		local _, _, classID = UnitClass("player")
+		local _, classToken, classID = UnitClass("player")
+		runtimeContext.playerClassToken = classToken
 		runtimeContext.playerClassID = classID
 
 		local specIndex = C_SpecializationInfo and C_SpecializationInfo.GetSpecialization and C_SpecializationInfo.GetSpecialization()
+		runtimeContext.playerSpecIndex = specIndex
 		if specIndex and specIndex > 0 and C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo then
 			runtimeContext.playerSpecID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
 		end
 	end
 
 	return runtimeContext
+end
+
+function Bags.functions.GetRuleEquippedAverageItemLevel(runtimeContext)
+	if not runtimeContext then
+		return nil
+	end
+
+	local equippedItemLevel = runtimeContext.equippedAverageItemLevel
+	if equippedItemLevel == nil then
+		if type(GetAverageItemLevel) == "function" then
+			equippedItemLevel = select(2, GetAverageItemLevel())
+		end
+
+		equippedItemLevel = tonumber(equippedItemLevel)
+		runtimeContext.equippedAverageItemLevel = equippedItemLevel and equippedItemLevel > 0 and equippedItemLevel or false
+		equippedItemLevel = runtimeContext.equippedAverageItemLevel
+	end
+
+	if not equippedItemLevel then
+		return nil
+	end
+
+	return equippedItemLevel
 end
 
 local function getEquippedItemLevel(runtimeContext, inventorySlot)
@@ -1907,6 +1979,7 @@ local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 	flags.isToy = false
 	flags.isKnownToy = false
 	flags.isTransmogSet = false
+	flags.isPvpItem = false
 	flags.hasUsageRequirement = false
 
 	local toyText = _G.TOY
@@ -1929,6 +2002,8 @@ local function getTooltipDerivedItemFlags(bagID, slotID, info, runtimeContext)
 				flags.isTransmogSet = true
 			elseif toyText and lineType == TOY_TOOLTIP_LINE_TYPE and line.leftText == toyText then
 				hasToyLine = true
+			elseif state.pvpItemTooltipPattern and lineType == 0 and line.leftText and line.leftText:match(state.pvpItemTooltipPattern) then
+				flags.isPvpItem = true
 			elseif lineType == KNOWN_SPELL_TOOLTIP_LINE_TYPE then
 				if knownText and line.leftText == knownText then
 					hasKnownLine = true
@@ -2029,8 +2104,8 @@ local function getRuleUpgradeTrackKey(itemRef, runtimeContext)
 	return trackKey
 end
 
-local function getRecommendationFlags(itemRef, itemID, runtimeContext)
-	if not itemRef or not runtimeContext or not runtimeContext.playerClassID then
+local function getRecommendationFlags(itemRef, equipLoc, classID, subClassID, runtimeContext)
+	if not itemRef or not runtimeContext then
 		return false, false
 	end
 
@@ -2040,10 +2115,6 @@ local function getRecommendationFlags(itemRef, itemID, runtimeContext)
 		return cachedFlags.recommendedForClass, cachedFlags.recommendedForSpec
 	end
 
-	local recommendedForClass = false
-	local recommendedForSpec = false
-	local hasSpecData = false
-
 	if C_Item and C_Item.IsEquippableItem and not C_Item.IsEquippableItem(itemRef) then
 		runtimeContext.recommendationCache[cacheKey] = {
 			recommendedForClass = false,
@@ -2052,31 +2123,35 @@ local function getRecommendationFlags(itemRef, itemID, runtimeContext)
 		return false, false
 	end
 
-	local specTable = C_Item and C_Item.GetItemSpecInfo and C_Item.GetItemSpecInfo(itemRef)
-	hasSpecData = type(specTable) == "table" and next(specTable) ~= nil
+	if not equipLoc or classID == nil or subClassID == nil then
+		local _, _, _, instantEquipLoc, _, instantClassID, instantSubClassID = GetItemInfoInstant(itemRef)
+		equipLoc = equipLoc or instantEquipLoc
+		classID = classID or instantClassID
+		subClassID = subClassID or instantSubClassID
+	end
 
-	if hasSpecData then
-		for _, specID in ipairs(specTable) do
-			if runtimeContext.playerSpecID and specID == runtimeContext.playerSpecID then
-				recommendedForSpec = true
-			end
-			if C_SpecializationInfo and C_SpecializationInfo.GetClassIDFromSpecID and C_SpecializationInfo.GetClassIDFromSpecID(specID) == runtimeContext.playerClassID then
+	local recommendedForClass = false
+	local recommendedForSpec = false
+	if equipLoc == "INVTYPE_CLOAK" then
+		recommendedForClass = true
+		recommendedForSpec = true
+	elseif equipLoc ~= "INVTYPE_TABARD" then
+		local classFilters = addon.itemBagFilterTypes and addon.itemBagFilterTypes[runtimeContext.playerClassToken or (addon.variables and addon.variables.unitClass)]
+		local specIndex = runtimeContext.playerSpecIndex or (addon.variables and addon.variables.unitSpec)
+		local numericClassID = tonumber(classID)
+		local numericSubClassID = tonumber(subClassID)
+		local specFilters = classFilters and classFilters[specIndex]
+		local specClassEntry = specFilters and numericClassID and specFilters[numericClassID]
+		local specValue = specClassEntry and numericSubClassID and specClassEntry[numericSubClassID]
+		recommendedForSpec = specValue ~= nil and specValue ~= false
+		for _, specFilters in pairs(classFilters or {}) do
+			local classEntry = numericClassID and specFilters[numericClassID]
+			local value = classEntry and numericSubClassID and classEntry[numericSubClassID]
+			if value ~= nil and value ~= false then
 				recommendedForClass = true
+				break
 			end
 		end
-	else
-		if C_Item and C_Item.DoesItemContainSpec then
-			recommendedForClass = C_Item.DoesItemContainSpec(itemRef, runtimeContext.playerClassID, 0)
-			if runtimeContext.playerSpecID then
-				recommendedForSpec = C_Item.DoesItemContainSpec(itemRef, runtimeContext.playerClassID, runtimeContext.playerSpecID)
-			end
-		end
-
-		if not recommendedForClass and itemID and C_PlayerInfo and C_PlayerInfo.CanUseItem then
-			recommendedForClass = C_PlayerInfo.CanUseItem(itemID)
-		end
-
-		recommendedForSpec = recommendedForClass
 	end
 
 	recommendedForClass = not not recommendedForClass
@@ -2270,6 +2345,7 @@ local function buildSectionDefinitions()
 			groupCollapseID = definition.groupCollapseID,
 			groupSpacerBefore = definition.groupSpacerBefore == true,
 			groupCombineSubcategories = definition.groupCombineSubcategories == true,
+			desaturateItems = definition.desaturateItems == true,
 			collapsible = definition.collapsible ~= false,
 			forceHeader = definition.forceHeader == true,
 		}
@@ -2292,19 +2368,53 @@ local function isNewItemAtSlot(bagID, slotID)
 	return C_NewItems and C_NewItems.IsNewItem and C_NewItems.IsNewItem(bagID, slotID) or false
 end
 
-isOpenSessionNewItem = function(bagID, slotID, info)
-	local identity = false
-	if info and info.iconFileID then
-		if ItemLocation and C_Item and C_Item.DoesItemExist and C_Item.GetItemGUID then
-			local itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotID)
-			if itemLocation and C_Item.DoesItemExist(itemLocation) then
-				identity = C_Item.GetItemGUID(itemLocation) or false
-			end
-		end
-		identity = identity or info.hyperlink or info.itemID or false
+state.bumpBankPerfCounter = state.bumpBankPerfCounter or function(name)
+	local perf = state.getPerfBucket and state.getPerfBucket() or nil
+	if not perf then
+		return
+	end
+	perf[name] = (perf[name] or 0) + 1
+end
+
+state.getOpenSessionNewItemIdentity = state.getOpenSessionNewItemIdentity or function(bagID, slotID, info)
+	if not (info and info.iconFileID) then
+		return false
 	end
 
+	if ItemLocation and C_Item and C_Item.DoesItemExist and C_Item.GetItemGUID then
+		local itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotID)
+		if itemLocation and C_Item.DoesItemExist(itemLocation) then
+			local itemGUID = C_Item.GetItemGUID(itemLocation)
+			if itemGUID then
+				return itemGUID
+			end
+		end
+	end
+
+	return info.hyperlink or info.itemID or false
+end
+
+isOpenSessionNewItem = function(bagID, slotID, info)
+	state.bumpBankPerfCounter("openSessionNewItemChecks")
 	local bucket = state.openSessionNewItems[bagID]
+	local storedIdentity = bucket and bucket[slotID] or nil
+
+	if not (info and info.iconFileID) then
+		if bucket then
+			bucket[slotID] = nil
+			state.bumpBankPerfCounter("openSessionNewItemClearedEmpty")
+		end
+		return false
+	end
+
+	local liveNewItem = isNewItemAtSlot(bagID, slotID)
+	if not liveNewItem and storedIdentity == nil then
+		state.bumpBankPerfCounter("openSessionNewItemFastFalse")
+		return false
+	end
+
+	state.bumpBankPerfCounter("openSessionNewItemIdentityReads")
+	local identity = state.getOpenSessionNewItemIdentity(bagID, slotID, info)
 	if not identity then
 		if bucket then
 			bucket[slotID] = nil
@@ -2312,20 +2422,22 @@ isOpenSessionNewItem = function(bagID, slotID, info)
 		return false
 	end
 
-	local storedIdentity = bucket and bucket[slotID]
 	if storedIdentity ~= nil then
 		if storedIdentity == identity then
+			state.bumpBankPerfCounter("openSessionNewItemSessionHit")
 			return true
 		end
 		bucket[slotID] = nil
+		state.bumpBankPerfCounter("openSessionNewItemIdentityMismatch")
 	end
 
-	if isNewItemAtSlot(bagID, slotID) then
+	if liveNewItem then
 		if not bucket then
 			bucket = {}
 			state.openSessionNewItems[bagID] = bucket
 		end
 		bucket[slotID] = identity
+		state.bumpBankPerfCounter("openSessionNewItemLiveHit")
 		return true
 	end
 
@@ -2492,6 +2604,7 @@ local function ensureSection(layoutData, sectionID)
 		groupCollapseID = definition.groupCollapseID,
 		groupSpacerBefore = definition.groupSpacerBefore == true,
 		groupCombineSubcategories = definition.groupCombineSubcategories == true,
+		desaturateItems = definition.desaturateItems == true,
 		collapsible = definition.collapsible ~= false,
 		forceHeader = definition.forceHeader == true,
 		slotIndices = {},
@@ -2539,10 +2652,10 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 
 			local resolvedItemLevel
 			local itemLocation
-			if usage.itemLevel or usage.isUpgrade or usage.canAuctionHouseSell then
+			if usage.itemLevel or usage.equippedAverageItemLevel or usage.isUpgrade or usage.canAuctionHouseSell then
 				itemLocation = ItemLocation:CreateFromBagAndSlot(bagID, slotID)
 			end
-			if usage.itemLevel or usage.isUpgrade then
+			if usage.itemLevel or usage.equippedAverageItemLevel or usage.isUpgrade then
 				resolvedItemLevel = ruleItemInfo and ruleItemInfo.itemLevel or nil
 
 				if itemLocation and C_Item.DoesItemExist(itemLocation) and C_Item.GetCurrentItemLevel then
@@ -2565,7 +2678,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local recommendedForClass
 			local recommendedForSpec
 			if usage.recommendedForClass or usage.recommendedForSpec or usage.isUpgrade then
-				recommendedForClass, recommendedForSpec = getRecommendationFlags(itemRef, info and info.itemID, ruleRuntimeContext)
+				recommendedForClass, recommendedForSpec = getRecommendationFlags(itemRef, equipLoc, classID, subClassID, ruleRuntimeContext)
 			end
 
 			local upgradeTrackKey
@@ -2591,7 +2704,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local needsTransmogTooltip = usage.isTransmogSet
 				and tonumber(classID) == CONSUMABLE_CLASS_ID
 				and tonumber(subClassID) == CONSUMABLE_OTHER_SUBCLASS_ID
-			if usage.isToy or needsTransmogTooltip then
+			if usage.isToy or usage.isPvpItem or needsTransmogTooltip then
 				tooltipFlags = getTooltipDerivedItemFlags(bagID, slotID, info, ruleRuntimeContext)
 			end
 
@@ -2603,6 +2716,11 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			local isToy
 			if usage.isToy then
 				isToy = tooltipFlags and tooltipFlags.isToy or false
+			end
+
+			local isPvpItem
+			if usage.isPvpItem then
+				isPvpItem = tooltipFlags and tooltipFlags.isPvpItem or false
 			end
 
 			local resolvedBindType = ruleItemInfo and ruleItemInfo.bindType or nil
@@ -2625,6 +2743,15 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.itemDescription = ruleItemInfo and ruleItemInfo.itemDescription or nil
 			itemContext.quality = (ruleItemInfo and ruleItemInfo.itemQuality) or (info and info.quality)
 			itemContext.itemLevel = resolvedItemLevel
+			itemContext.equippedAverageItemLevel = usage.equippedAverageItemLevel
+				and equipLoc
+				and not IGNORED_ITEM_LEVEL_EQUIP_LOCS[equipLoc]
+				and (
+					tonumber(classID) == (Enum and Enum.ItemClass and Enum.ItemClass.Armor or 4)
+					or tonumber(classID) == (Enum and Enum.ItemClass and Enum.ItemClass.Weapon or 2)
+				)
+				and Bags.functions.GetRuleEquippedAverageItemLevel(ruleRuntimeContext)
+				or nil
 			itemContext.itemMinLevel = ruleItemInfo and ruleItemInfo.itemMinLevel or nil
 			itemContext.itemType = ruleItemInfo and ruleItemInfo.itemType or nil
 			itemContext.itemSubType = ruleItemInfo and ruleItemInfo.itemSubType or nil
@@ -2651,6 +2778,7 @@ local function resolveCategoryForItem(bagID, slotID, info, questInfo, settings, 
 			itemContext.isEquipmentSet = not not isEquipmentSet
 			itemContext.isTransmogSet = not not isTransmogSet
 			itemContext.isToy = not not isToy
+			itemContext.isPvpItem = not not isPvpItem
 			itemContext.isTeleportItem = addon.MythicPlus
 				and addon.MythicPlus.functions
 				and addon.MythicPlus.functions.IsTeleportItem
@@ -2704,6 +2832,7 @@ local function addSlotMapping(layoutData, sectionID, bagID, slotID, extraData)
 	mapping.itemCount = extraData and extraData.itemCount or nil
 	mapping.itemInfo = extraData and extraData.itemInfo or nil
 	mapping.questInfo = extraData and extraData.questInfo or nil
+	mapping.desaturateItem = section.desaturateItems == true and mapping.itemInfo ~= nil or nil
 	state.slotMappings[index] = mapping
 
 	layoutData.requiredButtonCount = index
@@ -3026,6 +3155,7 @@ local function hasMatchingButtonRenderState(
 	texture,
 	displayCount,
 	locked,
+	desaturated,
 	quality,
 	readable,
 	itemLink,
@@ -3039,6 +3169,7 @@ local function hasMatchingButtonRenderState(
 	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
+	stackCountLayoutSignature,
 	freeSlotSignature
 )
 	return button._bagsWarbandRenderBagID == bagID
@@ -3046,6 +3177,7 @@ local function hasMatchingButtonRenderState(
 		and button._bagsWarbandRenderTexture == texture
 		and button._bagsWarbandRenderDisplayCount == displayCount
 		and button._bagsWarbandRenderLocked == locked
+		and button._bagsWarbandRenderDesaturated == desaturated
 		and button._bagsWarbandRenderQuality == quality
 		and button._bagsWarbandRenderReadable == readable
 		and button._bagsWarbandRenderItemLink == itemLink
@@ -3059,6 +3191,7 @@ local function hasMatchingButtonRenderState(
 		and button._bagsWarbandRenderUnusableRecipe == isUnusableRecipe
 		and button._bagsWarbandRenderOverlayVersion == overlayVersion
 		and button._bagsWarbandRenderFontSignature == fontSignature
+		and button._bagsWarbandRenderStackCountLayoutSignature == stackCountLayoutSignature
 		and button._bagsWarbandRenderFreeSlotSignature == freeSlotSignature
 end
 
@@ -3074,6 +3207,7 @@ local function storeButtonRenderState(
 	texture,
 	displayCount,
 	locked,
+	desaturated,
 	quality,
 	readable,
 	itemLink,
@@ -3088,6 +3222,7 @@ local function storeButtonRenderState(
 	isUnusableRecipe,
 	overlayVersion,
 	fontSignature,
+	stackCountLayoutSignature,
 	freeSlotSignature
 )
 	button._bagsWarbandRenderBagID = bagID
@@ -3095,6 +3230,7 @@ local function storeButtonRenderState(
 	button._bagsWarbandRenderTexture = texture
 	button._bagsWarbandRenderDisplayCount = displayCount
 	button._bagsWarbandRenderLocked = locked
+	button._bagsWarbandRenderDesaturated = desaturated
 	button._bagsWarbandRenderQuality = quality
 	button._bagsWarbandRenderReadable = readable
 	button._bagsWarbandRenderItemLink = itemLink
@@ -3109,6 +3245,7 @@ local function storeButtonRenderState(
 	button._bagsWarbandRenderUnusableRecipe = isUnusableRecipe
 	button._bagsWarbandRenderOverlayVersion = overlayVersion
 	button._bagsWarbandRenderFontSignature = fontSignature
+	button._bagsWarbandRenderStackCountLayoutSignature = stackCountLayoutSignature
 	button._bagsWarbandRenderFreeSlotSignature = freeSlotSignature
 end
 
@@ -3150,7 +3287,28 @@ function Bags.functions.ApplyWarbandItemButtonSkinIfNeeded(button, quality, forc
 	button._bagsAppliedSkinSignature = skinSignature
 end
 
-local function updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate)
+state.getStackCountLayoutSignature = state.getStackCountLayoutSignature or function()
+	return addon.GetStackCountLayoutSignature and addon.GetStackCountLayoutSignature()
+		or (addon.GetStackCountAnchor and addon.GetStackCountAnchor() or "BOTTOMRIGHT")
+end
+
+state.applyStackCountLayoutIfNeeded = state.applyStackCountLayoutIfNeeded or function(button, signature)
+	if not (button and addon.ApplyStackCountLayout) then
+		return
+	end
+
+	local count = button.Count
+	if count and count._bagsStackCountLayoutSignature == signature then
+		return
+	end
+
+	addon.ApplyStackCountLayout(button)
+	if count then
+		count._bagsStackCountLayoutSignature = signature
+	end
+end
+
+local function updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate, stackCountLayoutSignature)
 	if not button then
 		return
 	end
@@ -3168,6 +3326,8 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	local displayItemCount = mapping and mapping.itemCount
 	local freeSlotCount = mapping and mapping.freeSlotCount
 	local locked = info and info.isLocked
+	local desaturateItem = texture and mapping and mapping.desaturateItem == true or false
+	local desaturated = locked or desaturateItem
 	local quality = info and info.quality
 	local readable = info and (info.IsReadable or info.isReadable)
 	local itemLink = info and info.hyperlink
@@ -3190,6 +3350,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	overlayRuntime = overlayRuntime or getOverlayRuntimeConfig()
 	fontSignature = fontSignature or getTextAppearanceSignature(textAppearance)
 	local overlayVersion = overlayRuntime and overlayRuntime.version or 0
+	stackCountLayoutSignature = stackCountLayoutSignature or state.getStackCountLayoutSignature()
 
 	if hasMatchingButtonRenderState(
 		button,
@@ -3198,6 +3359,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		texture,
 		displayCount,
 		locked,
+		desaturated,
 		quality,
 		readable,
 		itemLink,
@@ -3211,12 +3373,14 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
+		stackCountLayoutSignature,
 		freeSlotSignature
 	) then
 		if not button:IsShown() then
 			button:Show()
 		end
 		Bags.functions.ApplyWarbandItemButtonSkinIfNeeded(button, quality)
+		state.applyStackCountLayoutIfNeeded(button, stackCountLayoutSignature)
 		applyConfiguredOverlayAnchors(button, overlayRuntime)
 		updateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
 		updateBindStatusOverlay(button, bagID, slotID, info, overlayRuntime)
@@ -3246,7 +3410,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	button:SetItemButtonTexture(texture)
 	SetItemButtonQuality(button, quality, itemLink, false, isBound)
 	SetItemButtonCount(button, displayCount)
-	SetItemButtonDesaturated(button, locked)
+	SetItemButtonDesaturated(button, desaturated)
 	button:UpdateExtended()
 	button:UpdateQuestItem(questIsQuestItem, questID, questIsActive)
 	button:UpdateNewItem(quality)
@@ -3274,6 +3438,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		addon.RefreshItemButtonCooldownMask(button)
 	end
 	applyConfiguredItemButtonFonts(button, textAppearance, fontSignature)
+	state.applyStackCountLayoutIfNeeded(button, stackCountLayoutSignature)
 	applyConfiguredOverlayAnchors(button, overlayRuntime)
 	updateItemLevelText(button, itemLink, itemID, quality, overlayRuntime)
 	updateItemUpgradeText(button, itemLink, itemID, overlayRuntime)
@@ -3286,6 +3451,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		texture,
 		displayCount,
 		locked,
+		desaturated,
 		quality,
 		readable,
 		itemLink,
@@ -3300,6 +3466,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 		isUnusableRecipe,
 		overlayVersion,
 		fontSignature,
+		stackCountLayoutSignature,
 		freeSlotSignature
 	)
 	button._bagsWarbandPendingRenderTexture = nil
@@ -3817,6 +3984,71 @@ getVisibleContext = function()
 	return context, contexts
 end
 
+state.isBagInContext = state.isBagInContext or function(context, bagID)
+	if not context or type(bagID) ~= "number" then
+		return false
+	end
+	for _, contextBagID in ipairs(context.bagIDs or {}) do
+		if contextBagID == bagID then
+			return true
+		end
+	end
+	return false
+end
+
+state.markBankBagDirty = state.markBankBagDirty or function(bagID)
+	if type(bagID) ~= "number" then
+		return false
+	end
+
+	local context = getVisibleContext()
+	local perf = state.getPerfBucket()
+	if not state.isBagInContext(context, bagID) then
+		perf.dirtyBagsIgnored = (perf.dirtyBagsIgnored or 0) + 1
+		return false
+	end
+
+	if not state.dirtyBags[bagID] then
+		state.dirtyBags[bagID] = true
+		state.dirtyBagCount = (state.dirtyBagCount or 0) + 1
+		perf.dirtyBagsMarked = (perf.dirtyBagsMarked or 0) + 1
+	end
+
+	return true
+end
+
+state.hasDirtyBankBagsForContext = state.hasDirtyBankBagsForContext or function(context)
+	if not context or (state.dirtyBagCount or 0) <= 0 then
+		return false
+	end
+	for bagID in pairs(state.dirtyBags) do
+		if state.isBagInContext(context, bagID) then
+			return true
+		end
+	end
+	return false
+end
+
+state.clearDirtyBankBags = state.clearDirtyBankBags or function()
+	wipeTable(state.dirtyBags)
+	state.dirtyBagCount = 0
+end
+
+state.contextHasNewItems = state.contextHasNewItems or function(context)
+	if not context or not C_NewItems or not C_NewItems.IsNewItem then
+		return false
+	end
+	for _, bagID in ipairs(context.bagIDs or {}) do
+		local slotCount = C_Container.GetContainerNumSlots(bagID) or 0
+		for slotID = 1, slotCount do
+			if C_NewItems.IsNewItem(bagID, slotID) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function isCustomBankContextVisible()
 	return state.frame ~= nil
 		and state.frame:IsShown()
@@ -4019,6 +4251,12 @@ local function createMainFrame()
 	frame:SetSize(MIN_FRAME_WIDTH, 1)
 	frame:Hide()
 
+	local backgroundBackingTexture = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+	backgroundBackingTexture:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+	backgroundBackingTexture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+	backgroundBackingTexture:Hide()
+	frame.BackgroundBackingTexture = backgroundBackingTexture
+
 	local backgroundTexture = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
 	backgroundTexture:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
 	backgroundTexture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
@@ -4154,7 +4392,7 @@ local function createMainFrame()
 				syncBlizzardBankStateForContextID(self.contextID)
 				notifyItemContextChanged()
 				if scheduleUpdate then
-					scheduleUpdate(true, true, true)
+					scheduleUpdate(true, true, true, "BankTabClick")
 				end
 			end
 		end)
@@ -4309,6 +4547,7 @@ local function rebuildLayout(context, contexts)
 	local fontSignature = getItemButtonTextAppearanceSignature(textAppearance)
 	local tooltipOwner = GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() or nil
 	local forceDynamicUpdate = state.forceDynamicRefresh
+	local stackCountLayoutSignature = state.getStackCountLayoutSignature()
 
 	for index = 1, layoutData.requiredButtonCount do
 		local mapping = state.slotMappings[index]
@@ -4318,7 +4557,7 @@ local function rebuildLayout(context, contexts)
 			button._bagsWarbandBagID = mapping.bagID
 			button._bagsWarbandSlotID = mapping.slotID
 		end
-		updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate)
+		updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate, stackCountLayoutSignature)
 	end
 
 	state.currentLayoutCount = layoutData.requiredButtonCount
@@ -4355,6 +4594,7 @@ local function refreshButtons(context, contexts)
 	end
 	local tooltipOwner = GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() or nil
 	local forceDynamicUpdate = state.forceDynamicRefresh
+	local stackCountLayoutSignature = state.getStackCountLayoutSignature()
 
 	for index = 1, state.currentLayoutCount or 0 do
 		updateButtonData(
@@ -4364,7 +4604,8 @@ local function refreshButtons(context, contexts)
 			textAppearance,
 			fontSignature,
 			tooltipOwner,
-			forceDynamicUpdate
+			forceDynamicUpdate,
+			stackCountLayoutSignature
 		)
 	end
 
@@ -4457,9 +4698,12 @@ local function processUpdate()
 	local shouldBeVisible = shouldShowFrame(context)
 	local wasVisible = state.frame and state.frame:IsShown()
 	local openingFrame = shouldBeVisible and not wasVisible
+	local previousContextSignature = state.contextSignature
+	local currentContextSignature = getContextSignature(context)
+	local contextChanged = previousContextSignature ~= currentContextSignature
 	local needsRebuild = state.pendingRebuild
 		or state.layoutData == nil
-		or state.contextSignature ~= getContextSignature(context)
+		or contextChanged
 		or state.currentTotalSlotCount ~= getTotalSlotCount(context)
 		or openingFrame
 	local needsRefresh = state.pendingRefresh or state.forceDynamicRefresh
@@ -4473,11 +4717,17 @@ local function processUpdate()
 		syncBlizzardBankState(context)
 		if needsRebuild then
 			updateApplied = rebuildLayout(context, contexts)
+			if updateApplied then state.countReason(state.getPerfBucket().rebuilds, state.consumeReasons(state.pendingRebuildReasons)) end
 		elseif needsRefresh then
 			updateApplied = refreshButtons(context, contexts)
+			if updateApplied then state.countReason(state.getPerfBucket().refreshes, state.consumeReasons(state.pendingRefreshReasons)) end
 		else
 			refreshActionBar(context)
 		end
+	end
+
+	if updateApplied and needsRebuild then
+		state.clearDirtyBankBags()
 	end
 
 	if shouldBeVisible then
@@ -4487,7 +4737,9 @@ local function processUpdate()
 		if state.frame then
 			state.frame:Show()
 		end
-		if Bags.functions.RequestLayoutUpdate then
+		if (openingFrame or contextChanged) and Bags.functions.RequestLayoutUpdate then
+			local perf = state.getPerfBucket()
+			perf.crossBackpackRefreshRequests = (perf.crossBackpackRefreshRequests or 0) + 1
 			Bags.functions.RequestLayoutUpdate(false, true)
 		end
 	else
@@ -4499,19 +4751,27 @@ local function processUpdate()
 	setActiveEventRegistration(shouldBeVisible)
 end
 
-scheduleUpdate = function(requestRefresh, requestRebuild, forceWhenHidden)
+scheduleUpdate = function(requestRefresh, requestRebuild, forceWhenHidden, reason)
+	local perf = state.getPerfBucket()
+	state.countReason(perf.schedule, reason)
 	if requestRebuild then
 		state.pendingRebuild = true
+		state.addPendingReason(state.pendingRebuildReasons, reason)
+		state.countReason(perf.rebuildRequests, reason)
 	end
 	if requestRefresh then
 		state.pendingRefresh = true
+		state.addPendingReason(state.pendingRefreshReasons, reason)
+		state.countReason(perf.refreshRequests, reason)
 	end
 
 	if not forceWhenHidden and not shouldProcessVisibleUpdates() then
+		state.countReason(perf.skips, "hidden:" .. tostring(reason or "unknown"))
 		return
 	end
 
 	if state.updateScheduled then
+		state.countReason(perf.skips, "alreadyScheduled:" .. tostring(reason or "unknown"))
 		return
 	end
 	state.updateScheduled = true
@@ -4522,7 +4782,7 @@ scheduleUpdate = function(requestRefresh, requestRebuild, forceWhenHidden)
 end
 
 function Bags.functions.RequestBankLayoutUpdate(requestRebuild, forceWhenHidden)
-	scheduleUpdate(true, requestRebuild, forceWhenHidden)
+	scheduleUpdate(true, requestRebuild, forceWhenHidden, requestRebuild and "api:rebuild" or "api:refresh")
 end
 
 Bags.functions.RequestWarbandBankLayoutUpdate = Bags.functions.RequestBankLayoutUpdate
@@ -4563,7 +4823,7 @@ function Bags.functions.EnableBank()
 	state.initialized = true
 	state.pendingRebuild = true
 	setActiveEventRegistration(shouldProcessVisibleUpdates())
-	scheduleUpdate(true, true, true)
+	scheduleUpdate(true, true, true, "EnableBank")
 end
 
 local eventFrame = state.eventFrame or CreateFrame("Frame")
@@ -4572,6 +4832,7 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("BANKFRAME_OPENED")
 eventFrame:RegisterEvent("BANKFRAME_CLOSED")
+eventFrame:RegisterEvent("EQUIPMENT_SETS_CHANGED")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
 	if event == "PLAYER_LOGIN" then
 		if addon.Bags and addon.Bags.IsEnabled and addon.Bags.IsEnabled() then
@@ -4586,7 +4847,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 	end
 
 	if event == "PLAYER_REGEN_ENABLED" then
-		scheduleUpdate(state.pendingRefresh, state.pendingRebuild)
+		scheduleUpdate(state.pendingRefresh, state.pendingRebuild, false, "PLAYER_REGEN_ENABLED")
 	elseif event == "BANKFRAME_OPENED" then
 		clearTooltipDerivedItemFlagsCache()
 		detachDefaultBankFrames()
@@ -4594,24 +4855,44 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 		local context = getVisibleContext()
 		syncBlizzardBankState(context, true)
 		notifyItemContextChanged()
-		scheduleUpdate(true, true, true)
+		scheduleUpdate(true, true, true, "BANKFRAME_OPENED")
 	elseif event == "BANKFRAME_CLOSED" then
+		state.clearDirtyBankBags()
 		StaticPopup_Hide("ACCOUNT_BANK_DEPOSIT_ALL_NO_REFUND_CONFIRM")
 		StaticPopup_Hide("BANK_MONEY_DEPOSIT")
 		StaticPopup_Hide("BANK_MONEY_WITHDRAW")
 		notifyItemContextChanged()
-		scheduleUpdate(true, true, true)
+		scheduleUpdate(true, true, true, "BANKFRAME_CLOSED")
+	elseif event == "BAG_UPDATE" then
+		state.markBankBagDirty(...)
 	elseif event == "BAG_UPDATE_DELAYED" then
-		scheduleUpdate(true, true)
+		local perf = state.getPerfBucket()
+		perf.dirtyBagDelayedEvents = (perf.dirtyBagDelayedEvents or 0) + 1
+		local context = getVisibleContext()
+		if state.hasDirtyBankBagsForContext(context) then
+			scheduleUpdate(true, true, false, "BAG_UPDATE_DELAYED:dirtyBankBag")
+		else
+			state.countReason(perf.skips, "BAG_UPDATE_DELAYED:noActiveBankDirtyBag")
+		end
 	elseif event == "BAG_NEW_ITEMS_UPDATED" then
-		scheduleUpdate(true, true)
-	elseif event == "UNIT_INVENTORY_CHANGED" or event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
+		local perf = state.getPerfBucket()
+		perf.newItemEvents = (perf.newItemEvents or 0) + 1
+		local context = getVisibleContext()
+		if state.pendingRebuild then
+			scheduleUpdate(true, false, false, "BAG_NEW_ITEMS_UPDATED:alreadyPendingRebuild")
+		elseif state.contextHasNewItems(context) then
+			scheduleUpdate(true, true, false, "BAG_NEW_ITEMS_UPDATED:bankContextHasNewItems")
+		else
+			perf.newItemEventsSkippedNoBankNewItems = (perf.newItemEventsSkippedNoBankNewItems or 0) + 1
+			state.countReason(perf.skips, "BAG_NEW_ITEMS_UPDATED:noBankContextNewItems")
+		end
+	elseif event == "UNIT_INVENTORY_CHANGED" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
 		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
 		if doesRuleUsageDependOnPlayerState(usage) then
 			bumpPlayerRuleRevision()
-			scheduleUpdate(true, true)
+			scheduleUpdate(true, true, false, event)
 		else
-			scheduleUpdate(true, false)
+			scheduleUpdate(true, false, false, event)
 		end
 	elseif event == "INVENTORY_SEARCH_UPDATE" then
 		if Bags.functions.RefreshWarbandBankSearchState then
@@ -4619,21 +4900,27 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
 		end
 	elseif event == "TOYS_UPDATED" or event == "NEW_TOY_ADDED" then
 		clearTooltipDerivedItemFlagsCache()
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, event)
+	elseif event == "EQUIPMENT_SETS_CHANGED" then
+		local usage = addon.GetCategoryRuleContextUsage and addon.GetCategoryRuleContextUsage() or nil
+		if usage and usage.isEquipmentSet then
+			wipeTable(state.slotCategoryCache)
+			scheduleUpdate(true, true, false, "EQUIPMENT_SETS_CHANGED")
+		end
 	elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED" then
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, event)
 	elseif event == "BANK_TABS_CHANGED" or event == "BANK_TAB_SETTINGS_UPDATED" then
 		notifyItemContextChanged()
-		scheduleUpdate(true, true)
+		scheduleUpdate(true, true, false, event)
 	elseif event == "PLAYER_MONEY" then
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, "PLAYER_MONEY")
 	elseif event == "ACCOUNT_MONEY" then
 		addon.UpdateWarbandGold()
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, "ACCOUNT_MONEY")
 	elseif event == "ITEM_LOCK_CHANGED" or event == "BAG_UPDATE_COOLDOWN" then
 		if event == "BAG_UPDATE_COOLDOWN" then
 			state.forceDynamicRefresh = true
 		end
-		scheduleUpdate(true, false)
+		scheduleUpdate(true, false, false, event)
 	end
 end)

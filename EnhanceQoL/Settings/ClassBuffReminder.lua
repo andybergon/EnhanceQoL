@@ -37,6 +37,10 @@ local DB_TRACK_FOOD_INSTANCE_ONLY = "classBuffReminderTrackFoodInstanceOnly"
 local DB_TRACK_WEAPON_BUFFS = "classBuffReminderTrackWeaponBuffs"
 local DB_TRACK_WEAPON_BUFFS_CONTENT = "classBuffReminderTrackWeaponBuffsContent"
 local DB_TRACK_WEAPON_BUFFS_INSTANCE_ONLY = "classBuffReminderTrackWeaponBuffsInstanceOnly"
+local DB_TRACK_PETS = "classBuffReminderTrackPets"
+local DB_TRACK_PETS_CONTENT = "classBuffReminderTrackPetsContent"
+local DB_TRACK_PETS_INSTANCE_ONLY = "classBuffReminderTrackPetsInstanceOnly"
+local DB_HIDE_PET_REMINDER_TEXT = "classBuffReminderHidePetReminderText"
 local DB_SCALE = "classBuffReminderScale"
 local DB_ICON_SIZE = "classBuffReminderIconSize"
 local DB_FONT_SIZE = "classBuffReminderFontSize"
@@ -107,6 +111,10 @@ local defaults = (Reminder and Reminder.defaults)
 		trackWeaponBuffs = false,
 		trackWeaponBuffsContent = createDefaultTrackingContentSelection(),
 		trackWeaponBuffsInstanceOnly = false,
+		trackPets = false,
+		trackPetsContent = createDefaultTrackingContentSelection(),
+		trackPetsInstanceOnly = false,
+		hidePetReminderText = false,
 		scale = 1,
 		iconSize = 64,
 		fontSize = 13,
@@ -140,6 +148,8 @@ if defaults.trackFood == nil then defaults.trackFood = false end
 if type(defaults.trackFoodContent) ~= "table" then defaults.trackFoodContent = createDefaultTrackingContentSelection() end
 if defaults.trackWeaponBuffs == nil then defaults.trackWeaponBuffs = false end
 if type(defaults.trackWeaponBuffsContent) ~= "table" then defaults.trackWeaponBuffsContent = createDefaultTrackingContentSelection() end
+if defaults.trackPets == nil then defaults.trackPets = false end
+if type(defaults.trackPetsContent) ~= "table" then defaults.trackPetsContent = createDefaultTrackingContentSelection() end
 if defaults.borderEnabled == nil then defaults.borderEnabled = false end
 if defaults.borderTexture == nil or defaults.borderTexture == "" then defaults.borderTexture = "DEFAULT" end
 if defaults.borderSize == nil then defaults.borderSize = 1 end
@@ -364,6 +374,49 @@ addon.functions.SettingsCreateMultiDropdown(cat, {
 	parentSection = expandable,
 })
 
+addon.functions.SettingsCreateHeadline(cat, L["ClassBuffReminderSectionPets"] or "Pets", {
+	parentSection = expandable,
+})
+
+local petTracking = addon.functions.SettingsCreateCheckbox(cat, {
+	var = DB_TRACK_PETS,
+	text = L["ClassBuffReminderTrackPets"] or "Track pet reminders",
+	desc = L["ClassBuffReminderTrackPetsDesc"] or "Shows a reminder when your expected pet is missing or set to passive or defensive.",
+	func = function(value)
+		addon.db[DB_TRACK_PETS] = value == true
+		refreshReminder()
+	end,
+	parentSection = expandable,
+})
+
+addon.functions.SettingsCreateCheckbox(cat, {
+	var = DB_HIDE_PET_REMINDER_TEXT,
+	text = L["ClassBuffReminderHidePetReminderText"] or "Hide pet reminder text",
+	desc = L["ClassBuffReminderHidePetReminderTextDesc"] or "Hides the small text shown on pet state reminder icons.",
+	func = function(value)
+		addon.db[DB_HIDE_PET_REMINDER_TEXT] = value == true
+		refreshReminder()
+	end,
+	parentSection = expandable,
+	parentCheck = function() return addon.db and addon.db[DB_TRACK_PETS] == true end,
+})
+
+addon.functions.SettingsCreateMultiDropdown(cat, {
+	var = DB_TRACK_PETS_CONTENT,
+	text = L["ClassBuffReminderTrackingContent"] or "Active in content",
+	desc = L["ClassBuffReminderTrackingContentDesc"] or "Choose where this reminder should be active. Multiple entries can be selected.",
+	optionfunc = getTrackingContentOptions,
+	getSelection = function() return getReminderSelection("GetPetTrackingContentSelection", defaults.trackPetsContent) end,
+	setSelection = function(selection) setReminderSelection("SetPetTrackingContentSelection", DB_TRACK_PETS_CONTENT, selection) end,
+	default = defaults.trackPetsContent,
+	menuHeight = 260,
+	hideSummary = true,
+	customDefaultText = _G.NONE or "None",
+	element = petTracking and petTracking.element,
+	parentCheck = function() return addon.db and addon.db[DB_TRACK_PETS] == true end,
+	parentSection = expandable,
+})
+
 function addon.functions.initClassBuffReminder()
 	if not addon.functions or not addon.functions.InitDBValue then return end
 	local init = addon.functions.InitDBValue
@@ -396,6 +449,8 @@ function addon.functions.initClassBuffReminder()
 	init("classBuffReminderTrackTrinkets", defaults.trackTrinkets)
 	init("classBuffReminderInstanceOnly", defaults.instanceOnly)
 	init("classBuffReminderNearbyOnly", defaults.nearbyOnly)
+	init(DB_TRACK_PETS, defaults.trackPets)
+	init(DB_HIDE_PET_REMINDER_TEXT, defaults.hidePetReminderText)
 	init(DB_SCALE, defaults.scale)
 	init(DB_ICON_SIZE, defaults.iconSize)
 	init(DB_FONT_SIZE, defaults.fontSize)
@@ -414,6 +469,7 @@ function addon.functions.initClassBuffReminder()
 		addon.db[DB_TRACK_FLASKS_CONTENT] = getReminderSelection("GetFlaskTrackingContentSelection", defaults.trackFlasksContent)
 		addon.db[DB_TRACK_FOOD_CONTENT] = getReminderSelection("GetFoodTrackingContentSelection", defaults.trackFoodContent)
 		addon.db[DB_TRACK_WEAPON_BUFFS_CONTENT] = getReminderSelection("GetWeaponBuffTrackingContentSelection", defaults.trackWeaponBuffsContent)
+		addon.db[DB_TRACK_PETS_CONTENT] = getReminderSelection("GetPetTrackingContentSelection", defaults.trackPetsContent)
 	end
 	if addon.db then addon.db[LEGACY_DB_SOUND_DEBUG_TRACE] = nil end
 	if addon.db then addon.db[LEGACY_DB_SHOW_ICON] = nil end

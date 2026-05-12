@@ -32,8 +32,6 @@ local FRAME_BACKGROUND_ORDER = {
 
 local WHITE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 local DEFAULT_BUTTON_SIZE = 37
-local DEFAULT_ITEM_COUNT_ANCHOR_POINT = "BOTTOMRIGHT"
-local DEFAULT_ITEM_COUNT_ANCHOR_X = -5
 local DEFAULT_ITEM_COUNT_ANCHOR_Y = 2
 local DEFAULT_ITEM_COUNT_DRAW_SUBLEVEL = 8
 local DEFAULT_NORMAL_TEXTURE = "Interface\\Buttons\\UI-Quickslot2"
@@ -64,6 +62,18 @@ local ITEM_FRAME_MASK_KEYS = {
 	"BattlepayItemTexture",
 	"BagIndicator",
 	"ExtendedSlot",
+}
+
+local STACK_COUNT_ANCHOR_FALLBACKS = {
+	TOPLEFT = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 2, y = -2, justifyH = "LEFT", justifyV = "TOP" },
+	TOP = { point = "TOP", relativePoint = "TOP", x = 0, y = -2, justifyH = "CENTER", justifyV = "TOP" },
+	TOPRIGHT = { point = "TOPRIGHT", relativePoint = "TOPRIGHT", x = -2, y = -2, justifyH = "RIGHT", justifyV = "TOP" },
+	LEFT = { point = "LEFT", relativePoint = "LEFT", x = 2, y = 0, justifyH = "LEFT", justifyV = "MIDDLE" },
+	CENTER = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0, justifyH = "CENTER", justifyV = "MIDDLE" },
+	RIGHT = { point = "RIGHT", relativePoint = "RIGHT", x = -2, y = 0, justifyH = "RIGHT", justifyV = "MIDDLE" },
+	BOTTOMLEFT = { point = "BOTTOMLEFT", relativePoint = "BOTTOMLEFT", x = 2, y = DEFAULT_ITEM_COUNT_ANCHOR_Y, justifyH = "LEFT", justifyV = "BOTTOM" },
+	BOTTOM = { point = "BOTTOM", relativePoint = "BOTTOM", x = 0, y = DEFAULT_ITEM_COUNT_ANCHOR_Y, justifyH = "CENTER", justifyV = "BOTTOM" },
+	BOTTOMRIGHT = { point = "BOTTOMRIGHT", relativePoint = "BOTTOMRIGHT", x = -2, y = DEFAULT_ITEM_COUNT_ANCHOR_Y, justifyH = "RIGHT", justifyV = "BOTTOM" },
 }
 
 Bags.functions.IsRecipeUnusableByPlayer = Bags.functions.IsRecipeUnusableByPlayer
@@ -242,17 +252,19 @@ local FRAME_BACKGROUND_DEFINITIONS = {
 	parchment = {
 		label = "Parchment",
 		labelKey = "settingsFrameBackgroundParchment",
+		backdropColor = { 0.24, 0.16, 0.07, 1 },
 		texture = "Interface\\AchievementFrame\\UI-Achievement-Parchment-Horizontal",
 		textureColor = { 1, 1, 1, 1 },
-		textureAlpha = 0.92,
+		textureAlpha = 1,
 		shadeColor = { 0.08, 0.05, 0.02, 0.24 },
 	},
 	warwithin = {
 		label = "The War Within",
 		labelKey = "settingsFrameBackgroundTheWarWithin",
+		backdropColor = { 0.02, 0.02, 0.03, 1 },
 		texture = "Interface\\Credits\\CreditsScreenBackground10TheWarWithin.blp",
 		textureColor = { 1, 1, 1, 1 },
-		textureAlpha = 0.9,
+		textureAlpha = 1,
 		shadeColor = { 0.02, 0.02, 0.03, 0.34 },
 	},
 }
@@ -516,25 +528,75 @@ local function restoreRegionAnchor(region, parent)
 	)
 end
 
+local function getStackCountAnchorTarget(button, shapeDefinition)
+	if not button then
+		return nil
+	end
+
+	if shapeDefinition and not shapeDefinition.useSystemStyle and button.BagsShapeBackground then
+		return button.BagsShapeBackground
+	end
+
+	local icon = GetItemButtonIconTexture and GetItemButtonIconTexture(button) or button.Icon or button.icon
+	return icon or button
+end
+
+local function resetFontStringAutoSize(fontString)
+	if not fontString then
+		return
+	end
+
+	if fontString.SetWidth then
+		fontString:SetWidth(0)
+	end
+	if fontString.SetHeight then
+		fontString:SetHeight(0)
+	end
+end
+
+local function reflowFontStringText(fontString)
+	if not fontString or not fontString.GetText or not fontString.SetText then
+		return
+	end
+
+	local text = fontString:GetText()
+	if text and text ~= "" then
+		fontString:SetText(text)
+	end
+end
+
 local function applyCountAnchorForShape(button, shapeDefinition)
 	if not button or not button.Count then
 		return
 	end
 
 	local count = button.Count
+	local target = getStackCountAnchorTarget(button, shapeDefinition) or button
+	local anchorID = addon.GetStackCountAnchor and addon.GetStackCountAnchor() or "BOTTOMRIGHT"
+	local anchorInfo = addon.GetOverlayAnchorInfo and addon.GetOverlayAnchorInfo(anchorID) or STACK_COUNT_ANCHOR_FALLBACKS[anchorID] or STACK_COUNT_ANCHOR_FALLBACKS.BOTTOMRIGHT
+
 	count:ClearAllPoints()
-	count:SetPoint(
-		DEFAULT_ITEM_COUNT_ANCHOR_POINT,
-		button,
-		DEFAULT_ITEM_COUNT_ANCHOR_POINT,
-		DEFAULT_ITEM_COUNT_ANCHOR_X,
-		DEFAULT_ITEM_COUNT_ANCHOR_Y
-	)
+	resetFontStringAutoSize(count)
+	if count.SetMaxLines then
+		count:SetMaxLines(1)
+	end
+	if count.SetWordWrap then
+		count:SetWordWrap(false)
+	end
+	if count.SetNonSpaceWrap then
+		count:SetNonSpaceWrap(false)
+	end
+	if count.SetIndentedWordWrap then
+		count:SetIndentedWordWrap(false)
+	end
+	if count.SetSpacing then
+		count:SetSpacing(0)
+	end
 	if count.SetJustifyH then
-		count:SetJustifyH("RIGHT")
+		count:SetJustifyH(anchorInfo.justifyH or "RIGHT")
 	end
 	if count.SetJustifyV then
-		count:SetJustifyV("BOTTOM")
+		count:SetJustifyV(anchorInfo.justifyV or "BOTTOM")
 	end
 	if count.SetScale then
 		count:SetScale(1)
@@ -542,6 +604,49 @@ local function applyCountAnchorForShape(button, shapeDefinition)
 	if count.SetDrawLayer then
 		count:SetDrawLayer("OVERLAY", DEFAULT_ITEM_COUNT_DRAW_SUBLEVEL)
 	end
+
+	count:SetPoint(
+		anchorInfo.point or "BOTTOMRIGHT",
+		target,
+		anchorInfo.relativePoint or anchorInfo.point or "BOTTOMRIGHT",
+		anchorInfo.x or 0,
+		anchorInfo.y or DEFAULT_ITEM_COUNT_ANCHOR_Y
+	)
+
+	reflowFontStringText(count)
+	if count.IsTruncated and count:IsTruncated() and count.GetUnboundedStringWidth and count.SetWidth then
+		local unboundedWidth = tonumber(count:GetUnboundedStringWidth()) or 0
+		if unboundedWidth > 0 then
+			count:SetWidth(math.ceil(unboundedWidth + 2))
+			reflowFontStringText(count)
+		end
+	end
+
+	count._bagsStackCountLayoutSignature = addon.GetStackCountLayoutSignature and addon.GetStackCountLayoutSignature() or anchorID
+end
+
+function addon.GetStackCountLayoutSignature()
+	local anchorID = addon.GetStackCountAnchor and addon.GetStackCountAnchor() or "BOTTOMRIGHT"
+	local shapeID = addon.GetResolvedIconShapeID and addon.GetResolvedIconShapeID() or "default"
+	local shapeDefinition = ICON_SHAPE_DEFINITIONS[shapeID] or ICON_SHAPE_DEFINITIONS.default
+
+	return table.concat({
+		"stackCountLayout:v2",
+		tostring(anchorID),
+		tostring(shapeID),
+		tostring(shapeDefinition and shapeDefinition.iconInset or ""),
+		tostring(shapeDefinition and shapeDefinition.frameInset or ""),
+		tostring(addon.GetItemScale and addon.GetItemScale() or 100),
+	}, "|")
+end
+
+function addon.ApplyStackCountLayout(button)
+	local shapeDefinition = addon.GetActiveIconShapeDefinition and addon.GetActiveIconShapeDefinition() or ICON_SHAPE_DEFINITIONS.default
+	if shapeDefinition and shapeDefinition.useSystemStyle then
+		shapeDefinition = nil
+	end
+
+	applyCountAnchorForShape(button, shapeDefinition)
 end
 
 local function applyProfessionQualityOverlayLayout(button, shapeDefinition)
@@ -1407,9 +1512,12 @@ function addon.ApplyFrameBackgroundSkin(frame, skin)
 
 	local definition = FRAME_BACKGROUND_DEFINITIONS[addon.GetFrameBackground and addon.GetFrameBackground() or "solid"] or FRAME_BACKGROUND_DEFINITIONS.solid
 	local backdropR, backdropG, backdropB, backdropA = unpackColor(skin.backdropColor, 0.94)
+	local backingR, backingG, backingB, backingA = backdropR, backdropG, backdropB, 0
 	if definition == FRAME_BACKGROUND_DEFINITIONS.solid and addon.GetFrameBackgroundColor then
 		local color = addon.GetFrameBackgroundColor()
 		backdropR, backdropG, backdropB = color[1] or backdropR, color[2] or backdropG, color[3] or backdropB
+	elseif definition and definition.texture and definition.backdropColor then
+		backingR, backingG, backingB, backingA = unpackColor(definition.backdropColor, 1)
 	end
 	local requestedOpacity = (addon.GetFrameBackgroundOpacity and addon.GetFrameBackgroundOpacity() or 60) / 100
 	local textureBaseAlpha = 0
@@ -1422,8 +1530,11 @@ function addon.ApplyFrameBackgroundSkin(frame, skin)
 		shadeBaseAlpha = resolvedShadeAlpha or 0
 	end
 
-	local backdropBaseAlpha = definition.backdropAlpha or backdropA
+	local hasTextureBackground = definition and definition.texture
+	local backdropBaseAlpha = hasTextureBackground and 0 or (definition.backdropAlpha or backdropA)
+	local backingBaseAlpha = hasTextureBackground and backingA or 0
 	local opacityScale = resolveBackgroundOpacityScale({
+		backingBaseAlpha,
 		backdropBaseAlpha,
 		textureBaseAlpha,
 		shadeBaseAlpha,
@@ -1432,6 +1543,24 @@ function addon.ApplyFrameBackgroundSkin(frame, skin)
 	frame:SetBackdropColor(backdropR, backdropG, backdropB, backdropBaseAlpha * opacityScale)
 	local borderColor = addon.GetFrameBorderColor and addon.GetFrameBorderColor(skin.borderColor) or skin.borderColor
 	frame:SetBackdropBorderColor(unpackColor(borderColor, 1))
+
+	local backing = frame.BackgroundBackingTexture
+	if not backing and hasTextureBackground then
+		backing = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+		frame.BackgroundBackingTexture = backing
+	end
+	if backing then
+		backing:ClearAllPoints()
+		backing:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+		backing:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+		if hasTextureBackground then
+			backing:SetColorTexture(backingR, backingG, backingB, backingBaseAlpha * opacityScale)
+			backing:Show()
+		else
+			backing:SetColorTexture(0, 0, 0, 0)
+			backing:Hide()
+		end
+	end
 
 	local texture = frame.BackgroundTexture
 	if texture then
