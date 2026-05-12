@@ -64,6 +64,10 @@
 - Do not merge beta-only changelog entries into a release section unless the user explicitly says those beta items are shipping in that release.
 - After changing packaging gates, verify `scripts/prepare_packager_gates.sh` with at least `bash -n`, and make sure the release workflow still runs Luacheck after the gate step.
 
+## WoW Lua Runtime
+
+- WoW's Lua 5.1 runtime has a hard limit of 200 local variables per function/main chunk. Large files can hit this at file scope; this is separate from the 60-upvalue limit. Before adding top-level locals or helper functions, prefer table methods or reuse existing helpers, and verify the main-chunk local count stays below 200.
+
 ## Class Buff Reminder
 
 - Druid Symbiotic Relationship uses different IDs for different checks: 474750 is the cast/known spell, while 474754 is the player aura that indicates the druid has an active bond.
