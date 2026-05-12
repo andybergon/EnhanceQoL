@@ -3606,7 +3606,23 @@ applyItemButtonSkinIfNeeded = function(button, quality, force)
 	button._bagsAppliedSkinSignature = skinSignature
 end
 
-local function updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate)
+state.applyStackCountLayoutIfNeeded = state.applyStackCountLayoutIfNeeded or function(button, signature)
+	if not (button and addon.ApplyStackCountLayout) then
+		return
+	end
+
+	local count = button.Count
+	if count and count._bagsStackCountLayoutSignature == signature then
+		return
+	end
+
+	addon.ApplyStackCountLayout(button)
+	if count then
+		count._bagsStackCountLayoutSignature = signature
+	end
+end
+
+local function updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate, stackCountLayoutSignature)
 	if not button then
 		return
 	end
@@ -3648,7 +3664,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	overlayRuntime = overlayRuntime or getOverlayRuntimeConfig()
 	fontSignature = fontSignature or getTextAppearanceSignature(textAppearance)
 	local overlayVersion = overlayRuntime and overlayRuntime.version or 0
-	local stackCountLayoutSignature = getStackCountLayoutSignature()
+	stackCountLayoutSignature = stackCountLayoutSignature or getStackCountLayoutSignature()
 
 	if hasMatchingButtonRenderState(
 		button,
@@ -3678,9 +3694,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 			button:Show()
 		end
 		applyItemButtonSkinIfNeeded(button, quality)
-		if addon.ApplyStackCountLayout then
-			addon.ApplyStackCountLayout(button)
-		end
+		state.applyStackCountLayoutIfNeeded(button, stackCountLayoutSignature)
 		updateReagentBagVisuals(button)
 		applyConfiguredOverlayAnchors(button, overlayRuntime)
 		Core.UpdateEquipmentSetOverlay(button, bagID, slotID, info, overlayRuntime)
@@ -3740,9 +3754,7 @@ local function updateButtonData(button, mapping, overlayRuntime, textAppearance,
 	end
 	updateReagentBagVisuals(button)
 	applyConfiguredItemButtonFonts(button, textAppearance, fontSignature)
-	if addon.ApplyStackCountLayout then
-		addon.ApplyStackCountLayout(button)
-	end
+	state.applyStackCountLayoutIfNeeded(button, stackCountLayoutSignature)
 	applyConfiguredOverlayAnchors(button, overlayRuntime)
 	updateItemLevelText(button, itemLink, itemID, quality, overlayRuntime)
 	updateItemUpgradeText(button, itemLink, itemID, overlayRuntime)
@@ -6172,6 +6184,7 @@ local function rebuildLayout()
 	local fontSignature = getItemButtonTextAppearanceSignature(textAppearance)
 	local tooltipOwner = GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() or nil
 	local forceDynamicUpdate = state.forceDynamicRefresh
+	local stackCountLayoutSignature = getStackCountLayoutSignature()
 
 	for index = 1, layoutData.requiredButtonCount do
 		local mapping = state.slotMappings[index]
@@ -6181,7 +6194,7 @@ local function rebuildLayout()
 			button._bagsBagID = mapping.bagID
 			button._bagsSlotID = mapping.slotID
 		end
-		updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate)
+		updateButtonData(button, mapping, overlayRuntime, textAppearance, fontSignature, tooltipOwner, forceDynamicUpdate, stackCountLayoutSignature)
 		mapping.itemInfo = nil
 		mapping.questInfo = nil
 	end
@@ -6240,6 +6253,7 @@ local function refreshButtons()
 	end
 	local tooltipOwner = GameTooltip and GameTooltip.GetOwner and GameTooltip:GetOwner() or nil
 	local forceDynamicUpdate = state.forceDynamicRefresh
+	local stackCountLayoutSignature = getStackCountLayoutSignature()
 
 	for index = 1, state.currentLayoutCount or 0 do
 		updateButtonData(
@@ -6249,7 +6263,8 @@ local function refreshButtons()
 			textAppearance,
 			fontSignature,
 			tooltipOwner,
-			forceDynamicUpdate
+			forceDynamicUpdate,
+			stackCountLayoutSignature
 		)
 	end
 
