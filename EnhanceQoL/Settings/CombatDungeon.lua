@@ -42,12 +42,9 @@ local NAMEPLATE_MOB_COLOR_NEUTRAL_DB_KEY = "nameplateMobColorNeutral"
 local NAMEPLATE_MOB_COLOR_THREAT_LOST_DB_KEY = "nameplateMobColorThreatLost"
 local NAMEPLATE_MOB_COLOR_THREAT_WARNING_DB_KEY = "nameplateMobColorThreatWarning"
 local NAMEPLATE_MOB_COLOR_TRIVIAL_DB_KEY = "nameplateMobColorTrivial"
-local nameplateAuraClickthroughFrame
-local nameplateAuraClickthroughHookedBuffPools = setmetatable({}, { __mode = "k" })
-local nameplateAuraClickthroughHookedAuraFrames = setmetatable({}, { __mode = "k" })
 local nameplateAuraClickthroughActive = false
 local nameplateMobColorFrame
-local nameplateMobColorHooksInstalled = false
+local nameplateMobColorUpdatePending = false
 local nameplateMobColorsActive = false
 local nameplateMobColorState = {
 	isActive = false,
@@ -648,11 +645,6 @@ local function refreshNameplateMobColorUnitFrame(unitFrame)
 	if not unitFrame or isSecretValue(unitFrame) then return end
 	if not isNameplateUnitToken(unitFrame.unit) then return end
 
-	if type(_G.CompactUnitFrame_UpdateHealthColor) == "function" then
-		_G.CompactUnitFrame_UpdateHealthColor(unitFrame)
-		return
-	end
-
 	applyNameplateMobColor(unitFrame)
 end
 
@@ -664,26 +656,28 @@ local function refreshAllNameplateMobColors()
 	end
 end
 
-local function ensureNameplateMobColorHooks()
-	if nameplateMobColorHooksInstalled then return end
-	if type(hooksecurefunc) ~= "function" then return end
-	local installedAnyHook = false
+local function scheduleNameplateMobColorRefresh(forceContextRefresh)
+	if not isNameplateMobColorsActive() then return end
+	if forceContextRefresh then updateNameplateMobColorContext(true) end
+	if nameplateMobColorUpdatePending then return end
 
-	if type(_G.CompactUnitFrame_UpdateHealthColor) == "function" then
-		hooksecurefunc("CompactUnitFrame_UpdateHealthColor", function(unitFrame) applyNameplateMobColor(unitFrame) end)
-		installedAnyHook = true
+	-- Do not hook or call CompactUnitFrame update functions from addon code; that taints nameplate setup.
+	nameplateMobColorUpdatePending = true
+	if C_Timer and C_Timer.After then
+		C_Timer.After(0, function()
+			nameplateMobColorUpdatePending = false
+			if not isNameplateMobColorsActive() then return end
+			updateNameplateMobColorContext()
+			refreshAllNameplateMobColors()
+		end)
+	else
+		nameplateMobColorUpdatePending = false
+		updateNameplateMobColorContext()
+		refreshAllNameplateMobColors()
 	end
-
-	if type(_G.CompactUnitFrame_UpdateAll) == "function" then
-		hooksecurefunc("CompactUnitFrame_UpdateAll", function(unitFrame) applyNameplateMobColor(unitFrame) end)
-		installedAnyHook = true
-	end
-
-	nameplateMobColorHooksInstalled = installedAnyHook
 end
 
 local function ensureNameplateMobColorWatcher()
-	ensureNameplateMobColorHooks()
 	if nameplateMobColorFrame then return end
 
 	nameplateMobColorFrame = CreateFrame("Frame")
@@ -692,127 +686,28 @@ local function ensureNameplateMobColorWatcher()
 	nameplateMobColorFrame:RegisterEvent("PLAYER_LEVEL_UP")
 	nameplateMobColorFrame:RegisterEvent("INSTANCE_GROUP_SIZE_CHANGED")
 	nameplateMobColorFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+	nameplateMobColorFrame:RegisterEvent("UNIT_THREAT_LIST_UPDATE")
+	nameplateMobColorFrame:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
+	nameplateMobColorFrame:RegisterEvent("UNIT_FACTION")
+	nameplateMobColorFrame:RegisterEvent("UNIT_LEVEL")
 	nameplateMobColorFrame:SetScript("OnEvent", function(_, event, unit)
-		ensureNameplateMobColorHooks()
-		local forceRefresh = event ~= "NAME_PLATE_UNIT_ADDED"
-		updateNameplateMobColorContext(forceRefresh)
-		if event == "NAME_PLATE_UNIT_ADDED" and unit and C_NamePlate and C_NamePlate.GetNamePlateForUnit then
-			local namePlate = C_NamePlate.GetNamePlateForUnit(unit)
-			local unitFrame = namePlate and namePlate.UnitFrame
-			if unitFrame then refreshNameplateMobColorUnitFrame(unitFrame) end
+		if unit and not isNameplateUnitToken(unit) then
 			return
 		end
 
-		refreshAllNameplateMobColors()
+		scheduleNameplateMobColorRefresh(event ~= "NAME_PLATE_UNIT_ADDED")
 	end)
 end
 
 local function syncNameplateMobColors()
 	if not isNameplateMobColorsActive() then return end
 	ensureNameplateMobColorWatcher()
-	updateNameplateMobColorContext()
-	refreshAllNameplateMobColors()
-end
-
-local function safeSetNameplateAuraButtonClicks(button, enabled)
-	if not button or type(button.SetMouseClickEnabled) ~= "function" then return false end
-	local ok = pcall(button.SetMouseClickEnabled, button, enabled and true or false)
-	return ok == true
-end
-
-local function applyNameplateAuraClickthroughToBuffPool(pool)
-	if not pool or type(pool.EnumerateActive) ~= "function" then return end
-	local allowClicks = not isNameplateAuraClickthroughActive()
-	for button in pool:EnumerateActive() do
-		safeSetNameplateAuraButtonClicks(button, allowClicks)
-	end
-end
-
-local function applyNameplateAuraClickthroughToAurasFrame(aurasFrame)
-	if not aurasFrame then return end
-
-	local allowClicks = not isNameplateAuraClickthroughActive()
-	local pool = aurasFrame.auraItemFramePool
-	if pool and type(pool.EnumerateActive) == "function" then
-		for auraItem in pool:EnumerateActive() do
-			safeSetNameplateAuraButtonClicks(auraItem, allowClicks)
-		end
-	end
-
-	local lossOfControlAura = aurasFrame.LossOfControlFrame and aurasFrame.LossOfControlFrame.AuraItemFrame
-	if lossOfControlAura then safeSetNameplateAuraButtonClicks(lossOfControlAura, allowClicks) end
-end
-
-local function hookNameplateAuraClickthroughOnBuffFrame(buffFrame)
-	if not buffFrame then return end
-
-	local pool = buffFrame.buffPool
-	if pool and not nameplateAuraClickthroughHookedBuffPools[pool] and type(pool.resetterFunc) == "function" then
-		hooksecurefunc(pool, "resetterFunc", function(_, button)
-			local allowClicks = not isNameplateAuraClickthroughActive()
-			safeSetNameplateAuraButtonClicks(button, allowClicks)
-		end)
-		nameplateAuraClickthroughHookedBuffPools[pool] = true
-	end
-
-	if not buffFrame._eqolNameplateAuraClickthroughHooked and type(buffFrame.UpdateBuffs) == "function" then
-		hooksecurefunc(buffFrame, "UpdateBuffs", function(self) applyNameplateAuraClickthroughToBuffPool(self.buffPool) end)
-		buffFrame._eqolNameplateAuraClickthroughHooked = true
-	end
-
-	applyNameplateAuraClickthroughToBuffPool(pool)
-end
-
-local function hookNameplateAuraClickthroughOnAurasFrame(aurasFrame)
-	if not aurasFrame or nameplateAuraClickthroughHookedAuraFrames[aurasFrame] then return end
-
-	if type(aurasFrame.RefreshAuras) == "function" then hooksecurefunc(aurasFrame, "RefreshAuras", function(self) applyNameplateAuraClickthroughToAurasFrame(self) end) end
-
-	if type(aurasFrame.RefreshLossOfControl) == "function" then hooksecurefunc(aurasFrame, "RefreshLossOfControl", function(self) applyNameplateAuraClickthroughToAurasFrame(self) end) end
-
-	nameplateAuraClickthroughHookedAuraFrames[aurasFrame] = true
-	applyNameplateAuraClickthroughToAurasFrame(aurasFrame)
-end
-
-local function hookNameplateAuraClickthroughOnUnitFrame(unitFrame)
-	if not unitFrame then return end
-	hookNameplateAuraClickthroughOnBuffFrame(unitFrame.BuffFrame)
-	hookNameplateAuraClickthroughOnAurasFrame(unitFrame.AurasFrame)
-end
-
-local function applyNameplateAuraClickthroughToNameplate(namePlate)
-	if not namePlate or not namePlate.UnitFrame then return end
-	hookNameplateAuraClickthroughOnUnitFrame(namePlate.UnitFrame)
-end
-
-local function applyNameplateAuraClickthroughToAllNameplates()
-	if not (C_NamePlate and C_NamePlate.GetNamePlates) then return end
-	for _, namePlate in pairs(C_NamePlate.GetNamePlates() or {}) do
-		applyNameplateAuraClickthroughToNameplate(namePlate)
-	end
-end
-
-local function ensureNameplateAuraClickthroughWatcher()
-	if nameplateAuraClickthroughFrame then return end
-
-	nameplateAuraClickthroughFrame = CreateFrame("Frame")
-	nameplateAuraClickthroughFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-	nameplateAuraClickthroughFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
-	nameplateAuraClickthroughFrame:SetScript("OnEvent", function(_, event, unit)
-		if event == "NAME_PLATE_UNIT_ADDED" and unit and C_NamePlate and C_NamePlate.GetNamePlateForUnit then
-			local namePlate = C_NamePlate.GetNamePlateForUnit(unit)
-			if namePlate then applyNameplateAuraClickthroughToNameplate(namePlate) end
-			return
-		end
-
-		applyNameplateAuraClickthroughToAllNameplates()
-	end)
+	scheduleNameplateMobColorRefresh(true)
 end
 
 local function syncNameplateAuraClickthrough()
-	if not isNameplateAuraClickthroughActive() then return end
-	ensureNameplateAuraClickthroughWatcher()
-	applyNameplateAuraClickthroughToAllNameplates()
+	nameplateAuraClickthroughActive = false
+	if addon.db then addon.db[NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY] = false end
 end
 
 local function requestFeatureReload()
@@ -823,12 +718,9 @@ end
 
 function addon.functions.SetDefaultNameplateAuraClickthroughEnabled(value)
 	local wasActive = isNameplateAuraClickthroughActive()
-	local enabled = value and true or false
-	addon.db[NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY] = enabled
-	if enabled then
-		nameplateAuraClickthroughActive = true
-		syncNameplateAuraClickthrough()
-	elseif wasActive then
+	addon.db[NAMEPLATE_AURA_CLICKTHROUGH_DB_KEY] = false
+	nameplateAuraClickthroughActive = false
+	if wasActive or value then
 		requestFeatureReload()
 	end
 end

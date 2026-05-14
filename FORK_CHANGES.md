@@ -31,7 +31,8 @@ All changes made in this fork (`andybergon/EnhanceQoL`) relative to upstream (`R
 | [Tooltip widget taint fixes](#tooltip-widget-taint-fixes) | Fork-only | — | `main` | Replaced broad GameTooltip hooks; added widget-instance `GetRect`/`GetScaledRect` guards for AreaPOI/UIWidget secret-number layout errors |
 | [LFG persistSignUpNote taint fix](#lfg-persistsignupnote-taint-fix) | Fork-only | — | `main` | Replaced `LFGListApplicationDialog_Show` global function replacement with `hooksecurefunc` + `OnTextChanged` HookScript; eliminates `LFGList.lua:1614` (and 1571/3187/4002) cascade |
 | LFG one-click apply after decline | Fork-only | — | `main` | Selects clicked listings before checking Sign Up state; for declined/timed-out rows, cancels the stale application, refreshes the search, then retries signup for the same result |
-| UIWidget Setup taint fixes | Fork-only | — | `main` | pcall wrappers on TextWithState/Currencies setup, ItemDisplay font/tooltip dimension guards, and widget `GetRect`/`GetScaledRect` guards applied before `DefaultWidgetLayout`. Suppresses only secret-number errors and re-raises everything else. |
+| UIWidget Setup taint fixes | Fork-only | — | `main` | pcall wrappers on TextWithState/Currencies setup, ItemDisplay font/tooltip dimension guards, and widget `GetRect`/`GetScaledRect` guards applied before `DefaultWidgetLayout`, including Spacer widgets. Suppresses only secret-number errors and re-raises everything else. |
+| [Default nameplate taint fixes](#default-nameplate-taint-fixes) | Fork-only | — | `main` | Removed direct hooks/calls from Blizzard nameplate aura and compact-frame refresh methods; disables default aura click-through because touching Blizzard aura buttons taints future refreshes |
 | LFG search auto-refresh | Fork-only | — | `main` | Auto-refresh toggle + interval selector (5–60s) in filter dropdown; only runs while search panel is open |
 | Rank display mode dropdown | Fork-only (WIP) | — | branch `feat/rank-display-mode` | Replace "use highest rank" checkbox with Single/Highest/Lowest/Both dropdown |
 
@@ -190,7 +191,7 @@ Settings include enable toggle, custom color with opacity, texture selection, fi
 1. **DungeonPortal.lua:** Replaced `GameTooltip:HookScript("OnShow/OnHide")` with per-entry `OnEnter/OnLeave` hooks via `hooksecurefunc("LFGListSearchEntry_Update")`. The RIO score frame positioning now only fires when hovering LFG search entries, never for unrelated tooltips.
 2. **Ignore.lua:** Replaced `GameTooltip:HookScript("OnShow")` with `TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit)`. The ignore note only fires for unit tooltips.
 3. **EnhanceQoLTooltip.lua:** Made `hooksecurefunc("GameTooltip_SetDefaultAnchor")` conditional — only registered when custom tooltip anchoring is active (`TooltipAnchorType ~= 1`). Changing the setting requires `/reload`.
-4. **EnhanceQoLTooltip.lua:** Added an instance-level `GetRect` guard for `UIWidgetTemplateStatusBarMixin` frames. AreaPOI status-bar widgets can finish `Setup()` cleanly, then fail later in `DefaultWidgetLayout -> GetUnscaledFrameRect` because `frame:GetRect()` returns secret values in the tainted tooltip context. The guard returns plain numeric fallback geometry without wrapping Blizzard's global tooltip/widget functions.
+4. **EnhanceQoLTooltip.lua:** Added instance-level `GetRect` / `GetScaledRect` guards for UIWidget frames. AreaPOI widgets can finish `Setup()` cleanly, then fail later in `DefaultWidgetLayout -> GetUnscaledFrameRect` because `frame:GetRect()` returns secret values in the tainted tooltip context. The guard returns plain numeric fallback geometry without wrapping Blizzard's global tooltip/widget functions. Spacer widgets (visualization type 22) do not go through the previously guarded setup mixins, so the guard is also applied at `UIWidgetContainerMixin:CreateWidget`, `ProcessWidget`, and before `UpdateWidgetLayout`.
 
 **Result:** Broad AreaPOI tooltip taint reduced substantially; follow-up fixed status-bar widget layout spam (`FrameUtil.lua:211`, widgetType 2, widget set 2042) without re-tainting `GameTooltip_AddWidgetSet`.
 
@@ -211,3 +212,17 @@ Settings include enable toggle, custom color with opacity, texture selection, fi
 2. Defer the `SetText` to the next frame via `C_Timer.After(0, ...)`. This breaks out of the secure stack so the assignment runs in a clean context. The deferred callback re-validates `addon.db.persistSignUpNote`, the saved note, the dialog/editbox, and the no-op check before writing, in case the dialog has been hidden or repurposed.
 
 **Files changed:** `EnhanceQoL.lua`.
+
+---
+
+### Default nameplate taint fixes
+
+**Problem:** The "Make nameplate auras click-through" option hooked default Blizzard nameplate aura refresh methods (`BuffFrame.UpdateBuffs`, `AurasFrame.RefreshAuras`, and related pool resetters). In Midnight builds this could taint Blizzard's aura refresh execution, producing errors in `Blizzard_NamePlateAuras.lua` when it compared secret aura fields such as `isStealable` or called `C_UnitAuras.GetAuraDataByAuraInstanceID` / `IsAuraFilteredOutByInstanceID`.
+
+The "Color default nameplates" option had the same issue through `CompactUnitFrame_UpdateHealthColor` / `CompactUnitFrame_UpdateAll` hooks and a direct addon call into `CompactUnitFrame_UpdateHealthColor`. That tainted nameplate setup and produced secret health-value errors in `CompactUnitFrame_UpdateHealPrediction` and `TextStatusBar`.
+
+**Fix:** Removed hooks and direct calls from Blizzard's aura and compact-frame refresh paths. Aura click-through is now disabled in settings and forces its saved setting back to `false`: even deferred `SetMouseClickEnabled(false)` calls on active Blizzard aura item buttons taint the next Blizzard aura refresh. Mob colors now listen for nameplate, threat, faction, level, and context-change events, then schedule a next-frame repaint after Blizzard's unit-frame setup has finished.
+
+**Key gotcha:** Do not hook `AurasFrame.RefreshAuras`, `RefreshLossOfControl`, `BuffFrame.UpdateBuffs`, aura pool resetters, `CompactUnitFrame_UpdateAll`, or `CompactUnitFrame_UpdateHealthColor` for these features. Even additive hooks can make the nameplate refresh stack run in an addon-tainted context on current clients. Also do not call `SetMouseClickEnabled` on Blizzard's default nameplate aura buttons; touching the buttons is enough to taint later `AddAura` parsing.
+
+**Files changed:** `Settings/CombatDungeon.lua`, `Settings/UIOptions.lua`, `Locales/enUS.lua`.

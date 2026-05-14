@@ -1493,8 +1493,26 @@ local function registerTooltipHooks()
 		end)
 	end
 
+	local function wrapWidgetContainerMethodForSafeRects(containerMixin, methodName, installBefore)
+		if not containerMixin or not containerMixin[methodName] then return end
+		local flagName = "_eqolSafeRect" .. methodName
+		if containerMixin[flagName] then return end
+
+		local originalMethod = containerMixin[methodName]
+		containerMixin[flagName] = true
+		containerMixin[methodName] = function(self, ...)
+			if installBefore then installSafeWidgetRectsFromValue(self, {}) end
+			local results = { originalMethod(self, ...) }
+			installSafeWidgetRectsFromValue(self, {})
+			return unpack(results)
+		end
+	end
+
 	wrapWidgetSetupForSafeRect(UIWidgetTemplateTextWithStateMixin)
 	wrapWidgetSetupForSafeRect(UIWidgetTemplateHorizontalCurrenciesMixin)
+	wrapWidgetContainerMethodForSafeRects(UIWidgetContainerMixin, "CreateWidget")
+	wrapWidgetContainerMethodForSafeRects(UIWidgetContainerMixin, "ProcessWidget")
+	wrapWidgetContainerMethodForSafeRects(UIWidgetContainerMixin, "UpdateWidgetLayout", true)
 	hookWidgetManagerProcessWidget(UIWidgetManagerMixin)
 	hookWidgetManagerProcessWidget(UIWidgetManager)
 

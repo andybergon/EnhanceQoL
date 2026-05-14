@@ -1619,6 +1619,8 @@ local function createNameplatesCategory()
 		var = DEFAULT_NAMEPLATE_FEATURE_KEYS.auraClickthrough,
 		text = L["nameplateAuraClickthrough"] or "Make nameplate auras click-through",
 		desc = L["nameplateAuraClickthroughDesc"],
+		get = function() return false end,
+		isEnabled = function() return false end,
 		func = function(value)
 			if addon.functions.SetDefaultNameplateAuraClickthroughEnabled then
 				addon.functions.SetDefaultNameplateAuraClickthroughEnabled(value)
